@@ -3,7 +3,7 @@ Funções CRUD (Create, Read, Update, Delete) para usuários e tickets.
 """
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from database.models import User, Ticket, TicketStatus
+from database.models import User, Ticket, TicketStatus, Integration, IntegrationSetting
 from core.security import get_password_hash, verify_password
 
 
@@ -174,3 +174,197 @@ def delete_ticket(db: Session, ticket_id: int) -> bool:
     db.delete(db_ticket)
     db.commit()
     return True
+
+
+# ========== CRUD de Integrações ==========
+
+def get_integration(db: Session, integration_id: int) -> Optional[Integration]:
+    """Busca uma integração pelo ID."""
+    return db.query(Integration).filter(Integration.id == integration_id).first()
+
+
+def get_integration_by_name(db: Session, name: str) -> Optional[Integration]:
+    """Busca uma integração pelo nome."""
+    return db.query(Integration).filter(Integration.name == name).first()
+
+
+def get_integration_by_type(db: Session, integration_type: str) -> Optional[Integration]:
+    """Busca uma integração pelo tipo."""
+    return db.query(Integration).filter(Integration.type == integration_type).first()
+
+
+def get_integrations(db: Session, skip: int = 0, limit: int = 100) -> List[Integration]:
+    """Lista todas as integrações com paginação."""
+    return db.query(Integration).offset(skip).limit(limit).all()
+
+
+def create_integration(
+    db: Session,
+    name: str,
+    integration_type: str,
+    is_active: bool = True
+) -> Integration:
+    """Cria uma nova integração."""
+    db_integration = Integration(
+        name=name,
+        type=integration_type,
+        is_active=1 if is_active else 0
+    )
+    db.add(db_integration)
+    db.commit()
+    db.refresh(db_integration)
+    return db_integration
+
+
+def update_integration(db: Session, integration_id: int, **kwargs) -> Optional[Integration]:
+    """Atualiza uma integração existente."""
+    db_integration = get_integration(db, integration_id)
+    if not db_integration:
+        return None
+    
+    for key, value in kwargs.items():
+        if hasattr(db_integration, key) and value is not None:
+            if key == "is_active":
+                setattr(db_integration, key, 1 if value else 0)
+            else:
+                setattr(db_integration, key, value)
+    
+    db.commit()
+    db.refresh(db_integration)
+    return db_integration
+
+
+def delete_integration(db: Session, integration_id: int) -> bool:
+    """Deleta uma integração pelo ID."""
+    db_integration = get_integration(db, integration_id)
+    if not db_integration:
+        return False
+    db.delete(db_integration)
+    db.commit()
+    return True
+
+
+# ========== CRUD de Configurações de Integração ==========
+
+def get_integration_setting(db: Session, setting_id: int) -> Optional[IntegrationSetting]:
+    """Busca uma configuração pelo ID."""
+    return db.query(IntegrationSetting).filter(IntegrationSetting.id == setting_id).first()
+
+
+def get_integration_settings(db: Session, integration_id: int) -> List[IntegrationSetting]:
+    """Lista todas as configurações de uma integração."""
+    return db.query(IntegrationSetting).filter(
+        IntegrationSetting.integration_id == integration_id
+    ).all()
+
+
+def get_integration_setting_by_key(
+    db: Session, 
+    integration_id: int, 
+    key: str
+) -> Optional[IntegrationSetting]:
+    """Busca uma configuração pelo nome da chave."""
+    return db.query(IntegrationSetting).filter(
+        IntegrationSetting.integration_id == integration_id,
+        IntegrationSetting.key == key
+    ).first()
+
+
+def create_or_update_setting(
+    db: Session,
+    integration_id: int,
+    key: str,
+    value: str,
+    is_secret: bool = False,
+    description: Optional[str] = None
+) -> IntegrationSetting:
+    """Cria ou atualiza uma configuração de integração."""
+    existing = get_integration_setting_by_key(db, integration_id, key)
+    
+    if existing:
+        existing.value = value
+        existing.is_secret = 1 if is_secret else 0
+        if description:
+            existing.description = description
+        db.commit()
+        db.refresh(existing)
+        return existing
+    
+    db_setting = IntegrationSetting(
+        integration_id=integration_id,
+        key=key,
+        value=value,
+        is_secret=1 if is_secret else 0,
+        description=description
+    )
+    db.add(db_setting)
+    db.commit()
+    db.refresh(db_setting)
+    return db_setting
+
+
+def delete_integration_setting(db: Session, setting_id: int) -> bool:
+    """Deleta uma configuração pelo ID."""
+    db_setting = get_integration_setting(db, setting_id)
+    if not db_setting:
+        return False
+    db.delete(db_setting)
+    db.commit()
+    return True
+
+
+def init_default_integrations(db: Session):
+    """
+    Inicializa as integrações padrão no banco de dados.
+    Chamado na inicialização da aplicação.
+    """
+    default_integrations = [
+        {
+            "name": "OpenAI",
+            "type": "openai",
+            "settings": [
+                {"key": "api_key", "description": "Chave da API OpenAI", "is_secret": True},
+                {"key": "model", "description": "Modelo a ser usado (ex: gpt-4)", "is_secret": False},
+                {"key": "max_tokens", "description": "Máximo de tokens por resposta", "is_secret": False},
+                {"key": "temperature", "description": "Temperatura (criatividade) 0-1", "is_secret": False},
+            ]
+        },
+        {
+            "name": "Notion",
+            "type": "notion",
+            "settings": [
+                {"key": "api_key", "description": "Token de integração do Notion", "is_secret": True},
+                {"key": "database_id", "description": "ID do banco de dados do Notion", "is_secret": False},
+                {"key": "parent_page_id", "description": "ID da página pai (opcional)", "is_secret": False},
+            ]
+        },
+        {
+            "name": "WhatsApp (WAHA)",
+            "type": "waha",
+            "settings": [
+                {"key": "api_url", "description": "URL da API WAHA", "is_secret": False},
+                {"key": "api_key", "description": "Chave de autenticação WAHA", "is_secret": True},
+                {"key": "session_name", "description": "Nome da sessão WhatsApp", "is_secret": False},
+                {"key": "webhook_url", "description": "URL do webhook para receber mensagens", "is_secret": False},
+            ]
+        },
+    ]
+    
+    for integration_data in default_integrations:
+        existing = get_integration_by_name(db, integration_data["name"])
+        if not existing:
+            integration = create_integration(
+                db,
+                name=integration_data["name"],
+                integration_type=integration_data["type"],
+                is_active=False
+            )
+            for setting in integration_data["settings"]:
+                create_or_update_setting(
+                    db,
+                    integration_id=integration.id,
+                    key=setting["key"],
+                    value="",
+                    is_secret=setting.get("is_secret", False),
+                    description=setting.get("description")
+                )

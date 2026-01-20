@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from database.database import engine, Base, SessionLocal
 from database import crud
-from api.endpoints import auth, users, tickets, whatsapp_webhook
+from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations
 from core.security import decode_token
 
 
@@ -42,6 +42,8 @@ async def lifespan(app: FastAPI):
                 role="admin"
             )
             print(f"Usuário admin criado. Configure ADMIN_PASSWORD em produção!")
+        
+        crud.init_default_integrations(db)
     finally:
         db.close()
     
@@ -69,6 +71,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(tickets.router)
 app.include_router(whatsapp_webhook.router)
+app.include_router(integrations.router)
 
 
 # ========== Rotas de Páginas HTML ==========
@@ -122,6 +125,27 @@ async def admin_page(request: Request):
         return RedirectResponse(url="/login")
     
     return templates.TemplateResponse("admin.html", {"request": request})
+
+
+@app.get("/integrations", response_class=HTMLResponse)
+async def integrations_page(request: Request):
+    """
+    Página de gerenciamento de integrações.
+    Requer autenticação como admin.
+    """
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        return RedirectResponse(url="/login")
+    
+    payload = decode_token(token)
+    if not payload:
+        return RedirectResponse(url="/login")
+    
+    if payload.get("role") != "admin":
+        return RedirectResponse(url="/login?error=permission")
+    
+    return templates.TemplateResponse("integrations.html", {"request": request})
 
 
 # ========== Health Check ==========

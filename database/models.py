@@ -69,3 +69,45 @@ class Ticket(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class IntegrationType(str, enum.Enum):
+    """Tipos de integração disponíveis."""
+    OPENAI = "openai"
+    NOTION = "notion"
+    WAHA = "waha"
+    CUSTOM = "custom"
+
+
+class Integration(Base):
+    """
+    Modelo para armazenar configurações de integrações.
+    Cada integração pode ter múltiplas configurações (chaves, URLs, etc).
+    """
+    __tablename__ = "integrations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, index=True, nullable=False)
+    type = Column(String(50), nullable=False)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    settings = relationship("IntegrationSetting", back_populates="integration", cascade="all, delete-orphan")
+
+
+class IntegrationSetting(Base):
+    """
+    Configurações individuais de uma integração.
+    Cada integração pode ter múltiplas configurações.
+    """
+    __tablename__ = "integration_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    integration_id = Column(Integer, ForeignKey("integrations.id"), nullable=False)
+    key = Column(String(100), nullable=False)
+    value = Column(Text, nullable=True)
+    is_secret = Column(Integer, default=0)
+    description = Column(String(255), nullable=True)
+    
+    integration = relationship("Integration", back_populates="settings")
