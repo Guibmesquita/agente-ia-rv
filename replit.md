@@ -147,6 +147,40 @@ A página `/agent-brain` (apenas admin) permite configurar em tempo real:
 - 2026-01-20: Menu de navegação unificado em todas as páginas
 - 2026-01-20: Renomeado app para "Agente IA - RV" e adicionado logo SVN
 - 2026-01-20: Adicionado módulo Base de Assessores com CRUD, campos customizados e importação de planilhas
+- 2026-01-20: **Reformulação completa da UI** - Novo design system com:
+  - Menu lateral vertical minimizável (260px/70px) com ícones SVG e persistência via localStorage
+  - Tema claro em toda aplicação (fundo #f8fafc, cards brancos)
+  - Fonte padronizada Inter (Google Fonts)
+  - Arquivo CSS global compartilhado (`frontend/static/global.css`)
+  - Português corrigido em todas as interfaces (acentuação, gramática)
+  - Modais padronizados com estrutura consistente
+
+## Design System
+
+### Arquivo Global CSS
+O arquivo `frontend/static/global.css` contém:
+- CSS Custom Properties (variáveis) para cores, espaçamentos e fontes
+- Estilos base para body, tipografia e formulários
+- Componentes reutilizáveis: `.card`, `.btn`, `.form-input`, `.table`, `.badge`, `.alert`
+- Sistema de grid responsivo: `.grid`, `.grid-2`, `.grid-3`, `.grid-4`
+- Menu lateral: `.sidebar`, `.nav-item`, `.sidebar-toggle`
+- Modais: `.modal-overlay`, `.modal`, `.modal-header`, `.modal-body`, `.modal-footer`
+
+### Variáveis CSS Principais
+```css
+--primary-color: #4f46e5 (indigo)
+--bg-color: #f8fafc (fundo claro)
+--card-bg: #ffffff (cards brancos)
+--sidebar-width: 260px (menu expandido)
+--sidebar-collapsed: 70px (menu minimizado)
+--font-family: 'Inter', sans-serif
+```
+
+### Menu Lateral
+- Estado persistente via localStorage (`sidebarCollapsed`)
+- Toggle com animação suave de 0.3s
+- Ícones SVG inline em cada item de navegação
+- Função `toggleSidebar()` presente em todos os templates
 
 ## Base de Assessores
 

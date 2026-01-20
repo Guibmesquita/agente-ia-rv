@@ -4,228 +4,105 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            color: #e0e0e0;
-        }
-
-        .navbar {
-            background: rgba(26, 26, 46, 0.95);
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid rgba(99, 102, 241, 0.3);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .navbar h1 {
-            color: #6366f1;
-            font-size: 1.5rem;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 1.5rem;
-            align-items: center;
-        }
-
-        .nav-links a {
-            color: #a0a0a0;
-            text-decoration: none;
-            transition: color 0.3s;
-            font-size: 0.95rem;
-        }
-
-        .nav-links a:hover, .nav-links a.active {
-            color: #6366f1;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-            gap: 1rem;
-        }
-
-        .page-header h2 {
-            color: #fff;
-            font-size: 1.8rem;
-        }
-
-        .date-filters {
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .date-filters label {
-            color: #a0a0a0;
-            font-size: 0.9rem;
-        }
-
-        .date-filters input[type="date"] {
-            padding: 0.5rem 1rem;
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            border-radius: 8px;
-            background: rgba(30, 30, 50, 0.8);
-            color: #fff;
-            font-size: 0.9rem;
-        }
-
-        .date-filters button {
-            padding: 0.5rem 1.5rem;
-            background: #6366f1;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: background 0.3s;
-        }
-
-        .date-filters button:hover {
-            background: #4f46e5;
-        }
-
-        .quick-filters {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .quick-filter {
-            padding: 0.4rem 0.8rem;
-            background: rgba(99, 102, 241, 0.2);
-            color: #6366f1;
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-        }
-
-        .quick-filter:hover, .quick-filter.active {
-            background: #6366f1;
-            color: #fff;
-        }
-
         .kpi-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+            gap: 24px;
+            margin-bottom: 32px;
         }
 
         .kpi-card {
-            background: rgba(30, 30, 50, 0.8);
+            background: var(--card-bg);
             border-radius: 16px;
-            padding: 1.5rem;
-            border: 1px solid rgba(99, 102, 241, 0.2);
-            transition: transform 0.3s, box-shadow 0.3s;
+            padding: 24px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s, box-shadow 0.2s;
         }
 
         .kpi-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.2);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
         }
 
         .kpi-icon {
-            width: 50px;
-            height: 50px;
+            width: 48px;
+            height: 48px;
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 1rem;
-            font-size: 1.5rem;
+            margin-bottom: 16px;
+            font-size: 1.4rem;
         }
 
         .kpi-value {
-            font-size: 2.5rem;
+            font-size: 2.25rem;
             font-weight: 700;
-            color: #fff;
-            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+            margin-bottom: 4px;
         }
 
         .kpi-label {
-            color: #a0a0a0;
+            color: var(--text-secondary);
             font-size: 0.9rem;
         }
 
         .charts-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 1.5rem;
+            gap: 24px;
         }
 
         .chart-card {
-            background: rgba(30, 30, 50, 0.8);
+            background: var(--card-bg);
             border-radius: 16px;
-            padding: 1.5rem;
-            border: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 24px;
+            border: 1px solid var(--border-color);
         }
 
         .chart-card h3 {
-            color: #fff;
-            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+            margin-bottom: 24px;
             font-size: 1.1rem;
+            font-weight: 600;
         }
 
         .category-bar {
             display: flex;
             align-items: center;
-            margin-bottom: 1rem;
-            gap: 1rem;
+            margin-bottom: 16px;
+            gap: 16px;
         }
 
         .category-name {
             width: 120px;
             font-size: 0.85rem;
-            color: #a0a0a0;
+            color: var(--text-secondary);
         }
 
         .category-bar-container {
             flex: 1;
-            height: 24px;
-            background: rgba(99, 102, 241, 0.1);
-            border-radius: 12px;
+            height: 28px;
+            background: var(--bg-color);
+            border-radius: 14px;
             overflow: hidden;
-            position: relative;
         }
 
         .category-bar-fill {
             height: 100%;
-            border-radius: 12px;
-            transition: width 0.5s ease;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding-right: 8px;
-            min-width: fit-content;
+            padding-right: 12px;
+            min-width: 40px;
+            transition: width 0.5s ease;
         }
 
         .category-count {
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 600;
             color: #fff;
         }
@@ -237,142 +114,221 @@
 
         .broker-table th,
         .broker-table td {
-            padding: 1rem;
+            padding: 14px 16px;
             text-align: left;
-            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+            border-bottom: 1px solid var(--border-color);
         }
 
         .broker-table th {
-            color: #6366f1;
+            color: var(--text-secondary);
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .broker-table td {
-            color: #e0e0e0;
+            color: var(--text-primary);
         }
 
         .broker-table tr:hover {
-            background: rgba(99, 102, 241, 0.1);
+            background: var(--bg-color);
         }
 
         .time-badge {
             display: inline-block;
-            padding: 0.3rem 0.8rem;
+            padding: 6px 12px;
             border-radius: 20px;
             font-size: 0.85rem;
             font-weight: 500;
         }
 
         .time-good {
-            background: rgba(16, 185, 129, 0.2);
-            color: #10b981;
+            background: #d1fae5;
+            color: #065f46;
         }
 
         .time-medium {
-            background: rgba(245, 158, 11, 0.2);
-            color: #f59e0b;
+            background: #fef3c7;
+            color: #92400e;
         }
 
         .time-bad {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
+            background: #fee2e2;
+            color: #991b1b;
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 3rem;
-            color: #a0a0a0;
+        .date-filters {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
         }
 
-        .empty-state p {
-            margin-bottom: 0.5rem;
+        .date-filters label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
 
-        .loading {
-            text-align: center;
-            padding: 2rem;
-            color: #6366f1;
+        .date-filters input[type="date"] {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .quick-filters {
+            display: flex;
+            gap: 8px;
+        }
+
+        .quick-filter {
+            padding: 6px 14px;
+            background: var(--bg-color);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .quick-filter:hover, .quick-filter.active {
+            background: var(--primary-color);
+            color: #fff;
+            border-color: var(--primary-color);
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 32px;
         }
 
         @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-            
-            .kpi-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
             .charts-grid {
                 grid-template-columns: 1fr;
-            }
-            
-            .page-header {
-                flex-direction: column;
-                align-items: flex-start;
             }
         }
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/logo.png" alt="SVN" style="height: 32px;">
-            <h1>Agente IA - RV</h1>
-        </div>
-        <div class="nav-links">
-            <a href="/analytics" class="active">Dashboard</a>
-            <a href="/kanban">Chamados</a>
-            <a href="/admin">Usuarios</a>
-            <a href="/integrations">Integracoes</a>
-            <a href="/agent-brain">Cerebro IA</a>
-            <a href="/login" id="logoutLink">Sair</a>
-        </div>
-    </nav>
-
-    <div class="container">
-        <div class="page-header">
-            <h2>Painel de Gestao</h2>
-            <div class="date-filters">
-                <div class="quick-filters">
-                    <button class="quick-filter" data-period="7">7 dias</button>
-                    <button class="quick-filter" data-period="30">30 dias</button>
-                    <button class="quick-filter" data-period="90">90 dias</button>
-                    <button class="quick-filter active" data-period="all">Todos</button>
-                </div>
-                <label>De:</label>
-                <input type="date" id="startDate">
-                <label>Ate:</label>
-                <input type="date" id="endDate">
-                <button onclick="loadAllData()">Filtrar</button>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
             </div>
-        </div>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/admin" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuários</span>
+                </a>
+                <a href="/integrations" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integrações</span>
+                </a>
+                <a href="/agent-brain" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cérebro IA</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
+                </button>
+            </div>
+        </aside>
 
-        <div class="kpi-grid" id="kpiGrid">
-            <div class="loading">Carregando indicadores...</div>
-        </div>
+        <main class="main-content" id="mainContent">
+            <div class="page-container">
+                <div class="header-actions">
+                    <div class="page-header" style="margin-bottom: 0;">
+                        <h1 class="page-title">Painel de Gestão</h1>
+                        <p class="page-subtitle">Acompanhe os indicadores de desempenho</p>
+                    </div>
+                    <div class="date-filters">
+                        <div class="quick-filters">
+                            <button class="quick-filter" data-period="7">7 dias</button>
+                            <button class="quick-filter" data-period="30">30 dias</button>
+                            <button class="quick-filter" data-period="90">90 dias</button>
+                            <button class="quick-filter active" data-period="all">Todos</button>
+                        </div>
+                        <label>De:</label>
+                        <input type="date" id="startDate">
+                        <label>Até:</label>
+                        <input type="date" id="endDate">
+                        <button class="btn btn-primary" onclick="loadAllData()">Filtrar</button>
+                    </div>
+                </div>
 
-        <div class="charts-grid">
-            <div class="chart-card">
-                <h3>Volume de Duvidas por Categoria</h3>
-                <div id="categoriesChart">
-                    <div class="loading">Carregando...</div>
+                <div class="kpi-grid" id="kpiGrid">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3>Volume de Dúvidas por Categoria</h3>
+                        <div id="categoriesChart">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <h3>Tempo Médio de Resolução por Assessor</h3>
+                        <div id="resolutionTable">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+                    </div>
                 </div>
             </div>
-
-            <div class="chart-card">
-                <h3>Tempo Medio de Resolucao por Assessor</h3>
-                <div id="resolutionTable">
-                    <div class="loading">Carregando...</div>
-                </div>
-            </div>
-        </div>
+        </main>
     </div>
 
     <script>
         const API_BASE = '/api/analytics';
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+        });
         
         function getDateParams() {
             const startDate = document.getElementById('startDate').value;
@@ -405,17 +361,17 @@
 
         function renderKPIs(data) {
             const kpis = [
-                { key: 'total_atendimentos', label: 'Total de Atendimentos', icon: '💬', color: '#6366f1' },
+                { key: 'total_atendimentos', label: 'Total de Atendimentos', icon: '💬', color: '#4f46e5' },
                 { key: 'chamados_abertos', label: 'Chamados Abertos', icon: '📋', color: '#f59e0b' },
-                { key: 'chamados_concluidos', label: 'Chamados Concluidos', icon: '✅', color: '#10b981' },
+                { key: 'chamados_concluidos', label: 'Chamados Concluídos', icon: '✅', color: '#10b981' },
                 { key: 'assessores_ativos', label: 'Assessores Ativos', icon: '👥', color: '#8b5cf6' },
-                { key: 'clientes_contactados', label: 'Clientes Contactados', icon: '📞', color: '#3b82f6' },
+                { key: 'clientes_contactados', label: 'Clientes Contatados', icon: '📞', color: '#3b82f6' },
                 { key: 'clientes_com_interesse', label: 'Clientes com Interesse', icon: '⭐', color: '#ec4899' },
             ];
 
             const html = kpis.map(kpi => `
                 <div class="kpi-card">
-                    <div class="kpi-icon" style="background: ${kpi.color}20;">
+                    <div class="kpi-icon" style="background: ${kpi.color}15;">
                         ${kpi.icon}
                     </div>
                     <div class="kpi-value">${data[kpi.key] || 0}</div>
@@ -451,7 +407,7 @@
                 document.getElementById('categoriesChart').innerHTML = `
                     <div class="empty-state">
                         <p>Nenhuma categoria encontrada</p>
-                        <p style="font-size: 0.85rem;">As categorias serao exibidas quando houver tickets classificados</p>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">As categorias serão exibidas quando houver tickets classificados</p>
                     </div>
                 `;
                 return;
@@ -460,7 +416,7 @@
             const maxCount = Math.max(...categories.map(c => c.count), 1);
             
             const html = categories.map(cat => {
-                const width = Math.max((cat.count / maxCount) * 100, 10);
+                const width = Math.max((cat.count / maxCount) * 100, 15);
                 return `
                     <div class="category-bar">
                         <span class="category-name">${cat.category_name}</span>
@@ -501,7 +457,7 @@
                 document.getElementById('resolutionTable').innerHTML = `
                     <div class="empty-state">
                         <p>Nenhum assessor com chamados resolvidos</p>
-                        <p style="font-size: 0.85rem;">Os tempos serao calculados quando houver chamados finalizados</p>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">Os tempos serão calculados quando houver chamados finalizados</p>
                     </div>
                 `;
                 return;
@@ -526,7 +482,7 @@
                         <tr>
                             <th>Assessor</th>
                             <th>Chamados Resolvidos</th>
-                            <th>Tempo Medio</th>
+                            <th>Tempo Médio</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -575,6 +531,11 @@
                 loadAllData();
             });
         });
+
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+        }
 
         document.addEventListener('DOMContentLoaded', loadAllData);
     </script>

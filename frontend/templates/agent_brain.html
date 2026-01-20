@@ -3,159 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cerebro do Agente - Agente IA - RV</title>
+    <title>Cérebro do Agente - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            color: #e0e0e0;
-        }
-
-        .navbar {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .navbar h1 {
-            font-size: 1.5rem;
-            color: #fff;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 1.5rem;
-            align-items: center;
-        }
-
-        .nav-links a {
-            color: #a0a0a0;
-            text-decoration: none;
-            transition: color 0.3s;
-            font-size: 0.95rem;
-        }
-
-        .nav-links a:hover, .nav-links a.active {
-            color: #6366f1;
-        }
-
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .page-header {
-            margin-bottom: 2rem;
-        }
-
-        .page-header h2 {
-            font-size: 1.8rem;
-            color: #fff;
-            margin-bottom: 0.5rem;
-        }
-
-        .page-header p {
-            color: #a0a0a0;
-            font-size: 1rem;
-        }
-
         .config-card {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--card-bg);
             border-radius: 16px;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 28px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border-color);
         }
 
         .config-card h3 {
-            color: #fff;
-            font-size: 1.2rem;
-            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+            font-size: 1.15rem;
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 10px;
         }
 
         .config-card h3 .icon {
-            font-size: 1.4rem;
+            font-size: 1.3rem;
         }
 
         .config-card .description {
-            color: #888;
+            color: var(--text-secondary);
             font-size: 0.9rem;
-            margin-bottom: 1rem;
+            margin-bottom: 20px;
         }
 
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group label {
-            display: block;
-            color: #ccc;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-        }
-
-        textarea {
+        .config-textarea {
             width: 100%;
-            min-height: 200px;
-            padding: 1rem;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            color: #fff;
-            font-family: inherit;
+            min-height: 180px;
+            padding: 16px;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-family: var(--font-family);
             font-size: 0.95rem;
             line-height: 1.6;
             resize: vertical;
         }
 
-        textarea:focus {
+        .config-textarea:focus {
             outline: none;
-            border-color: #6366f1;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
         }
 
-        textarea.small {
+        .config-textarea.small {
             min-height: 120px;
-        }
-
-        select {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            color: #fff;
-            font-size: 1rem;
-            cursor: pointer;
-        }
-
-        select:focus {
-            outline: none;
-            border-color: #6366f1;
-        }
-
-        select option {
-            background: #1a1a2e;
-            color: #fff;
         }
 
         .slider-container {
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            gap: 12px;
         }
 
         .slider-header {
@@ -165,8 +70,9 @@
         }
 
         .slider-value {
-            background: #6366f1;
-            padding: 0.25rem 0.75rem;
+            background: var(--primary-color);
+            color: white;
+            padding: 4px 14px;
             border-radius: 20px;
             font-size: 0.9rem;
             font-weight: 600;
@@ -175,7 +81,7 @@
         input[type="range"] {
             width: 100%;
             height: 8px;
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--border-color);
             border-radius: 4px;
             outline: none;
             -webkit-appearance: none;
@@ -185,7 +91,7 @@
             -webkit-appearance: none;
             width: 24px;
             height: 24px;
-            background: #6366f1;
+            background: var(--primary-color);
             border-radius: 50%;
             cursor: pointer;
             transition: transform 0.2s;
@@ -199,240 +105,199 @@
             display: flex;
             justify-content: space-between;
             font-size: 0.85rem;
-            color: #888;
+            color: var(--text-secondary);
         }
 
-        input[type="number"] {
+        .config-number {
             width: 150px;
-            padding: 0.75rem 1rem;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            color: #fff;
+            padding: 12px 16px;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
             font-size: 1rem;
         }
 
-        input[type="number"]:focus {
+        .config-number:focus {
             outline: none;
-            border-color: #6366f1;
+            border-color: var(--primary-color);
         }
 
-        .actions {
+        .actions-bar {
             display: flex;
-            gap: 1rem;
-            margin-top: 2rem;
-        }
-
-        .btn {
-            padding: 1rem 2rem;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
+            gap: 16px;
+            margin-top: 32px;
         }
 
         .status-message {
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 24px;
             display: none;
         }
 
         .status-message.success {
             display: block;
-            background: rgba(16, 185, 129, 0.2);
-            border: 1px solid #10b981;
-            color: #10b981;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #166534;
         }
 
         .status-message.error {
             display: block;
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid #ef4444;
-            color: #ef4444;
-        }
-
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 4rem;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #6366f1;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
         }
 
         .info-box {
-            background: rgba(99, 102, 241, 0.1);
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 2rem;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 28px;
         }
 
         .info-box p {
-            color: #a5b4fc;
+            color: #1e40af;
             font-size: 0.9rem;
             line-height: 1.6;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-            
-            .config-card {
-                padding: 1.5rem;
-            }
-            
-            .actions {
-                flex-direction: column;
-            }
-            
-            .btn {
-                width: 100%;
-            }
         }
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/logo.png" alt="SVN" style="height: 32px;">
-            <h1>Agente IA - RV</h1>
-        </div>
-        <div class="nav-links">
-            <a href="/analytics">Dashboard</a>
-            <a href="/kanban">Chamados</a>
-            <a href="/admin">Usuarios</a>
-            <a href="/integrations">Integracoes</a>
-            <a href="/agent-brain" class="active">Cerebro IA</a>
-            <a href="/login" id="logoutLink">Sair</a>
-        </div>
-    </nav>
-
-    <div class="container">
-        <div class="page-header">
-            <h2>Painel de Controle do Cerebro do Agente</h2>
-            <p>Configure a personalidade e comportamento do agente de IA</p>
-        </div>
-
-        <div id="statusMessage" class="status-message"></div>
-
-        <div id="loading" class="loading">
-            <div class="spinner"></div>
-        </div>
-
-        <form id="configForm" style="display: none;">
-            <div class="info-box">
-                <p><strong>Importante:</strong> As alteracoes feitas aqui serao aplicadas imediatamente a todas as novas conversas no WhatsApp. O agente passara a usar as novas configuracoes em tempo real.</p>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
             </div>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/admin" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuários</span>
+                </a>
+                <a href="/integrations" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integrações</span>
+                </a>
+                <a href="/agent-brain" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cérebro IA</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
+                </button>
+            </div>
+        </aside>
 
-            <div class="config-card">
-                <h3><span class="icon">&#129504;</span> A Alma do Agente</h3>
-                <p class="description">Defina a personalidade, regras e comportamento do agente. Escreva em portugues claro como o agente deve se comportar.</p>
-                <div class="form-group">
-                    <label for="personality">Personalidade e Regras</label>
-                    <textarea id="personality" placeholder="Ex: Voce e um assistente amigavel e profissional chamado Maria. Sempre responda de forma educada, use emojis com moderacao, e nunca de conselhos financeiros diretos..."></textarea>
+        <main class="main-content" id="mainContent">
+            <div class="page-container" style="max-width: 900px;">
+                <div class="page-header">
+                    <h1 class="page-title">Painel de Controle do Cérebro do Agente</h1>
+                    <p class="page-subtitle">Configure a personalidade e comportamento do agente de IA</p>
                 </div>
-            </div>
 
-            <div class="config-card">
-                <h3><span class="icon">&#9940;</span> Restricoes e Proibicoes</h3>
-                <p class="description">Defina o que o agente NAO pode fazer em hipotese alguma. Delimite sua atuacao para maior seguranca.</p>
-                <div class="form-group">
-                    <label for="restrictions">O que o agente nao pode fazer</label>
-                    <textarea id="restrictions" class="small" placeholder="Ex: - Nunca forneca conselhos financeiros especificos
-- Nao prometa resultados ou retornos
-- Nao compartilhe dados de outros clientes..."></textarea>
+                <div id="statusMessage" class="status-message"></div>
+
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
                 </div>
-            </div>
 
-            <div class="config-card">
-                <h3><span class="icon">&#9881;</span> O Motor da Inteligencia</h3>
-                <p class="description">Escolha o modelo de IA que sera usado para gerar as respostas.</p>
-                <div class="form-group">
-                    <label for="model">Modelo de IA</label>
-                    <select id="model">
-                        <option value="gpt-4o">GPT-4o - Mais recente e eficiente</option>
-                        <option value="gpt-4-turbo">GPT-4 Turbo - Alta inteligencia, respostas detalhadas</option>
-                        <option value="gpt-4">GPT-4 - Modelo padrao</option>
-                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo - Mais rapido e economico</option>
-                    </select>
-                </div>
-            </div>
+                <form id="configForm" style="display: none;">
+                    <div class="info-box">
+                        <p><strong>Importante:</strong> As alterações feitas aqui serão aplicadas imediatamente a todas as novas conversas no WhatsApp. O agente passará a usar as novas configurações em tempo real.</p>
+                    </div>
 
-            <div class="config-card">
-                <h3><span class="icon">&#127777;</span> O Termostato da Criatividade</h3>
-                <p class="description">Controle o nivel de criatividade das respostas. Valores baixos = mais objetivo. Valores altos = mais criativo.</p>
-                <div class="form-group">
-                    <div class="slider-container">
-                        <div class="slider-header">
-                            <label for="temperature">Temperatura</label>
-                            <span id="tempValue" class="slider-value">0.7</span>
-                        </div>
-                        <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
-                        <div class="slider-labels">
-                            <span>Objetivo e Previsivel</span>
-                            <span>Criativo e Variado</span>
+                    <div class="config-card">
+                        <h3><span class="icon">🧠</span> A Alma do Agente</h3>
+                        <p class="description">Defina a personalidade, regras e comportamento do agente. Escreva em português claro como o agente deve se comportar.</p>
+                        <div class="form-group">
+                            <label class="form-label" for="personality">Personalidade e Regras</label>
+                            <textarea class="config-textarea" id="personality" placeholder="Ex: Você é um assistente amigável e profissional chamado Maria. Sempre responda de forma educada, use emojis com moderação, e nunca dê conselhos financeiros diretos..."></textarea>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <div class="config-card">
-                <h3><span class="icon">&#128221;</span> O Limite de Palavras</h3>
-                <p class="description">Defina o tamanho maximo das respostas do agente (em tokens, aproximadamente 1 token = 4 caracteres).</p>
-                <div class="form-group">
-                    <label for="maxTokens">Tamanho Maximo da Resposta</label>
-                    <input type="number" id="maxTokens" min="50" max="4000" value="500">
-                    <p class="description" style="margin-top: 0.5rem;">Recomendado: 300-800 para WhatsApp</p>
-                </div>
-            </div>
+                    <div class="config-card">
+                        <h3><span class="icon">⛔</span> Restrições e Proibições</h3>
+                        <p class="description">Defina o que o agente NÃO pode fazer em hipótese alguma. Delimite sua atuação para maior segurança.</p>
+                        <div class="form-group">
+                            <label class="form-label" for="restrictions">O que o agente não pode fazer</label>
+                            <textarea class="config-textarea small" id="restrictions" placeholder="Ex: - Nunca forneça conselhos financeiros específicos
+- Não prometa resultados ou retornos
+- Não compartilhe dados de outros clientes..."></textarea>
+                        </div>
+                    </div>
 
-            <div class="actions">
-                <button type="submit" class="btn btn-primary" id="saveBtn">Salvar Configuracoes</button>
-                <button type="button" class="btn btn-secondary" id="resetBtn">Restaurar Padrao</button>
+                    <div class="config-card">
+                        <h3><span class="icon">⚙️</span> O Motor da Inteligência</h3>
+                        <p class="description">Escolha o modelo de IA que será usado para gerar as respostas.</p>
+                        <div class="form-group">
+                            <label class="form-label" for="model">Modelo de IA</label>
+                            <select class="form-select" id="model">
+                                <option value="gpt-4o">GPT-4o - Mais recente e eficiente</option>
+                                <option value="gpt-4-turbo">GPT-4 Turbo - Alta inteligência, respostas detalhadas</option>
+                                <option value="gpt-4">GPT-4 - Modelo padrão</option>
+                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo - Mais rápido e econômico</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3><span class="icon">🌡️</span> O Termostato da Criatividade</h3>
+                        <p class="description">Controle o nível de criatividade das respostas. Valores baixos = mais objetivo. Valores altos = mais criativo.</p>
+                        <div class="form-group">
+                            <div class="slider-container">
+                                <div class="slider-header">
+                                    <label class="form-label" for="temperature">Temperatura</label>
+                                    <span id="tempValue" class="slider-value">0.7</span>
+                                </div>
+                                <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                                <div class="slider-labels">
+                                    <span>Objetivo e Previsível</span>
+                                    <span>Criativo e Variado</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3><span class="icon">📝</span> O Limite de Palavras</h3>
+                        <p class="description">Defina o tamanho máximo das respostas do agente (em tokens, aproximadamente 1 token = 4 caracteres).</p>
+                        <div class="form-group">
+                            <label class="form-label" for="maxTokens">Tamanho Máximo da Resposta</label>
+                            <input type="number" class="config-number" id="maxTokens" min="50" max="4000" value="500">
+                            <p class="description" style="margin-top: 8px;">Recomendado: 300-800 para WhatsApp</p>
+                        </div>
+                    </div>
+
+                    <div class="actions-bar">
+                        <button type="submit" class="btn btn-primary" id="saveBtn">Salvar Configurações</button>
+                        <button type="button" class="btn btn-secondary" id="resetBtn">Restaurar Padrão</button>
+                    </div>
+                </form>
             </div>
-        </form>
+        </main>
     </div>
 
     <script>
@@ -441,6 +306,25 @@
         const statusEl = document.getElementById('statusMessage');
         const temperatureInput = document.getElementById('temperature');
         const tempValueEl = document.getElementById('tempValue');
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+        });
 
         temperatureInput.addEventListener('input', function() {
             tempValueEl.textContent = this.value;
@@ -466,7 +350,7 @@
                 }
                 
                 if (!response.ok) {
-                    throw new Error('Erro ao carregar configuracoes');
+                    throw new Error('Erro ao carregar configurações');
                 }
                 
                 const config = await response.json();
@@ -484,7 +368,7 @@
             } catch (error) {
                 loadingEl.style.display = 'none';
                 formEl.style.display = 'block';
-                showStatus('Erro ao carregar configuracoes: ' + error.message, 'error');
+                showStatus('Erro ao carregar configurações: ' + error.message, 'error');
             }
         }
 
@@ -519,44 +403,44 @@
                 }
                 
                 if (!response.ok) {
-                    throw new Error('Erro ao salvar configuracoes');
+                    throw new Error('Erro ao salvar configurações');
                 }
                 
-                showStatus('Configuracoes salvas com sucesso! O agente ja esta usando as novas configuracoes.', 'success');
+                showStatus('Configurações salvas com sucesso! O agente já está usando as novas configurações.', 'success');
                 
             } catch (error) {
                 showStatus('Erro ao salvar: ' + error.message, 'error');
             } finally {
                 saveBtn.disabled = false;
-                saveBtn.textContent = 'Salvar Configuracoes';
+                saveBtn.textContent = 'Salvar Configurações';
             }
         }
 
         document.getElementById('configForm').addEventListener('submit', saveConfig);
 
         document.getElementById('resetBtn').addEventListener('click', async function() {
-            if (!confirm('Tem certeza que deseja restaurar as configuracoes padrao?')) {
+            if (!confirm('Tem certeza que deseja restaurar as configurações padrão?')) {
                 return;
             }
             
-            const defaultPersonality = `Voce e um assistente virtual especializado em assessoria financeira.
-Seu papel e ajudar clientes com duvidas sobre investimentos, produtos financeiros e servicos.
+            const defaultPersonality = `Você é um assistente virtual especializado em assessoria financeira.
+Seu papel é ajudar clientes com dúvidas sobre investimentos, produtos financeiros e serviços.
 
 REGRAS IMPORTANTES:
 1. Responda sempre de forma educada e profissional.
 2. Use o contexto fornecido para basear suas respostas.
-3. Se a informacao nao estiver disponivel no contexto, seja honesto e diga que nao tem essa informacao.
-4. Quando nao puder ajudar adequadamente, pergunte se o cliente deseja abrir um chamado para falar com um assessor.
+3. Se a informação não estiver disponível no contexto, seja honesto e diga que não tem essa informação.
+4. Quando não puder ajudar adequadamente, pergunte se o cliente deseja abrir um chamado para falar com um assessor.
 5. Mantenha as respostas concisas e objetivas, adequadas para WhatsApp.
-6. Nunca invente informacoes sobre produtos, taxas ou valores.
+6. Nunca invente informações sobre produtos, taxas ou valores.
 
-Para abrir um chamado, o usuario deve responder "SIM" ou "sim" quando perguntado.`;
+Para abrir um chamado, o usuário deve responder "SIM" ou "sim" quando perguntado.`;
 
-            const defaultRestrictions = `- Nunca forneca conselhos financeiros especificos ou recomendacoes de investimento.
-- Nao mencione valores ou taxas a menos que estejam documentados na base de conhecimento.
-- Nao prometa resultados ou retornos financeiros.
-- Nao compartilhe informacoes de outros clientes.
-- Nao faca operacoes financeiras em nome do cliente.`;
+            const defaultRestrictions = `- Nunca forneça conselhos financeiros específicos ou recomendações de investimento.
+- Não mencione valores ou taxas a menos que estejam documentados na base de conhecimento.
+- Não prometa resultados ou retornos financeiros.
+- Não compartilhe informações de outros clientes.
+- Não faça operações financeiras em nome do cliente.`;
             
             document.getElementById('personality').value = defaultPersonality;
             document.getElementById('restrictions').value = defaultRestrictions;
@@ -565,14 +449,13 @@ Para abrir um chamado, o usuario deve responder "SIM" ou "sim" quando perguntado
             document.getElementById('maxTokens').value = 500;
             tempValueEl.textContent = '0.7';
             
-            showStatus('Configuracoes restauradas para o padrao. Clique em Salvar para aplicar.', 'success');
+            showStatus('Configurações restauradas para o padrão. Clique em Salvar para aplicar.', 'success');
         });
 
-        document.getElementById('logoutLink').addEventListener('click', function(e) {
-            e.preventDefault();
-            document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
             window.location.href = '/login';
-        });
+        }
 
         loadConfig();
     </script>

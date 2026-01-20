@@ -4,103 +4,56 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            min-height: 100vh;
+            background: var(--bg-color);
         }
         
         .login-container {
-            background: white;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            background: var(--card-bg);
+            padding: 48px;
+            border-radius: 20px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
+            border: 1px solid var(--border-color);
         }
         
         .logo {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 36px;
+        }
+        
+        .logo img {
+            height: 52px;
+            margin-bottom: 16px;
         }
         
         .logo h1 {
-            color: #1a1a2e;
-            font-size: 28px;
+            color: var(--text-primary);
+            font-size: 1.75rem;
             font-weight: 700;
         }
         
         .logo p {
-            color: #666;
-            font-size: 14px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
             margin-top: 8px;
         }
         
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 14px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s, box-shadow 0.3s;
-        }
-        
-        .form-group input:focus {
-            outline: none;
-            border-color: #4a90d9;
-            box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.1);
-        }
-        
-        .btn-login {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        
-        .btn-login:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(74, 144, 217, 0.4);
-        }
-        
-        .btn-login:active {
-            transform: translateY(0);
-        }
-        
         .error-message {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 14px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 14px 18px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+            font-size: 0.9rem;
             display: none;
         }
         
@@ -110,16 +63,16 @@
         
         .footer {
             text-align: center;
-            margin-top: 24px;
-            color: #999;
-            font-size: 12px;
+            margin-top: 28px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
         }
     </style>
 </head>
 <body>
     <div class="login-container">
         <div class="logo">
-            <img src="/static/logo.png" alt="SVN" style="height: 48px; margin-bottom: 12px;">
+            <img src="/static/logo.png" alt="SVN">
             <h1>Agente IA - RV</h1>
             <p>Painel Administrativo</p>
         </div>
@@ -130,16 +83,16 @@
         
         <form action="/api/auth/login-form" method="POST">
             <div class="form-group">
-                <label for="username">Usuário</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
+                <label class="form-label" for="username">Usuário</label>
+                <input type="text" class="form-input" id="username" name="username" required autocomplete="username">
             </div>
             
             <div class="form-group">
-                <label for="password">Senha</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <label class="form-label" for="password">Senha</label>
+                <input type="password" class="form-input" id="password" name="password" required autocomplete="current-password">
             </div>
             
-            <button type="submit" class="btn-login">Entrar</button>
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1rem;">Entrar</button>
         </form>
         
         <div class="footer">
@@ -148,7 +101,6 @@
     </div>
     
     <script>
-        // Mostra mensagem de erro se houver parâmetro na URL
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('error')) {
             const errorEl = document.getElementById('error-message');

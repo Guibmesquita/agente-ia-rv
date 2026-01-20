@@ -3,53 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Integracoes - Agente IA - RV</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Integrações - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        .integrations-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #e0e0e0;
-        }
-
-        .page-header h1 {
-            font-size: 1.8rem;
-            color: #1a365d;
-        }
-
-        .nav-links a {
-            margin-left: 15px;
-            color: #4a90a4;
-            text-decoration: none;
-        }
-
-        .nav-links a:hover {
-            text-decoration: underline;
-        }
-
         .integration-card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            margin-bottom: 24px;
             overflow: hidden;
+            border: 1px solid var(--border-color);
         }
 
         .integration-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px 24px;
             color: white;
         }
 
@@ -68,23 +37,24 @@
         .integration-title {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
         }
 
         .integration-title h2 {
             margin: 0;
-            font-size: 1.3rem;
+            font-size: 1.2rem;
+            font-weight: 600;
         }
 
         .integration-icon {
-            width: 40px;
-            height: 40px;
+            width: 44px;
+            height: 44px;
             background: rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 22px;
         }
 
         .status-badge {
@@ -95,64 +65,85 @@
         }
 
         .status-badge.connected {
-            background: #d4edda;
-            color: #155724;
+            background: rgba(255, 255, 255, 0.25);
+            color: white;
         }
 
         .status-badge.disconnected {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .status-badge.pending {
-            background: #fff3cd;
-            color: #856404;
+            background: rgba(255, 255, 255, 0.15);
+            color: rgba(255, 255, 255, 0.8);
         }
 
         .integration-body {
-            padding: 20px;
-        }
-
-        .env-vars-section {
-            margin-bottom: 20px;
+            padding: 24px;
         }
 
         .env-vars-section h3 {
-            color: #1a365d;
-            margin-bottom: 15px;
+            color: var(--text-primary);
+            margin-bottom: 16px;
             font-size: 1rem;
+            font-weight: 600;
         }
 
         .env-var-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            margin-bottom: 10px;
+            padding: 16px;
+            background: var(--bg-color);
+            border-radius: 12px;
+            margin-bottom: 12px;
+            gap: 16px;
         }
 
         .env-var-info {
             flex: 1;
+            min-width: 0;
         }
 
         .env-var-name {
-            font-family: monospace;
+            font-family: 'Monaco', 'Menlo', monospace;
             font-weight: 600;
-            color: #2d3748;
+            color: var(--text-primary);
+            font-size: 0.9rem;
         }
 
         .env-var-description {
             font-size: 0.85rem;
-            color: #718096;
+            color: var(--text-secondary);
             margin-top: 4px;
+        }
+
+        .env-var-input {
+            flex: 1;
+            max-width: 350px;
+        }
+
+        .env-var-input input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+            background: var(--card-bg);
+        }
+
+        .env-var-input input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .env-var-input input::placeholder {
+            font-family: var(--font-family);
+            font-style: italic;
         }
 
         .env-var-status {
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-shrink: 0;
         }
 
         .status-dot {
@@ -162,78 +153,35 @@
         }
 
         .status-dot.configured {
-            background: #48bb78;
+            background: var(--success-color);
         }
 
         .status-dot.missing {
-            background: #f56565;
+            background: var(--danger-color);
         }
 
         .required-badge {
             font-size: 0.7rem;
-            background: #e53e3e;
+            background: var(--danger-color);
             color: white;
-            padding: 2px 6px;
+            padding: 2px 8px;
             border-radius: 4px;
             margin-left: 8px;
         }
 
         .secret-badge {
             font-size: 0.7rem;
-            background: #805ad5;
+            background: #8b5cf6;
             color: white;
-            padding: 2px 6px;
+            padding: 2px 8px;
             border-radius: 4px;
             margin-left: 8px;
         }
 
         .action-buttons {
             display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: #4a90a4;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #3d7a8c;
-        }
-
-        .btn-success {
-            background: #48bb78;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #38a169;
-        }
-
-        .btn-outline {
-            background: white;
-            border: 2px solid #4a90a4;
-            color: #4a90a4;
-        }
-
-        .btn-outline:hover {
-            background: #4a90a4;
-            color: white;
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+            gap: 12px;
+            margin-top: 20px;
         }
 
         .toggle-switch {
@@ -255,7 +203,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: rgba(255, 255, 255, 0.3);
             transition: 0.3s;
             border-radius: 26px;
         }
@@ -273,47 +221,35 @@
         }
 
         input:checked + .toggle-slider {
-            background-color: #48bb78;
+            background-color: rgba(255, 255, 255, 0.5);
         }
 
         input:checked + .toggle-slider:before {
             transform: translateX(24px);
         }
 
-        .info-box {
-            background: #e6f7ff;
-            border-left: 4px solid #1890ff;
-            padding: 15px;
-            border-radius: 0 8px 8px 0;
-            margin-bottom: 20px;
-        }
-
-        .info-box p {
-            margin: 0;
-            color: #0050b3;
-            font-size: 0.9rem;
-        }
-
         .test-result {
-            margin-top: 15px;
-            padding: 12px;
-            border-radius: 8px;
+            margin-top: 16px;
+            padding: 14px 18px;
+            border-radius: 10px;
             display: none;
         }
 
         .test-result.success {
-            background: #d4edda;
-            color: #155724;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #166534;
             display: block;
         }
 
         .test-result.error {
-            background: #f8d7da;
-            color: #721c24;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
             display: block;
         }
 
-        .loading {
+        .spinner-sm {
             display: inline-block;
             width: 16px;
             height: 16px;
@@ -329,34 +265,90 @@
     </style>
 </head>
 <body>
-    <div class="integrations-container">
-        <div class="page-header">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <img src="/static/logo.png" alt="SVN" style="height: 32px;">
-                <h1>Agente IA - RV</h1>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
             </div>
-            <div class="nav-links">
-                <a href="/analytics">Dashboard</a>
-                <a href="/kanban">Chamados</a>
-                <a href="/admin">Usuarios</a>
-                <a href="/integrations" class="active">Integracoes</a>
-                <a href="/agent-brain">Cerebro IA</a>
-                <a href="/login" id="logoutLink">Sair</a>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/admin" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuários</span>
+                </a>
+                <a href="/integrations" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integrações</span>
+                </a>
+                <a href="/agent-brain" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cérebro IA</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
+                </button>
             </div>
-        </div>
+        </aside>
 
-        <div class="info-box">
-            <p><strong>Importante:</strong> As chaves de API (secrets) devem ser configuradas na aba "Secrets" do Replit para maior segurança. Esta página mostra quais variáveis estão configuradas e permite testar as conexões.</p>
-            <p style="margin-top: 8px; font-size: 0.85rem;"><strong>Como configurar:</strong> No Replit, vá em Tools > Secrets e adicione cada variável de ambiente listada abaixo. O toggle "Ativo/Inativo" indica se você deseja usar esta integração no sistema.</p>
-        </div>
+        <main class="main-content" id="mainContent">
+            <div class="page-container">
+                <div class="page-header">
+                    <h1 class="page-title">Integrações</h1>
+                    <p class="page-subtitle">Configure as conexões com serviços externos</p>
+                </div>
 
-        <div id="integrationsContainer">
-            <p>Carregando integrações...</p>
-        </div>
+                <div class="alert alert-info" style="margin-bottom: 24px;">
+                    <strong>Configuração de Integrações:</strong> As chaves de API devem ser configuradas através da aba <strong>Secrets</strong> do Replit (clique em Tools > Secrets no painel esquerdo). Após configurar, use o botão "Testar Conexão" para verificar se está funcionando corretamente.
+                </div>
+
+                <div id="integrationsContainer">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </main>
     </div>
 
     <script>
         const API_BASE = '/api/integrations';
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+        });
 
         async function loadIntegrations() {
             try {
@@ -377,8 +369,8 @@
             } catch (error) {
                 console.error('Erro:', error);
                 document.getElementById('integrationsContainer').innerHTML = `
-                    <div class="info-box" style="background: #fff5f5; border-color: #fc8181;">
-                        <p style="color: #c53030;">Erro ao carregar integrações. <button onclick="loadIntegrations()" class="btn btn-outline">Tentar novamente</button></p>
+                    <div class="alert alert-danger">
+                        <p>Erro ao carregar integrações. <button onclick="loadIntegrations()" class="btn btn-secondary btn-sm" style="margin-left: 12px;">Tentar novamente</button></p>
                     </div>
                 `;
             }
@@ -389,8 +381,8 @@
             
             if (integrations.length === 0) {
                 container.innerHTML = `
-                    <div class="info-box">
-                        <p>Nenhuma integração encontrada. <button onclick="initDefaults()" class="btn btn-primary">Inicializar Padrões</button></p>
+                    <div class="alert alert-info">
+                        <p>Nenhuma integração encontrada. <button onclick="initDefaults()" class="btn btn-primary btn-sm" style="margin-left: 12px;">Inicializar Padrões</button></p>
                     </div>
                 `;
                 return;
@@ -410,7 +402,7 @@
                                     <small style="opacity: 0.8;">Tipo: ${integration.type}</small>
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 15px;">
+                            <div style="display: flex; align-items: center; gap: 16px;">
                                 <label class="toggle-switch">
                                     <input type="checkbox" ${integration.is_active ? 'checked' : ''} 
                                            onchange="toggleIntegration(${integration.id}, this.checked)">
@@ -423,14 +415,15 @@
                         </div>
                         <div class="integration-body">
                             <div class="env-vars-section">
-                                <h3>Variáveis de Ambiente</h3>
+                                <h3>Variáveis de Ambiente Necessárias</h3>
+                                <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9rem;">Configure estas variáveis em Tools > Secrets no Replit.</p>
                                 ${Object.entries(settings).map(([key, config]) => `
                                     <div class="env-var-item">
                                         <div class="env-var-info">
                                             <div>
                                                 <span class="env-var-name">${config.env_var}</span>
                                                 ${config.is_required ? '<span class="required-badge">Obrigatório</span>' : ''}
-                                                ${config.is_secret ? '<span class="secret-badge">Secret</span>' : ''}
+                                                ${config.is_secret ? '<span class="secret-badge">Segredo</span>' : ''}
                                             </div>
                                             <div class="env-var-description">
                                                 ${getSettingDescription(key)}
@@ -439,7 +432,7 @@
                                         </div>
                                         <div class="env-var-status">
                                             <span class="status-dot ${config.is_configured ? 'configured' : 'missing'}"></span>
-                                            <span>${config.is_configured ? 'Configurado' : 'Não configurado'}</span>
+                                            <span style="font-size: 0.85rem; color: var(--text-secondary);">${config.is_configured ? 'Configurado' : 'Pendente'}</span>
                                         </div>
                                     </div>
                                 `).join('')}
@@ -501,7 +494,7 @@
 
         async function testConnection(id, button) {
             const originalText = button.innerHTML;
-            button.innerHTML = '<span class="loading"></span> Testando...';
+            button.innerHTML = '<span class="spinner-sm"></span> Testando...';
             button.disabled = true;
 
             const resultDiv = document.getElementById(`test-result-${id}`);
@@ -539,11 +532,10 @@
             }
         }
 
-        document.getElementById('logoutLink').addEventListener('click', function(e) {
-            e.preventDefault();
-            document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
             window.location.href = '/login';
-        });
+        }
 
         loadIntegrations();
     </script>

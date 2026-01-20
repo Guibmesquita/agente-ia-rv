@@ -3,346 +3,233 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuarios - Agente IA - RV</title>
+    <title>Usuários - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f2f5;
-            min-height: 100vh;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: white;
-            padding: 16px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .header h1 {
-            font-size: 24px;
-        }
-        
-        .header-actions {
-            display: flex;
-            gap: 16px;
-            align-items: center;
-        }
-        
-        .header-actions a {
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            transition: background 0.2s;
-        }
-        
-        .header-actions a:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        
-        .btn-logout {
-            background: rgba(220, 38, 38, 0.2) !important;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-        
-        .toolbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
-        }
-        
-        .btn-add {
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        
-        .btn-add:hover {
-            transform: translateY(-2px);
-        }
-        
-        .users-table {
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        th, td {
-            padding: 16px;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        
-        th {
-            background: #f9fafb;
-            font-weight: 600;
-            color: #374151;
-            font-size: 14px;
-        }
-        
-        td {
-            color: #1f2937;
-        }
-        
         .role-badge {
             display: inline-block;
             padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
         }
-        
+
         .role-admin {
             background: #fee2e2;
-            color: #dc2626;
+            color: #991b1b;
         }
-        
+
         .role-broker {
             background: #dbeafe;
-            color: #2563eb;
+            color: #1e40af;
         }
-        
+
         .role-client {
             background: #d1fae5;
-            color: #059669;
+            color: #065f46;
         }
-        
-        .actions {
+
+        .actions-cell {
             display: flex;
             gap: 8px;
+            justify-content: flex-end;
         }
-        
-        .btn-edit, .btn-delete {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-        
-        .btn-edit {
-            background: #dbeafe;
-            color: #2563eb;
-        }
-        
-        .btn-delete {
-            background: #fee2e2;
-            color: #dc2626;
-        }
-        
-        .btn-edit:hover, .btn-delete:hover {
-            opacity: 0.8;
-        }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 1000;
-        }
-        
-        .modal.show {
-            display: flex;
-        }
-        
-        .modal-content {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            width: 100%;
-            max-width: 480px;
-        }
-        
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .modal-header h2 {
-            font-size: 20px;
-            color: #1a1a2e;
-        }
-        
-        .btn-close {
-            background: none;
             border: none;
-            font-size: 24px;
             cursor: pointer;
-            color: #666;
+            transition: all 0.2s;
         }
-        
-        .form-group {
-            margin-bottom: 16px;
+
+        .btn-icon-edit {
+            background: #dbeafe;
+            color: #1e40af;
         }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 500;
-            color: #333;
+
+        .btn-icon-edit:hover {
+            background: #bfdbfe;
         }
-        
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
+
+        .btn-icon-delete {
+            background: #fee2e2;
+            color: #991b1b;
         }
-        
-        .btn-submit {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
+
+        .btn-icon-delete:hover {
+            background: #fecaca;
         }
-        
-        .empty-state {
-            text-align: center;
-            padding: 48px;
-            color: #666;
-        }
-        
+
         .access-denied {
             text-align: center;
-            padding: 100px 24px;
-            color: #dc2626;
+            padding: 80px 24px;
+        }
+
+        .access-denied h2 {
+            color: var(--danger-color);
+            margin-bottom: 16px;
+        }
+
+        .access-denied p {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
         }
     </style>
 </head>
 <body>
-    <header class="header">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/logo.png" alt="SVN" style="height: 32px;">
-            <h1>Agente IA - RV</h1>
-        </div>
-        <div class="header-actions">
-            <a href="/analytics">Dashboard</a>
-            <a href="/kanban">Chamados</a>
-            <a href="/admin" style="background: rgba(255,255,255,0.15);">Usuarios</a>
-            <a href="/integrations">Integracoes</a>
-            <a href="/agent-brain">Cerebro IA</a>
-            <a href="#" class="btn-logout" onclick="logout()">Sair</a>
-        </div>
-    </header>
-    
-    <div class="container" id="main-content">
-        <div class="toolbar">
-            <div></div>
-            <button class="btn-add" onclick="openModal()">+ Novo Usuário</button>
-        </div>
-        
-        <div class="users-table">
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Usuário</th>
-                        <th>Email</th>
-                        <th>Telefone</th>
-                        <th>Função</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
-                <tbody id="users-tbody">
-                    <tr>
-                        <td colspan="6" class="empty-state">Carregando...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
+            </div>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/admin" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuários</span>
+                </a>
+                <a href="/integrations" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integrações</span>
+                </a>
+                <a href="/agent-brain" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cérebro IA</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content" id="mainContent">
+            <div class="page-container" id="main-content">
+                <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1 class="page-title">Usuários</h1>
+                        <p class="page-subtitle">Gerencie os usuários do sistema</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="openModal()">+ Novo Usuário</button>
+                </div>
+
+                <div class="card">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Usuário</th>
+                                <th>E-mail</th>
+                                <th>Telefone</th>
+                                <th>Função</th>
+                                <th style="text-align: right;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody">
+                            <tr>
+                                <td colspan="6" class="empty-state">Carregando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="access-denied" id="access-denied" style="display: none;">
+                <h2>Acesso Negado</h2>
+                <p>Apenas administradores podem acessar esta página.</p>
+                <a href="/kanban" class="btn btn-primary">Voltar ao Kanban</a>
+            </div>
+        </main>
     </div>
     
-    <div class="access-denied" id="access-denied" style="display: none;">
-        <h2>Acesso Negado</h2>
-        <p>Apenas administradores podem acessar esta página.</p>
-        <a href="/kanban">Voltar ao Kanban</a>
-    </div>
-    
-    <div class="modal" id="userModal">
-        <div class="modal-content">
+    <div class="modal-overlay" id="userModal">
+        <div class="modal">
             <div class="modal-header">
-                <h2 id="modal-title">Novo Usuário</h2>
-                <button class="btn-close" onclick="closeModal()">&times;</button>
+                <h3 class="modal-title" id="modal-title">Novo Usuário</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <form id="userForm" onsubmit="saveUser(event)">
-                <input type="hidden" id="userId" name="userId">
-                <div class="form-group">
-                    <label for="username">Nome de Usuário</label>
-                    <input type="text" id="username" name="username" required>
+                <div class="modal-body">
+                    <input type="hidden" id="userId" name="userId">
+                    <div class="form-group">
+                        <label class="form-label" for="username">Nome de Usuário</label>
+                        <input type="text" class="form-input" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="email">E-mail</label>
+                        <input type="email" class="form-input" id="email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="password">Senha</label>
+                        <input type="password" class="form-input" id="password" name="password">
+                        <small style="color: var(--text-secondary); font-size: 0.8rem;">Deixe em branco para manter a senha atual (ao editar)</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="phone">Telefone</label>
+                        <input type="text" class="form-input" id="phone" name="phone" placeholder="5511999999999">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="role">Função</label>
+                        <select class="form-select" id="role" name="role" required>
+                            <option value="client">Cliente</option>
+                            <option value="broker">Assessor</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
                 </div>
-                <div class="form-group">
-                    <label for="password">Senha</label>
-                    <input type="password" id="password" name="password">
-                    <small style="color: #666; font-size: 12px;">Deixe em branco para manter a senha atual (ao editar)</small>
-                </div>
-                <div class="form-group">
-                    <label for="phone">Telefone</label>
-                    <input type="text" id="phone" name="phone" placeholder="5511999999999">
-                </div>
-                <div class="form-group">
-                    <label for="role">Função</label>
-                    <select id="role" name="role" required>
-                        <option value="client">Cliente</option>
-                        <option value="broker">Assessor</option>
-                        <option value="admin">Administrador</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn-submit">Salvar</button>
             </form>
         </div>
     </div>
     
     <script>
         let currentUserRole = null;
-        
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
         document.addEventListener('DOMContentLoaded', async function() {
-            // Verifica se é admin
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+
             try {
                 const response = await fetch('/api/auth/me');
                 if (response.status === 401) {
@@ -387,9 +274,15 @@
                         <td>${user.email}</td>
                         <td>${user.phone || '-'}</td>
                         <td><span class="role-badge role-${user.role}">${getRoleLabel(user.role)}</span></td>
-                        <td class="actions">
-                            <button class="btn-edit" onclick="editUser(${user.id})">Editar</button>
-                            <button class="btn-delete" onclick="deleteUser(${user.id})">Excluir</button>
+                        <td>
+                            <div class="actions-cell">
+                                <button class="btn-icon btn-icon-edit" onclick="editUser(${user.id})" title="Editar">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="btn-icon btn-icon-delete" onclick="deleteUser(${user.id})" title="Excluir">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `).join('');

@@ -3,238 +3,404 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Base de Assessores</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Base de Assessores - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
+    <style>
+        .filters-bar {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .search-input {
+            position: relative;
+        }
+
+        .search-input svg {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            color: var(--text-secondary);
+        }
+
+        .search-input input {
+            padding-left: 44px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-icon-edit {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .btn-icon-edit:hover {
+            background: #bfdbfe;
+        }
+
+        .btn-icon-delete {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .btn-icon-delete:hover {
+            background: #fecaca;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 16px;
+            padding: 48px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary-color);
+            background: var(--primary-light);
+        }
+
+        .upload-area svg {
+            width: 64px;
+            height: 64px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .mapping-row {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 16px;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-color);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .mapping-arrow {
+            color: var(--text-secondary);
+        }
+
+        .preview-table {
+            font-size: 0.85rem;
+            background: var(--bg-color);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .preview-table th {
+            background: var(--border-color);
+            padding: 10px 12px;
+            font-weight: 600;
+        }
+
+        .preview-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .field-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            background: var(--bg-color);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .field-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .field-slug {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 1024px) {
+            .filters-bar {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .filters-bar {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <header class="bg-white shadow-sm">
-        <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div class="flex items-center gap-4">
-                    <a href="/" class="text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-arrow-left"></i>
-                    </a>
-                    <div>
-                        <h1 class="text-2xl font-bold text-gray-900">Base de Assessores</h1>
-                        <p class="text-sm text-gray-500 mt-1" id="total-count">Carregando...</p>
-                    </div>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="openCustomFieldsModal()" class="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
-                        <i class="fas fa-cog mr-2"></i>
-                        Campos
-                    </button>
-                    <button onclick="openUploadModal()" class="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
-                        <i class="fas fa-upload mr-2"></i>
-                        Importar
-                    </button>
-                    <button onclick="openFormModal()" class="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        <i class="fas fa-plus mr-2"></i>
-                        Novo Assessor
-                    </button>
-                </div>
+<body>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
             </div>
-        </div>
-    </header>
-
-    <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div class="bg-white rounded-lg shadow-sm p-4 mb-6">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div class="lg:col-span-2">
-                    <div class="relative">
-                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" id="search-input" placeholder="Buscar por nome ou telefone..." 
-                            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                </div>
-                <select id="filter-unidade" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Todas Unidades</option>
-                </select>
-                <select id="filter-equipe" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Todas Equipes</option>
-                </select>
-                <select id="filter-broker" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Todos Brokers</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-            <div id="loading" class="p-8 text-center text-gray-500">Carregando...</div>
-            <div id="empty" class="p-8 text-center text-gray-500 hidden">
-                Nenhum assessor encontrado. Use o botão "Importar" para carregar uma planilha.
-            </div>
-            <div class="overflow-x-auto">
-                <table id="assessores-table" class="min-w-full divide-y divide-gray-200 hidden">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidade</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Equipe</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Broker</th>
-                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="assessores-body" class="bg-white divide-y divide-gray-200"></tbody>
-                </table>
-            </div>
-        </div>
-    </main>
-
-    <div id="form-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col mx-4">
-            <div class="flex items-center justify-between p-4 border-b">
-                <h2 id="form-title" class="text-xl font-semibold text-gray-800">Novo Assessor</h2>
-                <button onclick="closeFormModal()" class="text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times text-xl"></i>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/admin" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuários</span>
+                </a>
+                <a href="/integrations" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integrações</span>
+                </a>
+                <a href="/agent-brain" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cérebro IA</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
                 </button>
             </div>
-            <form id="assessor-form" class="p-4 overflow-y-auto flex-1">
-                <input type="hidden" id="form-id">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        </aside>
+
+        <main class="main-content" id="mainContent">
+            <div class="page-container">
+                <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Assessor *</label>
-                        <input type="text" id="form-nome" required
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <h1 class="page-title">Base de Assessores</h1>
+                        <p class="page-subtitle" id="total-count">Carregando...</p>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Telefone WhatsApp</label>
-                        <input type="text" id="form-telefone" placeholder="(00) 00000-0000"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
-                        <input type="text" id="form-unidade"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Equipe</label>
-                        <input type="text" id="form-equipe"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Broker Responsável</label>
-                        <input type="text" id="form-broker"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <div class="header-actions">
+                        <button class="btn btn-secondary" onclick="openCustomFieldsModal()">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            Campos
+                        </button>
+                        <button class="btn btn-secondary" onclick="openUploadModal()">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                            Importar
+                        </button>
+                        <button class="btn btn-primary" onclick="openFormModal()">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Novo Assessor
+                        </button>
                     </div>
                 </div>
-                <div id="custom-fields-container" class="border-t pt-4 mt-4 hidden">
-                    <h3 class="text-lg font-medium text-gray-800 mb-3">Campos Customizados</h3>
-                    <div id="custom-fields-inputs" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+
+                <div class="card" style="padding: 20px; margin-bottom: 24px;">
+                    <div class="filters-bar">
+                        <div class="search-input">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            <input type="text" class="form-input" id="search-input" placeholder="Buscar por nome ou telefone...">
+                        </div>
+                        <select class="form-select" id="filter-unidade">
+                            <option value="">Todas as Unidades</option>
+                        </select>
+                        <select class="form-select" id="filter-equipe">
+                            <option value="">Todas as Equipes</option>
+                        </select>
+                        <select class="form-select" id="filter-broker">
+                            <option value="">Todos os Brokers</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="flex justify-end gap-3 pt-4 border-t mt-4">
-                    <button type="button" onclick="closeFormModal()" class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
-                        Cancelar
-                    </button>
-                    <button type="submit" id="form-submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        Salvar
-                    </button>
+
+                <div class="card">
+                    <div id="loading" class="loading"><div class="spinner"></div></div>
+                    <div id="empty" class="empty-state" style="display: none;">
+                        <p>Nenhum assessor encontrado.</p>
+                        <p style="font-size: 0.85rem; margin-top: 8px;">Use o botão "Importar" para carregar uma planilha.</p>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="table" id="assessores-table" style="display: none;">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>WhatsApp</th>
+                                    <th>Unidade</th>
+                                    <th>Equipe</th>
+                                    <th>Broker</th>
+                                    <th style="text-align: right;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assessores-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="form-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="form-title">Novo Assessor</h3>
+                <button class="modal-close" onclick="closeFormModal()">&times;</button>
+            </div>
+            <form id="assessor-form">
+                <div class="modal-body">
+                    <input type="hidden" id="form-id">
+                    <div class="grid grid-2" style="gap: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Nome do Assessor *</label>
+                            <input type="text" class="form-input" id="form-nome" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Telefone WhatsApp</label>
+                            <input type="text" class="form-input" id="form-telefone" placeholder="(00) 00000-0000">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Unidade</label>
+                            <input type="text" class="form-input" id="form-unidade">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Equipe</label>
+                            <input type="text" class="form-input" id="form-equipe">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Broker Responsável</label>
+                        <input type="text" class="form-input" id="form-broker">
+                    </div>
+                    <div id="custom-fields-container" style="display: none; border-top: 1px solid var(--border-color); padding-top: 20px; margin-top: 20px;">
+                        <h4 style="margin-bottom: 16px; font-weight: 600;">Campos Customizados</h4>
+                        <div id="custom-fields-inputs" class="grid grid-2" style="gap: 16px;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeFormModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="upload-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col mx-4">
-            <div class="flex items-center justify-between p-4 border-b">
-                <h2 class="text-xl font-semibold text-gray-800">Importar Planilha</h2>
-                <button onclick="closeUploadModal()" class="text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
+    <div class="modal-overlay" id="upload-modal">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Importar Planilha</h3>
+                <button class="modal-close" onclick="closeUploadModal()">&times;</button>
             </div>
-            <div class="p-4 overflow-y-auto flex-1">
+            <div class="modal-body">
                 <div id="upload-step-1">
-                    <div class="text-center py-8">
-                        <i class="fas fa-file-excel text-6xl text-gray-400 mb-4"></i>
-                        <h3 class="text-lg font-medium text-gray-900 mb-2">Selecione uma planilha</h3>
-                        <p class="text-gray-500 mb-6">Suportamos arquivos Excel (.xlsx, .xls) e CSV</p>
-                        <label class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">
-                            <i class="fas fa-upload mr-2"></i>
-                            Escolher Arquivo
-                            <input type="file" id="upload-file" class="hidden" accept=".xlsx,.xls,.csv">
-                        </label>
-                        <div id="upload-loading" class="mt-4 text-gray-500 hidden">Processando arquivo...</div>
-                        <div id="upload-error" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg hidden"></div>
+                    <div class="upload-area" onclick="document.getElementById('upload-file').click()">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        <h3 style="font-size: 1.1rem; margin-bottom: 8px;">Selecione uma planilha</h3>
+                        <p style="color: var(--text-secondary);">Suportamos arquivos Excel (.xlsx, .xls) e CSV</p>
+                        <input type="file" id="upload-file" style="display: none;" accept=".xlsx,.xls,.csv">
                     </div>
+                    <div id="upload-loading" class="loading" style="display: none;"><div class="spinner"></div> Processando...</div>
+                    <div id="upload-error" class="alert alert-danger" style="display: none; margin-top: 16px;"></div>
                 </div>
-                <div id="upload-step-2" class="hidden">
-                    <div id="upload-info" class="mb-4 p-3 bg-blue-50 text-blue-700 rounded-lg"></div>
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">Mapeamento de Campos</h3>
-                    <p class="text-gray-500 mb-4">Associe as colunas da planilha aos campos do banco de dados:</p>
-                    <div id="mapping-container" class="space-y-3 max-h-64 overflow-y-auto"></div>
-                    <div class="mt-6 p-4 bg-gray-50 rounded-lg">
-                        <h4 class="font-medium text-gray-800 mb-2">Pré-visualização</h4>
-                        <div class="overflow-x-auto">
-                            <table id="preview-table" class="min-w-full text-sm">
+                <div id="upload-step-2" style="display: none;">
+                    <div id="upload-info" class="alert alert-info" style="margin-bottom: 20px;"></div>
+                    <h4 style="margin-bottom: 16px; font-weight: 600;">Mapeamento de Campos</h4>
+                    <p style="color: var(--text-secondary); margin-bottom: 16px;">Associe as colunas da planilha aos campos do banco de dados:</p>
+                    <div id="mapping-container" style="max-height: 250px; overflow-y: auto;"></div>
+                    <div style="margin-top: 24px; padding: 16px; background: var(--bg-color); border-radius: 12px;">
+                        <h5 style="margin-bottom: 12px; font-weight: 600;">Pré-visualização</h5>
+                        <div style="overflow-x: auto;">
+                            <table class="preview-table" style="width: 100%;">
                                 <thead id="preview-head"></thead>
                                 <tbody id="preview-body"></tbody>
                             </table>
                         </div>
                     </div>
-                    <div class="mt-4 flex items-center">
-                        <input type="checkbox" id="update-existing" class="h-4 w-4 text-blue-600 rounded">
-                        <label for="update-existing" class="ml-2 text-gray-700">Atualizar registros existentes (pelo telefone)</label>
-                    </div>
-                    <div class="flex justify-end gap-3 mt-6">
-                        <button onclick="resetUpload()" class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Voltar</button>
-                        <button onclick="confirmUpload()" id="confirm-upload-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                            Confirmar Importação
-                        </button>
+                    <div style="margin-top: 16px; display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="update-existing" style="width: 18px; height: 18px;">
+                        <label for="update-existing" style="color: var(--text-primary);">Atualizar registros existentes (pelo telefone)</label>
                     </div>
                 </div>
-                <div id="upload-step-3" class="hidden text-center py-8">
-                    <div class="mx-auto h-16 w-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                        <i class="fas fa-check text-2xl text-green-600"></i>
+                <div id="upload-step-3" style="display: none; text-align: center; padding: 32px 0;">
+                    <div style="width: 64px; height: 64px; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                        <svg width="32" height="32" fill="none" stroke="#065f46" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                     </div>
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">Importação Concluída!</h3>
-                    <div id="upload-result" class="space-y-2 text-gray-600"></div>
-                    <div id="upload-errors" class="mt-4 p-3 bg-red-50 rounded-lg text-left max-h-32 overflow-y-auto hidden"></div>
-                    <button onclick="finishUpload()" class="mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        Concluir
-                    </button>
+                    <h3 style="font-size: 1.2rem; margin-bottom: 16px;">Importação Concluída!</h3>
+                    <div id="upload-result" style="color: var(--text-secondary);"></div>
+                    <div id="upload-errors" class="alert alert-warning" style="display: none; margin-top: 16px; text-align: left; max-height: 120px; overflow-y: auto;"></div>
                 </div>
+            </div>
+            <div class="modal-footer" id="upload-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirm-upload-btn" style="display: none;" onclick="confirmUpload()">Confirmar Importação</button>
+                <button type="button" class="btn btn-primary" id="finish-upload-btn" style="display: none;" onclick="finishUpload()">Concluir</button>
             </div>
         </div>
     </div>
 
-    <div id="custom-fields-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col mx-4">
-            <div class="flex items-center justify-between p-4 border-b">
-                <h2 class="text-xl font-semibold text-gray-800">Campos Customizados</h2>
-                <button onclick="closeCustomFieldsModal()" class="text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
+    <div class="modal-overlay" id="custom-fields-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Campos Customizados</h3>
+                <button class="modal-close" onclick="closeCustomFieldsModal()">&times;</button>
             </div>
-            <div class="p-4 overflow-y-auto flex-1">
-                <div id="existing-fields" class="mb-6">
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">Campos Existentes</h3>
-                    <div id="fields-list" class="space-y-2"></div>
-                    <p id="no-fields" class="text-gray-500 hidden">Nenhum campo customizado criado ainda.</p>
+            <div class="modal-body">
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin-bottom: 16px; font-weight: 600;">Campos Existentes</h4>
+                    <div id="fields-list"></div>
+                    <p id="no-fields" style="color: var(--text-secondary); display: none;">Nenhum campo customizado criado ainda.</p>
                 </div>
-                <div class="border-t pt-6">
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">Criar Novo Campo</h3>
-                    <form id="custom-field-form" class="space-y-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Identificador (slug)</label>
-                                <input type="text" id="cf-slug" placeholder="ex: codigo_parceiro"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                <div style="border-top: 1px solid var(--border-color); padding-top: 24px;">
+                    <h4 style="margin-bottom: 16px; font-weight: 600;">Criar Novo Campo</h4>
+                    <form id="custom-field-form">
+                        <div class="grid grid-2" style="gap: 16px;">
+                            <div class="form-group">
+                                <label class="form-label">Identificador (slug)</label>
+                                <input type="text" class="form-input" id="cf-slug" placeholder="ex: codigo_parceiro">
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Campo</label>
-                                <input type="text" id="cf-label" placeholder="ex: Código do Parceiro"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <div class="form-group">
+                                <label class="form-label">Nome do Campo</label>
+                                <input type="text" class="form-input" id="cf-label" placeholder="ex: Código do Parceiro">
                             </div>
                         </div>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="cf-required" class="h-4 w-4 text-blue-600 rounded">
-                            <label for="cf-required" class="ml-2 text-gray-700">Campo obrigatório</label>
+                        <div style="margin: 16px 0; display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="cf-required" style="width: 18px; height: 18px;">
+                            <label for="cf-required">Campo obrigatório</label>
                         </div>
-                        <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                            Criar Campo
-                        </button>
+                        <button type="submit" class="btn btn-success">Criar Campo</button>
                     </form>
                 </div>
             </div>
@@ -247,6 +413,28 @@
         let filterOptions = { unidades: [], equipes: [], brokers: [] };
         let uploadPreview = null;
         let dbFields = [];
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+            loadAssessores();
+            loadFilterOptions();
+            loadCustomFields();
+        });
 
         async function loadAssessores() {
             const search = document.getElementById('search-input').value;
@@ -265,6 +453,12 @@
                     fetch(`/api/assessores?${params}`),
                     fetch('/api/assessores/count')
                 ]);
+
+                if (assessoresRes.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
                 assessores = await assessoresRes.json();
                 const count = await countRes.json();
 
@@ -315,38 +509,62 @@
             const table = document.getElementById('assessores-table');
             const tbody = document.getElementById('assessores-body');
 
-            loading.classList.add('hidden');
+            loading.style.display = 'none';
 
             if (assessores.length === 0) {
-                empty.classList.remove('hidden');
-                table.classList.add('hidden');
+                empty.style.display = 'block';
+                table.style.display = 'none';
                 return;
             }
 
-            empty.classList.add('hidden');
-            table.classList.remove('hidden');
+            empty.style.display = 'none';
+            table.style.display = 'table';
 
             tbody.innerHTML = assessores.map(a => `
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${a.nome || '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">${a.telefone_whatsapp || '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">${a.unidade || '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">${a.equipe || '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">${a.broker_responsavel || '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right">
-                        <button onclick="editAssessor(${a.id})" class="text-blue-600 hover:text-blue-800 mr-3">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button onclick="deleteAssessor(${a.id})" class="text-red-600 hover:text-red-800">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                <tr>
+                    <td style="font-weight: 500;">${a.nome || '-'}</td>
+                    <td>${a.telefone_whatsapp || '-'}</td>
+                    <td>${a.unidade || '-'}</td>
+                    <td>${a.equipe || '-'}</td>
+                    <td>${a.broker_responsavel || '-'}</td>
+                    <td>
+                        <div class="table-actions">
+                            <button class="btn-icon btn-icon-edit" onclick="editAssessor(${a.id})" title="Editar">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            </button>
+                            <button class="btn-icon btn-icon-delete" onclick="deleteAssessor(${a.id})" title="Excluir">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
         }
 
+        function renderCustomFields() {
+            const list = document.getElementById('fields-list');
+            const noFields = document.getElementById('no-fields');
+
+            if (customFields.length === 0) {
+                list.innerHTML = '';
+                noFields.style.display = 'block';
+                return;
+            }
+
+            noFields.style.display = 'none';
+            list.innerHTML = customFields.map(cf => `
+                <div class="field-item">
+                    <div class="field-info">
+                        <strong>${cf.label}</strong>
+                        <span class="field-slug">${cf.slug}</span>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="deleteCustomField(${cf.id})">Excluir</button>
+                </div>
+            `).join('');
+        }
+
         function openFormModal(assessor = null) {
-            document.getElementById('form-modal').classList.remove('hidden');
+            document.getElementById('form-modal').classList.add('show');
             document.getElementById('form-title').textContent = assessor ? 'Editar Assessor' : 'Novo Assessor';
             
             document.getElementById('form-id').value = assessor?.id || '';
@@ -360,25 +578,24 @@
             const cfInputs = document.getElementById('custom-fields-inputs');
             
             if (customFields.length > 0) {
-                cfContainer.classList.remove('hidden');
+                cfContainer.style.display = 'block';
                 cfInputs.innerHTML = customFields.map(cf => `
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">${cf.label}${cf.is_required ? ' *' : ''}</label>
-                        <input type="text" id="cf-${cf.slug}" ${cf.is_required ? 'required' : ''}
-                            value="${assessor?.custom_fields?.[cf.slug] || ''}"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <div class="form-group">
+                        <label class="form-label">${cf.label}${cf.is_required ? ' *' : ''}</label>
+                        <input type="text" class="form-input" id="cf-${cf.slug}" ${cf.is_required ? 'required' : ''}
+                            value="${assessor?.custom_fields?.[cf.slug] || ''}">
                     </div>
                 `).join('');
             } else {
-                cfContainer.classList.add('hidden');
+                cfContainer.style.display = 'none';
             }
         }
 
         function closeFormModal() {
-            document.getElementById('form-modal').classList.add('hidden');
+            document.getElementById('form-modal').classList.remove('show');
         }
 
-        async function editAssessor(id) {
+        function editAssessor(id) {
             const assessor = assessores.find(a => a.id === id);
             if (assessor) openFormModal(assessor);
         }
@@ -430,21 +647,23 @@
         });
 
         function openUploadModal() {
-            document.getElementById('upload-modal').classList.remove('hidden');
+            document.getElementById('upload-modal').classList.add('show');
             resetUpload();
         }
 
         function closeUploadModal() {
-            document.getElementById('upload-modal').classList.add('hidden');
+            document.getElementById('upload-modal').classList.remove('show');
         }
 
         function resetUpload() {
-            document.getElementById('upload-step-1').classList.remove('hidden');
-            document.getElementById('upload-step-2').classList.add('hidden');
-            document.getElementById('upload-step-3').classList.add('hidden');
+            document.getElementById('upload-step-1').style.display = 'block';
+            document.getElementById('upload-step-2').style.display = 'none';
+            document.getElementById('upload-step-3').style.display = 'none';
             document.getElementById('upload-file').value = '';
-            document.getElementById('upload-loading').classList.add('hidden');
-            document.getElementById('upload-error').classList.add('hidden');
+            document.getElementById('upload-loading').style.display = 'none';
+            document.getElementById('upload-error').style.display = 'none';
+            document.getElementById('confirm-upload-btn').style.display = 'none';
+            document.getElementById('finish-upload-btn').style.display = 'none';
             uploadPreview = null;
         }
 
@@ -452,8 +671,8 @@
             const file = e.target.files[0];
             if (!file) return;
 
-            document.getElementById('upload-loading').classList.remove('hidden');
-            document.getElementById('upload-error').classList.add('hidden');
+            document.getElementById('upload-loading').style.display = 'block';
+            document.getElementById('upload-error').style.display = 'none';
 
             const formData = new FormData();
             formData.append('file', file);
@@ -465,68 +684,84 @@
                 ]);
 
                 if (!previewRes.ok) {
-                    const err = await previewRes.json();
-                    throw new Error(err.detail);
+                    const error = await previewRes.json();
+                    throw new Error(error.detail || 'Erro ao processar arquivo');
                 }
 
                 uploadPreview = await previewRes.json();
                 dbFields = await fieldsRes.json();
 
-                showMappingStep();
+                document.getElementById('upload-loading').style.display = 'none';
+                document.getElementById('upload-step-1').style.display = 'none';
+                document.getElementById('upload-step-2').style.display = 'block';
+                document.getElementById('confirm-upload-btn').style.display = 'inline-flex';
+
+                document.getElementById('upload-info').innerHTML = `
+                    <strong>Arquivo:</strong> ${file.name}<br>
+                    <strong>Total de linhas:</strong> ${uploadPreview.total_rows}
+                `;
+
+                renderMapping();
+                renderPreview();
             } catch (err) {
+                document.getElementById('upload-loading').style.display = 'none';
                 document.getElementById('upload-error').textContent = err.message;
-                document.getElementById('upload-error').classList.remove('hidden');
-            } finally {
-                document.getElementById('upload-loading').classList.add('hidden');
+                document.getElementById('upload-error').style.display = 'block';
             }
         });
 
-        function showMappingStep() {
-            document.getElementById('upload-step-1').classList.add('hidden');
-            document.getElementById('upload-step-2').classList.remove('hidden');
+        function renderMapping() {
+            const container = document.getElementById('mapping-container');
+            container.innerHTML = uploadPreview.columns.map(col => `
+                <div class="mapping-row">
+                    <div style="font-weight: 500;">${col}</div>
+                    <div class="mapping-arrow">→</div>
+                    <select class="form-select" data-column="${col}">
+                        <option value="">Ignorar</option>
+                        ${dbFields.map(f => `
+                            <option value="${f.slug}" ${autoMap(col, f) ? 'selected' : ''}>${f.label}</option>
+                        `).join('')}
+                    </select>
+                </div>
+            `).join('');
+        }
 
-            document.getElementById('upload-info').innerHTML = `<strong>${uploadPreview.total_rows}</strong> registros encontrados na planilha`;
+        function autoMap(column, field) {
+            const col = column.toLowerCase().replace(/[^a-z]/g, '');
+            const slug = field.slug.toLowerCase();
+            const label = field.label.toLowerCase().replace(/[^a-z]/g, '');
+            return col === slug || col === label || col.includes(slug) || slug.includes(col);
+        }
 
-            const mappingContainer = document.getElementById('mapping-container');
-            mappingContainer.innerHTML = uploadPreview.columns.map(col => {
-                const matchedField = dbFields.find(f => {
-                    const colLower = col.toLowerCase().replace(/[^a-z]/g, '');
-                    const labelLower = f.label.toLowerCase().replace(/[^a-z]/g, '');
-                    return labelLower.includes(colLower) || colLower.includes(labelLower);
-                });
+        function renderPreview() {
+            const head = document.getElementById('preview-head');
+            const body = document.getElementById('preview-body');
 
-                return `
-                    <div class="flex items-center gap-4">
-                        <div class="w-1/2 px-3 py-2 bg-gray-100 rounded-lg text-gray-700 truncate">${col}</div>
-                        <i class="fas fa-arrow-right text-gray-400"></i>
-                        <select id="mapping-${col}" class="w-1/2 px-3 py-2 border border-gray-300 rounded-lg">
-                            <option value="">-- Ignorar coluna --</option>
-                            ${dbFields.map(f => `<option value="${f.slug}" ${matchedField?.slug === f.slug ? 'selected' : ''}>${f.label}</option>`).join('')}
-                        </select>
-                    </div>
-                `;
-            }).join('');
-
-            const previewHead = document.getElementById('preview-head');
-            previewHead.innerHTML = `<tr>${uploadPreview.columns.slice(0, 5).map(c => `<th class="px-2 py-1 text-left text-gray-600 font-medium">${c}</th>`).join('')}</tr>`;
-
-            const previewBody = document.getElementById('preview-body');
-            previewBody.innerHTML = uploadPreview.sample_data.slice(0, 3).map(row => 
-                `<tr class="border-t">${uploadPreview.columns.slice(0, 5).map(c => `<td class="px-2 py-1 text-gray-700 truncate max-w-32">${row[c] || '-'}</td>`).join('')}</tr>`
-            ).join('');
+            head.innerHTML = `<tr>${uploadPreview.columns.map(c => `<th>${c}</th>`).join('')}</tr>`;
+            body.innerHTML = uploadPreview.sample_data.slice(0, 3).map(row => `
+                <tr>${uploadPreview.columns.map(c => `<td>${row[c] || ''}</td>`).join('')}</tr>
+            `).join('');
         }
 
         async function confirmUpload() {
+            const mappings = [];
+            document.querySelectorAll('#mapping-container select').forEach(select => {
+                if (select.value) {
+                    mappings.push({
+                        spreadsheet_column: select.dataset.column,
+                        database_field: select.value
+                    });
+                }
+            });
+
+            if (mappings.length === 0) {
+                alert('Mapeie pelo menos uma coluna');
+                return;
+            }
+
             const btn = document.getElementById('confirm-upload-btn');
             btn.disabled = true;
             btn.textContent = 'Importando...';
-
-            const mappings = uploadPreview.columns
-                .map(col => ({
-                    spreadsheet_column: col,
-                    database_field: document.getElementById(`mapping-${col}`).value
-                }))
-                .filter(m => m.database_field);
 
             try {
                 const res = await fetch('/api/upload/confirm', {
@@ -540,29 +775,28 @@
                 });
 
                 const result = await res.json();
-                showUploadResult(result);
+
+                document.getElementById('upload-step-2').style.display = 'none';
+                document.getElementById('upload-step-3').style.display = 'block';
+                document.getElementById('confirm-upload-btn').style.display = 'none';
+                document.getElementById('finish-upload-btn').style.display = 'inline-flex';
+
+                document.getElementById('upload-result').innerHTML = `
+                    <p><strong>${result.created}</strong> registros criados</p>
+                    <p><strong>${result.updated}</strong> registros atualizados</p>
+                `;
+
+                if (result.errors && result.errors.length > 0) {
+                    const errorsDiv = document.getElementById('upload-errors');
+                    errorsDiv.style.display = 'block';
+                    errorsDiv.innerHTML = `<strong>Erros (${result.errors.length}):</strong><br>` + 
+                        result.errors.slice(0, 10).join('<br>');
+                }
             } catch (err) {
-                alert('Erro ao importar dados');
+                alert('Erro na importação: ' + err.message);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Confirmar Importação';
-            }
-        }
-
-        function showUploadResult(result) {
-            document.getElementById('upload-step-2').classList.add('hidden');
-            document.getElementById('upload-step-3').classList.remove('hidden');
-
-            document.getElementById('upload-result').innerHTML = `
-                <p><strong>${result.created}</strong> registros criados</p>
-                <p><strong>${result.updated}</strong> registros atualizados</p>
-                ${result.total_errors > 0 ? `<p class="text-red-600"><strong>${result.total_errors}</strong> erros encontrados</p>` : ''}
-            `;
-
-            if (result.errors?.length > 0) {
-                const errorsDiv = document.getElementById('upload-errors');
-                errorsDiv.innerHTML = result.errors.map(e => `<p class="text-sm text-red-700">${e}</p>`).join('');
-                errorsDiv.classList.remove('hidden');
             }
         }
 
@@ -573,53 +807,19 @@
         }
 
         function openCustomFieldsModal() {
-            document.getElementById('custom-fields-modal').classList.remove('hidden');
-            loadCustomFields();
+            document.getElementById('custom-fields-modal').classList.add('show');
+            renderCustomFields();
         }
 
         function closeCustomFieldsModal() {
-            document.getElementById('custom-fields-modal').classList.add('hidden');
-        }
-
-        function renderCustomFields() {
-            const list = document.getElementById('fields-list');
-            const noFields = document.getElementById('no-fields');
-
-            if (customFields.length === 0) {
-                list.innerHTML = '';
-                noFields.classList.remove('hidden');
-                return;
-            }
-
-            noFields.classList.add('hidden');
-            list.innerHTML = customFields.map(f => `
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                        <span class="font-medium text-gray-800">${f.label}</span>
-                        <span class="ml-2 text-sm text-gray-500">(${f.slug})</span>
-                        ${f.is_required ? '<span class="ml-2 text-xs text-red-500">Obrigatório</span>' : ''}
-                    </div>
-                    <button onclick="deleteCustomField(${f.id})" class="text-red-500 hover:text-red-700">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            `).join('');
-        }
-
-        async function deleteCustomField(id) {
-            if (!confirm('Deseja desativar este campo customizado?')) return;
-            try {
-                await fetch(`/api/custom-fields/${id}`, { method: 'DELETE' });
-                loadCustomFields();
-            } catch (err) {
-                alert('Erro ao desativar campo');
-            }
+            document.getElementById('custom-fields-modal').classList.remove('show');
         }
 
         document.getElementById('custom-field-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const slug = document.getElementById('cf-slug').value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-            const label = document.getElementById('cf-label').value;
+            const slug = document.getElementById('cf-slug').value.trim();
+            const label = document.getElementById('cf-label').value.trim();
+            const isRequired = document.getElementById('cf-required').checked;
 
             if (!slug || !label) {
                 alert('Preencha todos os campos');
@@ -627,17 +827,18 @@
             }
 
             try {
-                await fetch('/api/custom-fields', {
+                const res = await fetch('/api/custom-fields', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        slug,
-                        label,
-                        field_type: 'text',
-                        is_required: document.getElementById('cf-required').checked,
-                        options: []
-                    })
+                    body: JSON.stringify({ slug, label, is_required: isRequired })
                 });
+
+                if (!res.ok) {
+                    const error = await res.json();
+                    alert(error.detail || 'Erro ao criar campo');
+                    return;
+                }
+
                 document.getElementById('cf-slug').value = '';
                 document.getElementById('cf-label').value = '';
                 document.getElementById('cf-required').checked = false;
@@ -646,6 +847,16 @@
                 alert('Erro ao criar campo');
             }
         });
+
+        async function deleteCustomField(id) {
+            if (!confirm('Tem certeza que deseja excluir este campo?')) return;
+            try {
+                await fetch(`/api/custom-fields/${id}`, { method: 'DELETE' });
+                loadCustomFields();
+            } catch (err) {
+                alert('Erro ao excluir campo');
+            }
+        }
 
         let searchTimeout;
         document.getElementById('search-input').addEventListener('input', () => {
@@ -657,9 +868,18 @@
         document.getElementById('filter-equipe').addEventListener('change', loadAssessores);
         document.getElementById('filter-broker').addEventListener('change', loadAssessores);
 
-        loadAssessores();
-        loadFilterOptions();
-        loadCustomFields();
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('show');
+                }
+            });
+        });
+
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+        }
     </script>
 </body>
 </html>

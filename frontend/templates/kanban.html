@@ -4,363 +4,286 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chamados - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f2f5;
-            min-height: 100vh;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: white;
-            padding: 16px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .header h1 {
-            font-size: 24px;
-        }
-        
-        .header-actions {
-            display: flex;
-            gap: 16px;
-            align-items: center;
-        }
-        
-        .header-actions a {
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            transition: background 0.2s;
-        }
-        
-        .header-actions a:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        
-        .btn-logout {
-            background: rgba(220, 38, 38, 0.2) !important;
-        }
-        
-        .btn-logout:hover {
-            background: rgba(220, 38, 38, 0.4) !important;
-        }
-        
         .kanban-container {
             display: flex;
             gap: 24px;
-            padding: 24px;
             overflow-x: auto;
-            min-height: calc(100vh - 80px);
+            padding-bottom: 24px;
         }
-        
+
         .kanban-column {
-            background: #e5e7eb;
-            border-radius: 12px;
+            background: var(--card-bg);
+            border-radius: 16px;
             min-width: 320px;
             max-width: 320px;
             display: flex;
             flex-direction: column;
+            border: 1px solid var(--border-color);
         }
-        
+
         .column-header {
-            padding: 16px;
+            padding: 16px 20px;
             font-weight: 600;
-            font-size: 16px;
-            border-bottom: 2px solid transparent;
+            font-size: 0.95rem;
+            border-bottom: 3px solid transparent;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            background: var(--bg-color);
+            border-radius: 16px 16px 0 0;
         }
-        
+
         .column-header .count {
-            background: rgba(0, 0, 0, 0.1);
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 14px;
+            background: var(--card-bg);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            border: 1px solid var(--border-color);
         }
-        
+
         .column-open .column-header {
             color: #dc2626;
             border-bottom-color: #dc2626;
         }
-        
+
         .column-progress .column-header {
             color: #d97706;
             border-bottom-color: #d97706;
         }
-        
+
         .column-closed .column-header {
             color: #059669;
             border-bottom-color: #059669;
         }
-        
+
         .column-content {
-            padding: 12px;
+            padding: 16px;
             flex: 1;
             overflow-y: auto;
-            min-height: 200px;
+            min-height: 300px;
         }
-        
+
         .ticket-card {
-            background: white;
-            border-radius: 8px;
+            background: var(--card-bg);
+            border-radius: 12px;
             padding: 16px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
             cursor: grab;
             transition: transform 0.2s, box-shadow 0.2s;
         }
-        
+
         .ticket-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
         }
-        
+
         .ticket-card.sortable-ghost {
             opacity: 0.4;
         }
-        
+
         .ticket-card.sortable-drag {
             cursor: grabbing;
         }
-        
+
         .ticket-id {
-            font-size: 12px;
-            color: #666;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
             margin-bottom: 8px;
+            font-weight: 500;
         }
-        
+
         .ticket-title {
             font-weight: 600;
             margin-bottom: 8px;
-            color: #1a1a2e;
+            color: var(--text-primary);
         }
-        
+
         .ticket-description {
-            font-size: 14px;
-            color: #666;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
             margin-bottom: 12px;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-        
+
         .ticket-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 12px;
-            color: #999;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
         }
-        
-        .ticket-phone {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        
+
         .btn-new-ticket {
             position: fixed;
-            bottom: 24px;
-            right: 24px;
+            bottom: 32px;
+            right: 32px;
             width: 56px;
             height: 56px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
+            border-radius: 16px;
+            background: var(--primary-color);
             color: white;
             border: none;
             font-size: 28px;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(74, 144, 217, 0.4);
-            transition: transform 0.2s;
+            box-shadow: 0 4px 16px rgba(79, 70, 229, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        
+
         .btn-new-ticket:hover {
-            transform: scale(1.1);
+            transform: scale(1.05);
+            box-shadow: 0 6px 24px rgba(79, 70, 229, 0.4);
         }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-        
-        .modal.show {
-            display: flex;
-        }
-        
-        .modal-content {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            width: 100%;
-            max-width: 480px;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .modal-header h2 {
-            font-size: 20px;
-            color: #1a1a2e;
-        }
-        
-        .btn-close {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #666;
-        }
-        
-        .form-group {
-            margin-bottom: 16px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 500;
-            color: #333;
-        }
-        
-        .form-group input,
-        .form-group textarea {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        
-        .form-group textarea {
-            resize: vertical;
-            min-height: 100px;
-        }
-        
-        .btn-submit {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-        
+
         .empty-column {
             text-align: center;
-            padding: 24px;
-            color: #999;
-            font-size: 14px;
+            padding: 32px 16px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
     </style>
 </head>
 <body>
-    <header class="header">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/logo.png" alt="SVN" style="height: 32px;">
-            <h1>Agente IA - RV</h1>
-        </div>
-        <div class="header-actions">
-            <a href="/analytics">Dashboard</a>
-            <a href="/kanban" style="background: rgba(255,255,255,0.15);">Chamados</a>
-            <a href="/admin">Usuarios</a>
-            <a href="/integrations">Integracoes</a>
-            <a href="/agent-brain">Cerebro IA</a>
-            <a href="#" class="btn-logout" onclick="logout()">Sair</a>
-        </div>
-    </header>
-    
-    <div class="kanban-container">
-        <div class="kanban-column column-open">
-            <div class="column-header">
-                <span>Aberto</span>
-                <span class="count" id="count-open">0</span>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
             </div>
-            <div class="column-content" id="column-open" data-status="Aberto"></div>
-        </div>
-        
-        <div class="kanban-column column-progress">
-            <div class="column-header">
-                <span>Em Andamento</span>
-                <span class="count" id="count-progress">0</span>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/admin" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuários</span>
+                </a>
+                <a href="/integrations" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integrações</span>
+                </a>
+                <a href="/agent-brain" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cérebro IA</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
+                </button>
             </div>
-            <div class="column-content" id="column-progress" data-status="Em Andamento"></div>
-        </div>
-        
-        <div class="kanban-column column-closed">
-            <div class="column-header">
-                <span>Concluído</span>
-                <span class="count" id="count-closed">0</span>
+        </aside>
+
+        <main class="main-content" id="mainContent">
+            <div class="page-container">
+                <div class="page-header">
+                    <h1 class="page-title">Chamados</h1>
+                    <p class="page-subtitle">Gerencie os chamados arrastando entre as colunas</p>
+                </div>
+
+                <div class="kanban-container">
+                    <div class="kanban-column column-open">
+                        <div class="column-header">
+                            <span>Aberto</span>
+                            <span class="count" id="count-open">0</span>
+                        </div>
+                        <div class="column-content" id="column-open" data-status="Aberto"></div>
+                    </div>
+                    
+                    <div class="kanban-column column-progress">
+                        <div class="column-header">
+                            <span>Em Andamento</span>
+                            <span class="count" id="count-progress">0</span>
+                        </div>
+                        <div class="column-content" id="column-progress" data-status="Em Andamento"></div>
+                    </div>
+                    
+                    <div class="kanban-column column-closed">
+                        <div class="column-header">
+                            <span>Concluído</span>
+                            <span class="count" id="count-closed">0</span>
+                        </div>
+                        <div class="column-content" id="column-closed" data-status="Concluído"></div>
+                    </div>
+                </div>
             </div>
-            <div class="column-content" id="column-closed" data-status="Concluído"></div>
-        </div>
+        </main>
     </div>
     
     <button class="btn-new-ticket" onclick="openModal()">+</button>
     
-    <div class="modal" id="ticketModal">
-        <div class="modal-content">
+    <div class="modal-overlay" id="ticketModal">
+        <div class="modal">
             <div class="modal-header">
-                <h2>Novo Chamado</h2>
-                <button class="btn-close" onclick="closeModal()">&times;</button>
+                <h3 class="modal-title">Novo Chamado</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <form id="ticketForm" onsubmit="createTicket(event)">
-                <div class="form-group">
-                    <label for="title">Título</label>
-                    <input type="text" id="title" name="title" required>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="title">Título</label>
+                        <input type="text" class="form-input" id="title" name="title" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="description">Descrição</label>
+                        <textarea class="form-textarea" id="description" name="description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="client_phone">Telefone do Cliente</label>
+                        <input type="text" class="form-input" id="client_phone" name="client_phone" placeholder="5511999999999">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="description">Descrição</label>
-                    <textarea id="description" name="description"></textarea>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Criar Chamado</button>
                 </div>
-                <div class="form-group">
-                    <label for="client_phone">Telefone do Cliente</label>
-                    <input type="text" id="client_phone" name="client_phone" placeholder="5511999999999">
-                </div>
-                <button type="submit" class="btn-submit">Criar Chamado</button>
             </form>
         </div>
     </div>
     
     <script>
-        // Carrega tickets ao iniciar
-        document.addEventListener('DOMContentLoaded', loadTickets);
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+            loadTickets();
+        });
         
         async function loadTickets() {
             try {
@@ -372,15 +295,12 @@
                 
                 const tickets = await response.json();
                 
-                // Limpa colunas
                 document.getElementById('column-open').innerHTML = '';
                 document.getElementById('column-progress').innerHTML = '';
                 document.getElementById('column-closed').innerHTML = '';
                 
-                // Contadores
                 let countOpen = 0, countProgress = 0, countClosed = 0;
                 
-                // Distribui tickets nas colunas
                 tickets.forEach(ticket => {
                     const card = createTicketCard(ticket);
                     
@@ -400,12 +320,10 @@
                     }
                 });
                 
-                // Atualiza contadores
                 document.getElementById('count-open').textContent = countOpen;
                 document.getElementById('count-progress').textContent = countProgress;
                 document.getElementById('count-closed').textContent = countClosed;
                 
-                // Inicializa SortableJS para drag and drop
                 initSortable();
                 
             } catch (error) {
@@ -425,7 +343,7 @@
                 <div class="ticket-title">${ticket.title}</div>
                 <div class="ticket-description">${ticket.description || 'Sem descrição'}</div>
                 <div class="ticket-footer">
-                    <div class="ticket-phone">${ticket.client_phone || 'N/A'}</div>
+                    <div>${ticket.client_phone || 'N/A'}</div>
                     <div>${date}</div>
                 </div>
             `;
@@ -455,11 +373,10 @@
                                 body: JSON.stringify({ status: newStatus })
                             });
                             
-                            // Recarrega para atualizar contadores
                             loadTickets();
                         } catch (error) {
                             console.error('Erro ao atualizar status:', error);
-                            loadTickets(); // Recarrega para reverter
+                            loadTickets();
                         }
                     }
                 });
@@ -511,7 +428,6 @@
             window.location.href = '/login';
         }
         
-        // Fecha modal ao clicar fora
         document.getElementById('ticketModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeModal();
