@@ -7,7 +7,7 @@ from typing import List, Optional
 from datetime import datetime, date
 from database.models import (
     User, Ticket, TicketStatus, Integration, IntegrationSetting,
-    TicketCategory, Interaction, UserRole, AgentConfig, Advisor
+    TicketCategory, Interaction, UserRole, AgentConfig
 )
 from core.security import get_password_hash, verify_password
 

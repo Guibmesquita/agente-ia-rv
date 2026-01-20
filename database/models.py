@@ -1,6 +1,6 @@
 """
 Modelos SQLAlchemy para o banco de dados.
-Define as tabelas User, Ticket, Interaction, TicketCategory, Integration, AgentConfig e Advisor.
+Define as tabelas User, Ticket, Interaction, TicketCategory e Integration.
 """
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
@@ -177,22 +177,6 @@ class AgentConfig(Base):
     model = Column(String(50), default="gpt-4o")
     temperature = Column(String(10), default="0.7")
     max_tokens = Column(Integer, default=500)
-    is_active = Column(Integer, default=1)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-
-class Advisor(Base):
-    """
-    Base de assessores.
-    Armazena informações para identificação e roteamento de mensagens.
-    """
-    __tablename__ = "advisors"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String(255), nullable=False)
-    telefone_whatsapp = Column(String(20), unique=True, index=True, nullable=False)
-    unidade = Column(String(100), nullable=False)
     is_active = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
