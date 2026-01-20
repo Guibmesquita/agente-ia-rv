@@ -1,4 +1,4 @@
-# Assessor IA - Agente de IA para Assessores Financeiros
+# Agente IA - RV - Agente de IA para Assessores Financeiros
 
 ## Visão Geral
 
@@ -136,3 +136,4 @@ A página `/agent-brain` (apenas admin) permite configurar em tempo real:
 - 2026-01-20: Adicionado dashboard de analytics com KPIs e filtro de data
 - 2026-01-20: Adicionado Painel de Controle do Cérebro do Agente com configuração em tempo real
 - 2026-01-20: Menu de navegação unificado em todas as páginas
+- 2026-01-20: Renomeado app para "Agente IA - RV" e adicionado logo SVN
