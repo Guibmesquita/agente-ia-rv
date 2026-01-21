@@ -576,16 +576,32 @@
                                     <th>Enviadas</th>
                                     <th>Falhas</th>
                                     <th>Status</th>
+                                    <th style="width: 80px;">Acoes</th>
                                 </tr>
                             </thead>
                             <tbody id="historyTableBody">
-                                <tr><td colspan="6" style="text-align: center; padding: 40px;">Carregando...</td></tr>
+                                <tr><td colspan="7" style="text-align: center; padding: 40px;">Carregando...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
         </main>
+    </div>
+
+    <div class="modal-overlay" id="campaignSummaryModal" style="display: none;">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 id="summaryModalTitle">Resumo da Campanha</h3>
+                <button class="modal-close" onclick="closeSummaryModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="summaryModalBody">
+                <div style="text-align: center; padding: 40px;">Carregando...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSummaryModal()">Fechar</button>
+            </div>
+        </div>
     </div>
 
     <div class="modal-overlay" id="templateModal" style="display: none;">
@@ -1128,23 +1144,303 @@ Equipe de Gestao`;
                 const tbody = document.getElementById('historyTableBody');
 
                 if (campaigns.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-secondary);">Nenhuma campanha encontrada</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-secondary);">Nenhuma campanha encontrada</td></tr>';
                     return;
                 }
 
                 tbody.innerHTML = campaigns.map(c => `
                     <tr>
-                        <td><strong>${c.name}</strong><br><small style="color: var(--text-secondary);">${c.original_filename || ''}</small></td>
+                        <td>
+                            <a href="#" onclick="openCampaign(${c.id}, '${c.status}'); return false;" style="color: var(--primary-color); text-decoration: none; font-weight: 600;">
+                                ${c.name}
+                            </a>
+                            <br><small style="color: var(--text-secondary);">${c.original_filename || ''}</small>
+                        </td>
                         <td>${c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '-'}</td>
                         <td>${c.total_assessors}</td>
                         <td>${c.messages_sent}</td>
                         <td>${c.messages_failed}</td>
                         <td><span class="status-badge status-${c.status}">${c.status}</span></td>
+                        <td>
+                            <div style="position: relative;">
+                                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="toggleOptionsMenu(${c.id})">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
+                                    </svg>
+                                </button>
+                                <div id="optionsMenu-${c.id}" class="options-menu" style="display: none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 100; min-width: 120px;">
+                                    <button onclick="deleteCampaign(${c.id})" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 `).join('');
 
             } catch (error) {
                 console.error('Erro ao carregar historico:', error);
+            }
+        }
+
+        function toggleOptionsMenu(campaignId) {
+            const menu = document.getElementById(`optionsMenu-${campaignId}`);
+            document.querySelectorAll('.options-menu').forEach(m => {
+                if (m !== menu) m.style.display = 'none';
+            });
+            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.options-menu') && !e.target.closest('button')) {
+                document.querySelectorAll('.options-menu').forEach(m => m.style.display = 'none');
+            }
+        });
+
+        async function openCampaign(id, status) {
+            if (status === 'rascunho') {
+                await resumeCampaign(id);
+            } else {
+                await openCampaignSummary(id);
+            }
+        }
+
+        async function openCampaignSummary(id) {
+            document.getElementById('campaignSummaryModal').style.display = 'flex';
+            document.getElementById('summaryModalBody').innerHTML = '<div style="text-align: center; padding: 40px;">Carregando...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/${id}`, { credentials: 'include' });
+                if (!response.ok) throw new Error('Erro ao carregar campanha');
+                
+                const campaign = await response.json();
+                
+                const successDispatches = campaign.dispatches.filter(d => d.status === 'sent');
+                const failedDispatches = campaign.dispatches.filter(d => d.status === 'failed');
+                
+                let html = `
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+                        <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #16a34a;">${campaign.messages_sent}</div>
+                            <div style="font-size: 12px; color: #166534;">Enviadas</div>
+                        </div>
+                        <div style="background: #fef2f2; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #dc2626;">${campaign.messages_failed}</div>
+                            <div style="font-size: 12px; color: #991b1b;">Falhas</div>
+                        </div>
+                        <div style="background: #eff6ff; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #2563eb;">${campaign.total_assessors}</div>
+                            <div style="font-size: 12px; color: #1e40af;">Assessores</div>
+                        </div>
+                        <div style="background: #fefce8; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #ca8a04;">${campaign.total_recommendations}</div>
+                            <div style="font-size: 12px; color: #854d0e;">Recomendacoes</div>
+                        </div>
+                    </div>
+                `;
+                
+                if (failedDispatches.length > 0) {
+                    html += `
+                        <h4 style="margin-bottom: 12px; color: #dc2626;">Falhas no Envio (${failedDispatches.length})</h4>
+                        <div style="max-height: 200px; overflow-y: auto; margin-bottom: 24px;">
+                            <table class="history-table" style="font-size: 13px;">
+                                <thead>
+                                    <tr>
+                                        <th>Assessor</th>
+                                        <th>Telefone</th>
+                                        <th>Erro</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${failedDispatches.map(d => `
+                                        <tr>
+                                            <td>${d.assessor_name || d.assessor_id}</td>
+                                            <td>${d.assessor_phone || '-'}</td>
+                                            <td style="color: #dc2626;">${d.error_message || 'Erro desconhecido'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                
+                if (successDispatches.length > 0) {
+                    html += `
+                        <h4 style="margin-bottom: 12px; color: #16a34a;">Enviadas com Sucesso (${successDispatches.length})</h4>
+                        <div style="max-height: 200px; overflow-y: auto;">
+                            <table class="history-table" style="font-size: 13px;">
+                                <thead>
+                                    <tr>
+                                        <th>Assessor</th>
+                                        <th>Telefone</th>
+                                        <th>Enviado em</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${successDispatches.map(d => `
+                                        <tr>
+                                            <td>${d.assessor_name || d.assessor_id}</td>
+                                            <td>${d.assessor_phone || '-'}</td>
+                                            <td>${d.sent_at ? new Date(d.sent_at).toLocaleString('pt-BR') : '-'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                
+                if (campaign.dispatches.length === 0) {
+                    html += '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">Nenhum disparo registrado para esta campanha.</p>';
+                }
+                
+                document.getElementById('summaryModalTitle').textContent = campaign.name;
+                document.getElementById('summaryModalBody').innerHTML = html;
+                
+            } catch (error) {
+                console.error('Erro ao carregar resumo:', error);
+                document.getElementById('summaryModalBody').innerHTML = '<div style="text-align: center; padding: 40px; color: #dc2626;">Erro ao carregar dados da campanha.</div>';
+            }
+        }
+
+        function closeSummaryModal() {
+            document.getElementById('campaignSummaryModal').style.display = 'none';
+        }
+
+        async function resumeCampaign(id) {
+            try {
+                const response = await fetch(`${API_BASE}/${id}`, { credentials: 'include' });
+                if (!response.ok) throw new Error('Erro ao carregar campanha');
+                
+                const campaign = await response.json();
+                
+                campaignId = campaign.id;
+                
+                if (campaign.has_data && Object.keys(campaign.column_mapping).length > 0) {
+                    uploadedColumns = campaign.file_columns || [];
+                    renderMappingGrid(uploadedColumns, campaign.column_mapping);
+                    
+                    customFields = [];
+                    const cfContainer = document.getElementById('customFieldsContainer');
+                    cfContainer.innerHTML = '';
+                    if (campaign.custom_fields_mapping) {
+                        Object.entries(campaign.custom_fields_mapping).forEach(([col, varName]) => {
+                            customFields.push({ column: col, variable: varName });
+                            const index = customFields.length - 1;
+                            const row = document.createElement('div');
+                            row.className = 'custom-field-row';
+                            row.id = `customField_${index}`;
+                            row.innerHTML = `
+                                <select class="form-input" onchange="updateCustomField(${index}, 'column', this.value)">
+                                    <option value="">-- Coluna --</option>
+                                    ${uploadedColumns.map(c => `<option value="${c}" ${c === col ? 'selected' : ''}>${c}</option>`).join('')}
+                                </select>
+                                <span>como</span>
+                                <input type="text" class="form-input" placeholder="nome_variavel" value="${varName}" onchange="updateCustomField(${index}, 'variable', this.value)">
+                                <button class="btn btn-danger" onclick="removeCustomField(${index})" style="padding: 8px;">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            `;
+                            cfContainer.appendChild(row);
+                        });
+                    }
+                    updateCustomVariablesDisplay();
+                    
+                    document.getElementById('step1').classList.remove('active');
+                    document.getElementById('step3').classList.add('active');
+                    document.querySelectorAll('.wizard-step').forEach(el => {
+                        const stepNum = parseInt(el.dataset.step);
+                        el.classList.remove('active', 'completed');
+                        if (stepNum === 3) el.classList.add('active');
+                        else if (stepNum < 3) el.classList.add('completed');
+                    });
+                    currentStep = 3;
+                    
+                    if (campaign.custom_template_content) {
+                        document.getElementById('templatePreview').value = campaign.custom_template_content;
+                        customTemplateContent = campaign.custom_template_content;
+                    } else if (campaign.template_id) {
+                        document.getElementById('templateSelect').value = campaign.template_id;
+                        loadTemplatePreview();
+                    } else {
+                        loadTemplatePreview();
+                    }
+                } else if (campaign.has_data) {
+                    uploadedColumns = campaign.file_columns || [];
+                    renderMappingGrid(uploadedColumns, {});
+                    
+                    document.getElementById('step1').classList.remove('active');
+                    document.getElementById('step2').classList.add('active');
+                    document.querySelectorAll('.wizard-step').forEach(el => {
+                        const stepNum = parseInt(el.dataset.step);
+                        el.classList.remove('active', 'completed');
+                        if (stepNum === 2) el.classList.add('active');
+                        else if (stepNum < 2) el.classList.add('completed');
+                    });
+                    currentStep = 2;
+                } else {
+                    document.getElementById('step1').classList.add('active');
+                    currentStep = 1;
+                }
+                
+            } catch (error) {
+                console.error('Erro ao retomar campanha:', error);
+                alert('Erro ao retomar campanha. Tente novamente.');
+            }
+        }
+        
+        function renderMappingGrid(columns, savedMapping) {
+            const fields = [
+                { key: 'nome_assessor', label: 'Nome do Assessor', required: true },
+                { key: 'telefone_assessor', label: 'Telefone do Assessor', required: true },
+                { key: 'nome_cliente', label: 'Nome do Cliente', required: true },
+                { key: 'ativo_saida', label: 'Ativo de Saida', required: true },
+                { key: 'valor_saida', label: 'Valor de Saida', required: true },
+                { key: 'ativo_compra', label: 'Ativo de Compra', required: true },
+                { key: 'valor_compra', label: 'Valor de Compra', required: true }
+            ];
+
+            const grid = document.getElementById('mappingGrid');
+            grid.innerHTML = fields.map(field => `
+                <div class="mapping-item">
+                    <label>
+                        ${field.label}
+                        ${field.required ? '<span class="required">*</span>' : ''}
+                    </label>
+                    <select class="form-input" id="map_${field.key}">
+                        <option value="">-- Selecione --</option>
+                        ${columns.map(col => `
+                            <option value="${col}" ${savedMapping[field.key] === col ? 'selected' : ''}>
+                                ${col}
+                            </option>
+                        `).join('')}
+                    </select>
+                </div>
+            `).join('');
+        }
+
+        async function deleteCampaign(id) {
+            if (!confirm('Tem certeza que deseja excluir esta campanha? Esta acao nao pode ser desfeita.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/${id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao excluir campanha');
+                }
+                
+                loadHistory();
+                
+            } catch (error) {
+                console.error('Erro ao excluir campanha:', error);
+                alert(error.message);
             }
         }
 

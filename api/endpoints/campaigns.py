@@ -662,6 +662,10 @@ async def get_campaign(
         custom_fields_mapping = {}
         processed_data = []
     
+    file_columns = []
+    if processed_data and len(processed_data) > 0:
+        file_columns = list(processed_data[0].keys())
+    
     return {
         "id": campaign.id,
         "name": campaign.name,
@@ -672,6 +676,7 @@ async def get_campaign(
         "original_filename": campaign.original_filename,
         "column_mapping": column_mapping,
         "custom_fields_mapping": custom_fields_mapping,
+        "file_columns": file_columns,
         "total_assessors": campaign.total_assessors,
         "total_recommendations": campaign.total_recommendations,
         "messages_sent": campaign.messages_sent,
