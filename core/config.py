@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     
     # Configuração do WAHA (WhatsApp HTTP API)
     WAHA_API_URL: str = os.getenv("WAHA_API_URL", "http://localhost:3000")
+    WAHA_API_KEY: str = os.getenv("WAHA_API_KEY", "")
     WAHA_SESSION: str = os.getenv("WAHA_SESSION", "default")
     
     # Configuração do banco de dados (usa PostgreSQL do Replit ou SQLite local)

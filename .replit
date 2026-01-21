@@ -37,3 +37,8 @@ externalPort = 80
 [deployment]
 deploymentTarget = "autoscale"
 run = ["python", "main.py"]
+
+[userenv]
+
+[userenv.shared]
+WAHA_API_URL = "https://waha-production-3000.up.railway.app"
