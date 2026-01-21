@@ -295,3 +295,85 @@ class CampaignDispatch(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
     
     campaign = relationship("Campaign", back_populates="dispatches")
+
+
+class DocumentType(str, enum.Enum):
+    """Tipos de documento na base de conhecimento."""
+    PDF = "pdf"
+    DOCX = "docx"
+    TXT = "txt"
+    IMAGE = "image"
+    OTHER = "other"
+
+
+class KnowledgeDocument(Base):
+    """
+    Documentos da base de conhecimento.
+    Armazena PDFs, DOCs e outros arquivos para busca semântica.
+    """
+    __tablename__ = "knowledge_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_type = Column(String(50), default=DocumentType.PDF.value)
+    file_size = Column(Integer, default=0)
+    category = Column(String(100), nullable=True, index=True)
+    chunks_count = Column(Integer, default=0)
+    is_indexed = Column(Boolean, default=False)
+    index_error = Column(Text, nullable=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+
+
+class MessageDirection(str, enum.Enum):
+    """Direção da mensagem."""
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
+
+class MessageType(str, enum.Enum):
+    """Tipos de mensagem."""
+    TEXT = "text"
+    AUDIO = "audio"
+    IMAGE = "image"
+    VIDEO = "video"
+    DOCUMENT = "document"
+    STICKER = "sticker"
+    LOCATION = "location"
+    CONTACT = "contact"
+    UNKNOWN = "unknown"
+
+
+class WhatsAppMessage(Base):
+    """
+    Registro de mensagens do WhatsApp.
+    Armazena todas as mensagens recebidas e enviadas.
+    """
+    __tablename__ = "whatsapp_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    waha_message_id = Column(String(255), unique=True, index=True, nullable=True)
+    chat_id = Column(String(100), nullable=False, index=True)
+    phone = Column(String(20), nullable=True, index=True)
+    direction = Column(String(20), default=MessageDirection.INBOUND.value)
+    message_type = Column(String(20), default=MessageType.TEXT.value)
+    body = Column(Text, nullable=True)
+    media_url = Column(String(500), nullable=True)
+    media_mimetype = Column(String(100), nullable=True)
+    media_filename = Column(String(255), nullable=True)
+    transcription = Column(Text, nullable=True)
+    ai_response = Column(Text, nullable=True)
+    ai_intent = Column(String(100), nullable=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
+    is_from_campaign = Column(Boolean, default=False)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    ticket = relationship("Ticket", foreign_keys=[ticket_id])
+    campaign = relationship("Campaign", foreign_keys=[campaign_id])

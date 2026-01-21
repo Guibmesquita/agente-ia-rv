@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from database.database import engine, Base, SessionLocal
 from database import crud
-from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, analytics, agent_config, assessores, campaigns
+from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, analytics, agent_config, assessores, campaigns, knowledge
 from core.security import decode_token
 
 
@@ -80,6 +80,7 @@ app.include_router(assessores.router)
 app.include_router(assessores.custom_fields_router)
 app.include_router(assessores.upload_router)
 app.include_router(campaigns.router)
+app.include_router(knowledge.router)
 
 
 # ========== Rotas de Páginas HTML ==========
@@ -247,6 +248,29 @@ async def campanhas_page(request: Request):
         return RedirectResponse(url="/login?error=permission")
     
     return templates.TemplateResponse("campanhas.html", {"request": request, "user_role": user_role})
+
+
+@app.get("/base-conhecimento", response_class=HTMLResponse)
+async def base_conhecimento_page(request: Request):
+    """
+    Página de gerenciamento da Base de Conhecimento.
+    Permite upload e indexação de documentos para a IA.
+    Requer autenticação como admin ou gestao_rv.
+    """
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        return RedirectResponse(url="/login")
+    
+    payload = decode_token(token)
+    if not payload:
+        return RedirectResponse(url="/login")
+    
+    user_role = payload.get("role")
+    if user_role not in ["admin", "gestao_rv"]:
+        return RedirectResponse(url="/login?error=permission")
+    
+    return templates.TemplateResponse("base_conhecimento.html", {"request": request, "user_role": user_role})
 
 
 # ========== Health Check ==========

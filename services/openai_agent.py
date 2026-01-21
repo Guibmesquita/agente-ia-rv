@@ -77,8 +77,9 @@ Para abrir um chamado, o usuário deve responder "SIM" ou "sim" quando perguntad
     async def generate_response(
         self,
         user_message: str,
-        conversation_history: Optional[List[dict]] = None
-    ) -> Tuple[str, bool, List[dict]]:
+        conversation_history: Optional[List[dict]] = None,
+        extra_context: Optional[str] = None
+    ) -> Tuple[str, bool, dict]:
         """
         Gera uma resposta para a mensagem do usuário.
         
@@ -97,7 +98,7 @@ Para abrir um chamado, o usuário deve responder "SIM" ou "sim" quando perguntad
                 "Desculpe, o serviço de IA não está configurado no momento. "
                 "Deseja abrir um chamado para falar com um assessor?",
                 False,
-                []
+                {"intent": "error"}
             )
         
         if user_message.lower().strip() in ['sim', 'yes', 's', 'quero', 'pode ser']:
@@ -106,7 +107,7 @@ Para abrir um chamado, o usuário deve responder "SIM" ou "sim" quando perguntad
                 "Um de nossos assessores entrará em contato em breve. "
                 "Obrigado pela paciência!",
                 True,
-                []
+                {"intent": "create_ticket"}
             )
         
         config = self._get_config_from_db()
@@ -118,6 +119,9 @@ Para abrir um chamado, o usuário deve responder "SIM" ou "sim" quando perguntad
         vs = get_vector_store()
         context_documents = vs.search(user_message, n_results=3) if vs else []
         context = self._build_context(context_documents)
+        
+        if extra_context:
+            context += f"\n\n{extra_context}"
         
         messages = [{"role": "system", "content": system_prompt}]
         
@@ -155,14 +159,15 @@ pergunte se o cliente deseja abrir um chamado."""
                 "quer abrir"
             ])
             
-            return ai_response, False, context_documents
+            return ai_response, False, {"intent": "question", "documents": context_documents}
             
         except Exception as e:
+            print(f"[OpenAI] Erro ao gerar resposta: {e}")
             return (
-                f"Desculpe, ocorreu um erro ao processar sua mensagem. "
+                "Desculpe, ocorreu um erro ao processar sua mensagem. "
                 "Deseja abrir um chamado para falar com um assessor?",
                 False,
-                []
+                {"intent": "error", "error": str(e)}
             )
     
     def is_available(self) -> bool:

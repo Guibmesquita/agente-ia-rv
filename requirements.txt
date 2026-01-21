@@ -32,3 +32,6 @@ numpy<2.0
 bcrypt==4.0.1
 openpyxl
 pandas
+aiofiles
+PyPDF2
+python-docx
