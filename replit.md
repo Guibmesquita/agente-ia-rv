@@ -267,7 +267,9 @@ A página `/campanhas` (admin e gestao_rv) permite criar e gerenciar campanhas d
 
 ### Disparo com Progresso em Tempo Real
 O endpoint `/api/campaigns/{id}/dispatch-stream` usa Server-Sent Events (SSE) para:
-- Enviar mensagens uma a uma com delay de 2.5 segundos entre cada envio
-- Transmitir progresso em tempo real para o frontend
+- Enviar mensagens uma a uma com delay de 5 segundos entre cada envio
+- Retry automático com até 3 tentativas para erros HTTP 5xx, TIMEOUT e CONNECTION_ERROR
+- Delay de 3 segundos entre retries
+- Transmitir progresso em tempo real para o frontend (incluindo status de retry)
 - Evitar sobrecarga do servidor WAHA
-- Exibir barra de progresso, contadores e log de envio
+- Exibir barra de progresso, contadores e log de envio com indicação de tentativas
