@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campanhas Ativas - Agente IA - RV</title>
+    <link rel="stylesheet" href="/static/global.css">
+    <style>
+        .wizard-container {
+            background: var(--card-bg);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            padding: 32px;
+            margin-bottom: 32px;
+        }
+
+        .wizard-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            position: relative;
+        }
+
+        .wizard-steps::before {
+            content: '';
+            position: absolute;
+            top: 20px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--border-color);
+            z-index: 0;
+        }
+
+        .wizard-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--bg-color);
+            border: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            transition: all 0.3s;
+        }
+
+        .wizard-step.active .step-number {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: #fff;
+        }
+
+        .wizard-step.completed .step-number {
+            background: #10b981;
+            border-color: #10b981;
+            color: #fff;
+        }
+
+        .step-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .wizard-step.active .step-label {
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .step-content {
+            display: none;
+        }
+
+        .step-content.active {
+            display: block;
+        }
+
+        .upload-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 48px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: var(--primary-color);
+            background: rgba(79, 70, 229, 0.05);
+        }
+
+        .upload-zone svg {
+            width: 48px;
+            height: 48px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .upload-zone h3 {
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .upload-zone p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .mapping-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .mapping-item {
+            background: var(--bg-color);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .mapping-item label {
+            display: block;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .mapping-item .required {
+            color: #ef4444;
+            margin-left: 2px;
+        }
+
+        .custom-fields-section {
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .custom-field-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .custom-field-row select, .custom-field-row input {
+            flex: 1;
+        }
+
+        .template-selector {
+            margin-bottom: 24px;
+        }
+
+        .template-preview {
+            background: var(--bg-color);
+            border-radius: 8px;
+            padding: 24px;
+            margin-top: 16px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .preview-card {
+            background: var(--bg-color);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .preview-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .preview-card-header h4 {
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .preview-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            background: #dbeafe;
+            color: #1e40af;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .preview-message {
+            background: #fff;
+            border-radius: 8px;
+            padding: 16px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            border: 1px solid var(--border-color);
+        }
+
+        .dispatch-btn {
+            padding: 16px 32px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .history-section {
+            margin-top: 48px;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .history-table th, .history-table td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .history-table th {
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+
+        .history-table tr:hover {
+            background: var(--bg-color);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-rascunho { background: #fef3c7; color: #92400e; }
+        .status-processando { background: #dbeafe; color: #1e40af; }
+        .status-enviada { background: #d1fae5; color: #065f46; }
+        .status-falha { background: #fee2e2; color: #991b1b; }
+
+        .wizard-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #d1fae5;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .file-info svg {
+            color: #065f46;
+        }
+
+        .file-info-text {
+            flex: 1;
+        }
+
+        .file-info-text strong {
+            color: #065f46;
+            display: block;
+        }
+
+        .file-info-text span {
+            color: #047857;
+            font-size: 0.85rem;
+        }
+
+        .variables-help {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+
+        .variables-help h4 {
+            color: #1e40af;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .variables-help code {
+            background: #dbeafe;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-right: 8px;
+        }
+
+        .template-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .wizard-steps {
+                flex-wrap: wrap;
+                gap: 16px;
+            }
+            .step-label {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
+                <span class="sidebar-title">Agente IA - RV</span>
+            </div>
+            <button class="sidebar-toggle" onclick="toggleSidebar()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <nav class="sidebar-nav">
+                <a href="/analytics" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/kanban" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span>Chamados</span>
+                </a>
+                <a href="/assessores" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Assessores</span>
+                </a>
+                <a href="/campanhas" class="nav-item active">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
+                    <span>Campanhas</span>
+                </a>
+                {% if user_role == 'admin' %}
+                <a href="/admin" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Usuarios</span>
+                </a>
+                <a href="/integrations" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Integracoes</span>
+                </a>
+                {% endif %}
+                {% if user_role in ['admin', 'gestao_rv'] %}
+                <a href="/agent-brain" class="nav-item">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    <span>Cerebro IA</span>
+                </a>
+                {% endif %}
+            </nav>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span>Sair</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content" id="mainContent">
+            <div class="page-container">
+                <div class="page-header">
+                    <h1 class="page-title">Campanhas Ativas</h1>
+                    <p class="page-subtitle">Dispare mensagens em massa para assessores com recomendacoes de investimento</p>
+                </div>
+
+                <div class="wizard-container">
+                    <div class="wizard-steps">
+                        <div class="wizard-step active" data-step="1">
+                            <div class="step-number">1</div>
+                            <span class="step-label">Upload do Arquivo</span>
+                        </div>
+                        <div class="wizard-step" data-step="2">
+                            <div class="step-number">2</div>
+                            <span class="step-label">Mapear Colunas</span>
+                        </div>
+                        <div class="wizard-step" data-step="3">
+                            <div class="step-number">3</div>
+                            <span class="step-label">Escolher Template</span>
+                        </div>
+                        <div class="wizard-step" data-step="4">
+                            <div class="step-number">4</div>
+                            <span class="step-label">Revisar e Disparar</span>
+                        </div>
+                    </div>
+
+                    <div class="step-content active" id="step1">
+                        <h3>Fazer Upload da Base de Dados</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                            Envie um arquivo CSV ou Excel contendo as recomendacoes de investimento para os clientes.
+                        </p>
+
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label class="form-label">Nome da Campanha</label>
+                            <input type="text" id="campaignName" class="form-input" placeholder="Ex: Recomendacoes Janeiro 2026">
+                        </div>
+
+                        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            <h3>Arraste seu arquivo aqui</h3>
+                            <p>ou clique para selecionar (CSV, XLSX, XLS)</p>
+                        </div>
+                        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display: none;" onchange="handleFileSelect(event)">
+
+                        <div id="fileInfo" style="display: none;"></div>
+
+                        <div class="wizard-actions">
+                            <div></div>
+                            <button class="btn btn-primary" id="btnStep1Next" disabled onclick="goToStep(2)">
+                                Proximo Passo
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="step-content" id="step2">
+                        <h3>Mapear Colunas do Arquivo</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                            Indique qual coluna do seu arquivo corresponde a cada campo obrigatorio.
+                        </p>
+
+                        <h4 style="margin-bottom: 16px;">Campos Obrigatorios</h4>
+                        <div class="mapping-grid" id="mappingGrid"></div>
+
+                        <div class="custom-fields-section">
+                            <h4 style="margin-bottom: 16px;">Campos Customizados (Opcional)</h4>
+                            <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9rem;">
+                                Adicione colunas extras para usar como variaveis no seu template de mensagem.
+                            </p>
+                            <div id="customFieldsContainer"></div>
+                            <button class="btn btn-secondary" onclick="addCustomField()">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                Adicionar Campo
+                            </button>
+                        </div>
+
+                        <div class="wizard-actions">
+                            <button class="btn btn-secondary" onclick="goToStep(1)">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                                Voltar
+                            </button>
+                            <button class="btn btn-primary" onclick="saveMapping()">
+                                Proximo Passo
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="step-content" id="step3">
+                        <h3>Escolher Template de Mensagem</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                            Selecione um template existente ou crie um novo para personalizar a mensagem.
+                        </p>
+
+                        <div class="template-selector">
+                            <label class="form-label">Selecione um Template</label>
+                            <div style="display: flex; gap: 12px;">
+                                <select id="templateSelect" class="form-input" style="flex: 1;" onchange="loadTemplatePreview()">
+                                    <option value="">-- Selecione um template --</option>
+                                </select>
+                                <button class="btn btn-secondary" onclick="openTemplateModal()">Gerenciar Templates</button>
+                            </div>
+                        </div>
+
+                        <div id="templatePreviewContainer" style="display: none;">
+                            <label class="form-label">Preview do Template</label>
+                            <div class="template-preview" id="templatePreview"></div>
+                        </div>
+
+                        <div class="variables-help">
+                            <h4>Variaveis Disponiveis</h4>
+                            <p style="font-size: 0.85rem; color: #1e40af; margin-top: 8px;">
+                                <code>{{nome_assessor}}</code>
+                                <code>{{assessor_id}}</code>
+                                <code>{{lista_clientes}}</code>
+                                <span id="customVariables"></span>
+                            </p>
+                        </div>
+
+                        <div class="wizard-actions">
+                            <button class="btn btn-secondary" onclick="goToStep(2)">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                                Voltar
+                            </button>
+                            <button class="btn btn-primary" id="btnStep3Next" disabled onclick="goToStep(4)">
+                                Proximo Passo
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="step-content" id="step4">
+                        <h3>Revisar e Disparar Campanha</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                            Revise as mensagens antes de enviar. Veja como ficara a mensagem para cada assessor.
+                        </p>
+
+                        <div id="campaignSummary" style="margin-bottom: 24px;"></div>
+
+                        <div id="previewMessages">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+
+                        <div class="wizard-actions">
+                            <button class="btn btn-secondary" onclick="goToStep(3)">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                                Voltar
+                            </button>
+                            <button class="btn btn-primary dispatch-btn" id="dispatchBtn" onclick="dispatchCampaign()">
+                                <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                                Disparar Campanha para <span id="assessorCount">0</span> Assessores
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="history-section">
+                    <h2 style="margin-bottom: 24px;">Historico de Campanhas</h2>
+                    <div class="card">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Data</th>
+                                    <th>Assessores</th>
+                                    <th>Enviadas</th>
+                                    <th>Falhas</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr><td colspan="6" style="text-align: center; padding: 40px;">Carregando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="templateModal" style="display: none;">
+        <div class="modal" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3 id="modalTitle">Gerenciar Templates</h3>
+                <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="templateList"></div>
+                <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
+                <h4 style="margin-bottom: 16px;" id="templateFormTitle">Criar Novo Template</h4>
+                <div class="form-group">
+                    <label class="form-label">Nome do Template</label>
+                    <input type="text" id="templateName" class="form-input" placeholder="Ex: Recomendacao Padrao">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Descricao (opcional)</label>
+                    <input type="text" id="templateDescription" class="form-input" placeholder="Breve descricao do template">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Conteudo da Mensagem</label>
+                    <textarea id="templateContent" class="form-input" rows="10" placeholder="Ola, {{nome_assessor}}!
+
+Aqui estao as recomendacoes de hoje:
+
+{{lista_clientes}}
+
+Se precisar do racional de investimento ou de materiais de apoio para qualquer uma dessas operacoes, e so me pedir!"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeTemplateModal()">Cancelar</button>
+                <button class="btn btn-primary" id="saveTemplateBtn" onclick="saveTemplate()">Salvar Template</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/campaigns';
+        let currentStep = 1;
+        let campaignId = null;
+        let uploadedColumns = [];
+        let customFields = [];
+        let editingTemplateId = null;
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                mainContent.style.marginLeft = 'var(--sidebar-collapsed)';
+            } else {
+                mainContent.style.marginLeft = 'var(--sidebar-width)';
+            }
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
+            }
+            loadHistory();
+            loadTemplates();
+            setupDragDrop();
+        });
+
+        function setupDragDrop() {
+            const zone = document.getElementById('uploadZone');
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('drag-over');
+            });
+            zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                if (e.dataTransfer.files.length) {
+                    document.getElementById('fileInput').files = e.dataTransfer.files;
+                    handleFileSelect({ target: { files: e.dataTransfer.files } });
+                }
+            });
+        }
+
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const campaignName = document.getElementById('campaignName').value.trim();
+            if (!campaignName) {
+                alert('Por favor, informe o nome da campanha antes de fazer upload.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('campaign_name', campaignName);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao fazer upload');
+                }
+
+                const data = await response.json();
+                campaignId = data.campaign_id;
+                uploadedColumns = data.columns;
+
+                document.getElementById('fileInfo').innerHTML = `
+                    <div class="file-info">
+                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <div class="file-info-text">
+                            <strong>${data.filename}</strong>
+                            <span>${data.row_count} registros encontrados</span>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('fileInfo').style.display = 'block';
+                document.getElementById('btnStep1Next').disabled = false;
+
+                renderMappingGrid(data.columns, data.suggested_mapping);
+
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function renderMappingGrid(columns, suggested) {
+            const fields = [
+                { key: 'assessor_id', label: 'ID do Assessor', required: true },
+                { key: 'client_id', label: 'ID do Cliente', required: true },
+                { key: 'ativo_saida', label: 'Ativo de Saida', required: true },
+                { key: 'valor_saida', label: 'Valor de Saida', required: true },
+                { key: 'ativo_compra', label: 'Ativo de Compra', required: true },
+                { key: 'valor_compra', label: 'Valor de Compra', required: true }
+            ];
+
+            const grid = document.getElementById('mappingGrid');
+            grid.innerHTML = fields.map(field => `
+                <div class="mapping-item">
+                    <label>
+                        ${field.label}
+                        ${field.required ? '<span class="required">*</span>' : ''}
+                    </label>
+                    <select class="form-input" id="map_${field.key}">
+                        <option value="">-- Selecione --</option>
+                        ${columns.map(col => `
+                            <option value="${col}" ${suggested[field.key] === col ? 'selected' : ''}>
+                                ${col}
+                            </option>
+                        `).join('')}
+                    </select>
+                </div>
+            `).join('');
+        }
+
+        function addCustomField() {
+            const container = document.getElementById('customFieldsContainer');
+            const index = customFields.length;
+            customFields.push({ column: '', variable: '' });
+
+            const row = document.createElement('div');
+            row.className = 'custom-field-row';
+            row.id = `customField_${index}`;
+            row.innerHTML = `
+                <select class="form-input" onchange="updateCustomField(${index}, 'column', this.value)">
+                    <option value="">-- Coluna --</option>
+                    ${uploadedColumns.map(col => `<option value="${col}">${col}</option>`).join('')}
+                </select>
+                <span>como</span>
+                <input type="text" class="form-input" placeholder="nome_variavel" onchange="updateCustomField(${index}, 'variable', this.value)">
+                <button class="btn btn-danger" onclick="removeCustomField(${index})" style="padding: 8px;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            `;
+            container.appendChild(row);
+        }
+
+        function updateCustomField(index, field, value) {
+            customFields[index][field] = value;
+            updateCustomVariablesDisplay();
+        }
+
+        function removeCustomField(index) {
+            document.getElementById(`customField_${index}`).remove();
+            customFields[index] = null;
+            updateCustomVariablesDisplay();
+        }
+
+        function updateCustomVariablesDisplay() {
+            const vars = customFields.filter(f => f && f.variable).map(f => `<code>{{${f.variable}}}</code>`).join('');
+            document.getElementById('customVariables').innerHTML = vars;
+        }
+
+        async function saveMapping() {
+            const mapping = {
+                assessor_id: document.getElementById('map_assessor_id').value,
+                client_id: document.getElementById('map_client_id').value,
+                ativo_saida: document.getElementById('map_ativo_saida').value,
+                valor_saida: document.getElementById('map_valor_saida').value,
+                ativo_compra: document.getElementById('map_ativo_compra').value,
+                valor_compra: document.getElementById('map_valor_compra').value
+            };
+
+            const missing = Object.entries(mapping).filter(([k, v]) => !v).map(([k]) => k);
+            if (missing.length > 0) {
+                alert('Preencha todos os campos obrigatorios: ' + missing.join(', '));
+                return;
+            }
+
+            const customFieldsData = customFields.filter(f => f && f.column && f.variable).map(f => ({
+                column_name: f.column,
+                variable_name: f.variable
+            }));
+
+            try {
+                const response = await fetch(`${API_BASE}/${campaignId}/mapping`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ column_mapping: mapping, custom_fields: customFieldsData }),
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar mapeamento');
+                }
+
+                goToStep(3);
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(`step${step}`).classList.add('active');
+
+            document.querySelectorAll('.wizard-step').forEach(el => {
+                const stepNum = parseInt(el.dataset.step);
+                el.classList.remove('active', 'completed');
+                if (stepNum === step) el.classList.add('active');
+                else if (stepNum < step) el.classList.add('completed');
+            });
+
+            currentStep = step;
+
+            if (step === 4) {
+                loadPreview();
+            }
+        }
+
+        async function loadTemplates() {
+            try {
+                const response = await fetch(`${API_BASE}/templates`, { credentials: 'include' });
+                const templates = await response.json();
+
+                const select = document.getElementById('templateSelect');
+                select.innerHTML = '<option value="">-- Selecione um template --</option>';
+                templates.forEach(t => {
+                    select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+                });
+
+                renderTemplateList(templates);
+            } catch (error) {
+                console.error('Erro ao carregar templates:', error);
+            }
+        }
+
+        function renderTemplateList(templates) {
+            const list = document.getElementById('templateList');
+            if (templates.length === 0) {
+                list.innerHTML = '<p style="color: var(--text-secondary);">Nenhum template cadastrado.</p>';
+                return;
+            }
+
+            list.innerHTML = templates.map(t => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-color); border-radius: 8px; margin-bottom: 8px;">
+                    <div>
+                        <strong>${t.name}</strong>
+                        ${t.description ? `<br><small style="color: var(--text-secondary);">${t.description}</small>` : ''}
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary" style="padding: 6px 12px;" onclick="editTemplate(${t.id})">Editar</button>
+                        <button class="btn btn-danger" style="padding: 6px 12px;" onclick="deleteTemplate(${t.id})">Excluir</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadTemplatePreview() {
+            const templateId = document.getElementById('templateSelect').value;
+            if (!templateId) {
+                document.getElementById('templatePreviewContainer').style.display = 'none';
+                document.getElementById('btnStep3Next').disabled = true;
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/templates/${templateId}`, { credentials: 'include' });
+                const template = await response.json();
+
+                document.getElementById('templatePreview').textContent = template.content;
+                document.getElementById('templatePreviewContainer').style.display = 'block';
+                document.getElementById('btnStep3Next').disabled = false;
+
+                await fetch(`${API_BASE}/${campaignId}/template?template_id=${templateId}`, {
+                    method: 'PUT',
+                    credentials: 'include'
+                });
+            } catch (error) {
+                console.error('Erro ao carregar template:', error);
+            }
+        }
+
+        function openTemplateModal() {
+            editingTemplateId = null;
+            document.getElementById('templateFormTitle').textContent = 'Criar Novo Template';
+            document.getElementById('templateName').value = '';
+            document.getElementById('templateDescription').value = '';
+            document.getElementById('templateContent').value = '';
+            document.getElementById('saveTemplateBtn').textContent = 'Salvar Template';
+            document.getElementById('templateModal').style.display = 'flex';
+        }
+
+        function closeTemplateModal() {
+            document.getElementById('templateModal').style.display = 'none';
+        }
+
+        async function editTemplate(id) {
+            try {
+                const response = await fetch(`${API_BASE}/templates/${id}`, { credentials: 'include' });
+                const template = await response.json();
+
+                editingTemplateId = id;
+                document.getElementById('templateFormTitle').textContent = 'Editar Template';
+                document.getElementById('templateName').value = template.name;
+                document.getElementById('templateDescription').value = template.description || '';
+                document.getElementById('templateContent').value = template.content;
+                document.getElementById('saveTemplateBtn').textContent = 'Atualizar Template';
+                document.getElementById('templateModal').style.display = 'flex';
+            } catch (error) {
+                alert('Erro ao carregar template');
+            }
+        }
+
+        async function saveTemplate() {
+            const name = document.getElementById('templateName').value.trim();
+            const description = document.getElementById('templateDescription').value.trim();
+            const content = document.getElementById('templateContent').value.trim();
+
+            if (!name || !content) {
+                alert('Nome e conteudo sao obrigatorios');
+                return;
+            }
+
+            try {
+                const method = editingTemplateId ? 'PUT' : 'POST';
+                const url = editingTemplateId ? `${API_BASE}/templates/${editingTemplateId}` : `${API_BASE}/templates`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, content }),
+                    credentials: 'include'
+                });
+
+                if (!response.ok) throw new Error('Erro ao salvar template');
+
+                closeTemplateModal();
+                loadTemplates();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function deleteTemplate(id) {
+            if (!confirm('Tem certeza que deseja excluir este template?')) return;
+
+            try {
+                await fetch(`${API_BASE}/templates/${id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                loadTemplates();
+            } catch (error) {
+                alert('Erro ao excluir template');
+            }
+        }
+
+        async function loadPreview() {
+            try {
+                const response = await fetch(`${API_BASE}/${campaignId}/preview`, { credentials: 'include' });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao gerar preview');
+                }
+
+                const data = await response.json();
+
+                document.getElementById('assessorCount').textContent = data.total_assessors;
+
+                document.getElementById('campaignSummary').innerHTML = `
+                    <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                        <div class="preview-badge" style="background: #dbeafe; color: #1e40af;">
+                            <strong>${data.total_assessors}</strong> Assessores
+                        </div>
+                        <div class="preview-badge" style="background: #d1fae5; color: #065f46;">
+                            <strong>${data.total_recommendations}</strong> Recomendacoes
+                        </div>
+                        <div class="preview-badge" style="background: #fef3c7; color: #92400e;">
+                            Template: <strong>${data.template_name}</strong>
+                        </div>
+                    </div>
+                `;
+
+                const container = document.getElementById('previewMessages');
+                if (data.messages.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-secondary);">Nenhuma mensagem para exibir.</p>';
+                    return;
+                }
+
+                container.innerHTML = data.messages.map(msg => `
+                    <div class="preview-card">
+                        <div class="preview-card-header">
+                            <h4>${msg.assessor_name || msg.assessor_id}</h4>
+                            <div>
+                                <span class="preview-badge">${msg.client_count} clientes</span>
+                                <span class="preview-badge">${msg.recommendation_count} recomendacoes</span>
+                            </div>
+                        </div>
+                        <div class="preview-message">${msg.message_preview}</div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                document.getElementById('previewMessages').innerHTML = `
+                    <div class="alert alert-danger">${error.message}</div>
+                `;
+            }
+        }
+
+        async function dispatchCampaign() {
+            if (!confirm('Tem certeza que deseja disparar esta campanha? As mensagens serao enviadas para todos os assessores.')) {
+                return;
+            }
+
+            const btn = document.getElementById('dispatchBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner" style="width: 20px; height: 20px;"></div> Enviando...';
+
+            try {
+                const response = await fetch(`${API_BASE}/${campaignId}/dispatch`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao disparar campanha');
+                }
+
+                const data = await response.json();
+
+                alert(`Campanha disparada com sucesso!\n\nMensagens enviadas: ${data.messages_sent}\nFalhas: ${data.messages_failed}`);
+
+                location.reload();
+
+            } catch (error) {
+                alert(error.message);
+                btn.disabled = false;
+                btn.innerHTML = `
+                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                    Disparar Campanha
+                `;
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/`, { credentials: 'include' });
+                const campaigns = await response.json();
+
+                const tbody = document.getElementById('historyTableBody');
+
+                if (campaigns.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-secondary);">Nenhuma campanha encontrada</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = campaigns.map(c => `
+                    <tr>
+                        <td><strong>${c.name}</strong><br><small style="color: var(--text-secondary);">${c.original_filename || ''}</small></td>
+                        <td>${c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '-'}</td>
+                        <td>${c.total_assessors}</td>
+                        <td>${c.messages_sent}</td>
+                        <td>${c.messages_failed}</td>
+                        <td><span class="status-badge status-${c.status}">${c.status}</span></td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                console.error('Erro ao carregar historico:', error);
+            }
+        }
+
+        function logout() {
+            document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+</html>

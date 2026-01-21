@@ -216,3 +216,79 @@ class CustomFieldDefinition(Base):
     is_active = Column(Integer, default=1)
     options = Column(Text, default="[]")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CampaignStatus(str, enum.Enum):
+    """Status possíveis para campanhas."""
+    DRAFT = "rascunho"
+    PROCESSING = "processando"
+    SENT = "enviada"
+    FAILED = "falha"
+
+
+class MessageTemplate(Base):
+    """
+    Templates de mensagem reutilizáveis para campanhas.
+    Suporta variáveis como {{nome_assessor}}, {{lista_clientes}}, etc.
+    """
+    __tablename__ = "message_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    description = Column(String(500), nullable=True)
+    is_active = Column(Integer, default=1)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    creator = relationship("User", foreign_keys=[created_by])
+    campaigns = relationship("Campaign", back_populates="template")
+
+
+class Campaign(Base):
+    """
+    Campanha de disparo em massa de mensagens.
+    Armazena dados do arquivo, mapeamento e status.
+    """
+    __tablename__ = "campaigns"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    status = Column(String(50), default=CampaignStatus.DRAFT.value)
+    template_id = Column(Integer, ForeignKey("message_templates.id"), nullable=True)
+    column_mapping = Column(Text, default="{}")
+    custom_fields_mapping = Column(Text, default="{}")
+    original_filename = Column(String(255), nullable=True)
+    total_assessors = Column(Integer, default=0)
+    total_recommendations = Column(Integer, default=0)
+    messages_sent = Column(Integer, default=0)
+    messages_failed = Column(Integer, default=0)
+    processed_data = Column(Text, default="[]")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    
+    template = relationship("MessageTemplate", back_populates="campaigns")
+    creator = relationship("User", foreign_keys=[created_by])
+    dispatches = relationship("CampaignDispatch", back_populates="campaign", cascade="all, delete-orphan")
+
+
+class CampaignDispatch(Base):
+    """
+    Registro individual de disparo de mensagem para um assessor.
+    Armazena a mensagem final e status do envio.
+    """
+    __tablename__ = "campaign_dispatches"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    assessor_id = Column(String(100), nullable=False)
+    assessor_phone = Column(String(20), nullable=True)
+    assessor_name = Column(String(255), nullable=True)
+    message_content = Column(Text, nullable=False)
+    status = Column(String(50), default="pending")
+    error_message = Column(Text, nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    
+    campaign = relationship("Campaign", back_populates="dispatches")

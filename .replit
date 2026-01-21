@@ -1,10 +1,10 @@
-modules = ["python-3.11", "nodejs-20"]
+modules = ["python-3.11", "nodejs-20", "postgresql-16"]
 [agent]
 expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "libiconv", "libxcrypt", "rustc"]
+packages = ["cargo", "glibcLocales", "libiconv", "libxcrypt", "rustc"]
 
 [workflows]
 runButton = "Project"

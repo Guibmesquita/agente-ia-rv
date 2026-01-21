@@ -1,0 +1,45 @@
+Quero adicionar uma nova funcionalidade poderosa ao meu aplicativo chamada "Campanhas Ativas". Esta será uma nova página no painel de administração, e o acesso a ela deve ser restrito apenas para usuários com o perfil de "Administrador" ou um novo perfil chamado "Gestão RV".
+
+Esta página permitirá o disparo de mensagens em massa para os assessores no WhatsApp, com recomendações de investimento para seus clientes. A experiência do usuário deve ser dividida em passos claros:
+
+**Passo 1: Fazer o Upload de uma Base de Dados**
+- Quero uma área na página onde eu possa enviar um arquivo, de preferência no formato CSV ou Excel. Este arquivo contém todas as recomendações.
+
+**Passo 2: Mapear as Colunas do Arquivo**
+- Depois que eu enviar o arquivo, o sistema deve ler os nomes das colunas e me mostrar uma interface de mapeamento.
+- Para cada coluna do meu arquivo, eu quero poder dizer ao sistema o que ela significa. Haverá uma lista de campos obrigatórios que eu preciso mapear: "ID do Assessor", "ID do Cliente", "Ativo de Saída", "Valor de Saída", "Ativo de Compra" e "Valor de Compra".
+- **Importante:** Eu também quero a flexibilidade de mapear colunas extras como "Campos Customizados". Por exemplo, se meu arquivo tem uma coluna "Analista Responsável", eu quero poder mapeá-la e criar uma variável personalizada, como `{{analista_responsavel}}`, para usar na minha mensagem.
+
+**Passo 3: Escolher e Gerenciar as Mensagens**
+- Quero um sistema de "Templates de Mensagem" para não ter que escrever a mesma coisa toda vez.
+- Deve haver um menu para eu escolher um template já salvo.
+- Também preciso de um botão para "Gerenciar Templates", onde eu possa criar, editar ou apagar esses modelos de mensagem.
+- Ao criar um template, eu usarei variáveis especiais (placeholders). A mais importante será a `{{lista_clientes}}`, que o sistema usará para inserir o bloco de recomendações. Outras variáveis como `{{nome_assessor}}` e qualquer campo customizado que eu criei também devem estar disponíveis.
+
+**Lógica de Agrupamento das Mensagens (Regra de Ouro):**
+- O sistema precisa ser inteligente para não enviar dezenas de mensagens para o mesmo assessor.
+- Ele deve agrupar todas as recomendações destinadas a um único assessor em uma única mensagem de WhatsApp.
+- Dentro dessa mensagem, as recomendações devem ser agrupadas por cliente. O resultado final deve ser algo limpo e organizado, como:
+
+  > Olá, [Nome do Assessor]!
+  >
+  > Aqui estão as recomendações de hoje:
+  >
+  > **Cliente: 12345**
+  > • Saia de R$ 10.000 em PETR4 e compre R$ 10.000 em VALE3.
+  > • Saia de R$ 5.000 em MGLU3 e compre R$ 5.000 em BBDC4.
+  >
+  > **Cliente: 67890**
+  > • Saia de R$ 20.000 em ITSA4 e compre R$ 20.000 em WEGE3.
+  >
+  > Se precisar do racional de investimento ou de materiais de apoio para qualquer uma dessas operações, é só me pedir!
+
+**Passo 4: Revisar e Disparar a Campanha**
+- Antes de enviar tudo, quero ver uma prévia de como a mensagem final ficará para um dos assessores, para ter certeza de que a formatação e as variáveis estão corretas.
+- Por fim, um botão grande e claro, como "Disparar Campanha para [X] Assessores", para iniciar o envio.
+
+**Funcionalidades Adicionais:**
+- Adicione o novo perfil de usuário "Gestão RV" ao sistema, com as mesmas permissões de acesso a esta página que o "Administrador".
+- Na parte inferior da página, mostre um histórico simples das campanhas que já foram disparadas.
+
+Por favor, construa toda essa funcionalidade, incluindo as modificações no banco de dados para salvar os templates, a lógica de processamento do arquivo, a interface do usuário no painel de administração e as APIs necessárias para tudo funcionar.
