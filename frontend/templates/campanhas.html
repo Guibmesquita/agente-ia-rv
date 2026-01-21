@@ -588,21 +588,6 @@
         </main>
     </div>
 
-    <div class="modal-overlay" id="campaignDetailsModal" style="display: none;">
-        <div class="modal" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3>Detalhes da Campanha</h3>
-                <button class="modal-close" onclick="closeCampaignDetailsModal()">&times;</button>
-            </div>
-            <div class="modal-body" id="campaignDetailsBody">
-                <div style="text-align: center; padding: 40px;">Carregando...</div>
-            </div>
-            <div class="modal-footer" id="campaignDetailsFooter">
-                <button class="btn btn-secondary" onclick="closeCampaignDetailsModal()">Fechar</button>
-            </div>
-        </div>
-    </div>
-
     <div class="modal-overlay" id="templateModal" style="display: none;">
         <div class="modal" style="max-width: 700px;">
             <div class="modal-header">
@@ -856,14 +841,6 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
             });
 
             currentStep = step;
-
-            if (step === 3) {
-                // Carrega template se ainda nao estiver carregado
-                const templatePreview = document.getElementById('templatePreview');
-                if (!templatePreview.value || templatePreview.value.trim() === '') {
-                    loadTemplatePreview();
-                }
-            }
 
             if (step === 4) {
                 // Salva template customizado antes de gerar preview
@@ -1156,221 +1133,18 @@ Equipe de Gestao`;
                 }
 
                 tbody.innerHTML = campaigns.map(c => `
-                    <tr onclick="showCampaignDetails(${c.id})" style="cursor: pointer;">
+                    <tr>
                         <td><strong>${c.name}</strong><br><small style="color: var(--text-secondary);">${c.original_filename || ''}</small></td>
                         <td>${c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '-'}</td>
                         <td>${c.total_assessors}</td>
                         <td>${c.messages_sent}</td>
-                        <td style="color: ${c.messages_failed > 0 ? '#dc2626' : 'inherit'}; font-weight: ${c.messages_failed > 0 ? '600' : 'normal'};">${c.messages_failed}</td>
+                        <td>${c.messages_failed}</td>
                         <td><span class="status-badge status-${c.status}">${c.status}</span></td>
                     </tr>
                 `).join('');
 
             } catch (error) {
                 console.error('Erro ao carregar historico:', error);
-            }
-        }
-
-        async function showCampaignDetails(id) {
-            document.getElementById('campaignDetailsModal').style.display = 'flex';
-            document.getElementById('campaignDetailsBody').innerHTML = '<div style="text-align: center; padding: 40px;">Carregando...</div>';
-            
-            try {
-                const response = await fetch(`${API_BASE}/${id}`, { credentials: 'include' });
-                if (!response.ok) throw new Error('Campanha nao encontrada');
-                
-                const campaign = await response.json();
-                
-                const statusClass = campaign.status === 'enviada' ? 'success' : 
-                                   campaign.status === 'falha' ? 'danger' : 
-                                   campaign.status === 'processando' ? 'warning' : 'secondary';
-                
-                let dispatchesHtml = '';
-                if (campaign.dispatches && campaign.dispatches.length > 0) {
-                    const failed = campaign.dispatches.filter(d => d.status === 'failed');
-                    const sent = campaign.dispatches.filter(d => d.status === 'sent');
-                    
-                    if (failed.length > 0) {
-                        dispatchesHtml += `
-                            <div style="margin-top: 24px;">
-                                <h4 style="color: #dc2626; margin-bottom: 12px;">Falhas no Envio (${failed.length})</h4>
-                                <div style="max-height: 200px; overflow-y: auto; background: #fef2f2; border-radius: 8px; padding: 12px;">
-                                    ${failed.map(d => `
-                                        <div style="padding: 8px; border-bottom: 1px solid #fecaca; margin-bottom: 8px;">
-                                            <strong>${d.assessor_name || d.assessor_id}</strong>
-                                            <br><span style="color: #991b1b; font-size: 0.9rem;">${d.error_message || 'Erro desconhecido'}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
-                    if (sent.length > 0) {
-                        dispatchesHtml += `
-                            <div style="margin-top: 24px;">
-                                <h4 style="color: #059669; margin-bottom: 12px;">Enviadas com Sucesso (${sent.length})</h4>
-                                <div style="max-height: 150px; overflow-y: auto; background: #f0fdf4; border-radius: 8px; padding: 12px;">
-                                    ${sent.map(d => `
-                                        <div style="padding: 4px 8px;">
-                                            ${d.assessor_name || d.assessor_id}
-                                            <span style="color: #059669; font-size: 0.85rem; margin-left: 8px;">${d.sent_at ? new Date(d.sent_at).toLocaleString('pt-BR') : ''}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        `;
-                    }
-                }
-                
-                document.getElementById('campaignDetailsBody').innerHTML = `
-                    <div style="display: grid; gap: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <h2 style="margin: 0;">${campaign.name}</h2>
-                            <span class="badge badge-${statusClass}">${campaign.status}</span>
-                        </div>
-                        
-                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
-                            <div class="card" style="padding: 16px; text-align: center;">
-                                <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">${campaign.total_assessors}</div>
-                                <div style="font-size: 0.85rem; color: var(--text-secondary);">Assessores</div>
-                            </div>
-                            <div class="card" style="padding: 16px; text-align: center;">
-                                <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">${campaign.total_recommendations}</div>
-                                <div style="font-size: 0.85rem; color: var(--text-secondary);">Recomendacoes</div>
-                            </div>
-                            <div class="card" style="padding: 16px; text-align: center;">
-                                <div style="font-size: 1.5rem; font-weight: 700; color: #059669;">${campaign.messages_sent}</div>
-                                <div style="font-size: 0.85rem; color: var(--text-secondary);">Enviadas</div>
-                            </div>
-                            <div class="card" style="padding: 16px; text-align: center;">
-                                <div style="font-size: 1.5rem; font-weight: 700; color: #dc2626;">${campaign.messages_failed}</div>
-                                <div style="font-size: 0.85rem; color: var(--text-secondary);">Falhas</div>
-                            </div>
-                        </div>
-                        
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 0.9rem;">
-                            <div><strong>Arquivo:</strong> ${campaign.original_filename || '-'}</div>
-                            <div><strong>Template:</strong> ${campaign.template_name || 'Mensagem Padrao'}</div>
-                            <div><strong>Criado em:</strong> ${campaign.created_at ? new Date(campaign.created_at).toLocaleString('pt-BR') : '-'}</div>
-                            <div><strong>Enviado em:</strong> ${campaign.sent_at ? new Date(campaign.sent_at).toLocaleString('pt-BR') : '-'}</div>
-                        </div>
-                        
-                        ${dispatchesHtml}
-                    </div>
-                `;
-                
-                // Footer buttons
-                let footerHtml = '<button class="btn btn-secondary" onclick="closeCampaignDetailsModal()">Fechar</button>';
-                
-                if (campaign.status === 'rascunho' || campaign.status === 'processando') {
-                    footerHtml += `<button class="btn btn-primary" onclick="resumeCampaign(${campaign.id})">Retomar Campanha</button>`;
-                }
-                
-                if (campaign.messages_failed > 0) {
-                    footerHtml += `<button class="btn btn-warning" style="background: #f59e0b; color: #fff;" onclick="retryFailedDispatches(${campaign.id})">Reenviar Falhas</button>`;
-                }
-                
-                // Botao de deletar sempre disponivel (exceto se processando)
-                if (campaign.status !== 'processando') {
-                    footerHtml += `<button class="btn btn-danger" onclick="deleteCampaign(${campaign.id})">Excluir Campanha</button>`;
-                }
-                
-                document.getElementById('campaignDetailsFooter').innerHTML = footerHtml;
-                
-            } catch (error) {
-                document.getElementById('campaignDetailsBody').innerHTML = `<div style="color: #dc2626; padding: 20px;">${error.message}</div>`;
-            }
-        }
-
-        function closeCampaignDetailsModal() {
-            document.getElementById('campaignDetailsModal').style.display = 'none';
-        }
-
-        async function resumeCampaign(id) {
-            try {
-                const response = await fetch(`${API_BASE}/${id}/resume`, { 
-                    method: 'POST',
-                    credentials: 'include' 
-                });
-                
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao retomar campanha');
-                }
-                
-                const data = await response.json();
-                
-                // Set campaign data and go to appropriate step
-                campaignId = data.id;
-                customTemplateContent = data.custom_template_content;
-                
-                closeCampaignDetailsModal();
-                
-                if (data.has_data) {
-                    // Has data, go to template step
-                    if (data.custom_template_content) {
-                        document.getElementById('templatePreview').value = data.custom_template_content;
-                    }
-                    goToStep(3);
-                } else {
-                    // No data, start from beginning
-                    goToStep(1);
-                }
-                
-                alert('Campanha retomada! Continue de onde parou.');
-                
-            } catch (error) {
-                alert(error.message);
-            }
-        }
-
-        async function retryFailedDispatches(id) {
-            if (!confirm('Tem certeza que deseja reenviar as mensagens que falharam?')) return;
-            
-            try {
-                const response = await fetch(`${API_BASE}/${id}/retry-failed`, { 
-                    method: 'POST',
-                    credentials: 'include' 
-                });
-                
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao reenviar');
-                }
-                
-                const result = await response.json();
-                alert(result.message);
-                
-                // Reload details
-                showCampaignDetails(id);
-                loadHistory();
-                
-            } catch (error) {
-                alert(error.message);
-            }
-        }
-
-        async function deleteCampaign(id) {
-            if (!confirm('Tem certeza que deseja excluir esta campanha? Esta acao nao pode ser desfeita.')) return;
-            
-            try {
-                const response = await fetch(`${API_BASE}/${id}`, { 
-                    method: 'DELETE',
-                    credentials: 'include' 
-                });
-                
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao excluir campanha');
-                }
-                
-                closeCampaignDetailsModal();
-                loadHistory();
-                alert('Campanha excluida com sucesso!');
-                
-            } catch (error) {
-                alert(error.message);
             }
         }
 

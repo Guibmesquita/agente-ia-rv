@@ -168,12 +168,6 @@ A página `/agent-brain` (admin e gestao_rv) permite configurar em tempo real:
   - Templates de mensagem reutilizáveis com variáveis dinâmicas
   - Agrupamento inteligente por assessor e cliente
   - Histórico de campanhas com estatísticas de sucesso/falha
-  - **Detalhes de campanha**: clique na linha do histórico para ver detalhes
-  - **Visualização de falhas**: modal mostra erros de cada dispatch com falha
-  - **Retomada de campanhas**: campanhas em rascunho podem ser retomadas
-  - **Reenvio de falhas**: botão para reenviar apenas mensagens que falharam
-  - Template editável diretamente na página via textarea
-  - Preview limitado a 5 assessores (amostra)
 
 ## Design System
 

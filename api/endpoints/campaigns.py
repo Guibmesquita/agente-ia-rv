@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import func
 from pydantic import BaseModel
 from database.database import get_db
 from database.models import MessageTemplate, Campaign, CampaignDispatch, CampaignStatus, Assessor
@@ -677,124 +676,6 @@ async def get_campaign(
             }
             for d in dispatches
         ]
-    }
-
-
-@router.post("/{campaign_id}/resume")
-async def resume_campaign(
-    campaign_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_gestao())
-):
-    """
-    Retoma uma campanha em rascunho ou que teve falhas.
-    Retorna os dados necessários para continuar o wizard.
-    """
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campanha não encontrada")
-    
-    if campaign.status == CampaignStatus.SENT.value and campaign.messages_failed == 0:
-        raise HTTPException(status_code=400, detail="Esta campanha já foi enviada com sucesso")
-    
-    try:
-        column_mapping = json.loads(campaign.column_mapping) if campaign.column_mapping else {}
-        custom_mapping = json.loads(campaign.custom_fields_mapping) if campaign.custom_fields_mapping else {}
-        processed_data = json.loads(campaign.processed_data) if campaign.processed_data else []
-    except json.JSONDecodeError:
-        column_mapping = {}
-        custom_mapping = {}
-        processed_data = []
-    
-    return {
-        "id": campaign.id,
-        "name": campaign.name,
-        "status": campaign.status,
-        "template_id": campaign.template_id,
-        "custom_template_content": campaign.custom_template_content,
-        "column_mapping": column_mapping,
-        "custom_fields_mapping": custom_mapping,
-        "original_filename": campaign.original_filename,
-        "total_assessors": campaign.total_assessors,
-        "total_recommendations": campaign.total_recommendations,
-        "messages_sent": campaign.messages_sent,
-        "messages_failed": campaign.messages_failed,
-        "has_data": len(processed_data) > 0,
-        "can_retry_failed": campaign.messages_failed > 0
-    }
-
-
-@router.post("/{campaign_id}/retry-failed")
-async def retry_failed_dispatches(
-    campaign_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_gestao())
-):
-    """
-    Reenvia apenas os dispatches que falharam.
-    """
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campanha não encontrada")
-    
-    failed_dispatches = db.query(CampaignDispatch).filter(
-        CampaignDispatch.campaign_id == campaign_id,
-        CampaignDispatch.status == "failed"
-    ).all()
-    
-    if not failed_dispatches:
-        raise HTTPException(status_code=400, detail="Não há dispatches com falha para reenviar")
-    
-    success_count = 0
-    fail_count = 0
-    
-    for dispatch in failed_dispatches:
-        if not dispatch.assessor_phone:
-            dispatch.error_message = "Telefone do assessor não encontrado"
-            fail_count += 1
-            continue
-        
-        try:
-            result = await whatsapp_client.send_message(
-                phone=dispatch.assessor_phone,
-                message=dispatch.message_content
-            )
-            
-            if result.get("success"):
-                dispatch.status = "sent"
-                dispatch.error_message = None
-                dispatch.sent_at = func.now()
-                success_count += 1
-            else:
-                dispatch.error_message = result.get("error", "Erro desconhecido ao reenviar")
-                fail_count += 1
-        except Exception as e:
-            dispatch.error_message = str(e)
-            fail_count += 1
-    
-    # Recalcula totais a partir dos dispatches
-    total_sent = db.query(CampaignDispatch).filter(
-        CampaignDispatch.campaign_id == campaign_id,
-        CampaignDispatch.status == "sent"
-    ).count()
-    
-    total_failed = db.query(CampaignDispatch).filter(
-        CampaignDispatch.campaign_id == campaign_id,
-        CampaignDispatch.status == "failed"
-    ).count()
-    
-    campaign.messages_sent = total_sent
-    campaign.messages_failed = total_failed
-    
-    if total_failed == 0:
-        campaign.status = CampaignStatus.SENT.value
-    
-    db.commit()
-    
-    return {
-        "message": f"Reenvio concluído: {success_count} sucesso, {fail_count} falhas restantes",
-        "success_count": success_count,
-        "fail_count": total_failed
     }
 
 
