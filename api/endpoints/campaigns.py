@@ -17,6 +17,18 @@ from database.models import User
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
+# Mensagem padrao usada quando nenhum template e selecionado
+DEFAULT_TEMPLATE_CONTENT = """Ola, {{nome_assessor}}!
+
+Seguem as recomendacoes de troca de ativos para seus clientes:
+
+{{lista_clientes}}
+
+Por favor, entre em contato com cada cliente para alinhar as operacoes.
+
+Atenciosamente,
+Equipe de Gestao"""
+
 
 class TemplateCreate(BaseModel):
     name: str
@@ -327,12 +339,15 @@ async def preview_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
     
-    if not campaign.template_id:
-        raise HTTPException(status_code=400, detail="Template não definido para esta campanha")
+    # Usa template se existir, senao usa mensagem padrao
+    template_content = DEFAULT_TEMPLATE_CONTENT
+    template_name = "Mensagem Padrao"
     
-    template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
-    if not template:
-        raise HTTPException(status_code=400, detail="Template não encontrado")
+    if campaign.template_id:
+        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+        if template:
+            template_content = template.content
+            template_name = template.name
     
     try:
         column_mapping = json.loads(campaign.column_mapping) if campaign.column_mapping else {}
@@ -351,7 +366,7 @@ async def preview_campaign(
     
     messages = []
     for assessor_id, assessor_data in grouped.items():
-        message = build_message(template.content, assessor_data, custom_mapping)
+        message = build_message(template_content, assessor_data, custom_mapping)
         messages.append({
             "assessor_id": assessor_id,
             "assessor_name": assessor_data.get("nome_assessor", ""),
@@ -366,7 +381,7 @@ async def preview_campaign(
         "total_assessors": len(messages),
         "total_recommendations": campaign.total_recommendations,
         "messages": messages[:10],
-        "template_name": template.name
+        "template_name": template_name
     }
 
 
@@ -490,12 +505,13 @@ async def dispatch_campaign(
     if campaign.status == CampaignStatus.SENT.value:
         raise HTTPException(status_code=400, detail="Esta campanha já foi enviada")
     
-    if not campaign.template_id:
-        raise HTTPException(status_code=400, detail="Template não definido")
+    # Usa template se existir, senao usa mensagem padrao
+    template_content = DEFAULT_TEMPLATE_CONTENT
     
-    template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
-    if not template:
-        raise HTTPException(status_code=400, detail="Template não encontrado")
+    if campaign.template_id:
+        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+        if template:
+            template_content = template.content
     
     try:
         column_mapping = json.loads(campaign.column_mapping) if campaign.column_mapping else {}
@@ -517,7 +533,7 @@ async def dispatch_campaign(
     failed_count = 0
     
     for assessor_id, assessor_data in grouped.items():
-        message = build_message(template.content, assessor_data, custom_mapping)
+        message = build_message(template_content, assessor_data, custom_mapping)
         phone = assessor_data.get("telefone", "")
         
         dispatch = CampaignDispatch(

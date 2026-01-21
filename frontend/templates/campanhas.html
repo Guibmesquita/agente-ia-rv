@@ -489,16 +489,19 @@
                         </p>
 
                         <div class="template-selector">
-                            <label class="form-label">Selecione um Template</label>
+                            <label class="form-label">Selecione um Template (opcional)</label>
                             <div style="display: flex; gap: 12px;">
                                 <select id="templateSelect" class="form-input" style="flex: 1;" onchange="loadTemplatePreview()">
-                                    <option value="">-- Selecione um template --</option>
+                                    <option value="">-- Usar mensagem padrao --</option>
                                 </select>
                                 <button class="btn btn-secondary" onclick="openTemplateModal()">Gerenciar Templates</button>
                             </div>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">
+                                Se nenhum template for selecionado, sera usada uma mensagem padrao de recomendacao de troca de ativos.
+                            </p>
                         </div>
 
-                        <div id="templatePreviewContainer" style="display: none;">
+                        <div id="templatePreviewContainer">
                             <label class="form-label">Preview do Template</label>
                             <div class="template-preview" id="templatePreview"></div>
                         </div>
@@ -839,12 +842,15 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
                 const templates = await response.json();
 
                 const select = document.getElementById('templateSelect');
-                select.innerHTML = '<option value="">-- Selecione um template --</option>';
+                select.innerHTML = '<option value="">-- Usar mensagem padrao --</option>';
                 templates.forEach(t => {
                     select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
                 });
 
                 renderTemplateList(templates);
+                
+                // Mostra preview da mensagem padrao e habilita botao
+                loadTemplatePreview();
             } catch (error) {
                 console.error('Erro ao carregar templates:', error);
             }
@@ -871,11 +877,27 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
             `).join('');
         }
 
+        const DEFAULT_TEMPLATE = `Ola, {{nome_assessor}}!
+
+Seguem as recomendacoes de troca de ativos para seus clientes:
+
+{{lista_clientes}}
+
+Por favor, entre em contato com cada cliente para alinhar as operacoes.
+
+Atenciosamente,
+Equipe de Gestao`;
+
         async function loadTemplatePreview() {
             const templateId = document.getElementById('templateSelect').value;
+            
+            // Sempre habilita o botao - template e opcional
+            document.getElementById('btnStep3Next').disabled = false;
+            
             if (!templateId) {
-                document.getElementById('templatePreviewContainer').style.display = 'none';
-                document.getElementById('btnStep3Next').disabled = true;
+                // Mostra preview da mensagem padrao
+                document.getElementById('templatePreview').textContent = DEFAULT_TEMPLATE;
+                document.getElementById('templatePreviewContainer').style.display = 'block';
                 return;
             }
 
@@ -885,7 +907,6 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
 
                 document.getElementById('templatePreview').textContent = template.content;
                 document.getElementById('templatePreviewContainer').style.display = 'block';
-                document.getElementById('btnStep3Next').disabled = false;
 
                 await fetch(`${API_BASE}/${campaignId}/template?template_id=${templateId}`, {
                     method: 'PUT',
