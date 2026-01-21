@@ -371,13 +371,24 @@ async def preview_campaign(
     template_name = "Mensagem Padrao"
     
     if campaign.custom_template_content:
-        template_content = str(campaign.custom_template_content)
-        template_name = "Mensagem Editada"
+        candidate = str(campaign.custom_template_content)
+        # Verifica se o template contém as variáveis obrigatórias
+        if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+            template_content = candidate
+            template_name = "Mensagem Editada"
+        else:
+            # Template salvo não contém variáveis, usa o padrão
+            print(f"[PREVIEW] Template customizado não contém variáveis obrigatórias, usando padrão")
     elif campaign.template_id:
         template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
         if template:
-            template_content = str(template.content)
-            template_name = str(template.name)
+            candidate = str(template.content)
+            # Verifica se o template contém as variáveis obrigatórias
+            if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+                template_content = candidate
+                template_name = str(template.name)
+            else:
+                print(f"[PREVIEW] Template salvo não contém variáveis obrigatórias, usando padrão")
     
     try:
         column_mapping = json.loads(str(campaign.column_mapping)) if campaign.column_mapping else {}
@@ -681,11 +692,15 @@ async def dispatch_campaign(
     template_content = DEFAULT_TEMPLATE_CONTENT
     
     if campaign.custom_template_content:
-        template_content = str(campaign.custom_template_content)
+        candidate = str(campaign.custom_template_content)
+        if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+            template_content = candidate
     elif campaign.template_id:
         template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
         if template:
-            template_content = str(template.content)
+            candidate = str(template.content)
+            if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+                template_content = candidate
     
     try:
         column_mapping = json.loads(str(campaign.column_mapping)) if campaign.column_mapping else {}
