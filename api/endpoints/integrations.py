@@ -345,16 +345,27 @@ async def check_integration_status(
     try:
         if integration.type == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
+            org_id = os.getenv("OPENAI_ORG_ID")
+            project_id = os.getenv("OPENAI_PROJECT_ID")
             if api_key:
+                headers = {"Authorization": f"Bearer {api_key}"}
+                if org_id:
+                    headers["OpenAI-Organization"] = org_id
+                if project_id:
+                    headers["OpenAI-Project"] = project_id
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
                         "https://api.openai.com/v1/models",
-                        headers={"Authorization": f"Bearer {api_key}"},
+                        headers=headers,
                         timeout=10.0
                     )
                     if response.status_code == 200:
+                        data = response.json()
+                        model_count = len(data.get("data", []))
                         is_connected = True
-                        message = "Conexão estabelecida com sucesso!"
+                        message = f"Conexão estabelecida! {model_count} modelos disponíveis."
+                    elif response.status_code == 401:
+                        message = "Erro de autenticação. Verifique a OPENAI_API_KEY."
                     else:
                         message = f"Erro na API: {response.status_code}"
             else:
@@ -382,15 +393,24 @@ async def check_integration_status(
         
         elif integration.type == "waha":
             api_url = os.getenv("WAHA_API_URL")
+            api_key = os.getenv("WAHA_API_KEY")
             if api_url:
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["X-Api-Key"] = api_key
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
                         f"{api_url.rstrip('/')}/api/sessions",
+                        headers=headers,
                         timeout=10.0
                     )
                     if response.status_code == 200:
+                        sessions = response.json()
+                        session_count = len(sessions) if isinstance(sessions, list) else 0
                         is_connected = True
-                        message = "Conexão estabelecida com sucesso!"
+                        message = f"Conexão estabelecida! {session_count} sessão(ões) encontrada(s)."
+                    elif response.status_code == 401:
+                        message = "Erro de autenticação. Verifique a WAHA_API_KEY."
                     else:
                         message = f"Erro na API: {response.status_code}"
             else:
