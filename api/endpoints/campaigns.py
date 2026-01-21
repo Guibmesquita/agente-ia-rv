@@ -430,124 +430,194 @@ async def preview_campaign(
 def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_mapping: dict, db: Session) -> dict:
     """
     Agrupa recomendações por assessor e, dentro de cada assessor, por cliente.
+    
+    Retorna um dicionário onde cada chave é o ID do assessor e o valor contém:
+    - assessor_id: identificador do assessor
+    - nome_assessor: nome do assessor (buscado na base ou usando o ID)
+    - telefone: telefone do assessor
+    - clients: dicionário de clientes com suas recomendações
+    - total_recommendations: total de recomendações para este assessor
+    - custom_fields: campos customizados mapeados
     """
     grouped = {}
     
-    for row in data:
-        assessor_id = str(row.get(mapping.get("assessor_id", ""), "")).strip()
+    # Extrai os nomes das colunas do mapeamento
+    col_assessor = mapping.get("assessor_id", "")
+    col_client = mapping.get("client_id", "")
+    col_ativo_saida = mapping.get("ativo_saida", "")
+    col_valor_saida = mapping.get("valor_saida", "")
+    col_ativo_compra = mapping.get("ativo_compra", "")
+    col_valor_compra = mapping.get("valor_compra", "")
+    
+    print(f"[GROUPING] Column mapping: assessor={col_assessor}, client={col_client}")
+    print(f"[GROUPING] Total rows to process: {len(data)}")
+    
+    for idx, row in enumerate(data):
+        # Obtém o ID do assessor da linha
+        assessor_val = row.get(col_assessor, "")
+        if assessor_val is None:
+            assessor_val = ""
+        assessor_id = str(assessor_val).strip()
+        
         if not assessor_id:
+            print(f"[GROUPING] Row {idx}: No assessor_id found, skipping")
             continue
         
+        # Inicializa o grupo do assessor se ainda não existe
         if assessor_id not in grouped:
+            # Tenta buscar o assessor na base de dados
             assessor = None
+            
+            # Primeiro tenta como ID numérico
             try:
                 assessor_id_int = int(assessor_id)
                 assessor = db.query(Assessor).filter(Assessor.id == assessor_id_int).first()
             except (ValueError, TypeError):
                 pass
             
+            # Se não encontrou, tenta por telefone ou nome
             if not assessor:
                 assessor = db.query(Assessor).filter(
                     (Assessor.telefone_whatsapp == assessor_id) |
                     (Assessor.nome.ilike(f"%{assessor_id}%"))
                 ).first()
             
+            # Define o nome do assessor
+            if assessor:
+                nome = assessor.nome
+                telefone = assessor.telefone_whatsapp or ""
+            else:
+                nome = assessor_id
+                telefone = ""
+            
             grouped[assessor_id] = {
                 "assessor_id": assessor_id,
-                "nome_assessor": assessor.nome if assessor else assessor_id,
-                "telefone": assessor.telefone_whatsapp if assessor else "",
+                "nome_assessor": nome,
+                "telefone": telefone,
                 "clients": {},
                 "total_recommendations": 0,
                 "custom_fields": {}
             }
             
-            for col_name, var_name in custom_mapping.items():
-                if col_name in row:
-                    grouped[assessor_id]["custom_fields"][var_name] = row[col_name]
+            # Processa campos customizados
+            if custom_mapping:
+                for col_name, var_name in custom_mapping.items():
+                    if col_name in row and row[col_name]:
+                        grouped[assessor_id]["custom_fields"][var_name] = str(row[col_name])
+            
+            print(f"[GROUPING] New assessor: {assessor_id} -> nome={nome}")
         
-        client_id = str(row.get(mapping.get("client_id", ""), "")).strip()
+        # Obtém o ID do cliente
+        client_val = row.get(col_client, "")
+        if client_val is None:
+            client_val = ""
+        client_id = str(client_val).strip()
+        
+        if not client_id:
+            client_id = "Sem ID"
+        
+        # Inicializa a lista de recomendações do cliente
         if client_id not in grouped[assessor_id]["clients"]:
             grouped[assessor_id]["clients"][client_id] = []
         
+        # Cria a recomendação
         recommendation = {
-            "ativo_saida": row.get(mapping.get("ativo_saida", ""), ""),
-            "valor_saida": format_currency(row.get(mapping.get("valor_saida", ""), 0)),
-            "ativo_compra": row.get(mapping.get("ativo_compra", ""), ""),
-            "valor_compra": format_currency(row.get(mapping.get("valor_compra", ""), 0))
+            "ativo_saida": str(row.get(col_ativo_saida, "") or ""),
+            "valor_saida": format_currency(row.get(col_valor_saida, 0)),
+            "ativo_compra": str(row.get(col_ativo_compra, "") or ""),
+            "valor_compra": format_currency(row.get(col_valor_compra, 0))
         }
         
         grouped[assessor_id]["clients"][client_id].append(recommendation)
         grouped[assessor_id]["total_recommendations"] += 1
+    
+    print(f"[GROUPING] Final result: {len(grouped)} assessors")
+    for aid, adata in grouped.items():
+        print(f"[GROUPING]   {aid}: nome={adata['nome_assessor']}, clients={len(adata['clients'])}, recs={adata['total_recommendations']}")
     
     return grouped
 
 
 def format_currency(value) -> str:
     """Formata valor para moeda brasileira."""
+    if value is None:
+        return "R$ 0,00"
     try:
         if isinstance(value, str):
+            # Remove formatação existente
             value = value.replace("R$", "").replace(".", "").replace(",", ".").strip()
+            if not value:
+                return "R$ 0,00"
         num = float(value)
         return f"R$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except (ValueError, TypeError):
-        return str(value)
+        return str(value) if value else "R$ 0,00"
 
 
 def build_message(template_content: str, assessor_data: dict, custom_mapping: dict) -> str:
     """
     Constrói a mensagem final substituindo as variáveis do template.
-    Usa substituição simples para máxima confiabilidade.
+    
+    Variáveis suportadas:
+    - {{nome_assessor}} - Nome do assessor
+    - {{assessor_id}} - ID do assessor
+    - {{data_atual}} - Data atual (DD/MM/YYYY)
+    - {{lista_clientes}} - Bloco formatado com recomendações por cliente
+    - Campos customizados definidos no mapeamento
     """
-    from datetime import datetime
-    message = str(template_content) if template_content else ""
+    # Garante que temos uma string válida
+    if not template_content:
+        template_content = DEFAULT_TEMPLATE_CONTENT
     
-    nome_assessor = str(assessor_data.get("nome_assessor", ""))
-    assessor_id_val = str(assessor_data.get("assessor_id", ""))
+    message = str(template_content)
+    
+    # Extrai dados do assessor
+    nome_assessor = str(assessor_data.get("nome_assessor", "") or "")
+    assessor_id_val = str(assessor_data.get("assessor_id", "") or "")
     clients = assessor_data.get("clients", {})
+    custom_fields = assessor_data.get("custom_fields", {})
     
-    print(f"[DEBUG BUILD_MESSAGE] template_content first 300 chars: '{message[:300] if message else 'EMPTY'}'")
-    print(f"[DEBUG BUILD_MESSAGE] nome_assessor='{nome_assessor}'")
-    print(f"[DEBUG BUILD_MESSAGE] assessor_id='{assessor_id_val}'")
-    print(f"[DEBUG BUILD_MESSAGE] clients count={len(clients)}")
-    if clients:
-        print(f"[DEBUG BUILD_MESSAGE] first client sample={list(clients.items())[:1]}")
+    print(f"[BUILD_MSG] Input template (first 200 chars): {message[:200]}")
+    print(f"[BUILD_MSG] nome_assessor='{nome_assessor}'")
+    print(f"[BUILD_MSG] assessor_id='{assessor_id_val}'")
+    print(f"[BUILD_MSG] clients count={len(clients)}")
+    print(f"[BUILD_MSG] custom_fields={custom_fields}")
     
-    # Substituição direta com str.replace() - mais confiável
-    message = message.replace("{{nome_assessor}}", nome_assessor)
-    message = message.replace("{{ nome_assessor }}", nome_assessor)
-    message = message.replace("{nome_assessor}", nome_assessor)
+    # SUBSTITUIÇÕES PRINCIPAIS
+    # Tenta múltiplas variações de formatação para máxima compatibilidade
     
-    message = message.replace("{{assessor_id}}", assessor_id_val)
-    message = message.replace("{{ assessor_id }}", assessor_id_val)
-    message = message.replace("{assessor_id}", assessor_id_val)
+    # 1. Nome do assessor
+    for pattern in ["{{nome_assessor}}", "{{ nome_assessor }}", "{nome_assessor}"]:
+        message = message.replace(pattern, nome_assessor)
     
+    # 2. ID do assessor
+    for pattern in ["{{assessor_id}}", "{{ assessor_id }}", "{assessor_id}"]:
+        message = message.replace(pattern, assessor_id_val)
+    
+    # 3. Data atual
     data_atual = datetime.now().strftime("%d/%m/%Y")
-    message = message.replace("{{data_atual}}", data_atual)
-    message = message.replace("{{ data_atual }}", data_atual)
-    message = message.replace("{data_atual}", data_atual)
+    for pattern in ["{{data_atual}}", "{{ data_atual }}", "{data_atual}"]:
+        message = message.replace(pattern, data_atual)
     
-    # Campos customizados
-    for var_name, value in assessor_data.get("custom_fields", {}).items():
-        message = message.replace("{{" + var_name + "}}", str(value))
-        message = message.replace("{{ " + var_name + " }}", str(value))
-        message = message.replace("{" + var_name + "}", str(value))
+    # 4. Campos customizados
+    for var_name, value in custom_fields.items():
+        val_str = str(value) if value else ""
+        for pattern in [f"{{{{{var_name}}}}}", f"{{{{ {var_name} }}}}", f"{{{var_name}}}"]:
+            message = message.replace(pattern, val_str)
     
-    # Constrói o bloco de clientes
+    # 5. Lista de clientes (mais importante!)
     clients_block = build_clients_block(clients)
-    print(f"[DEBUG BUILD_MESSAGE] clients_block length={len(clients_block)}")
+    print(f"[BUILD_MSG] clients_block length={len(clients_block)}")
     if clients_block:
-        print(f"[DEBUG BUILD_MESSAGE] clients_block first 200 chars: '{clients_block[:200]}'")
-    else:
-        print(f"[DEBUG BUILD_MESSAGE] clients_block is EMPTY")
+        print(f"[BUILD_MSG] clients_block preview: {clients_block[:300]}")
     
-    message = message.replace("{{lista_clientes}}", clients_block)
-    message = message.replace("{{ lista_clientes }}", clients_block)
-    message = message.replace("{lista_clientes}", clients_block)
+    for pattern in ["{{lista_clientes}}", "{{ lista_clientes }}", "{lista_clientes}"]:
+        message = message.replace(pattern, clients_block)
     
     # Remove variáveis não substituídas
     message = re.sub(r'\{\{[^}]+\}\}', '', message)
     
-    print(f"[DEBUG BUILD_MESSAGE] final message first 300 chars: '{message[:300]}'")
+    print(f"[BUILD_MSG] Final message (first 300 chars): {message[:300]}")
     
     return message
 
@@ -555,17 +625,40 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
 def build_clients_block(clients: dict) -> str:
     """
     Constrói o bloco de texto com as recomendações agrupadas por cliente.
+    
+    Formato:
+    **Cliente: 12345**
+    • Saia de R$ 10.000 em PETR4 e compre R$ 10.000 em VALE3.
+    
+    **Cliente: 67890**
+    • Saia de R$ 20.000 em ITSA4 e compre R$ 20.000 em WEGE3.
     """
+    if not clients:
+        print("[BUILD_CLIENTS] No clients provided!")
+        return "(Nenhuma recomendação encontrada)"
+    
     lines = []
     
     for client_id, recommendations in clients.items():
+        if not client_id:
+            client_id = "Sem ID"
+        
         lines.append(f"**Cliente: {client_id}**")
+        
         for rec in recommendations:
-            line = f"• Saia de {rec['valor_saida']} em {rec['ativo_saida']} e compre {rec['valor_compra']} em {rec['ativo_compra']}."
+            ativo_saida = rec.get('ativo_saida', 'N/A')
+            valor_saida = rec.get('valor_saida', 'R$ 0,00')
+            ativo_compra = rec.get('ativo_compra', 'N/A')
+            valor_compra = rec.get('valor_compra', 'R$ 0,00')
+            
+            line = f"• Saia de {valor_saida} em {ativo_saida} e compre {valor_compra} em {ativo_compra}."
             lines.append(line)
-        lines.append("")
+        
+        lines.append("")  # Linha em branco entre clientes
     
-    return "\n".join(lines).strip()
+    result = "\n".join(lines).strip()
+    print(f"[BUILD_CLIENTS] Generated block with {len(lines)} lines for {len(clients)} clients")
+    return result
 
 
 @router.post("/{campaign_id}/dispatch")
