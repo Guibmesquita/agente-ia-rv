@@ -604,7 +604,7 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="failuresModal" style="display: none;">
+    <div class="modal-overlay" id="failuresModal">
         <div class="modal" style="max-width: 900px; max-height: 90vh;">
             <div class="modal-header" style="background: #fef2f2; border-bottom: 1px solid #fecaca;">
                 <h3 id="failuresModalTitle" style="color: #dc2626;">
@@ -1440,14 +1440,23 @@ Equipe de Gestao`;
         }
 
         async function openFailuresModal(campaignId) {
-            document.getElementById('failuresModal').style.display = 'flex';
+            console.log('[FAILURES] Opening modal for campaign:', campaignId);
+            const modal = document.getElementById('failuresModal');
+            if (!modal) {
+                console.error('[FAILURES] Modal element not found!');
+                alert('Erro: Modal de falhas nao encontrado');
+                return;
+            }
+            modal.classList.add('show');
             document.getElementById('failuresModalBody').innerHTML = '<div style="text-align: center; padding: 40px;">Carregando analise de falhas...</div>';
             
             try {
                 const response = await fetch(`${API_BASE}/${campaignId}/failures`, { credentials: 'include' });
+                console.log('[FAILURES] Response status:', response.status);
                 if (!response.ok) throw new Error('Erro ao carregar falhas');
                 
                 const data = await response.json();
+                console.log('[FAILURES] Data received:', data);
                 
                 if (data.total_failures === 0) {
                     document.getElementById('failuresModalBody').innerHTML = `
@@ -1533,7 +1542,7 @@ Equipe de Gestao`;
         }
 
         function closeFailuresModal() {
-            document.getElementById('failuresModal').style.display = 'none';
+            document.getElementById('failuresModal').classList.remove('show');
         }
 
         function logout() {
