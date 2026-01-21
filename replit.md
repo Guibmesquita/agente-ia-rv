@@ -234,7 +234,8 @@ A página `/campanhas` (admin e gestao_rv) permite criar e gerenciar campanhas d
 4. **Templates Reutilizáveis** - Cria e gerencia templates de mensagem com variáveis
 5. **Agrupamento Inteligente** - Agrupa recomendações por assessor e depois por cliente
 6. **Preview Antes do Disparo** - Visualiza mensagens formatadas antes de enviar
-7. **Histórico de Campanhas** - Consulta campanhas anteriores com status e estatísticas
+7. **Disparo Sequencial com Progresso** - Envio de mensagens uma a uma com delay de 2.5s e barra de progresso em tempo real via SSE
+8. **Histórico de Campanhas** - Consulta campanhas anteriores com status e estatísticas
 
 ### Etapas do Wizard
 1. **Upload** - Carrega planilha com dados de clientes e recomendações
@@ -260,5 +261,13 @@ A página `/campanhas` (admin e gestao_rv) permite criar e gerenciar campanhas d
 - `DELETE /api/templates/{id}` - Excluir template
 - `POST /api/campaigns/upload` - Upload de planilha
 - `POST /api/campaigns/preview` - Preview com mapeamento
-- `POST /api/campaigns/dispatch` - Disparar campanha
+- `POST /api/campaigns/dispatch` - Disparar campanha (método antigo, instantâneo)
+- `GET /api/campaigns/{id}/dispatch-stream` - Disparar campanha com SSE para progresso em tempo real
 - `GET /api/campaigns/history` - Histórico de campanhas
+
+### Disparo com Progresso em Tempo Real
+O endpoint `/api/campaigns/{id}/dispatch-stream` usa Server-Sent Events (SSE) para:
+- Enviar mensagens uma a uma com delay de 2.5 segundos entre cada envio
+- Transmitir progresso em tempo real para o frontend
+- Evitar sobrecarga do servidor WAHA
+- Exibir barra de progresso, contadores e log de envio
