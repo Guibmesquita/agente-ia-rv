@@ -17,6 +17,32 @@ from database.models import User
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
+
+def template_has_required_variables(template: str) -> bool:
+    """
+    Verifica se o template contém as variáveis obrigatórias.
+    Aceita variações com e sem espaços, e com uma ou duas chaves.
+    """
+    if not template:
+        return False
+    
+    # Padrões aceitos para nome_assessor
+    has_nome = any([
+        "{{nome_assessor}}" in template,
+        "{{ nome_assessor }}" in template,
+        "{nome_assessor}" in template,
+    ])
+    
+    # Padrões aceitos para lista_clientes
+    has_lista = any([
+        "{{lista_clientes}}" in template,
+        "{{ lista_clientes }}" in template,
+        "{lista_clientes}" in template,
+    ])
+    
+    return has_nome and has_lista
+
+
 # Mensagem padrao usada quando nenhum template e selecionado
 DEFAULT_TEMPLATE_CONTENT = """Ola, {{nome_assessor}}!
 
@@ -372,19 +398,16 @@ async def preview_campaign(
     
     if campaign.custom_template_content:
         candidate = str(campaign.custom_template_content)
-        # Verifica se o template contém as variáveis obrigatórias
-        if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+        if template_has_required_variables(candidate):
             template_content = candidate
             template_name = "Mensagem Editada"
         else:
-            # Template salvo não contém variáveis, usa o padrão
             print(f"[PREVIEW] Template customizado não contém variáveis obrigatórias, usando padrão")
     elif campaign.template_id:
         template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
         if template:
             candidate = str(template.content)
-            # Verifica se o template contém as variáveis obrigatórias
-            if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+            if template_has_required_variables(candidate):
                 template_content = candidate
                 template_name = str(template.name)
             else:
@@ -693,13 +716,13 @@ async def dispatch_campaign(
     
     if campaign.custom_template_content:
         candidate = str(campaign.custom_template_content)
-        if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+        if template_has_required_variables(candidate):
             template_content = candidate
     elif campaign.template_id:
         template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
         if template:
             candidate = str(template.content)
-            if "{{nome_assessor}}" in candidate and "{{lista_clientes}}" in candidate:
+            if template_has_required_variables(candidate):
                 template_content = candidate
     
     try:
