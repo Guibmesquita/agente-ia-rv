@@ -382,11 +382,18 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
             continue
         
         if assessor_id not in grouped:
-            assessor = db.query(Assessor).filter(
-                (Assessor.id == assessor_id) | 
-                (Assessor.telefone_whatsapp == assessor_id) |
-                (Assessor.nome.ilike(f"%{assessor_id}%"))
-            ).first()
+            assessor = None
+            try:
+                assessor_id_int = int(assessor_id)
+                assessor = db.query(Assessor).filter(Assessor.id == assessor_id_int).first()
+            except (ValueError, TypeError):
+                pass
+            
+            if not assessor:
+                assessor = db.query(Assessor).filter(
+                    (Assessor.telefone_whatsapp == assessor_id) |
+                    (Assessor.nome.ilike(f"%{assessor_id}%"))
+                ).first()
             
             grouped[assessor_id] = {
                 "assessor_id": assessor_id,
@@ -433,10 +440,12 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     """
     Constrói a mensagem final substituindo as variáveis do template.
     """
+    from datetime import datetime
     message = template_content
     
     message = message.replace("{{nome_assessor}}", assessor_data.get("nome_assessor", ""))
     message = message.replace("{{assessor_id}}", assessor_data.get("assessor_id", ""))
+    message = message.replace("{{data_atual}}", datetime.now().strftime("%d/%m/%Y"))
     
     for var_name, value in assessor_data.get("custom_fields", {}).items():
         message = message.replace(f"{{{{{var_name}}}}}", str(value))

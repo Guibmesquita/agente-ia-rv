@@ -75,6 +75,7 @@ Aplicação FastAPI completa para um agente de IA de assessores financeiros. O s
 - `/integrations` - Gerenciamento de integrações (admin)
 - `/agent-brain` - Painel de Controle do Cérebro do Agente (admin/gestao_rv)
 - `/assessores` - Base de Assessores (admin/broker/gestao_rv)
+- `/campanhas` - Campanhas Ativas (admin/gestao_rv)
 
 ## Roles de Usuário
 - `admin` - Acesso total ao sistema
@@ -162,6 +163,11 @@ A página `/agent-brain` (admin e gestao_rv) permite configurar em tempo real:
 - 2026-01-21: **Configuração de Secrets na Interface**:
   - Página de integrações permite configurar chaves de API diretamente
   - Endpoint `POST /api/integrations/save-secrets` para salvar configurações
+- 2026-01-21: **Sistema de Campanhas Ativas**:
+  - Wizard de 4 passos para criação de campanhas de disparo em massa
+  - Templates de mensagem reutilizáveis com variáveis dinâmicas
+  - Agrupamento inteligente por assessor e cliente
+  - Histórico de campanhas com estatísticas de sucesso/falha
 
 ## Design System
 
@@ -217,3 +223,43 @@ A página `/assessores` (admin e broker) permite gerenciar a base de assessores 
 ### Tabelas do Banco de Dados
 - `assessores` - Registros dos assessores com campos customizados em JSON
 - `custom_field_definitions` - Definições de campos customizados
+
+## Sistema de Campanhas Ativas
+
+A página `/campanhas` (admin e gestao_rv) permite criar e gerenciar campanhas de disparo em massa via WhatsApp.
+
+### Funcionalidades
+1. **Wizard de 4 passos** - Processo guiado para criação de campanhas
+2. **Upload de Planilhas** - Aceita Excel (.xlsx, .xls) ou CSV
+3. **Mapeamento Flexível** - Mapeia colunas da planilha para campos do sistema
+4. **Templates Reutilizáveis** - Cria e gerencia templates de mensagem com variáveis
+5. **Agrupamento Inteligente** - Agrupa recomendações por assessor e depois por cliente
+6. **Preview Antes do Disparo** - Visualiza mensagens formatadas antes de enviar
+7. **Histórico de Campanhas** - Consulta campanhas anteriores com status e estatísticas
+
+### Etapas do Wizard
+1. **Upload** - Carrega planilha com dados de clientes e recomendações
+2. **Mapeamento** - Define quais colunas correspondem a cada campo
+3. **Template** - Seleciona ou cria template de mensagem com variáveis
+4. **Preview e Disparo** - Visualiza mensagens agrupadas e confirma envio
+
+### Variáveis de Template
+- `{{nome_assessor}}` - Nome do assessor
+- `{{lista_clientes}}` - Lista formatada de clientes com recomendações
+- `{{data_atual}}` - Data do disparo
+- Variáveis customizadas conforme mapeamento
+
+### Tabelas do Banco de Dados
+- `message_templates` - Templates de mensagem com nome e conteúdo
+- `campaigns` - Campanhas com status, contadores e metadados
+- `campaign_dispatches` - Registro de cada mensagem enviada
+
+### Endpoints API
+- `GET /api/templates` - Listar templates
+- `POST /api/templates` - Criar template
+- `PUT /api/templates/{id}` - Atualizar template
+- `DELETE /api/templates/{id}` - Excluir template
+- `POST /api/campaigns/upload` - Upload de planilha
+- `POST /api/campaigns/preview` - Preview com mapeamento
+- `POST /api/campaigns/dispatch` - Disparar campanha
+- `GET /api/campaigns/history` - Histórico de campanhas
