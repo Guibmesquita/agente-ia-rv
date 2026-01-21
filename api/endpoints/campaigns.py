@@ -306,7 +306,7 @@ async def update_campaign_mapping(
 @router.put("/{campaign_id}/template")
 async def set_campaign_template(
     campaign_id: int,
-    template_id: int,
+    template_id: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_gestao())
 ):
@@ -315,14 +315,37 @@ async def set_campaign_template(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
     
-    template = db.query(MessageTemplate).filter(MessageTemplate.id == template_id).first()
-    if not template:
-        raise HTTPException(status_code=404, detail="Template não encontrado")
+    if template_id:
+        template = db.query(MessageTemplate).filter(MessageTemplate.id == template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail="Template não encontrado")
+        campaign.template_id = template_id
     
-    campaign.template_id = template_id
     db.commit()
     
     return {"message": "Template definido com sucesso"}
+
+
+class CustomTemplateRequest(BaseModel):
+    content: str
+
+
+@router.put("/{campaign_id}/custom-template")
+async def set_custom_template(
+    campaign_id: int,
+    request: CustomTemplateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """Define um template customizado (editado) para a campanha."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+    
+    campaign.custom_template_content = request.content
+    db.commit()
+    
+    return {"message": "Template customizado salvo com sucesso"}
 
 
 @router.get("/{campaign_id}/preview")
@@ -339,11 +362,14 @@ async def preview_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
     
-    # Usa template se existir, senao usa mensagem padrao
+    # Usa template customizado se existir, senao template salvo, senao mensagem padrao
     template_content = DEFAULT_TEMPLATE_CONTENT
     template_name = "Mensagem Padrao"
     
-    if campaign.template_id:
+    if campaign.custom_template_content:
+        template_content = campaign.custom_template_content
+        template_name = "Mensagem Editada"
+    elif campaign.template_id:
         template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
         if template:
             template_content = template.content
@@ -380,7 +406,7 @@ async def preview_campaign(
         "campaign_id": campaign.id,
         "total_assessors": len(messages),
         "total_recommendations": campaign.total_recommendations,
-        "messages": messages[:10],
+        "messages": messages[:5],
         "template_name": template_name
     }
 
@@ -505,10 +531,12 @@ async def dispatch_campaign(
     if campaign.status == CampaignStatus.SENT.value:
         raise HTTPException(status_code=400, detail="Esta campanha já foi enviada")
     
-    # Usa template se existir, senao usa mensagem padrao
+    # Usa template customizado se existir, senao template salvo, senao mensagem padrao
     template_content = DEFAULT_TEMPLATE_CONTENT
     
-    if campaign.template_id:
+    if campaign.custom_template_content:
+        template_content = campaign.custom_template_content
+    elif campaign.template_id:
         template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
         if template:
             template_content = template.content
@@ -525,7 +553,7 @@ async def dispatch_campaign(
     
     grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
     
-    from services.whatsapp_service import send_whatsapp_message
+    from services.whatsapp_client import whatsapp_client
     import os
     
     waha_url = os.getenv("WAHA_API_URL", "")
@@ -549,8 +577,8 @@ async def dispatch_campaign(
         
         if phone and waha_url:
             try:
-                result = send_whatsapp_message(phone, message)
-                if result.get("success"):
+                result = await whatsapp_client.send_message(phone, message)
+                if not result.get("error"):
                     dispatch.status = "sent"
                     dispatch.sent_at = datetime.utcnow()
                     sent_count += 1
