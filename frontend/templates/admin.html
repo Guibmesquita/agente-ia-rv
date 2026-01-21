@@ -83,17 +83,18 @@
 </head>
 <body>
     <div class="app-layout">
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <img src="/static/logo.png" alt="SVN" class="sidebar-logo">
-                <span class="sidebar-title">Agente IA - RV</span>
-            </div>
-            <button class="sidebar-toggle" onclick="toggleSidebar()">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                </svg>
-            </button>
-            <nav class="sidebar-nav">
+        <header class="topbar">
+            <img src="/static/logo.png" alt="SVN" class="topbar-logo">
+            <span class="topbar-title">Agente IA - RV</span>
+        </header>
+        <div class="app-body">
+            <aside class="sidebar" id="sidebar">
+                <button class="sidebar-toggle" onclick="toggleSidebar()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <nav class="sidebar-nav">
                 <a href="/analytics" class="nav-item">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
                     <span>Dashboard</span>
@@ -170,6 +171,7 @@
                 <a href="/kanban" class="btn btn-primary">Voltar ao Kanban</a>
             </div>
         </main>
+        </div>
     </div>
     
     <div class="modal-overlay" id="userModal">
