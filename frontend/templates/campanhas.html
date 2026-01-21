@@ -738,34 +738,6 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
             }
         }
 
-        function renderMappingGrid(columns, suggested) {
-            const fields = [
-                { key: 'assessor_id', label: 'ID do Assessor', required: true },
-                { key: 'client_id', label: 'ID do Cliente', required: true },
-                { key: 'ativo_saida', label: 'Ativo de Saida', required: true },
-                { key: 'valor_saida', label: 'Valor de Saida', required: true },
-                { key: 'ativo_compra', label: 'Ativo de Compra', required: true },
-                { key: 'valor_compra', label: 'Valor de Compra', required: true }
-            ];
-
-            const grid = document.getElementById('mappingGrid');
-            grid.innerHTML = fields.map(field => `
-                <div class="mapping-item">
-                    <label>
-                        ${field.label}
-                        ${field.required ? '<span class="required">*</span>' : ''}
-                    </label>
-                    <select class="form-input" id="map_${field.key}">
-                        <option value="">-- Selecione --</option>
-                        ${columns.map(col => `
-                            <option value="${col}" ${suggested[field.key] === col ? 'selected' : ''}>
-                                ${col}
-                            </option>
-                        `).join('')}
-                    </select>
-                </div>
-            `).join('');
-        }
 
         function addCustomField() {
             const container = document.getElementById('customFieldsContainer');
@@ -1392,9 +1364,8 @@ Equipe de Gestao`;
         
         function renderMappingGrid(columns, savedMapping) {
             const fields = [
-                { key: 'nome_assessor', label: 'Nome do Assessor', required: true },
-                { key: 'telefone_assessor', label: 'Telefone do Assessor', required: true },
-                { key: 'nome_cliente', label: 'Nome do Cliente', required: true },
+                { key: 'assessor_id', label: 'Nome do Assessor', required: true },
+                { key: 'client_id', label: 'Nome do Cliente', required: true },
                 { key: 'ativo_saida', label: 'Ativo de Saida', required: true },
                 { key: 'valor_saida', label: 'Valor de Saida', required: true },
                 { key: 'ativo_compra', label: 'Ativo de Compra', required: true },
