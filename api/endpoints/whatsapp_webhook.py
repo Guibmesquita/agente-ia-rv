@@ -19,6 +19,34 @@ from services.vector_store import get_vector_store
 
 router = APIRouter(prefix="/api/webhook", tags=["WhatsApp Webhook"])
 
+
+def is_phone_allowed(phone: str, db: Session) -> bool:
+    """Verifica se o telefone está autorizado a receber respostas."""
+    config = crud.get_agent_config(db)
+    if not config:
+        return True
+    
+    filter_mode = getattr(config, 'filter_mode', 'all') or 'all'
+    
+    if filter_mode == "all":
+        return True
+    
+    allowed_phones = getattr(config, 'allowed_phones', '') or ''
+    if not allowed_phones.strip():
+        return True
+    
+    clean_phone = phone.replace("@c.us", "").replace("@s.whatsapp.net", "")
+    clean_phone = clean_phone.replace("+", "").replace("-", "").replace(" ", "")
+    
+    allowed_list = [p.strip().replace("+", "").replace("-", "").replace(" ", "") 
+                    for p in allowed_phones.split(",") if p.strip()]
+    
+    for allowed in allowed_list:
+        if clean_phone.endswith(allowed) or allowed.endswith(clean_phone) or clean_phone == allowed:
+            return True
+    
+    return False
+
 conversation_history: Dict[str, list] = {}
 
 
@@ -279,6 +307,10 @@ async def whatsapp_webhook(
     
     if "@g.us" in chat_id:
         return {"status": "ignored", "reason": "group message"}
+    
+    if not is_phone_allowed(chat_id, db):
+        print(f"[WEBHOOK] Número não autorizado: {chat_id}")
+        return {"status": "ignored", "reason": "phone not allowed"}
     
     message_type = get_message_type(message_payload)
     

@@ -669,7 +669,9 @@ def create_or_update_agent_config(
     restrictions: str = "",
     model: str = "gpt-4o",
     temperature: str = "0.7",
-    max_tokens: int = 500
+    max_tokens: int = 500,
+    allowed_phones: str = "",
+    filter_mode: str = "all"
 ) -> AgentConfig:
     """Cria ou atualiza a configuração do agente."""
     existing = get_agent_config(db)
@@ -680,6 +682,8 @@ def create_or_update_agent_config(
         existing.model = model
         existing.temperature = temperature
         existing.max_tokens = max_tokens
+        existing.allowed_phones = allowed_phones
+        existing.filter_mode = filter_mode
         db.commit()
         db.refresh(existing)
         return existing
@@ -690,6 +694,8 @@ def create_or_update_agent_config(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
+        allowed_phones=allowed_phones,
+        filter_mode=filter_mode,
         is_active=1
     )
     db.add(config)

@@ -22,6 +22,8 @@ class AgentConfigResponse(BaseModel):
     model: str
     temperature: str
     max_tokens: int
+    allowed_phones: Optional[str] = ""
+    filter_mode: Optional[str] = "all"
     
     class Config:
         from_attributes = True
@@ -33,6 +35,8 @@ class AgentConfigUpdate(BaseModel):
     model: str = "gpt-4o"
     temperature: str = "0.7"
     max_tokens: int = 500
+    allowed_phones: Optional[str] = ""
+    filter_mode: Optional[str] = "all"
 
 
 def require_admin_or_gestao(current_user: User = Depends(get_current_user)):
@@ -73,7 +77,9 @@ async def update_config(
         restrictions=config_data.restrictions or "",
         model=config_data.model,
         temperature=config_data.temperature,
-        max_tokens=config_data.max_tokens
+        max_tokens=config_data.max_tokens,
+        allowed_phones=config_data.allowed_phones or "",
+        filter_mode=config_data.filter_mode or "all"
     )
     return config
 

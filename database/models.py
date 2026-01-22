@@ -178,6 +178,8 @@ class AgentConfig(Base):
     model = Column(String(50), default="gpt-4o")
     temperature = Column(String(10), default="0.7")
     max_tokens = Column(Integer, default=500)
+    allowed_phones = Column(Text, nullable=True, default="")
+    filter_mode = Column(String(20), default="all")
     is_active = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
