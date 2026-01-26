@@ -62,6 +62,11 @@ class TakeoverRequest(BaseModel):
     action: str  # "takeover" ou "release"
 
 
+class StartConversationRequest(BaseModel):
+    phone: str
+    message: str
+
+
 def normalize_phone(phone: str) -> str:
     """Remove caracteres especiais do telefone."""
     if not phone:
@@ -117,6 +122,102 @@ async def list_conversations(
         ))
     
     return result
+
+
+@router.post("/start")
+async def start_new_conversation(
+    request: StartConversationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Inicia uma nova conversa com um número de telefone ou envia para conversa existente."""
+    phone = normalize_phone(request.phone)
+    
+    if len(phone) < 10 or len(phone) > 15:
+        raise HTTPException(status_code=400, detail="Número de telefone inválido")
+    
+    message_text = request.message.strip() if request.message else ""
+    if not message_text:
+        raise HTTPException(status_code=400, detail="A mensagem não pode estar vazia")
+    
+    waha_api_key = os.environ.get("WAHA_API_KEY", "")
+    waha_base_url = os.environ.get("WAHA_API_URL", "https://waha-cvm7.onrender.com")
+    
+    if not waha_api_key:
+        raise HTTPException(status_code=500, detail="WAHA API não configurada")
+    
+    existing_conv = db.query(Conversation).filter(Conversation.phone == phone).first()
+    is_new_conversation = existing_conv is None
+    
+    if existing_conv:
+        conv = existing_conv
+    else:
+        assessor = db.query(Assessor).filter(
+            Assessor.telefone_whatsapp.contains(phone)
+        ).first()
+        
+        conv = Conversation(
+            phone=phone,
+            contact_name=assessor.nome if assessor else None,
+            assessor_id=assessor.id if assessor else None,
+            status=ConversationStatus.HUMAN_TAKEOVER.value,
+            assigned_to=current_user.id
+        )
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+    
+    chat_id = f"{phone}@c.us"
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{waha_base_url}/api/sendText",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Api-Key": waha_api_key
+                },
+                json={
+                    "session": "default",
+                    "chatId": chat_id,
+                    "text": message_text
+                }
+            )
+            
+            if response.status_code not in [200, 201]:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Erro ao enviar mensagem: {response.text}"
+                )
+            
+            response_data = response.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Erro de conexão: {str(e)}")
+    
+    message = WhatsAppMessage(
+        waha_message_id=response_data.get("key", {}).get("id"),
+        chat_id=chat_id,
+        phone=phone,
+        direction=MessageDirection.OUTBOUND.value,
+        message_type="text",
+        sender_type=SenderType.HUMAN.value,
+        body=message_text,
+        conversation_id=conv.id
+    )
+    db.add(message)
+    
+    conv.last_message_at = datetime.utcnow()
+    conv.last_message_preview = message_text[:100] if len(message_text) > 100 else message_text
+    conv.status = ConversationStatus.HUMAN_TAKEOVER.value
+    conv.assigned_to = current_user.id
+    
+    db.commit()
+    
+    return {
+        "success": True, 
+        "message": "Conversa iniciada com sucesso", 
+        "conversation_id": conv.id
+    }
 
 
 @router.get("/{conversation_id}", response_model=ConversationResponse)

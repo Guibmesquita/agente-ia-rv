@@ -455,9 +455,17 @@
 
         <main class="main-content" id="mainContent">
             <div class="page-container">
-                <div class="page-header">
-                    <h1 class="page-title">Conversas</h1>
-                    <p class="page-subtitle">Visualize e gerencie todas as conversas do agente</p>
+                <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1 class="page-title">Conversas</h1>
+                        <p class="page-subtitle">Visualize e gerencie todas as conversas do agente</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="openNewConversationModal()">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Nova Conversa
+                    </button>
                 </div>
 
                 <div class="conversations-layout">
@@ -794,6 +802,93 @@
             currentFilter = status;
             loadConversations();
         }
+        function openNewConversationModal() {
+            document.getElementById('newConversationModal').style.display = 'flex';
+            document.getElementById('newPhoneInput').value = '';
+            document.getElementById('newMessageInput').value = '';
+            document.getElementById('newPhoneInput').focus();
+        }
+
+        function closeNewConversationModal() {
+            document.getElementById('newConversationModal').style.display = 'none';
+        }
+
+        async function startNewConversation() {
+            const phone = document.getElementById('newPhoneInput').value.trim();
+            const message = document.getElementById('newMessageInput').value.trim();
+
+            if (!phone) {
+                alert('Por favor, insira o número de telefone');
+                return;
+            }
+
+            if (!message) {
+                alert('Por favor, insira a mensagem inicial');
+                return;
+            }
+
+            const phoneClean = phone.replace(/\D/g, '');
+            if (phoneClean.length < 10 || phoneClean.length > 15) {
+                alert('Número de telefone inválido. Use o formato: 5511999999999');
+                return;
+            }
+
+            const btn = document.getElementById('startConversationBtn');
+            btn.disabled = true;
+            btn.textContent = 'Enviando...';
+
+            try {
+                const response = await fetch('/api/conversations/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ phone: phoneClean, message })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.detail || 'Erro ao iniciar conversa');
+                }
+
+                closeNewConversationModal();
+                await loadConversations();
+                
+                if (result.conversation_id) {
+                    selectConversation(result.conversation_id);
+                }
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Enviar Mensagem';
+            }
+        }
     </script>
+
+    <div class="modal" id="newConversationModal" style="display: none;">
+        <div class="modal-overlay" onclick="closeNewConversationModal()"></div>
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Nova Conversa</h2>
+                <button class="modal-close" onclick="closeNewConversationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newPhoneInput">Número de Telefone</label>
+                    <input type="text" id="newPhoneInput" class="form-input" placeholder="Ex: 5511999999999" style="width: 100%;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Formato: código do país + DDD + número (apenas números)</small>
+                </div>
+                <div class="form-group" style="margin-top: 16px;">
+                    <label for="newMessageInput">Mensagem Inicial</label>
+                    <textarea id="newMessageInput" class="form-input" rows="4" placeholder="Digite a mensagem para enviar..." style="width: 100%; resize: vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeNewConversationModal()">Cancelar</button>
+                <button class="btn btn-primary" id="startConversationBtn" onclick="startNewConversation()">Enviar Mensagem</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
