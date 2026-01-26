@@ -36,7 +36,11 @@ The application is built using FastAPI, leveraging a modular project structure.
     - **Kanban Ticket System:** For managing client inquiries with statuses and categories.
     - **Analytics:** Dashboard displaying KPIs (Total Interactions, Open/Closed Tickets, Messages Sent, Assessors Impacted), categorized inquiries, and average resolution time per broker, with date filtering.
     - **Assessor Base:** CRUD operations for managing financial advisors, with email as required unique identifier, custom fields, and bulk import via Excel/CSV with flexible column mapping. Email is used as the primary key for cross-referencing between campaigns and the assessor database.
-    - **Campaign Management:** A 4-step wizard for mass WhatsApp message campaigns with reusable templates, dynamic variables, intelligent grouping, and real-time dispatch progress via Server-Sent Events (SSE) with retry mechanisms.
+    - **Campaign Management:** A 4-step wizard for mass WhatsApp message campaigns with two origin modes:
+        - **Upload Mode:** Import CSV/Excel with data for personalized messages with variable mapping
+        - **Base Selection Mode:** Select assessors directly from the database with filters (unidade, equipe) and checkboxes for quick informational broadcasts
+        - Features: Reusable templates, dynamic variables, intelligent grouping, and real-time dispatch progress via Server-Sent Events (SSE) with retry mechanisms.
+    - **Conversations System:** Full conversation history grouped by phone number, human takeover capability, and ability to start new conversations with any phone number via modal.
     - **Knowledge Base Management:** Upload, index, categorize, and reindex documents (PDF, DOCX, TXT, images) for the AI agent to consult.
 
 **Feature Specifications:**
