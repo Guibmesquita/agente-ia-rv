@@ -259,6 +259,7 @@ class Campaign(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, index=True)
     status = Column(String(50), default=CampaignStatus.DRAFT.value)
+    source_type = Column(String(50), default="upload")
     template_id = Column(Integer, ForeignKey("message_templates.id"), nullable=True)
     custom_template_content = Column(Text, nullable=True)
     column_mapping = Column(Text, default="{}")

@@ -344,6 +344,61 @@ def suggest_column_mapping(columns: List[str]) -> dict:
     return mapping
 
 
+class CampaignFromBaseRequest(BaseModel):
+    name: str
+    assessor_ids: List[int]
+
+
+@router.post("/from-base")
+async def create_campaign_from_base(
+    data: CampaignFromBaseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """
+    Cria uma campanha a partir de assessores selecionados da base.
+    Não requer mapeamento de colunas pois os dados já estão estruturados.
+    """
+    if not data.assessor_ids:
+        raise HTTPException(status_code=400, detail="Nenhum assessor selecionado")
+    
+    assessores = db.query(Assessor).filter(Assessor.id.in_(data.assessor_ids)).all()
+    
+    if len(assessores) != len(data.assessor_ids):
+        raise HTTPException(status_code=400, detail="Um ou mais assessores não foram encontrados")
+    
+    assessor_data = []
+    for a in assessores:
+        assessor_data.append({
+            "id": a.id,
+            "nome": a.nome,
+            "email": a.email,
+            "telefone_whatsapp": a.telefone_whatsapp,
+            "unidade": a.unidade,
+            "equipe": a.equipe
+        })
+    
+    campaign = Campaign(
+        name=data.name,
+        status=CampaignStatus.DRAFT.value,
+        original_filename=None,
+        total_recommendations=0,
+        total_assessors=len(assessores),
+        source_type="base",
+        processed_data=json.dumps(assessor_data, default=str),
+        created_by=int(current_user.id)
+    )
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+    
+    return {
+        "campaign_id": campaign.id,
+        "assessor_count": len(assessores),
+        "message": "Campanha criada com sucesso"
+    }
+
+
 @router.put("/{campaign_id}/mapping")
 async def update_campaign_mapping(
     campaign_id: int,
@@ -436,6 +491,11 @@ async def preview_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
     
+    source_type = getattr(campaign, 'source_type', 'upload') or 'upload'
+    
+    if source_type == "base":
+        return await preview_campaign_from_base(campaign, db)
+    
     # Usa template customizado se existir, senao template salvo, senao mensagem padrao
     template_content = DEFAULT_TEMPLATE_CONTENT
     template_name = "Mensagem Padrao"
@@ -502,6 +562,56 @@ async def preview_campaign(
         "total_recommendations": campaign.total_recommendations,
         "messages": messages[:5],
         "template_name": template_name
+    }
+
+
+async def preview_campaign_from_base(campaign, db: Session):
+    """
+    Gera preview para campanhas baseadas em assessores selecionados da base.
+    Não tem recomendações de ativos, apenas lista de assessores para disparo.
+    """
+    template_content = "Ola, {{nome_assessor}}!\n\n"
+    template_name = "Mensagem Simples"
+    
+    if campaign.custom_template_content:
+        template_content = str(campaign.custom_template_content)
+        template_name = "Mensagem Editada"
+    elif campaign.template_id:
+        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+        if template:
+            template_content = str(template.content)
+            template_name = str(template.name)
+    
+    try:
+        data = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
+    except json.JSONDecodeError:
+        data = []
+    
+    messages = []
+    for assessor in data:
+        message = template_content.replace("{{nome_assessor}}", assessor.get("nome", ""))
+        message = message.replace("{{ nome_assessor }}", assessor.get("nome", ""))
+        message = message.replace("{nome_assessor}", assessor.get("nome", ""))
+        message = message.replace("{{lista_clientes}}", "(Sem recomendacoes de ativos)")
+        message = message.replace("{{ lista_clientes }}", "(Sem recomendacoes de ativos)")
+        message = message.replace("{lista_clientes}", "(Sem recomendacoes de ativos)")
+        
+        messages.append({
+            "assessor_id": str(assessor.get("id", "")),
+            "assessor_name": assessor.get("nome", ""),
+            "assessor_phone": assessor.get("telefone_whatsapp", ""),
+            "client_count": 0,
+            "recommendation_count": 0,
+            "message_preview": message
+        })
+    
+    return {
+        "campaign_id": campaign.id,
+        "total_assessors": len(messages),
+        "total_recommendations": 0,
+        "messages": messages[:5],
+        "template_name": template_name,
+        "source_type": "base"
     }
 
 
@@ -882,6 +992,11 @@ async def dispatch_campaign_stream(
     if campaign.status == CampaignStatus.SENT.value:
         raise HTTPException(status_code=400, detail="Esta campanha já foi enviada")
     
+    source_type = getattr(campaign, 'source_type', 'upload') or 'upload'
+    
+    if source_type == "base":
+        return await dispatch_campaign_from_base(campaign, db)
+    
     template_content = DEFAULT_TEMPLATE_CONTENT
     
     if campaign.custom_template_content:
@@ -1082,6 +1197,213 @@ async def dispatch_campaign_stream(
             db_final = SessionLocal()
             try:
                 campaign_final = db_final.query(Campaign).filter(Campaign.id == campaign_id).first()
+                if campaign_final:
+                    campaign_final.status = CampaignStatus.SENT.value
+                    campaign_final.messages_sent = sent_count
+                    campaign_final.messages_failed = failed_count
+                    campaign_final.sent_at = datetime.utcnow()
+                    db_final.commit()
+            finally:
+                db_final.close()
+        
+        if not cancelled:
+            complete_data = {
+                'type': 'complete',
+                'total': total_assessors,
+                'sent_count': sent_count,
+                'failed_count': failed_count
+            }
+            yield f"data: {json.dumps(complete_data)}\n\n"
+    
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+async def dispatch_campaign_from_base(campaign, db: Session):
+    """
+    Dispara campanha baseada em assessores selecionados da base.
+    Envia mensagem simples para cada assessor sem lista de clientes.
+    """
+    from services.whatsapp_client import whatsapp_client
+    import os
+    
+    template_content = "Ola, {{nome_assessor}}!\n\n"
+    
+    if campaign.custom_template_content:
+        template_content = str(campaign.custom_template_content)
+    elif campaign.template_id:
+        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+        if template:
+            template_content = str(template.content)
+    
+    try:
+        data = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
+    except json.JSONDecodeError:
+        data = []
+    
+    total_assessors = len(data)
+    
+    if total_assessors == 0:
+        campaign.status = CampaignStatus.SENT.value
+        campaign.messages_sent = 0
+        campaign.messages_failed = 0
+        campaign.sent_at = datetime.utcnow()
+        campaign.total_assessors = 0
+        db.commit()
+        
+        async def empty_generator():
+            yield f"data: {json.dumps({'type': 'start', 'total': 0})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete', 'total': 0, 'sent_count': 0, 'failed_count': 0})}\n\n"
+        
+        return StreamingResponse(
+            empty_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+        )
+    
+    campaign.status = CampaignStatus.PROCESSING.value
+    campaign.total_assessors = total_assessors
+    db.commit()
+    
+    async def generate_events():
+        waha_url = os.getenv("WAHA_API_URL", "")
+        sent_count = 0
+        failed_count = 0
+        current_index = 0
+        cancelled = False
+        
+        try:
+            yield f"data: {json.dumps({'type': 'start', 'total': total_assessors})}\n\n"
+            
+            for assessor in data:
+                current_index += 1
+                assessor_name = assessor.get("nome", "")
+                phone = assessor.get("telefone_whatsapp", "")
+                
+                message = template_content.replace("{{nome_assessor}}", assessor_name)
+                message = message.replace("{{ nome_assessor }}", assessor_name)
+                message = message.replace("{nome_assessor}", assessor_name)
+                message = message.replace("{{lista_clientes}}", "(Campanha sem recomendacoes de ativos)")
+                message = message.replace("{{ lista_clientes }}", "(Campanha sem recomendacoes de ativos)")
+                message = message.replace("{lista_clientes}", "(Campanha sem recomendacoes de ativos)")
+                
+                db_session = SessionLocal()
+                try:
+                    dispatch = CampaignDispatch(
+                        campaign_id=campaign.id,
+                        assessor_id=str(assessor.get("id", "")),
+                        assessor_email=assessor.get("email", ""),
+                        assessor_phone=phone,
+                        assessor_name=assessor_name,
+                        message_content=message,
+                        status="pending"
+                    )
+                    db_session.add(dispatch)
+                    db_session.flush()
+                    
+                    status = "pending"
+                    error_msg = ""
+                    attempt = 1
+                    
+                    if phone and waha_url:
+                        while attempt <= MAX_RETRY_ATTEMPTS:
+                            try:
+                                result = await whatsapp_client.send_message(phone, message)
+                                dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
+                                
+                                if result.get("success"):
+                                    dispatch.status = "sent"
+                                    dispatch.sent_at = datetime.utcnow()
+                                    sent_count += 1
+                                    status = "sent"
+                                    break
+                                else:
+                                    error_code = result.get("error_code", "UNKNOWN")
+                                    error_msg = result.get("error", "Erro desconhecido")
+                                    
+                                    is_retryable = (
+                                        error_code.startswith("HTTP_5") or 
+                                        "500" in error_code or
+                                        "502" in error_code or
+                                        "503" in error_code or
+                                        error_code in ["TIMEOUT", "CONNECTION_ERROR", "HTTP_ERROR"]
+                                    )
+                                    
+                                    if is_retryable and attempt < MAX_RETRY_ATTEMPTS:
+                                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                                        attempt += 1
+                                        continue
+                                    else:
+                                        dispatch.status = "failed"
+                                        dispatch.error_message = error_msg
+                                        dispatch.error_details = translate_error_to_natural_language(error_code, error_msg, phone)
+                                        failed_count += 1
+                                        status = "failed"
+                                        break
+                            except Exception as e:
+                                error_msg = str(e)
+                                if attempt < MAX_RETRY_ATTEMPTS:
+                                    await asyncio.sleep(RETRY_DELAY_SECONDS)
+                                    attempt += 1
+                                else:
+                                    dispatch.status = "failed"
+                                    dispatch.error_message = error_msg
+                                    dispatch.error_details = f"Erro de conexao: {error_msg}"
+                                    failed_count += 1
+                                    status = "failed"
+                                    break
+                    else:
+                        if not phone:
+                            dispatch.status = "failed"
+                            dispatch.error_message = "Telefone não informado"
+                            dispatch.error_details = "O assessor não possui telefone WhatsApp cadastrado"
+                            failed_count += 1
+                            status = "failed"
+                            error_msg = "Telefone não informado"
+                        elif not waha_url:
+                            dispatch.status = "simulated"
+                            dispatch.error_details = "Disparo simulado - WAHA não configurado"
+                            dispatch.sent_at = datetime.utcnow()
+                            sent_count += 1
+                            status = "simulated"
+                    
+                    db_session.commit()
+                    
+                    percent = round((current_index / total_assessors) * 100, 1)
+                    progress_data = {
+                        'type': 'progress',
+                        'current': current_index,
+                        'total': total_assessors,
+                        'percent': percent,
+                        'assessor_name': assessor_name,
+                        'assessor_phone': phone,
+                        'status': status,
+                        'error': error_msg,
+                        'sent_count': sent_count,
+                        'failed_count': failed_count,
+                        'attempts_made': attempt
+                    }
+                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
+                    
+                finally:
+                    db_session.close()
+                
+                if current_index < total_assessors:
+                    await asyncio.sleep(DISPATCH_DELAY_SECONDS)
+        
+        except asyncio.CancelledError:
+            cancelled = True
+        finally:
+            db_final = SessionLocal()
+            try:
+                campaign_final = db_final.query(Campaign).filter(Campaign.id == campaign.id).first()
                 if campaign_final:
                     campaign_final.status = CampaignStatus.SENT.value
                     campaign_final.messages_sent = sent_count

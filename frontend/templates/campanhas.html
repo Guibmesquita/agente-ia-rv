@@ -327,6 +327,150 @@
             margin-top: 12px;
         }
 
+        .source-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .source-card {
+            padding: 32px;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .source-card:hover {
+            border-color: var(--primary-color);
+            background: rgba(79, 70, 229, 0.05);
+        }
+
+        .source-card.selected {
+            border-color: var(--primary-color);
+            background: rgba(79, 70, 229, 0.1);
+        }
+
+        .source-card svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+
+        .source-card.selected svg {
+            color: var(--primary-color);
+        }
+
+        .source-card h4 {
+            margin-bottom: 8px;
+        }
+
+        .source-card p {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .assessor-selection-container {
+            display: none;
+        }
+
+        .assessor-selection-container.active {
+            display: block;
+        }
+
+        .upload-container {
+            display: none;
+        }
+
+        .upload-container.active {
+            display: block;
+        }
+
+        .selection-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .selection-search {
+            flex: 1;
+            max-width: 400px;
+        }
+
+        .selection-filters {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .selection-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .selection-count {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .assessors-table-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .assessors-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .assessors-table th,
+        .assessors-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .assessors-table th {
+            background: var(--bg-color);
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .assessors-table tr:hover {
+            background: var(--bg-color);
+        }
+
+        .assessors-table input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .assessors-table tr.selected {
+            background: rgba(79, 70, 229, 0.08);
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
         @media (max-width: 768px) {
             .wizard-steps {
                 flex-wrap: wrap;
@@ -334,6 +478,16 @@
             }
             .step-label {
                 display: none;
+            }
+            .source-options {
+                grid-template-columns: 1fr;
+            }
+            .selection-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .selection-search {
+                max-width: 100%;
             }
         }
     </style>
@@ -414,7 +568,7 @@
                     <div class="wizard-steps">
                         <div class="wizard-step active" data-step="1">
                             <div class="step-number">1</div>
-                            <span class="step-label">Upload do Arquivo</span>
+                            <span class="step-label">Escolher Origem</span>
                         </div>
                         <div class="wizard-step" data-step="2">
                             <div class="step-number">2</div>
@@ -431,30 +585,88 @@
                     </div>
 
                     <div class="step-content active" id="step1">
-                        <h3>Fazer Upload da Base de Dados</h3>
+                        <h3>Escolha a Origem dos Destinatarios</h3>
                         <p style="color: var(--text-secondary); margin-bottom: 24px;">
-                            Envie um arquivo CSV ou Excel contendo as recomendacoes de investimento para os clientes.
+                            Selecione de onde virao os assessores que receberao a campanha.
                         </p>
 
                         <div class="form-group" style="margin-bottom: 16px;">
                             <label class="form-label">Nome da Campanha</label>
-                            <input type="text" id="campaignName" class="form-input" placeholder="Ex: Recomendacoes Janeiro 2026">
+                            <input type="text" id="campaignName" class="form-input" placeholder="Ex: Recomendacoes Janeiro 2026" oninput="validateStep1()">
                         </div>
 
-                        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-                            </svg>
-                            <h3>Arraste seu arquivo aqui</h3>
-                            <p>ou clique para selecionar (CSV, XLSX, XLS)</p>
+                        <div class="source-options">
+                            <div class="source-card" id="sourceUpload" onclick="selectCampaignSource('upload')">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                </svg>
+                                <h4>Importar Planilha</h4>
+                                <p>Envie um arquivo CSV ou Excel com recomendacoes de investimento</p>
+                            </div>
+                            <div class="source-card" id="sourceBase" onclick="selectCampaignSource('base')">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                </svg>
+                                <h4>Selecionar da Base</h4>
+                                <p>Escolha assessores cadastrados na base de dados</p>
+                            </div>
                         </div>
-                        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display: none;" onchange="handleFileSelect(event)">
 
-                        <div id="fileInfo" style="display: none;"></div>
+                        <div class="upload-container" id="uploadContainer">
+                            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                </svg>
+                                <h3>Arraste seu arquivo aqui</h3>
+                                <p>ou clique para selecionar (CSV, XLSX, XLS)</p>
+                            </div>
+                            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display: none;" onchange="handleFileSelect(event)">
+                            <div id="fileInfo" style="display: none;"></div>
+                        </div>
+
+                        <div class="assessor-selection-container" id="assessorSelectionContainer">
+                            <div class="selection-header">
+                                <div class="selection-search">
+                                    <input type="text" id="assessorSearch" class="form-input" placeholder="Buscar por nome ou email..." oninput="filterAssessors()">
+                                </div>
+                                <div class="selection-filters">
+                                    <select id="filterUnidade" class="form-input" style="width: auto; min-width: 150px;" onchange="filterAssessors()">
+                                        <option value="">Todas Unidades</option>
+                                    </select>
+                                    <select id="filterEquipe" class="form-input" style="width: auto; min-width: 150px;" onchange="filterAssessors()">
+                                        <option value="">Todas Equipes</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="selection-actions" style="margin-bottom: 16px;">
+                                <span class="selection-count" id="selectionCount">0 assessores selecionados</span>
+                                <button class="btn btn-secondary" onclick="clearAssessorSelection()" style="padding: 6px 12px; font-size: 0.85rem;">
+                                    Limpar Selecao
+                                </button>
+                            </div>
+                            <div class="assessors-table-container">
+                                <table class="assessors-table" id="assessorsTable">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 40px;">
+                                                <input type="checkbox" id="selectAllAssessors" onchange="toggleSelectAllAssessors()">
+                                            </th>
+                                            <th>Nome</th>
+                                            <th>Email</th>
+                                            <th>Telefone WhatsApp</th>
+                                            <th>Unidade</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="assessorsTableBody">
+                                        <tr><td colspan="5" class="no-results">Carregando assessores...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
 
                         <div class="wizard-actions">
                             <div></div>
-                            <button class="btn btn-primary" id="btnStep1Next" disabled onclick="goToStep(2)">
+                            <button class="btn btn-primary" id="btnStep1Next" disabled onclick="handleStep1Next()">
                                 Proximo Passo
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                             </button>
@@ -540,7 +752,7 @@
                         </div>
 
                         <div class="wizard-actions">
-                            <button class="btn btn-secondary" onclick="goToStep(2)">
+                            <button class="btn btn-secondary" onclick="goBackFromStep3()">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                                 Voltar
                             </button>
@@ -716,6 +928,11 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
         let uploadedColumns = [];
         let customFields = [];
         let editingTemplateId = null;
+        let campaignSource = null;
+        let selectedAssessors = [];
+        let allAssessors = [];
+        let filteredAssessors = [];
+        let assessorFilters = { unidades: [], equipes: [] };
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -756,6 +973,244 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
             });
         }
 
+        function selectCampaignSource(source) {
+            campaignSource = source;
+            
+            document.getElementById('sourceUpload').classList.remove('selected');
+            document.getElementById('sourceBase').classList.remove('selected');
+            document.getElementById('uploadContainer').classList.remove('active');
+            document.getElementById('assessorSelectionContainer').classList.remove('active');
+            
+            if (source === 'upload') {
+                document.getElementById('sourceUpload').classList.add('selected');
+                document.getElementById('uploadContainer').classList.add('active');
+            } else if (source === 'base') {
+                document.getElementById('sourceBase').classList.add('selected');
+                document.getElementById('assessorSelectionContainer').classList.add('active');
+                loadAssessorsForSelection();
+            }
+            
+            validateStep1();
+        }
+
+        async function loadAssessorsForSelection() {
+            const tbody = document.getElementById('assessorsTableBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="no-results">Carregando assessores...</td></tr>';
+            
+            try {
+                const [assessoresRes, filtersRes] = await Promise.all([
+                    fetch('/api/assessores?limit=500', { credentials: 'include' }),
+                    fetch('/api/assessores/filters', { credentials: 'include' })
+                ]);
+                
+                if (!assessoresRes.ok) throw new Error('Erro ao carregar assessores');
+                
+                allAssessors = await assessoresRes.json();
+                filteredAssessors = [...allAssessors];
+                
+                if (filtersRes.ok) {
+                    const filters = await filtersRes.json();
+                    assessorFilters = filters;
+                    
+                    const unidadeSelect = document.getElementById('filterUnidade');
+                    unidadeSelect.innerHTML = '<option value="">Todas Unidades</option>';
+                    (filters.unidades || []).forEach(u => {
+                        unidadeSelect.innerHTML += `<option value="${u}">${u}</option>`;
+                    });
+                    
+                    const equipeSelect = document.getElementById('filterEquipe');
+                    equipeSelect.innerHTML = '<option value="">Todas Equipes</option>';
+                    (filters.equipes || []).forEach(e => {
+                        equipeSelect.innerHTML += `<option value="${e}">${e}</option>`;
+                    });
+                }
+                
+                renderAssessorsTable();
+                
+            } catch (error) {
+                console.error('Erro ao carregar assessores:', error);
+                tbody.innerHTML = '<tr><td colspan="5" class="no-results" style="color: #dc2626;">Erro ao carregar assessores. Tente novamente.</td></tr>';
+            }
+        }
+
+        function filterAssessors() {
+            const search = document.getElementById('assessorSearch').value.toLowerCase().trim();
+            const unidade = document.getElementById('filterUnidade').value;
+            const equipe = document.getElementById('filterEquipe').value;
+            
+            filteredAssessors = allAssessors.filter(a => {
+                const matchSearch = !search || 
+                    (a.nome && a.nome.toLowerCase().includes(search)) || 
+                    (a.email && a.email.toLowerCase().includes(search));
+                const matchUnidade = !unidade || a.unidade === unidade;
+                const matchEquipe = !equipe || a.equipe === equipe;
+                return matchSearch && matchUnidade && matchEquipe;
+            });
+            
+            renderAssessorsTable();
+        }
+
+        function renderAssessorsTable() {
+            const tbody = document.getElementById('assessorsTableBody');
+            
+            if (filteredAssessors.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="no-results">Nenhum assessor encontrado</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = filteredAssessors.map(a => {
+                const isSelected = selectedAssessors.some(s => s.id === a.id);
+                return `
+                    <tr class="${isSelected ? 'selected' : ''}" onclick="toggleAssessorSelection(${a.id})">
+                        <td onclick="event.stopPropagation()">
+                            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleAssessorSelection(${a.id})">
+                        </td>
+                        <td>${a.nome || '-'}</td>
+                        <td>${a.email || '-'}</td>
+                        <td>${a.telefone_whatsapp || '-'}</td>
+                        <td>${a.unidade || '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            updateSelectAllCheckbox();
+        }
+
+        function toggleAssessorSelection(id) {
+            const assessor = allAssessors.find(a => a.id === id);
+            if (!assessor) return;
+            
+            const index = selectedAssessors.findIndex(s => s.id === id);
+            if (index > -1) {
+                selectedAssessors.splice(index, 1);
+            } else {
+                selectedAssessors.push(assessor);
+            }
+            
+            renderAssessorsTable();
+            updateSelectionCount();
+            validateStep1();
+        }
+
+        function toggleSelectAllAssessors() {
+            const selectAllCheckbox = document.getElementById('selectAllAssessors');
+            
+            if (selectAllCheckbox.checked) {
+                filteredAssessors.forEach(a => {
+                    if (!selectedAssessors.some(s => s.id === a.id)) {
+                        selectedAssessors.push(a);
+                    }
+                });
+            } else {
+                const filteredIds = new Set(filteredAssessors.map(a => a.id));
+                selectedAssessors = selectedAssessors.filter(s => !filteredIds.has(s.id));
+            }
+            
+            renderAssessorsTable();
+            updateSelectionCount();
+            validateStep1();
+        }
+
+        function updateSelectAllCheckbox() {
+            const selectAllCheckbox = document.getElementById('selectAllAssessors');
+            if (filteredAssessors.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+                return;
+            }
+            
+            const selectedInFiltered = filteredAssessors.filter(a => selectedAssessors.some(s => s.id === a.id)).length;
+            
+            if (selectedInFiltered === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (selectedInFiltered === filteredAssessors.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+
+        function clearAssessorSelection() {
+            selectedAssessors = [];
+            renderAssessorsTable();
+            updateSelectionCount();
+            validateStep1();
+        }
+
+        function updateSelectionCount() {
+            const count = selectedAssessors.length;
+            document.getElementById('selectionCount').textContent = 
+                count === 0 ? '0 assessores selecionados' :
+                count === 1 ? '1 assessor selecionado' :
+                `${count} assessores selecionados`;
+        }
+
+        function validateStep1() {
+            const campaignName = document.getElementById('campaignName').value.trim();
+            const btnNext = document.getElementById('btnStep1Next');
+            
+            if (!campaignName) {
+                btnNext.disabled = true;
+                return;
+            }
+            
+            if (campaignSource === 'upload') {
+                btnNext.disabled = !campaignId;
+            } else if (campaignSource === 'base') {
+                btnNext.disabled = selectedAssessors.length === 0;
+            } else {
+                btnNext.disabled = true;
+            }
+        }
+
+        async function handleStep1Next() {
+            if (campaignSource === 'upload') {
+                goToStep(2);
+            } else if (campaignSource === 'base') {
+                await createCampaignFromBase();
+                goToStep(3);
+            }
+        }
+
+        async function createCampaignFromBase() {
+            const campaignName = document.getElementById('campaignName').value.trim();
+            
+            try {
+                const response = await fetch(`${API_BASE}/from-base`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: campaignName,
+                        assessor_ids: selectedAssessors.map(a => a.id)
+                    }),
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao criar campanha');
+                }
+                
+                const data = await response.json();
+                campaignId = data.campaign_id;
+                
+            } catch (error) {
+                alert(error.message);
+                throw error;
+            }
+        }
+
+        function goBackFromStep3() {
+            if (campaignSource === 'base') {
+                goToStep(1);
+            } else {
+                goToStep(2);
+            }
+        }
+
         async function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -764,6 +1219,10 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
             if (!campaignName) {
                 alert('Por favor, informe o nome da campanha antes de fazer upload.');
                 return;
+            }
+
+            if (!campaignSource) {
+                selectCampaignSource('upload');
             }
 
             const formData = new FormData();
@@ -798,7 +1257,7 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
                     </div>
                 `;
                 document.getElementById('fileInfo').style.display = 'block';
-                document.getElementById('btnStep1Next').disabled = false;
+                validateStep1();
 
                 renderMappingGrid(data.columns, data.suggested_mapping);
 
@@ -895,13 +1354,22 @@ Se precisar do racional de investimento ou de materiais de apoio para qualquer u
                 const stepNum = parseInt(el.dataset.step);
                 el.classList.remove('active', 'completed');
                 if (stepNum === step) el.classList.add('active');
-                else if (stepNum < step) el.classList.add('completed');
+                else if (stepNum < step) {
+                    if (campaignSource === 'base' && stepNum === 2) {
+                        el.classList.add('completed');
+                        el.style.opacity = '0.5';
+                    } else {
+                        el.classList.add('completed');
+                        el.style.opacity = '1';
+                    }
+                } else {
+                    el.style.opacity = '1';
+                }
             });
 
             currentStep = step;
 
             if (step === 4) {
-                // Salva template customizado antes de gerar preview
                 const templateContent = document.getElementById('templatePreview').value;
                 if (templateContent && campaignId) {
                     try {
