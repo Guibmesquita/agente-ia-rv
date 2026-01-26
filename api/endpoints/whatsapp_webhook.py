@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 
 from database.database import get_db, SessionLocal
-from database.models import WhatsAppMessage, MessageDirection, MessageType
+from database.models import WhatsAppMessage, MessageDirection, MessageType, Conversation, ConversationStatus, SenderType, Assessor
 from database import crud
 from services.whatsapp_client import whatsapp_client
 from services.openai_agent import openai_agent
@@ -79,6 +79,40 @@ def get_message_type(payload: Dict[str, Any]) -> str:
     return MessageType.TEXT.value
 
 
+def get_or_create_conversation(db: Session, phone: str) -> Conversation:
+    """Obtém ou cria uma conversa para um número de telefone."""
+    conv = db.query(Conversation).filter(Conversation.phone == phone).first()
+    
+    if not conv:
+        assessor = db.query(Assessor).filter(
+            Assessor.telefone_whatsapp.contains(phone)
+        ).first()
+        
+        conv = Conversation(
+            phone=phone,
+            contact_name=assessor.nome if assessor else None,
+            assessor_id=assessor.id if assessor else None,
+            status=ConversationStatus.BOT_ACTIVE.value
+        )
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+    
+    return conv
+
+
+def update_conversation_metadata(db: Session, conversation: Conversation, message_body: str, is_inbound: bool = True):
+    """Atualiza metadados da conversa após nova mensagem."""
+    conversation.last_message_at = datetime.utcnow()
+    if message_body:
+        conversation.last_message_preview = message_body[:100] if len(message_body) > 100 else message_body
+    
+    if is_inbound:
+        conversation.unread_count = (conversation.unread_count or 0) + 1
+    
+    db.commit()
+
+
 def save_message(
     db: Session,
     waha_message_id: str,
@@ -91,12 +125,18 @@ def save_message(
     media_filename: str = None,
     ai_response: str = None,
     ai_intent: str = None,
-    ticket_id: int = None
+    ticket_id: int = None,
+    sender_type: str = None
 ) -> WhatsAppMessage:
     """
-    Salva uma mensagem no banco de dados.
+    Salva uma mensagem no banco de dados e atualiza a conversa.
     """
     phone = chat_id.replace("@c.us", "").replace("@s.whatsapp.net", "")
+    
+    conversation = get_or_create_conversation(db, phone)
+    
+    if sender_type is None:
+        sender_type = SenderType.CONTACT.value if direction == MessageDirection.INBOUND.value else SenderType.BOT.value
     
     message = WhatsAppMessage(
         waha_message_id=waha_message_id,
@@ -104,18 +144,23 @@ def save_message(
         phone=phone,
         direction=direction,
         message_type=message_type,
+        sender_type=sender_type,
         body=body,
         media_url=media_url,
         media_mimetype=media_mimetype,
         media_filename=media_filename,
         ai_response=ai_response,
         ai_intent=ai_intent,
-        ticket_id=ticket_id
+        ticket_id=ticket_id,
+        conversation_id=conversation.id
     )
     
     db.add(message)
     db.commit()
     db.refresh(message)
+    
+    is_inbound = direction == MessageDirection.INBOUND.value
+    update_conversation_metadata(db, conversation, body, is_inbound)
     
     return message
 
@@ -312,6 +357,10 @@ async def whatsapp_webhook(
         print(f"[WEBHOOK] Número não autorizado: {chat_id}")
         return {"status": "ignored", "reason": "phone not allowed"}
     
+    phone = chat_id.replace("@c.us", "").replace("@s.whatsapp.net", "")
+    conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
+    is_human_takeover = conversation and conversation.status == ConversationStatus.HUMAN_TAKEOVER.value
+    
     message_type = get_message_type(message_payload)
     
     try:
@@ -334,6 +383,16 @@ async def whatsapp_webhook(
         await whatsapp_client.send_seen(chat_id)
     except Exception as e:
         print(f"[WEBHOOK] Erro ao marcar como visto: {e}")
+    
+    if is_human_takeover:
+        print(f"[WEBHOOK] Conversa em modo humano, não respondendo automaticamente: {chat_id}")
+        return {
+            "status": "received",
+            "message_type": message_type,
+            "message_id": message_record.id if message_record else None,
+            "auto_response": False,
+            "reason": "human_takeover"
+        }
     
     if message_type == MessageType.TEXT.value:
         if body:

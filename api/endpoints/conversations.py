@@ -16,7 +16,7 @@ from database.models import (
     Conversation, WhatsAppMessage, Assessor, User,
     ConversationStatus, SenderType, MessageDirection
 )
-from core.security import get_current_user
+from api.endpoints.auth import get_current_user
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
