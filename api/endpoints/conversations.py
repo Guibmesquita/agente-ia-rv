@@ -19,7 +19,7 @@ from database.models import (
 from api.endpoints.auth import get_current_user
 
 
-router = APIRouter(prefix="/conversations", tags=["Conversations"])
+router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
 
 
 class ConversationResponse(BaseModel):
