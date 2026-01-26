@@ -126,7 +126,7 @@ class IntegrationType(str, enum.Enum):
     """Tipos de integração disponíveis."""
     OPENAI = "openai"
     NOTION = "notion"
-    WAHA = "waha"
+    ZAPI = "zapi"
     CUSTOM = "custom"
 
 
@@ -401,24 +401,41 @@ class Conversation(Base):
     messages = relationship("WhatsAppMessage", back_populates="conversation", order_by="WhatsAppMessage.created_at")
 
 
+class MessageStatus(str, enum.Enum):
+    """Status da mensagem no WhatsApp."""
+    PENDING = "PENDING"
+    SENT = "SENT"
+    RECEIVED = "RECEIVED"
+    READ = "READ"
+    PLAYED = "PLAYED"
+    FAILED = "FAILED"
+
+
 class WhatsAppMessage(Base):
     """
     Registro de mensagens do WhatsApp.
     Armazena todas as mensagens recebidas e enviadas.
+    Compatível com Z-API.
     """
     __tablename__ = "whatsapp_messages"
     
     id = Column(Integer, primary_key=True, index=True)
-    waha_message_id = Column(String(255), unique=True, index=True, nullable=True)
+    message_id = Column(String(255), unique=True, index=True, nullable=True)
+    zaap_id = Column(String(255), index=True, nullable=True)
     chat_id = Column(String(100), nullable=False, index=True)
     phone = Column(String(20), nullable=True, index=True)
+    from_me = Column(Boolean, default=False)
     direction = Column(String(20), default=MessageDirection.INBOUND.value)
     message_type = Column(String(20), default=MessageType.TEXT.value)
+    message_status = Column(String(20), default=MessageStatus.PENDING.value)
     sender_type = Column(String(20), default=SenderType.CONTACT.value)
+    sender_name = Column(String(255), nullable=True)
+    sender_photo = Column(String(500), nullable=True)
     body = Column(Text, nullable=True)
     media_url = Column(String(500), nullable=True)
     media_mimetype = Column(String(100), nullable=True)
     media_filename = Column(String(255), nullable=True)
+    thumbnail_url = Column(String(500), nullable=True)
     transcription = Column(Text, nullable=True)
     ai_response = Column(Text, nullable=True)
     ai_intent = Column(String(100), nullable=True)

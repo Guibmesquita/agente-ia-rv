@@ -18,10 +18,10 @@ class Settings(BaseSettings):
     NOTION_API_KEY: str = os.getenv("NOTION_API_KEY", "")
     NOTION_DATABASE_ID: str = os.getenv("NOTION_DATABASE_ID", "")
     
-    # Configuração do WAHA (WhatsApp HTTP API)
-    WAHA_API_URL: str = os.getenv("WAHA_API_URL", "http://localhost:3000")
-    WAHA_API_KEY: str = os.getenv("WAHA_API_KEY", "")
-    WAHA_SESSION: str = os.getenv("WAHA_SESSION", "default")
+    # Configuração do Z-API (WhatsApp API)
+    ZAPI_INSTANCE_ID: str = os.getenv("ZAPI_INSTANCE_ID", "")
+    ZAPI_TOKEN: str = os.getenv("ZAPI_TOKEN", "")
+    ZAPI_CLIENT_TOKEN: str = os.getenv("ZAPI_CLIENT_TOKEN", "")
     
     # Configuração do banco de dados (usa PostgreSQL do Replit ou SQLite local)
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
