@@ -303,7 +303,7 @@ async def teste_agente_page(request: Request):
 @app.get("/conversas", response_class=HTMLResponse)
 async def conversas_page(request: Request):
     """
-    Página de Conversas estilo WhatsApp Web.
+    Página de gerenciamento de Conversas.
     Mostra histórico de todas as conversas e permite intervenção humana.
     Requer autenticação como admin, gestao_rv ou broker.
     """
@@ -320,7 +320,7 @@ async def conversas_page(request: Request):
     if user_role not in ["admin", "gestao_rv", "broker"]:
         return RedirectResponse(url="/login?error=permission")
     
-    return templates.TemplateResponse("central_mensagens.html", {"request": request, "user_role": user_role})
+    return templates.TemplateResponse("conversas.html", {"request": request, "user_role": user_role})
 
 
 # ========== Health Check ==========
