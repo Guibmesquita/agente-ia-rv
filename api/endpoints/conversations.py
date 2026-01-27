@@ -149,12 +149,20 @@ async def sync_chats_from_zapi(
     for chat in chats:
         if chat.get("isGroup"):
             continue
-            
+        
         phone = chat.get("phone", "")
+        lid = chat.get("lid", "")
+        
+        if phone and "@lid" in phone:
+            phone = ""
+        
+        if not phone and lid:
+            phone = lid
+        
         if not phone:
             continue
         
-        phone = normalize_phone(phone)
+        phone = normalize_phone(phone) if "@lid" not in phone else phone
         
         existing = db.query(Conversation).filter(Conversation.phone == phone).first()
         
@@ -166,20 +174,24 @@ async def sync_chats_from_zapi(
             if chat.get("lastMessageTime"):
                 try:
                     last_msg_ts = int(chat.get("lastMessageTime"))
-                    last_msg_dt = datetime.fromtimestamp(last_msg_ts)
+                    last_msg_dt = datetime.fromtimestamp(last_msg_ts / 1000) if last_msg_ts > 9999999999 else datetime.fromtimestamp(last_msg_ts)
                     if not existing.last_message_at or last_msg_dt > existing.last_message_at:
                         existing.last_message_at = last_msg_dt
                 except (ValueError, TypeError):
                     pass
         else:
-            assessor = db.query(Assessor).filter(
-                Assessor.telefone_whatsapp.contains(phone)
-            ).first()
+            phone_for_assessor = phone if "@lid" not in phone else None
+            assessor = None
+            if phone_for_assessor:
+                assessor = db.query(Assessor).filter(
+                    Assessor.telefone_whatsapp.contains(phone_for_assessor)
+                ).first()
             
             last_msg_at = None
             if chat.get("lastMessageTime"):
                 try:
-                    last_msg_at = datetime.fromtimestamp(int(chat.get("lastMessageTime")))
+                    ts = int(chat.get("lastMessageTime"))
+                    last_msg_at = datetime.fromtimestamp(ts / 1000) if ts > 9999999999 else datetime.fromtimestamp(ts)
                 except (ValueError, TypeError):
                     last_msg_at = datetime.utcnow()
             

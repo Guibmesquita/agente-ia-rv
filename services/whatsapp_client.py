@@ -348,6 +348,41 @@ class ZAPIClient:
             except httpx.HTTPError as e:
                 return {"success": False, "error": str(e)}
     
+    async def check_phone_exists(self, phone: str) -> dict:
+        """
+        Verifica se um número tem WhatsApp e obtém o LID correspondente.
+        
+        Args:
+            phone: Número de telefone no formato internacional
+            
+        Returns:
+            Dict com exists, phone e lid
+        """
+        url = f"{self.base_url}/phone-exists/{self._normalize_phone(phone)}"
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url, headers=self._get_headers(), timeout=10.0)
+                if response.status_code == 200:
+                    data = response.json() if response.content else {}
+                    return {
+                        "success": True,
+                        "exists": data.get("exists", False),
+                        "phone": data.get("phone"),
+                        "lid": data.get("lid")
+                    }
+                else:
+                    return {"success": False, "exists": False}
+            except Exception as e:
+                return {"success": False, "error": str(e), "exists": False}
+    
+    async def resolve_lid_to_phone(self, lid: str) -> dict:
+        """
+        Tenta resolver um LID para número de telefone.
+        Nota: Esta é uma operação limitada pela Z-API.
+        """
+        return {"success": False, "error": "LID to phone conversion not supported by WhatsApp"}
+    
     async def get_chats(self, page: int = 1, page_size: int = 50) -> dict:
         """
         Busca todos os chats da instância Z-API.
