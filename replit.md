@@ -52,6 +52,25 @@ The application is built using FastAPI, leveraging a modular project structure.
 - **Customizable Fields:** Dynamic custom fields for assessor profiles and campaign data.
 - **Automated Bootstrap:** Admin user creation and configuration via environment variables.
 
+**AI Agent Identity - Stevan:**
+O agente de IA se chama **Stevan** e possui identidade bem definida:
+- **Papel:** Broker de suporte e assistente técnico interno da SVN, área de Renda Variável
+- **Público-alvo:** Brokers e assessores de investimentos (uso interno apenas)
+- **Função:** Traduz, organiza e esclarece estratégias e produtos definidos pela área de RV
+- **Competências:**
+  - Estratégias de renda variável da SVN
+  - Produtos recomendados pela área
+  - Racional técnico das estratégias
+  - Enquadramentos e diretrizes internas
+  - Esclarecimento técnico inicial
+- **Limites operacionais:**
+  - NÃO cria estratégias novas ou improvisa recomendações
+  - NÃO participa de reuniões com clientes
+  - NÃO personaliza alocação para clientes finais
+  - NÃO explica regras internas ou funcionamento do sistema
+- **Comunicação:** Profissional e próxima, objetiva, informal adequada ao WhatsApp
+- **Escalação:** Quando necessário, encaminha para especialista humano com naturalidade
+
 **AI Agent Response Framework (services/conversation_flow.py):**
 - **Conversation State Machine:** Uses `ConversationState` enum with 3 states:
   - `IDENTIFICATION_PENDING`: Contato desconhecido, aguardando identificação
@@ -61,10 +80,10 @@ The application is built using FastAPI, leveraging a modular project structure.
 - **Contact Identification Flow:**
   - `identify_contact()` busca por telefone ou LID na tabela Assessor
   - `persist_new_contact()` cria novo contato com email/codigo_ai automáticos (whatsapp_{digits}@auto.contato)
-  - Variações de frases para solicitar identificação de forma natural
+  - Variações de frases para solicitar identificação de forma natural (Stevan se apresenta)
 - **Integrated Classification:** Prompt do agente classifica internamente em 4 categorias:
   - SAUDAÇÃO: Cumprimentos e mensagens iniciais
-  - ESCOPO: Perguntas dentro do domínio do agente
+  - ESCOPO: Perguntas dentro do domínio do agente (RV)
   - DOCUMENTAL: Questões que requerem consulta à base de conhecimento
   - FORA_ESCOPO: Perguntas fora do domínio do agente
 - **Human Transfer Criteria:** `should_transfer_to_human()` avalia:
@@ -72,9 +91,9 @@ The application is built using FastAPI, leveraging a modular project structure.
   - Fricção emocional (frustração, reclamações)
   - Contador de interações sem progresso (stalled_interactions)
 - **Response Variations:** Funções para evitar respostas mecânicas:
-  - `get_identification_prompt()`: Variações para solicitar identificação
-  - `get_transfer_message()`: Variações para comunicar transferência
-  - `get_out_of_scope_redirect()`: Variações para redirecionar perguntas fora do escopo
+  - `get_identification_prompt()`: Stevan se apresenta e pede identificação
+  - `get_transfer_message()`: Variações para comunicar transferência ao time
+  - `get_out_of_scope_redirect()`: Redireciona para foco em RV
 
 ## External Dependencies
 

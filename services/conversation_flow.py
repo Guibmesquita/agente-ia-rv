@@ -82,10 +82,10 @@ def extract_first_name(message: str) -> Optional[str]:
 def get_identification_prompt() -> str:
     """Retorna mensagem para solicitar identificação."""
     variations = [
-        "Oi! Para te atender melhor, me diz seu nome?",
-        "Olá! Como posso te chamar?",
-        "Oi! Qual seu nome para eu te ajudar?",
-        "Olá! Me conta seu nome para seguirmos?",
+        "Oi! Aqui é o Stevan, da área de RV. Qual seu nome?",
+        "E aí! Sou o Stevan, suporte de RV. Como te chamo?",
+        "Oi! Stevan aqui, do time de Renda Variável. Qual seu nome?",
+        "Fala! Aqui é o Stevan, RV. Me diz seu nome pra eu te ajudar?",
     ]
     return random.choice(variations)
 
@@ -93,10 +93,10 @@ def get_identification_prompt() -> str:
 def get_identification_confirmation(name: str) -> str:
     """Retorna mensagem confirmando identificação."""
     variations = [
-        f"Pronto, {name}! Salvei seu contato aqui. Como posso te ajudar hoje?",
-        f"Perfeito, {name}! Agora estamos conectados. Em que posso te ajudar?",
-        f"Ótimo, {name}! Registrado. O que você precisa?",
-        f"Beleza, {name}! Agora sim. Como posso te ajudar?",
+        f"Pronto, {name}! Salvei aqui. Em que posso ajudar?",
+        f"Perfeito, {name}! Conectados. O que precisa?",
+        f"Beleza, {name}! Anotado. Como te ajudo?",
+        f"Show, {name}! Pode mandar sua dúvida.",
     ]
     return random.choice(variations)
 
@@ -104,10 +104,10 @@ def get_identification_confirmation(name: str) -> str:
 def get_out_of_scope_redirect() -> str:
     """Retorna mensagem de redirecionamento para mensagens fora do escopo."""
     variations = [
-        "Entendi! Mas meu foco aqui é te ajudar com questões de investimentos e serviços financeiros. Como posso te ajudar nessa área?",
-        "Legal! Bom, aqui minha especialidade é assessoria financeira. Tem alguma dúvida sobre investimentos?",
-        "Certo! Olha, estou aqui para te ajudar com questões financeiras. Posso te auxiliar em algo nesse sentido?",
-        "Tudo bem! Minha área é assessoria financeira. Quer saber algo sobre investimentos ou produtos?",
+        "Entendi! Meu foco aqui é suporte de RV. Tem algo nessa linha?",
+        "Legal! Mas minha área é renda variável. Posso ajudar em algo sobre isso?",
+        "Certo! Aqui é mais questões de RV mesmo. Como te ajudo nessa área?",
+        "Beleza! Mas sou do time de Renda Variável. Alguma dúvida nessa linha?",
     ]
     return random.choice(variations)
 
@@ -116,27 +116,27 @@ def get_transfer_message(reason: str = None) -> str:
     """Retorna mensagem de transferência para humano."""
     if reason == TransferReason.EXPLICIT_REQUEST.value:
         variations = [
-            "Sem problemas! Vou te encaminhar para o responsável agora.",
-            "Claro! Já estou chamando alguém para te atender.",
-            "Perfeito! Vou passar para o responsável dar sequência.",
+            "Sem problemas! Já passo pro pessoal de RV.",
+            "Claro! Vou chamar o responsável.",
+            "Perfeito! Deixa eu acionar quem pode te ajudar.",
         ]
     elif reason == TransferReason.EXCESSIVE_SPECIFICITY.value:
         variations = [
-            "Esse ponto é mais específico, vou envolver o responsável para te responder certinho.",
-            "Para te ajudar da melhor forma nessa questão, vou chamar o responsável.",
-            "Esse caso precisa de uma análise mais detalhada. Vou te encaminhar para o responsável.",
+            "Esse ponto precisa de uma análise mais específica. Vou envolver o especialista.",
+            "Para esse caso, melhor acionar quem pode te dar uma resposta mais precisa.",
+            "Essa questão exige um olhar mais detalhado. Vou passar pro responsável.",
         ]
     elif reason == TransferReason.NO_PROGRESS.value:
         variations = [
-            "Percebi que não estou conseguindo te ajudar como deveria. Vou chamar o responsável.",
-            "Melhor eu passar para o responsável te ajudar diretamente nesse caso.",
-            "Vou encaminhar para o responsável dar andamento, tudo bem?",
+            "Acho que alguém do time pode te ajudar melhor nisso. Vou acionar.",
+            "Deixa eu passar pro responsável te ajudar diretamente.",
+            "Vou encaminhar pra quem pode resolver isso contigo.",
         ]
     else:
         variations = [
-            "Vou te encaminhar para o responsável dar sequência.",
-            "Vou passar para o responsável te ajudar melhor.",
-            "Já estou chamando alguém para te atender.",
+            "Vou acionar o pessoal pra te ajudar.",
+            "Deixa eu passar pro responsável.",
+            "Vou chamar quem pode te ajudar melhor.",
         ]
     return random.choice(variations)
 
@@ -307,36 +307,37 @@ def should_transfer_to_human(
 
 CLASSIFICATION_PROMPT_ADDITION = """
 ESTILO DE COMUNICAÇÃO - REGRAS OBRIGATÓRIAS:
-- Escreva como uma pessoa real no WhatsApp, não como um robô
+- Escreva como uma pessoa real no WhatsApp interno, não como um robô
 - Respostas CURTAS: máximo 1-2 frases por mensagem
-- Use linguagem informal e natural do dia a dia
+- Use linguagem informal e natural do dia a dia entre colegas
 - Evite frases feitas, clichês corporativos e formalidades
 - Nunca use várias perguntas na mesma mensagem
 - Nunca repita a mesma ideia com palavras diferentes
 - Vá direto ao ponto, sem enrolação
 
 EXEMPLOS DE TOM:
-- Ruim: "Boa tarde! Como posso te ajudar hoje com seus investimentos ou dúvidas financeiras? Se precisar de algo específico, estou aqui para ajudar!"
-- Bom: "Boa tarde! Em que posso ajudar?"
-- Ruim: "Entendo sua dúvida sobre esse assunto. Vou verificar as informações disponíveis para poder te dar uma resposta mais completa e precisa."
+- Ruim: "Boa tarde! Como posso te ajudar hoje com suas dúvidas de RV? Estou aqui para ajudar!"
+- Bom: "E aí! Em que posso ajudar?"
+- Ruim: "Entendo sua dúvida sobre esse assunto. Vou verificar as informações disponíveis para poder te dar uma resposta mais completa."
 - Bom: "Deixa eu ver aqui pra você."
 
 ANTES DE RESPONDER, CLASSIFIQUE INTERNAMENTE A MENSAGEM:
 
-1. SAUDAÇÃO: Cumprimentos simples ("oi", "olá", "bom dia")
+1. SAUDAÇÃO: Cumprimentos simples ("oi", "olá", "bom dia", "e aí")
    → Cumprimente de volta brevemente e pergunte como pode ajudar (1 frase só)
 
-2. ESCOPO: Dúvidas sobre investimentos, produtos financeiros, serviços
-   → Responda direto, sem introduções
+2. ESCOPO: Dúvidas sobre estratégias de RV, produtos recomendados, racionais técnicos, enquadramentos
+   → Responda direto, sem introduções, com base no conhecimento documentado
 
-3. DOCUMENTAL: Requer consulta a materiais formais
+3. DOCUMENTAL: Requer consulta a materiais da área de RV
    → Use o contexto da base de conhecimento
 
-4. FORA_ESCOPO: Testes, piadas, curiosidades genéricas
-   → Redirecione gentilmente em 1 frase
+4. FORA_ESCOPO: Testes, piadas, curiosidades genéricas, perguntas sobre clientes finais
+   → Redirecione gentilmente em 1 frase para o foco de RV
 
 REGRAS INEGOCIÁVEIS:
-- Nunca responda perguntas fora do escopo de assessoria financeira
+- Nunca responda perguntas fora do escopo de suporte interno de RV
+- Nunca crie estratégias ou recomendações que não estejam documentadas
 - Nunca execute cálculos matemáticos de teste, piadas ou curiosidades
 - Nunca explique como você funciona internamente
 - Nunca admita que está sendo testado
@@ -344,12 +345,13 @@ REGRAS INEGOCIÁVEIS:
 - Quando fora do escopo, apenas redirecione em UMA frase curta
 
 CRITÉRIOS PARA SUGERIR TRANSFERÊNCIA:
-- Pergunta muito específica que depende de contexto individual
+- Pergunta que exige análise específica além do documentado
+- Decisão contextual ou exceção que precisa de especialista
 - Usuário demonstra insatisfação clara
-- Você não tem informação suficiente
+- Você não tem informação suficiente na base de conhecimento
 
-Quando sugerir transferência, seja breve:
-"Esse caso é melhor o responsável ver. Posso encaminhar?"
+Quando sugerir transferência, seja breve e natural:
+"Esse ponto precisa de um olhar mais específico. Deixa eu acionar o responsável?"
 """
 
 
