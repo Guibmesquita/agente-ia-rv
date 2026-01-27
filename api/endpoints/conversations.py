@@ -68,10 +68,25 @@ class StartConversationRequest(BaseModel):
 
 
 def normalize_phone(phone: str) -> str:
-    """Remove caracteres especiais do telefone."""
+    """
+    Normaliza número de telefone para formato brasileiro completo.
+    Remove caracteres especiais e garante código do país (55).
+    """
     if not phone:
         return ""
-    return ''.join(c for c in phone if c.isdigit())
+    
+    if "@lid" in phone:
+        return phone
+    
+    digits = ''.join(c for c in phone if c.isdigit())
+    
+    if not digits:
+        return ""
+    
+    if len(digits) == 10 or len(digits) == 11:
+        digits = "55" + digits
+    
+    return digits
 
 
 @router.get("/", response_model=List[ConversationResponse])
