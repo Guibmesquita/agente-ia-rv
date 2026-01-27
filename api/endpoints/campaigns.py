@@ -778,12 +778,36 @@ async def preview_campaign(
                 for rec in client_info.get("recommendations", []):
                     all_recommendations.append(rec)
             
+            header_template = campaign.message_header or ""
+            content_template = campaign.message_content_template or ""
+            footer_template = campaign.message_footer or ""
+            
+            def replace_vars(text, data):
+                result = text
+                for key, value in data.items():
+                    result = result.replace("{{" + key + "}}", str(value) if value else "")
+                    result = result.replace("{{ " + key + " }}", str(value) if value else "")
+                return result
+            
+            header_rendered = replace_vars(header_template, assessor_data)
+            header_rendered = replace_vars(header_rendered, {"nome_assessor": assessor_data.get("nome_assessor", "")})
+            
+            content_lines = []
+            for rec in all_recommendations[:10]:
+                line = replace_vars(content_template, rec)
+                line = replace_vars(line, assessor_data)
+                content_lines.append(line)
+            
+            footer_rendered = replace_vars(footer_template, assessor_data)
+            footer_rendered = replace_vars(footer_rendered, {"nome_assessor": assessor_data.get("nome_assessor", "")})
+            
             first_example = {
                 "assessor_name": assessor_data.get("nome_assessor", "Assessor"),
                 "assessor_id": assessor_id,
                 "recommendation_count": len(all_recommendations),
-                "recommendations": all_recommendations[:10],
-                "raw_data": assessor_data
+                "header_rendered": header_rendered,
+                "content_lines": content_lines,
+                "footer_rendered": footer_rendered
             }
     
     return {

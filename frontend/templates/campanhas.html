@@ -2416,46 +2416,13 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
         function updatePreviewWithRealData(example) {
             document.getElementById('previewAssessorName').textContent = example.assessor_name || 'Assessor';
             
-            const headerTemplate = messageBlocks.header || 'Ola, ' + '{' + '{nome_assessor}' + '}' + '!';
-            const contentTemplate = messageBlocks.content || '';
-            const footerTemplate = messageBlocks.footer || '';
-            
-            const rawData = example.raw_data || {};
-            const recommendations = example.recommendations || [];
-            
-            let headerText = headerTemplate;
-            const replaceVars = (text, data) => {
-                let result = text;
-                Object.keys(data).forEach(key => {
-                    const varPattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
-                    result = result.replace(varPattern, data[key] || '');
-                });
-                return result;
-            };
-            
-            headerText = replaceVars(headerText, rawData);
-            headerText = replaceVars(headerText, { nome_assessor: rawData.nome_assessor || example.assessor_name });
-            
-            let contentLines = [];
-            if (contentTemplate && recommendations.length > 0) {
-                recommendations.forEach(rec => {
-                    let line = replaceVars(contentTemplate, rec);
-                    line = replaceVars(line, rawData);
-                    contentLines.push(line);
-                });
-            } else if (recommendations.length > 0) {
-                recommendations.forEach(rec => {
-                    const keys = Object.keys(rec);
-                    contentLines.push(keys.map(k => `${k}: ${rec[k]}`).join(' | '));
-                });
-            }
-            
-            let footerText = replaceVars(footerTemplate, rawData);
-            footerText = replaceVars(footerText, { nome_assessor: rawData.nome_assessor || example.assessor_name });
-            
             const previewHeader = document.getElementById('previewHeader');
             const previewContent = document.getElementById('previewContent');
             const previewFooter = document.getElementById('previewFooter');
+            
+            const headerText = example.header_rendered || '';
+            const contentLines = example.content_lines || [];
+            const footerText = example.footer_rendered || '';
             
             previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #16a34a; text-transform: uppercase;">Cabecalho</strong><br>${headerText.replace(/\n/g, '<br>')}`;
             
