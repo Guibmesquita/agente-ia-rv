@@ -77,27 +77,64 @@ def get_message_type_zapi(payload: Dict[str, Any]) -> str:
     return MessageType.TEXT.value
 
 
-def get_or_create_conversation(db: Session, phone: str, sender_name: str = None, sender_photo: str = None) -> Conversation:
-    """Obtém ou cria uma conversa para um número de telefone."""
-    conv = db.query(Conversation).filter(Conversation.phone == phone).first()
+def get_or_create_conversation(
+    db: Session, 
+    phone: str, 
+    sender_name: str = None, 
+    sender_photo: str = None,
+    sender_lid: str = None,
+    chat_lid: str = None
+) -> Conversation:
+    """
+    Obtém ou cria uma conversa.
+    Busca primeiro por LID, depois por phone (seguindo recomendação Z-API).
+    """
+    conv = None
+    
+    if sender_lid:
+        conv = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
+    
+    if not conv and phone:
+        conv = db.query(Conversation).filter(Conversation.phone == phone).first()
     
     if not conv:
-        assessor = db.query(Assessor).filter(
-            Assessor.telefone_whatsapp.contains(phone)
-        ).first()
+        assessor = None
+        if phone:
+            assessor = db.query(Assessor).filter(
+                Assessor.telefone_whatsapp.contains(phone)
+            ).first()
         
         conv = Conversation(
-            phone=phone,
+            phone=phone if phone else None,
+            lid=sender_lid,
+            chat_lid=chat_lid,
             contact_name=sender_name or (assessor.nome if assessor else None),
             assessor_id=assessor.id if assessor else None,
-            status=ConversationStatus.BOT_ACTIVE.value
+            status=ConversationStatus.BOT_ACTIVE.value,
+            lid_source="webhook" if sender_lid else None,
+            lid_collected_at=datetime.utcnow() if sender_lid else None
         )
         db.add(conv)
         db.commit()
         db.refresh(conv)
-    elif sender_name and not conv.contact_name:
-        conv.contact_name = sender_name
-        db.commit()
+    else:
+        updated = False
+        if sender_lid and not conv.lid:
+            conv.lid = sender_lid
+            conv.lid_source = "webhook"
+            conv.lid_collected_at = datetime.utcnow()
+            updated = True
+        if chat_lid and not conv.chat_lid:
+            conv.chat_lid = chat_lid
+            updated = True
+        if phone and not conv.phone:
+            conv.phone = phone
+            updated = True
+        if sender_name and not conv.contact_name:
+            conv.contact_name = sender_name
+            updated = True
+        if updated:
+            db.commit()
     
     return conv
 
@@ -133,14 +170,24 @@ def save_message_zapi(
     ai_response: str = None,
     ai_intent: str = None,
     ticket_id: int = None,
-    sender_type: str = None
+    sender_type: str = None,
+    sender_lid: str = None,
+    chat_lid: str = None
 ) -> WhatsAppMessage:
     """
     Salva uma mensagem no banco de dados e atualiza a conversa (formato Z-API).
+    Agora com suporte a LID (identificador privado do WhatsApp).
     """
-    clean_phone = ''.join(filter(str.isdigit, phone))
+    clean_phone = ''.join(filter(str.isdigit, phone)) if phone else ""
     
-    conversation = get_or_create_conversation(db, clean_phone, sender_name, sender_photo)
+    conversation = get_or_create_conversation(
+        db, 
+        clean_phone if clean_phone else None, 
+        sender_name, 
+        sender_photo,
+        sender_lid=sender_lid,
+        chat_lid=chat_lid
+    )
     
     if sender_type is None:
         sender_type = SenderType.CONTACT.value if direction == MessageDirection.INBOUND.value else SenderType.BOT.value
@@ -148,11 +195,14 @@ def save_message_zapi(
     if not message_status:
         message_status = MessageStatus.RECEIVED.value if direction == MessageDirection.INBOUND.value else MessageStatus.SENT.value
     
+    effective_chat_id = clean_phone if clean_phone else (chat_lid or sender_lid or "unknown")
+    effective_phone = clean_phone if clean_phone else None
+    
     message = WhatsAppMessage(
         message_id=message_id,
         zaap_id=zaap_id,
-        chat_id=clean_phone,
-        phone=clean_phone,
+        chat_id=effective_chat_id,
+        phone=effective_phone,
         from_me=from_me,
         direction=direction,
         message_type=message_type,
@@ -352,6 +402,9 @@ async def zapi_webhook(
     sender_photo = payload.get("senderPhoto") or payload.get("photo")
     status = payload.get("status", "RECEIVED")
     
+    sender_lid = payload.get("senderLid")
+    chat_lid = payload.get("chatLid")
+    
     if is_group:
         return {"status": "ignored", "reason": "group message"}
     
@@ -367,7 +420,9 @@ async def zapi_webhook(
                 from_me=True,
                 message_status=status,
                 body=payload.get("text", {}).get("message") if payload.get("text") else None,
-                sender_type=SenderType.HUMAN.value
+                sender_type=SenderType.HUMAN.value,
+                sender_lid=sender_lid,
+                chat_lid=chat_lid
             )
         except Exception as e:
             print(f"[WEBHOOK] Erro ao salvar mensagem enviada: {e}")
@@ -377,7 +432,11 @@ async def zapi_webhook(
         print(f"[WEBHOOK] Número não autorizado: {phone}")
         return {"status": "ignored", "reason": "phone not allowed"}
     
-    conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
+    conversation = None
+    if sender_lid:
+        conversation = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
+    if not conversation and phone:
+        conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
     is_human_takeover = conversation and conversation.status == ConversationStatus.HUMAN_TAKEOVER.value
     
     message_type = get_message_type_zapi(payload)
@@ -427,7 +486,9 @@ async def zapi_webhook(
             media_filename=media_filename,
             thumbnail_url=thumbnail_url,
             sender_name=sender_name,
-            sender_photo=sender_photo
+            sender_photo=sender_photo,
+            sender_lid=sender_lid,
+            chat_lid=chat_lid
         )
     except Exception as e:
         print(f"[WEBHOOK] Erro ao salvar mensagem: {e}")

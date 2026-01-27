@@ -189,6 +189,7 @@ class Assessor(Base):
     """
     Base de Assessores.
     Armazena informações dos assessores para disparo de mensagens e identificação.
+    Suporta LID do WhatsApp para identificação por privacidade.
     """
     __tablename__ = "assessores"
     
@@ -196,6 +197,7 @@ class Assessor(Base):
     nome = Column(String(255), nullable=False, index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     telefone_whatsapp = Column(String(20), nullable=True, index=True)
+    lid = Column(String(100), nullable=True, index=True)
     unidade = Column(String(255), nullable=True, index=True)
     equipe = Column(String(255), nullable=True, index=True)
     broker_responsavel = Column(String(255), nullable=True, index=True)
@@ -379,13 +381,16 @@ class MessageType(str, enum.Enum):
 
 class Conversation(Base):
     """
-    Agrupa mensagens de uma conversa por número de telefone.
+    Agrupa mensagens de uma conversa por número de telefone ou LID.
     Permite controle de takeover humano e histórico.
+    O LID é o identificador preferencial do WhatsApp para privacidade.
     """
     __tablename__ = "conversations"
     
     id = Column(Integer, primary_key=True, index=True)
-    phone = Column(String(20), nullable=False, unique=True, index=True)
+    phone = Column(String(50), nullable=True, index=True)
+    lid = Column(String(100), nullable=True, index=True)
+    chat_lid = Column(String(100), nullable=True, index=True)
     contact_name = Column(String(255), nullable=True)
     contact_photo = Column(String(512), nullable=True)
     assessor_id = Column(Integer, ForeignKey("assessores.id"), nullable=True)
@@ -394,6 +399,8 @@ class Conversation(Base):
     last_message_at = Column(DateTime(timezone=True), server_default=func.now())
     last_message_preview = Column(String(255), nullable=True)
     unread_count = Column(Integer, default=0)
+    lid_source = Column(String(50), nullable=True)
+    lid_collected_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
