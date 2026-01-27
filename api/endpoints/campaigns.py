@@ -773,10 +773,6 @@ async def preview_campaign(
         
         if idx == 0:
             clients_data = assessor_data.get("clients", {})
-            all_recommendations = []
-            for client_id, client_info in clients_data.items():
-                for rec in client_info.get("recommendations", []):
-                    all_recommendations.append(rec)
             
             header_template = campaign.message_header or ""
             content_template = campaign.message_content_template or ""
@@ -785,18 +781,28 @@ async def preview_campaign(
             def replace_vars(text, data):
                 result = text
                 for key, value in data.items():
-                    result = result.replace("{{" + key + "}}", str(value) if value else "")
-                    result = result.replace("{{ " + key + " }}", str(value) if value else "")
+                    if isinstance(value, (dict, list)):
+                        continue
+                    result = result.replace("{{" + str(key) + "}}", str(value) if value else "")
+                    result = result.replace("{{ " + str(key) + " }}", str(value) if value else "")
                 return result
             
             header_rendered = replace_vars(header_template, assessor_data)
             header_rendered = replace_vars(header_rendered, {"nome_assessor": assessor_data.get("nome_assessor", "")})
             
             content_lines = []
-            for rec in all_recommendations[:10]:
-                line = replace_vars(content_template, rec)
-                line = replace_vars(line, assessor_data)
-                content_lines.append(line)
+            total_recs = 0
+            for client_id, client_info in clients_data.items():
+                recommendations = client_info.get("recommendations", [])
+                if recommendations:
+                    content_lines.append(f"*Cliente: {client_id}*")
+                    for rec in recommendations:
+                        line = replace_vars(content_template, rec)
+                        line = replace_vars(line, assessor_data)
+                        if line.strip():
+                            content_lines.append(f"• {line}")
+                        total_recs += 1
+                    content_lines.append("")
             
             footer_rendered = replace_vars(footer_template, assessor_data)
             footer_rendered = replace_vars(footer_rendered, {"nome_assessor": assessor_data.get("nome_assessor", "")})
@@ -804,7 +810,7 @@ async def preview_campaign(
             first_example = {
                 "assessor_name": assessor_data.get("nome_assessor", "Assessor"),
                 "assessor_id": assessor_id,
-                "recommendation_count": len(all_recommendations),
+                "recommendation_count": total_recs,
                 "header_rendered": header_rendered,
                 "content_lines": content_lines,
                 "footer_rendered": footer_rendered
@@ -994,7 +1000,7 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
                     if col_name in row and row[col_name]:
                         grouped[key]["custom_fields"][var_name] = str(row[col_name])
         
-        if col_client and not use_codigo_ai_mode:
+        if col_client:
             client_val = row.get(col_client, "")
             if client_val is None:
                 client_val = ""
@@ -1004,16 +1010,21 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
                 client_id = "Sem ID"
             
             if client_id not in grouped[key]["clients"]:
-                grouped[key]["clients"][client_id] = []
+                grouped[key]["clients"][client_id] = {"client_id": client_id, "recommendations": []}
             
             recommendation = {
                 "ativo_saida": str(row.get(col_ativo_saida, "") or ""),
                 "valor_saida": format_currency(row.get(col_valor_saida, 0)),
                 "ativo_compra": str(row.get(col_ativo_compra, "") or ""),
-                "valor_compra": format_currency(row.get(col_valor_compra, 0))
+                "valor_compra": format_currency(row.get(col_valor_compra, 0)),
+                "client_id": client_id
             }
             
-            grouped[key]["clients"][client_id].append(recommendation)
+            for col_name, col_val in row.items():
+                if col_name not in ["ativo_saida", "valor_saida", "ativo_compra", "valor_compra"]:
+                    recommendation[col_name] = col_val
+            
+            grouped[key]["clients"][client_id]["recommendations"].append(recommendation)
             grouped[key]["total_recommendations"] += 1
     
     print(f"[GROUPING] Final result: {len(grouped)} assessors")

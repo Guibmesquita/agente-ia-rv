@@ -27,6 +27,10 @@ class ZAPIClient:
             "Client-Token": self.client_token
         }
     
+    def is_configured(self) -> bool:
+        """Verifica se a Z-API está configurada corretamente."""
+        return bool(self.instance_id and self.token and self.client_token)
+    
     def _normalize_phone(self, phone: str) -> str:
         """
         Normaliza o número de telefone para o formato Z-API.
