@@ -1169,12 +1169,12 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                     Variaveis da Base de Assessores
                                 </div>
                                 <div class="variables-list" id="assessorVariables">
-                                    <span class="variable-tag assessor" onclick="insertVariable('nome_assessor')">{{nome_assessor}}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariable('codigo_ai')">{{codigo_ai}}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariable('email')">{{email}}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariable('telefone_whatsapp')">{{telefone_whatsapp}}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariable('unidade')">{{unidade}}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariable('equipe')">{{equipe}}</span>
+                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('nome_assessor')">{{nome_assessor}}</span>
+                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('codigo_ai')">{{codigo_ai}}</span>
+                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('email')">{{email}}</span>
+                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('telefone_whatsapp')">{{telefone_whatsapp}}</span>
+                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('unidade')">{{unidade}}</span>
+                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('equipe')">{{equipe}}</span>
                                 </div>
                             </div>
 
@@ -1640,7 +1640,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             });
         }
 
-        function insertVariable(varName) {
+        function insertVariableLegacy(varName) {
             if (lastFocusedTextarea) {
                 const start = lastFocusedTextarea.selectionStart;
                 const end = lastFocusedTextarea.selectionEnd;
@@ -2071,9 +2071,11 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             
             if (uploadedColumns.length > 0) {
                 section.style.display = 'block';
+                availableVariables = uploadedColumns.map(col => col.toLowerCase().replace(/\s+/g, '_'));
+                
                 container.innerHTML = uploadedColumns.map(col => {
                     const varName = col.toLowerCase().replace(/\s+/g, '_');
-                    return '<span class="variable-tag planilha" onclick="insertVariable(\'' + varName + '\')">' + '{' + '{' + varName + '}' + '}' + '</span>';
+                    return '<span class="variable-tag planilha" onclick="insertVariableLegacy(\'' + varName + '\')">' + '{' + '{' + varName + '}' + '}' + '</span>';
                 }).join('');
                 
                 populateAssessorCodeSelect();
