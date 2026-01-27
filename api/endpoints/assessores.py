@@ -114,6 +114,7 @@ def parse_custom_fields(assessor):
     """Parse custom_fields from JSON string to dict."""
     result = {
         "id": assessor.id,
+        "codigo_ai": assessor.codigo_ai,
         "nome": assessor.nome,
         "email": assessor.email,
         "telefone_whatsapp": assessor.telefone_whatsapp,
