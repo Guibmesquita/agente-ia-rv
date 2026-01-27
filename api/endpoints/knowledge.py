@@ -211,10 +211,10 @@ async def index_document_background(doc_id: int, file_path: str, file_type: str,
         db.close()
 
 
-async def index_document_smart(doc_id: int, file_path: str, file_type: str, title: str, category: str):
+def _process_document_smart_sync(doc_id: int, file_path: str, file_type: str, title: str, category: str):
     """
-    Processa e indexa um documento usando GPT-4 Vision para análise inteligente.
-    Ideal para documentos com tabelas, infográficos e conteúdo visual.
+    Versão síncrona do processamento inteligente de documentos.
+    Executa em thread separada para não bloquear o servidor.
     """
     from database.database import SessionLocal
     
@@ -250,8 +250,7 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
                 processed_data = processor.process_image(image_path=file_path, document_title=title)
                 update_progress(1, 1)
             else:
-                print(f"[KNOWLEDGE] Tipo {file_type} não suportado para processamento inteligente, usando método padrão")
-                await index_document_background(doc_id, file_path, file_type, title, category)
+                print(f"[KNOWLEDGE] Tipo {file_type} não suportado para processamento inteligente")
                 return
             
             if "error" in processed_data and not processed_data.get("all_facts"):
@@ -306,6 +305,21 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
             
     finally:
         db.close()
+
+
+def index_document_smart(doc_id: int, file_path: str, file_type: str, title: str, category: str):
+    """
+    Inicia processamento inteligente de documento em thread separada.
+    Retorna imediatamente para não bloquear o servidor.
+    """
+    import threading
+    thread = threading.Thread(
+        target=_process_document_smart_sync,
+        args=(doc_id, file_path, file_type, title, category),
+        daemon=True
+    )
+    thread.start()
+    print(f"[KNOWLEDGE] Thread de processamento iniciada para documento {doc_id}")
 
 
 @router.get("/", response_model=DocumentListResponse)
@@ -395,16 +409,9 @@ async def upload_document(
     db.refresh(doc)
     
     if file_type in [DocumentType.PDF.value, DocumentType.IMAGE.value]:
-        background_tasks.add_task(
-            index_document_smart,
-            doc.id,
-            file_path,
-            file_type,
-            title,
-            category
-        )
+        index_document_smart(doc.id, file_path, file_type, title, category)
         processing_msg = "Processamento inteligente com IA em andamento."
-    elif file_type in [DocumentType.PDF.value, DocumentType.DOCX.value, DocumentType.TXT.value]:
+    elif file_type in [DocumentType.DOCX.value, DocumentType.TXT.value]:
         background_tasks.add_task(
             index_document_background,
             doc.id,
@@ -487,14 +494,7 @@ async def reindex_document(
     db.commit()
     
     if doc.file_type in [DocumentType.PDF.value, DocumentType.IMAGE.value]:
-        background_tasks.add_task(
-            index_document_smart,
-            doc.id,
-            doc.file_path,
-            doc.file_type,
-            doc.title,
-            doc.category
-        )
+        index_document_smart(doc.id, doc.file_path, doc.file_type, doc.title, doc.category)
         msg = "Reindexação iniciada com análise inteligente"
     else:
         background_tasks.add_task(
