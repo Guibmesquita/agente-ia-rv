@@ -1838,7 +1838,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 section.style.display = 'block';
                 container.innerHTML = uploadedColumns.map(col => {
                     const varName = col.toLowerCase().replace(/\s+/g, '_');
-                    return `<span class="variable-tag planilha" onclick="insertVariable('${varName}')">{{${varName}}}</span>`;
+                    return '<span class="variable-tag planilha" onclick="insertVariable(\'' + varName + '\')">' + '{' + '{' + varName + '}' + '}' + '</span>';
                 }).join('');
             } else {
                 section.style.display = 'none';
@@ -1890,7 +1890,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             if (validFields.length > 0) {
                 section.style.display = 'block';
                 container.innerHTML = validFields.map(f => 
-                    `<span class="variable-tag custom" onclick="insertVariable('${f.variable}')">{{${f.variable}}}</span>`
+                    '<span class="variable-tag custom" onclick="insertVariable(\'' + f.variable + '\')">' + '{' + '{' + f.variable + '}' + '}' + '</span>'
                 ).join('');
             } else {
                 section.style.display = 'none';
@@ -2568,7 +2568,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 container.innerHTML = '<span style="color: var(--text-secondary); font-size: 0.85rem;">Nenhuma variavel detectada</span>';
             } else {
                 container.innerHTML = variables.map(v => 
-                    `<span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">{{${v}}}</span>`
+                    '<span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">' + '{' + '{' + v + '}' + '}' + '</span>'
                 ).join('');
             }
         }
