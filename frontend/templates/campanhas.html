@@ -1158,6 +1158,29 @@
             });
         }
 
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.add('drag-over');
+        }
+
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('drag-over');
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('drag-over');
+            
+            if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+                document.getElementById('fileInput').files = event.dataTransfer.files;
+                handleFileSelect({ target: { files: event.dataTransfer.files } });
+            }
+        }
+
         function selectCampaignSource(source) {
             campaignSource = source;
             
