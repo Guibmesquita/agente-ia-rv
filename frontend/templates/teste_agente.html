@@ -88,35 +88,40 @@
         .message {
             max-width: 65%;
             width: fit-content;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            line-height: 1.4;
+            padding: 6px 8px 4px 8px;
+            border-radius: 7px;
+            font-size: 0.875rem;
+            line-height: 1.3;
             white-space: pre-wrap;
             word-wrap: break-word;
             position: relative;
         }
 
+        .message-content {
+            display: inline;
+        }
+
         .message.user {
             align-self: flex-end;
-            background: #dcf8c6;
+            background: #d9fdd3;
             color: #111b21;
-            border-bottom-right-radius: 2px;
+            border-bottom-right-radius: 0;
         }
 
         .message.assistant {
             align-self: flex-start;
             background: #ffffff;
             color: #111b21;
-            border: 1px solid var(--border-color);
-            border-bottom-left-radius: 2px;
+            border: 1px solid #e9edef;
+            border-bottom-left-radius: 0;
         }
 
         .message .time {
-            font-size: 0.7rem;
+            font-size: 0.6875rem;
             color: #667781;
+            float: right;
+            margin-left: 8px;
             margin-top: 4px;
-            text-align: right;
         }
 
         .chat-input-container {
@@ -570,10 +575,7 @@
             
             const time = timestamp ? new Date(timestamp).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) : new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
             
-            messageDiv.innerHTML = `
-                ${content}
-                <div class="time">${time}</div>
-            `;
+            messageDiv.innerHTML = `<span class="message-content">${content}</span><span class="time">${time}</span>`;
             
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
