@@ -159,10 +159,17 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         self, 
         pdf_path: str = None, 
         pdf_bytes: bytes = None,
-        document_title: str = ""
+        document_title: str = "",
+        progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Processa um PDF completo, analisando cada página.
+        
+        Args:
+            pdf_path: Caminho para o arquivo PDF
+            pdf_bytes: Bytes do arquivo PDF
+            document_title: Título do documento
+            progress_callback: Função chamada a cada página (current, total)
         
         Returns:
             Dict com informações estruturadas de todas as páginas
@@ -178,11 +185,18 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 "error": "Não foi possível converter o PDF em imagens"
             }
         
+        total_pages = len(images)
         pages_data = []
         all_facts = []
         
+        if progress_callback:
+            progress_callback(0, total_pages)
+        
         for i, image in enumerate(images):
-            print(f"[DOC_PROCESSOR] Processando página {i + 1}/{len(images)}...")
+            print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages}...")
+            
+            if progress_callback:
+                progress_callback(i + 1, total_pages)
             
             page_result = self.analyze_page(image, document_title)
             page_result["page_number"] = i + 1
@@ -194,7 +208,7 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         
         return {
             "title": document_title,
-            "total_pages": len(images),
+            "total_pages": total_pages,
             "pages": pages_data,
             "all_facts": all_facts
         }

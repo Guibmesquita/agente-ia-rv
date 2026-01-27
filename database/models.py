@@ -347,6 +347,8 @@ class KnowledgeDocument(Base):
     chunks_count = Column(Integer, default=0)
     is_indexed = Column(Boolean, default=False)
     index_error = Column(Text, nullable=True)
+    progress_current = Column(Integer, default=0)
+    progress_total = Column(Integer, default=0)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
