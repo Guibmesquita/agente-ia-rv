@@ -481,16 +481,6 @@
                             <textarea id="docDescription" rows="3" placeholder="Descreva o conteudo do documento..."></textarea>
                         </div>
 
-                        <div class="modal-form-group" id="smartProcessingGroup" style="display: none;">
-                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                                <input type="checkbox" id="smartProcessing" style="width: 18px; height: 18px;">
-                                <span>Processamento Inteligente (IA)</span>
-                            </label>
-                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">
-                                Usa GPT-4 Vision para extrair dados de tabelas, infograficos e imagens. 
-                                Ideal para documentos visuais com dados estruturados.
-                            </p>
-                        </div>
                     </div>
                 </form>
             </div>
@@ -684,13 +674,6 @@
                 titleInput.value = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
             }
 
-            const smartGroup = document.getElementById('smartProcessingGroup');
-            if (['pdf', 'png', 'jpg', 'jpeg'].includes(ext)) {
-                smartGroup.style.display = 'block';
-            } else {
-                smartGroup.style.display = 'none';
-                document.getElementById('smartProcessing').checked = false;
-            }
         }
 
         function clearFile() {
@@ -700,8 +683,6 @@
             document.getElementById('uploadZone').style.display = 'block';
             document.getElementById('uploadFields').classList.remove('active');
             document.getElementById('submitBtn').disabled = true;
-            document.getElementById('smartProcessingGroup').style.display = 'none';
-            document.getElementById('smartProcessing').checked = false;
         }
 
         async function uploadDocument(event) {
@@ -728,7 +709,6 @@
                 formData.append('title', title);
                 formData.append('category', document.getElementById('docCategory').value);
                 formData.append('description', document.getElementById('docDescription').value);
-                formData.append('smart_processing', document.getElementById('smartProcessing').checked);
 
                 const response = await fetch('/api/knowledge/upload', {
                     method: 'POST',
@@ -776,21 +756,15 @@
         }
 
         async function reindexDocument(id, fileType) {
-            let smartProcessing = false;
-            
-            if (['pdf', 'image'].includes(fileType)) {
-                smartProcessing = confirm(
-                    'Deseja usar Processamento Inteligente (IA)?\n\n' +
-                    'SIM = Usa GPT-4 Vision para extrair dados de tabelas e infograficos\n' +
-                    'NAO = Usa indexacao tradicional por texto'
-                );
+            if (!confirm('Deseja reindexar este documento?')) {
+                return;
             }
             
             try {
                 const response = await fetch(`/api/knowledge/${id}/reindex`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({smart_processing: smartProcessing}),
+                    body: JSON.stringify({}),
                     credentials: 'same-origin'
                 });
 

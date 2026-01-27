@@ -321,7 +321,6 @@ async def upload_document(
     title: str = Form(...),
     description: str = Form(None),
     category: str = Form(None),
-    smart_processing: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -329,9 +328,8 @@ async def upload_document(
     Faz upload de um documento e inicia indexação em background.
     Suporta PDF, DOCX, TXT e imagens.
     
-    Args:
-        smart_processing: Se True, usa GPT-4 Vision para extrair dados estruturados
-                         de tabelas e infográficos. Ideal para documentos visuais.
+    PDFs e imagens utilizam automaticamente processamento inteligente com GPT-4 Vision
+    para melhor extração de dados estruturados (tabelas, infográficos).
     """
     if current_user.role not in ["admin", "gestao_rv"]:
         raise HTTPException(status_code=403, detail="Acesso negado")
@@ -371,7 +369,7 @@ async def upload_document(
     db.commit()
     db.refresh(doc)
     
-    if smart_processing and file_type in [DocumentType.PDF.value, DocumentType.IMAGE.value]:
+    if file_type in [DocumentType.PDF.value, DocumentType.IMAGE.value]:
         background_tasks.add_task(
             index_document_smart,
             doc.id,
@@ -426,23 +424,16 @@ async def delete_document(
     return {"success": True, "message": "Documento removido com sucesso"}
 
 
-class ReindexRequest(BaseModel):
-    smart_processing: bool = False
-
-
 @router.post("/{doc_id}/reindex")
 async def reindex_document(
     doc_id: int,
     background_tasks: BackgroundTasks,
-    request: Optional[ReindexRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Reindexa um documento existente.
-    
-    Args:
-        smart_processing: Se True, usa processamento inteligente com GPT-4 Vision
+    PDFs e imagens utilizam automaticamente análise inteligente com GPT-4 Vision.
     """
     if current_user.role not in ["admin", "gestao_rv"]:
         raise HTTPException(status_code=403, detail="Acesso negado")
@@ -471,9 +462,7 @@ async def reindex_document(
     doc.chunks_count = 0
     db.commit()
     
-    smart = request.smart_processing if request else False
-    
-    if smart and doc.file_type in [DocumentType.PDF.value, DocumentType.IMAGE.value]:
+    if doc.file_type in [DocumentType.PDF.value, DocumentType.IMAGE.value]:
         background_tasks.add_task(
             index_document_smart,
             doc.id,
@@ -482,7 +471,7 @@ async def reindex_document(
             doc.title,
             doc.category
         )
-        msg = "Reindexação inteligente com IA iniciada"
+        msg = "Reindexação iniciada com análise inteligente"
     else:
         background_tasks.add_task(
             index_document_background,
@@ -494,7 +483,7 @@ async def reindex_document(
         )
         msg = "Reindexação iniciada"
     
-    return {"success": True, "message": msg, "smart_processing": smart}
+    return {"success": True, "message": msg}
 
 
 @router.get("/search")
