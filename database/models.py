@@ -354,11 +354,28 @@ class KnowledgeDocument(Base):
     uploader = relationship("User", foreign_keys=[uploaded_by])
 
 
+class ConversationState(str, enum.Enum):
+    """Estado do fluxo da conversa (máquina de estados)."""
+    IDENTIFICATION_PENDING = "identification_pending"
+    READY = "ready"
+    IN_PROGRESS = "in_progress"
+
+
 class ConversationStatus(str, enum.Enum):
-    """Status da conversa."""
+    """Status de atendimento da conversa."""
     BOT_ACTIVE = "bot_active"
     HUMAN_TAKEOVER = "human_takeover"
     CLOSED = "closed"
+
+
+class TransferReason(str, enum.Enum):
+    """Motivos de transferência para humano."""
+    EXCESSIVE_SPECIFICITY = "excessive_specificity"
+    PERSISTENT_AMBIGUITY = "persistent_ambiguity"
+    EXPLICIT_REQUEST = "explicit_request"
+    EMOTIONAL_FRICTION = "emotional_friction"
+    NO_PROGRESS = "no_progress"
+    OTHER = "other"
 
 
 class SenderType(str, enum.Enum):
@@ -392,6 +409,7 @@ class Conversation(Base):
     Agrupa mensagens de uma conversa por número de telefone ou LID.
     Permite controle de takeover humano e histórico.
     O LID é o identificador preferencial do WhatsApp para privacidade.
+    Inclui máquina de estados para fluxo de identificação e atendimento.
     """
     __tablename__ = "conversations"
     
@@ -403,6 +421,11 @@ class Conversation(Base):
     contact_photo = Column(String(512), nullable=True)
     assessor_id = Column(Integer, ForeignKey("assessores.id"), nullable=True)
     status = Column(String(30), default=ConversationStatus.BOT_ACTIVE.value)
+    conversation_state = Column(String(30), default=ConversationState.IDENTIFICATION_PENDING.value)
+    transfer_reason = Column(String(50), nullable=True)
+    transfer_notes = Column(Text, nullable=True)
+    transferred_at = Column(DateTime(timezone=True), nullable=True)
+    stalled_interactions = Column(Integer, default=0)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     last_message_at = Column(DateTime(timezone=True), server_default=func.now())
     last_message_preview = Column(String(255), nullable=True)

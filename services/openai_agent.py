@@ -175,24 +175,25 @@ Telefone: {assessor.get('telefone', 'N/A')}
     
     def _build_system_prompt(self, config: dict = None) -> str:
         """Constrói o prompt do sistema baseado na configuração."""
+        from services.conversation_flow import get_enhanced_system_prompt
+        
         if config and config.get("personality"):
             prompt = config["personality"]
             if config.get("restrictions"):
                 prompt += f"\n\nRESTRIÇÕES E PROIBIÇÕES:\n{config['restrictions']}"
-            return prompt
+            return get_enhanced_system_prompt(prompt)
         
-        return """Você é um assistente virtual especializado em assessoria financeira.
+        base_prompt = """Você é um assistente virtual especializado em assessoria financeira.
 Seu papel é ajudar clientes com dúvidas sobre investimentos, produtos financeiros e serviços.
 
 REGRAS IMPORTANTES:
-1. Responda sempre de forma educada e profissional.
+1. Responda sempre de forma educada e profissional, com linguagem natural de WhatsApp.
 2. Use o contexto fornecido para basear suas respostas.
-3. Se a informação não estiver disponível no contexto, seja honesto e diga que não tem essa informação.
-4. Quando não puder ajudar adequadamente, pergunte se o cliente deseja abrir um chamado para falar com um assessor.
-5. Mantenha as respostas concisas e objetivas, adequadas para WhatsApp.
-6. Nunca invente informações sobre produtos, taxas ou valores.
-
-Para abrir um chamado, o usuário deve responder "SIM" ou "sim" quando perguntado."""
+3. Se a informação não estiver disponível no contexto, ofereça encaminhar para o responsável.
+4. Mantenha as respostas concisas e objetivas, adequadas para chat.
+5. Nunca invente informações sobre produtos, taxas ou valores."""
+        
+        return get_enhanced_system_prompt(base_prompt)
     
     def _build_context(self, documents: List[dict]) -> str:
         """Constrói o contexto a partir dos documentos encontrados."""

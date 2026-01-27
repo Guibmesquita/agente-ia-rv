@@ -231,18 +231,121 @@ def save_message_zapi(
     return message
 
 
-async def process_text_message(phone: str, message: str, db: Session, message_record: WhatsAppMessage = None):
+async def process_text_message(phone: str, message: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
     """
-    Processa uma mensagem de texto e gera resposta usando IA.
-    Busca na base de conhecimento para enriquecer o contexto.
+    Processa uma mensagem de texto seguindo o framework de fluxo:
+    Recebe mensagem → identifica remetente → verifica estado → classifica → 
+    avalia transferência → responde ou transfere.
     """
+    from services.conversation_flow import (
+        normalize_message, extract_first_name, identify_contact,
+        persist_new_contact, get_identification_prompt, get_identification_confirmation,
+        get_transfer_message, should_transfer_to_human, update_conversation_state,
+        increment_stalled_counter, reset_stalled_counter
+    )
+    from database.models import ConversationState, TransferReason
+    
     try:
+        normalized_message = normalize_message(message)
+        
+        if not conversation:
+            conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
+        
+        if not conversation:
+            print(f"[WEBHOOK] Conversa não encontrada para {phone}")
+            return
+        
+        conv_state = conversation.conversation_state or ConversationState.IDENTIFICATION_PENDING.value
+        
+        assessor, is_known = identify_contact(db, phone)
+        
+        if not is_known:
+            if conv_state == ConversationState.IDENTIFICATION_PENDING.value:
+                extracted_name = extract_first_name(normalized_message)
+                
+                if extracted_name:
+                    assessor = persist_new_contact(db, phone, extracted_name)
+                    conversation.assessor_id = assessor.id
+                    conversation.contact_name = extracted_name
+                    update_conversation_state(db, conversation, ConversationState.READY.value)
+                    
+                    response = get_identification_confirmation(extracted_name)
+                    
+                    if message_record:
+                        message_record.ai_response = response
+                        message_record.ai_intent = "identification_complete"
+                        db.commit()
+                    
+                    result = await zapi_client.send_text(phone, response, delay_typing=1)
+                    if result.get("success"):
+                        save_message_zapi(
+                            db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
+                            phone=phone, direction=MessageDirection.OUTBOUND.value,
+                            message_type=MessageType.TEXT.value, from_me=True, body=response,
+                            sender_type=SenderType.BOT.value
+                        )
+                    return
+                else:
+                    response = get_identification_prompt()
+                    
+                    if message_record:
+                        message_record.ai_response = response
+                        message_record.ai_intent = "identification_request"
+                        db.commit()
+                    
+                    result = await zapi_client.send_text(phone, response, delay_typing=1)
+                    if result.get("success"):
+                        save_message_zapi(
+                            db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
+                            phone=phone, direction=MessageDirection.OUTBOUND.value,
+                            message_type=MessageType.TEXT.value, from_me=True, body=response,
+                            sender_type=SenderType.BOT.value
+                        )
+                    return
+        else:
+            if conv_state == ConversationState.IDENTIFICATION_PENDING.value:
+                update_conversation_state(db, conversation, ConversationState.READY.value)
+                conv_state = ConversationState.READY.value
+            
+            if not conversation.assessor_id and assessor:
+                conversation.assessor_id = assessor.id
+                conversation.contact_name = assessor.nome
+                db.commit()
+        
+        should_transfer, transfer_reason = should_transfer_to_human(normalized_message, conversation)
+        
+        if should_transfer:
+            response = get_transfer_message(transfer_reason)
+            update_conversation_state(
+                db, conversation, ConversationState.IN_PROGRESS.value,
+                transfer_reason=transfer_reason,
+                transfer_notes=f"Última mensagem: {normalized_message[:200]}"
+            )
+            
+            if message_record:
+                message_record.ai_response = response
+                message_record.ai_intent = "transfer_to_human"
+                db.commit()
+            
+            result = await zapi_client.send_text(phone, response, delay_typing=1)
+            if result.get("success"):
+                save_message_zapi(
+                    db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
+                    phone=phone, direction=MessageDirection.OUTBOUND.value,
+                    message_type=MessageType.TEXT.value, from_me=True, body=response,
+                    sender_type=SenderType.BOT.value
+                )
+            return
+        
+        if conv_state != ConversationState.IN_PROGRESS.value:
+            update_conversation_state(db, conversation, ConversationState.IN_PROGRESS.value)
+        
         history = conversation_history.get(phone, [])
         
         knowledge_context = ""
         try:
             vector_store = get_vector_store()
-            search_results = vector_store.search(message, n_results=3)
+            search_results = vector_store.search(normalized_message, n_results=3)
             
             if search_results:
                 knowledge_context = "\n\n--- Informações da Base de Conhecimento ---\n"
@@ -253,15 +356,30 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         except Exception as e:
             print(f"[WEBHOOK] Erro ao buscar na base de conhecimento: {e}")
         
+        assessor_data = None
+        if assessor:
+            assessor_data = {
+                "id": assessor.id,
+                "nome": assessor.nome,
+                "telefone": assessor.telefone_whatsapp,
+                "unidade": assessor.unidade,
+                "equipe": assessor.equipe,
+                "broker": assessor.broker_responsavel
+            }
+        
         response, should_create_ticket, context = await openai_agent.generate_response(
-            message,
+            normalized_message,
             history,
-            extra_context=knowledge_context
+            extra_context=knowledge_context,
+            sender_phone=phone,
+            identified_assessor=assessor_data
         )
         
-        history.append({"role": "user", "content": message})
+        history.append({"role": "user", "content": normalized_message})
         history.append({"role": "assistant", "content": response})
         conversation_history[phone] = history[-10:]
+        
+        reset_stalled_counter(db, conversation)
         
         ticket = None
         if should_create_ticket:
@@ -270,7 +388,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             ticket = crud.create_ticket(
                 db,
                 title=f"Chamado via WhatsApp - {phone}",
-                description=f"Cliente solicitou atendimento.\n\nÚltima mensagem: {message}",
+                description=f"Cliente solicitou atendimento.\n\nÚltima mensagem: {normalized_message}",
                 client_id=user.id if user else None,
                 client_phone=phone
             )
@@ -284,13 +402,13 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 message_record.ticket_id = ticket.id
             db.commit()
         
-        result = await zapi_client.send_text(phone, response, delay_typing=2)
+        send_result = await zapi_client.send_text(phone, response, delay_typing=2)
         
-        if result.get("success"):
+        if send_result.get("success"):
             save_message_zapi(
                 db,
-                message_id=result.get("message_id"),
-                zaap_id=result.get("zaap_id"),
+                message_id=send_result.get("message_id"),
+                zaap_id=send_result.get("zaap_id"),
                 phone=phone,
                 direction=MessageDirection.OUTBOUND.value,
                 message_type=MessageType.TEXT.value,
@@ -302,6 +420,8 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         
     except Exception as e:
         print(f"[WEBHOOK] Erro ao processar mensagem: {e}")
+        import traceback
+        traceback.print_exc()
         error_msg = (
             "Desculpe, ocorreu um erro ao processar sua mensagem. "
             "Por favor, tente novamente mais tarde ou entre em contato com seu assessor."
