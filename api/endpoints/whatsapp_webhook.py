@@ -386,10 +386,31 @@ async def zapi_webhook(
 ):
     """
     Endpoint que recebe mensagens do Z-API.
-    Formato: ReceivedCallback
+    Formatos suportados:
+    - ReceivedCallback: Mensagens recebidas (e enviadas se "Notificar enviadas por mim" estiver ativo)
+    - DeliveryCallback: Confirmação de mensagens enviadas via API
     Documentação: https://developer.z-api.io/webhooks/on-message-received
     """
     event_type = payload.get("type", "")
+    
+    if event_type == "DeliveryCallback":
+        phone = payload.get("phone", "")
+        message_id = payload.get("messageId", "")
+        zaap_id = payload.get("zaapId", "")
+        
+        print(f"[WEBHOOK] DeliveryCallback recebido - phone: {phone}, messageId: {message_id}")
+        
+        if message_id:
+            existing = db.query(WhatsAppMessage).filter(
+                WhatsAppMessage.message_id == message_id
+            ).first()
+            
+            if existing:
+                existing.message_status = "SENT"
+                db.commit()
+                return {"status": "updated", "reason": "message status updated to SENT"}
+        
+        return {"status": "ignored", "reason": "DeliveryCallback - no action needed"}
     
     if event_type != "ReceivedCallback":
         return {"status": "ignored", "reason": f"event type: {event_type}"}
