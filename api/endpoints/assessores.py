@@ -32,6 +32,7 @@ temp_files = {}
 
 
 class AssessorBase(BaseModel):
+    codigo_ai: Optional[str] = None
     nome: str
     email: str
     telefone_whatsapp: Optional[str] = None
