@@ -790,44 +790,42 @@
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner" style="width: 20px; height: 20px;"></div> Enviando...';
 
-            try {
-                const formData = new FormData();
-                formData.append('file', selectedFile);
-                formData.append('title', title);
-                formData.append('category', document.getElementById('docCategory').value);
-                formData.append('description', document.getElementById('docDescription').value);
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('title', title);
+            formData.append('category', document.getElementById('docCategory').value);
+            formData.append('description', document.getElementById('docDescription').value);
 
-                console.log('[UPLOAD] Enviando para servidor...');
-                const response = await fetch('/api/knowledge/upload', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'same-origin'
-                });
-
-                console.log('[UPLOAD] Resposta recebida:', response.status);
-
+            console.log('[UPLOAD] Enviando para servidor...');
+            
+            fetch('/api/knowledge/upload', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(response => {
+                console.log('[UPLOAD] Status:', response.status);
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.detail || `Erro ${response.status}`);
+                    return response.json().then(data => {
+                        throw new Error(data.detail || `Erro ${response.status}`);
+                    });
                 }
-
-                const data = await response.json();
-                console.log('[UPLOAD] Dados:', data);
-
-                closeUploadModal();
-                console.log('[UPLOAD] Modal fechado');
-                
+                return response.json();
+            })
+            .then(data => {
+                console.log('[UPLOAD] Sucesso:', data);
+                showToast('Documento enviado! A indexacao esta sendo processada em segundo plano.', 'success', 6000);
                 loadDocuments();
                 loadStats();
-                
-                showToast('Documento enviado! A indexacao esta sendo processada em segundo plano.', 'success', 6000);
-            } catch (error) {
+            })
+            .catch(error => {
                 console.error('[UPLOAD] Erro:', error);
-                showToast('Erro: ' + error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Enviar Documento';
-            }
+                showToast('Erro: ' + error.message, 'error', 8000);
+            });
+
+            closeUploadModal();
+            btn.disabled = false;
+            btn.textContent = 'Enviar Documento';
         }
 
         async function deleteDocument(id) {
