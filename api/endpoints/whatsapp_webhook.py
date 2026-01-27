@@ -410,6 +410,35 @@ async def zapi_webhook(
     
     if from_me:
         try:
+            outbound_body = None
+            outbound_media_url = None
+            outbound_media_mimetype = None
+            outbound_media_filename = None
+            
+            if payload.get("text"):
+                text_data = payload["text"]
+                outbound_body = text_data.get("message", "") if isinstance(text_data, dict) else str(text_data)
+            elif payload.get("image"):
+                outbound_body = payload["image"].get("caption", "[Imagem]")
+                outbound_media_url = payload["image"].get("imageUrl")
+                outbound_media_mimetype = payload["image"].get("mimeType")
+            elif payload.get("audio"):
+                outbound_body = "[Áudio]"
+                outbound_media_url = payload["audio"].get("audioUrl")
+                outbound_media_mimetype = payload["audio"].get("mimeType")
+            elif payload.get("video"):
+                outbound_body = payload["video"].get("caption", "[Vídeo]")
+                outbound_media_url = payload["video"].get("videoUrl")
+                outbound_media_mimetype = payload["video"].get("mimeType")
+            elif payload.get("document"):
+                outbound_body = payload["document"].get("fileName", "[Documento]")
+                outbound_media_url = payload["document"].get("documentUrl")
+                outbound_media_mimetype = payload["document"].get("mimeType")
+                outbound_media_filename = payload["document"].get("fileName")
+            elif payload.get("sticker"):
+                outbound_body = "[Sticker]"
+                outbound_media_url = payload["sticker"].get("stickerUrl")
+            
             save_message_zapi(
                 db,
                 message_id=message_id,
@@ -419,13 +448,18 @@ async def zapi_webhook(
                 message_type=get_message_type_zapi(payload),
                 from_me=True,
                 message_status=status,
-                body=payload.get("text", {}).get("message") if payload.get("text") else None,
+                body=outbound_body,
+                media_url=outbound_media_url,
+                media_mimetype=outbound_media_mimetype,
+                media_filename=outbound_media_filename,
                 sender_type=SenderType.HUMAN.value,
                 sender_lid=sender_lid,
                 chat_lid=chat_lid
             )
         except Exception as e:
             print(f"[WEBHOOK] Erro ao salvar mensagem enviada: {e}")
+            import traceback
+            traceback.print_exc()
         return {"status": "saved", "reason": "message from self"}
     
     if not is_phone_allowed(phone, db):
