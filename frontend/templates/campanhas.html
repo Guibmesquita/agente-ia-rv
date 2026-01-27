@@ -1025,12 +1025,21 @@
                                 <div class="message-block-number">1</div>
                                 <div>
                                     <div class="message-block-title">Inicio da Mensagem (Cabecalho)</div>
-                                    <div class="message-block-subtitle">Introducao e saudacao. Use variaveis como {{nome_assessor}}</div>
+                                    <div class="message-block-subtitle">Introducao e saudacao. Clique em {x} para inserir variaveis.</div>
                                 </div>
                             </div>
-                            <textarea id="messageHeader" class="message-textarea" placeholder="Ola, {{nome_assessor}}!
+                            <div class="textarea-wrapper">
+                                <button type="button" class="var-insert-btn" onclick="toggleVarDropdown('header')" title="Inserir variavel">
+                                    {x}
+                                </button>
+                                <div class="var-dropdown" id="varDropdownHeader">
+                                    <div class="var-dropdown-header">Variaveis Disponiveis</div>
+                                    <div class="var-dropdown-list" id="varListHeader"></div>
+                                </div>
+                                <textarea id="messageHeader" class="message-textarea" placeholder="Ola, {{nome_assessor}}!
 
 Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMessagePreview()"></textarea>
+                            </div>
                         </div>
 
                         <!-- Bloco 2: Conteudo Principal -->
@@ -1039,10 +1048,19 @@ Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMess
                                 <div class="message-block-number">2</div>
                                 <div>
                                     <div class="message-block-title">Conteudo Principal (Modelo Repetivel)</div>
-                                    <div class="message-block-subtitle">Este modelo sera repetido para cada linha do arquivo. Use variaveis da planilha.</div>
+                                    <div class="message-block-subtitle">Este modelo sera repetido para cada linha. Clique em {x} para inserir variaveis.</div>
                                 </div>
                             </div>
-                            <textarea id="messageContent" class="message-textarea repeatable" placeholder="• Trocar {{ativo_saida}} por {{ativo_compra}}." oninput="updateMessagePreview()"></textarea>
+                            <div class="textarea-wrapper">
+                                <button type="button" class="var-insert-btn" onclick="toggleVarDropdown('content')" title="Inserir variavel">
+                                    {x}
+                                </button>
+                                <div class="var-dropdown" id="varDropdownContent">
+                                    <div class="var-dropdown-header">Variaveis Disponiveis</div>
+                                    <div class="var-dropdown-list" id="varListContent"></div>
+                                </div>
+                                <textarea id="messageContent" class="message-textarea repeatable" placeholder="• Trocar {{ativo_saida}} por {{ativo_compra}}." oninput="updateMessagePreview()"></textarea>
+                            </div>
                             <p style="font-size: 0.8rem; color: #92400e; margin-top: 8px; display: flex; align-items: center; gap: 6px;">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -1057,13 +1075,22 @@ Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMess
                                 <div class="message-block-number">3</div>
                                 <div>
                                     <div class="message-block-title">Fim da Mensagem (Rodape)</div>
-                                    <div class="message-block-subtitle">Conclusao e assinatura da mensagem</div>
+                                    <div class="message-block-subtitle">Conclusao e assinatura. Clique em {x} para inserir variaveis.</div>
                                 </div>
                             </div>
-                            <textarea id="messageFooter" class="message-textarea" placeholder="Por favor, entre em contato com cada cliente para alinhar as operacoes.
+                            <div class="textarea-wrapper">
+                                <button type="button" class="var-insert-btn" onclick="toggleVarDropdown('footer')" title="Inserir variavel">
+                                    {x}
+                                </button>
+                                <div class="var-dropdown" id="varDropdownFooter">
+                                    <div class="var-dropdown-header">Variaveis Disponiveis</div>
+                                    <div class="var-dropdown-list" id="varListFooter"></div>
+                                </div>
+                                <textarea id="messageFooter" class="message-textarea" placeholder="Por favor, entre em contato com cada cliente para alinhar as operacoes.
 
 Atenciosamente,
 Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
+                            </div>
                         </div>
 
                         <!-- Opcao de Agrupamento (so aparece para upload) -->
@@ -1460,6 +1487,83 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
         function getVariableLabel(varName) {
             return variableLabels[varName.toLowerCase()] || varName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         }
+
+        let activeDropdown = null;
+
+        function toggleVarDropdown(blockType) {
+            const dropdownId = `varDropdown${blockType.charAt(0).toUpperCase() + blockType.slice(1)}`;
+            const dropdown = document.getElementById(dropdownId);
+            
+            if (activeDropdown && activeDropdown !== dropdown) {
+                activeDropdown.classList.remove('active');
+            }
+            
+            dropdown.classList.toggle('active');
+            activeDropdown = dropdown.classList.contains('active') ? dropdown : null;
+            
+            if (dropdown.classList.contains('active')) {
+                populateVarDropdown(blockType);
+            }
+        }
+
+        function populateVarDropdown(blockType) {
+            const listId = `varList${blockType.charAt(0).toUpperCase() + blockType.slice(1)}`;
+            const listContainer = document.getElementById(listId);
+            listContainer.innerHTML = '';
+            
+            const vars = getAvailableVariablesForBlock(blockType);
+            
+            if (vars.length === 0) {
+                listContainer.innerHTML = '<div class="var-dropdown-empty">Nenhuma variavel disponivel.<br>Selecione uma origem de dados primeiro.</div>';
+                return;
+            }
+            
+            vars.forEach(varName => {
+                const item = document.createElement('div');
+                item.className = 'var-dropdown-item';
+                item.innerHTML = `<code>{{${varName}}}</code> <span style="color: var(--text-secondary); font-size: 0.8rem;">${getVariableLabel(varName)}</span>`;
+                item.onclick = () => insertVariable(blockType, varName);
+                listContainer.appendChild(item);
+            });
+        }
+
+        function getAvailableVariablesForBlock(blockType) {
+            if (dataSource === 'base') {
+                return assessorBaseVariables;
+            } else if (dataSource === 'upload' && availableVariables.length > 0) {
+                return availableVariables;
+            }
+            return [];
+        }
+
+        function insertVariable(blockType, varName) {
+            const textareaId = blockType === 'header' ? 'messageHeader' : 
+                               blockType === 'content' ? 'messageContent' : 'messageFooter';
+            const textarea = document.getElementById(textareaId);
+            
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+            const varText = `{{${varName}}}`;
+            
+            textarea.value = text.substring(0, start) + varText + text.substring(end);
+            textarea.focus();
+            const newPos = start + varText.length;
+            textarea.setSelectionRange(newPos, newPos);
+            
+            const dropdownId = `varDropdown${blockType.charAt(0).toUpperCase() + blockType.slice(1)}`;
+            document.getElementById(dropdownId).classList.remove('active');
+            activeDropdown = null;
+            
+            updateMessagePreview();
+        }
+
+        document.addEventListener('click', function(e) {
+            if (activeDropdown && !e.target.closest('.textarea-wrapper')) {
+                activeDropdown.classList.remove('active');
+                activeDropdown = null;
+            }
+        });
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
