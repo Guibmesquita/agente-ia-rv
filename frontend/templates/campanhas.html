@@ -1410,7 +1410,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 const start = lastFocusedTextarea.selectionStart;
                 const end = lastFocusedTextarea.selectionEnd;
                 const text = lastFocusedTextarea.value;
-                const insertion = `{{${varName}}}`;
+                const insertion = '{' + '{' + varName + '}' + '}';
                 lastFocusedTextarea.value = text.substring(0, start) + insertion + text.substring(end);
                 lastFocusedTextarea.selectionStart = lastFocusedTextarea.selectionEnd = start + insertion.length;
                 lastFocusedTextarea.focus();
