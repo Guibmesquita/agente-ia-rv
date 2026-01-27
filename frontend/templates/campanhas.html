@@ -1150,66 +1150,40 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                 </div>
                             </div>
                             
-                            <!-- Info sobre variaveis -->
-                            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px;">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                    <svg width="20" height="20" fill="none" stroke="#16a34a" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                    <h5 style="margin: 0; color: #16a34a;">Variaveis Disponiveis</h5>
-                                </div>
-                                <p style="font-size: 0.85rem; color: #16a34a; margin: 0;">
-                                    Todas as colunas da sua planilha estarao disponiveis como variaveis no passo 3. 
-                                    Use o botao <strong>{x}</strong> para inserir variaveis na mensagem.
+                            <!-- Painel de Variaveis Disponiveis -->
+                            <div class="variables-panel" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+                                <h5 style="margin: 0 0 12px 0; color: #334155;">Variaveis Disponiveis para a Mensagem</h5>
+                                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
+                                    Clique em uma variavel para inseri-la no campo de texto ativo, ou use o botao <strong>{x}</strong> nos campos de mensagem.
                                 </p>
-                            </div>
-                        </div>
 
-                        <!-- Painel de Variaveis -->
-                        <div class="variables-panel">
-                            <h4>Variaveis Disponiveis</h4>
-                            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
-                                Clique em uma variavel para inseri-la no campo de texto ativo.
-                            </p>
+                                <div class="variables-section">
+                                    <div class="variables-section-title assessor">
+                                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                                        </svg>
+                                        Variaveis da Base de Assessores
+                                    </div>
+                                    <div class="variables-list" id="assessorVariables">
+                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('nome_assessor')">{<!-- -->{nome_assessor}<!-- -->}</span>
+                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('codigo_ai')">{<!-- -->{codigo_ai}<!-- -->}</span>
+                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('email')">{<!-- -->{email}<!-- -->}</span>
+                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('telefone_whatsapp')">{<!-- -->{telefone_whatsapp}<!-- -->}</span>
+                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('unidade')">{<!-- -->{unidade}<!-- -->}</span>
+                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('equipe')">{<!-- -->{equipe}<!-- -->}</span>
+                                    </div>
+                                </div>
 
-                            <div class="variables-section">
-                                <div class="variables-section-title assessor">
-                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
-                                    </svg>
-                                    Variaveis da Base de Assessores
-                                </div>
-                                <div class="variables-list" id="assessorVariables">
-                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('nome_assessor')">{<!-- -->{nome_assessor}<!-- -->}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('codigo_ai')">{<!-- -->{codigo_ai}<!-- -->}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('email')">{<!-- -->{email}<!-- -->}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('telefone_whatsapp')">{<!-- -->{telefone_whatsapp}<!-- -->}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('unidade')">{<!-- -->{unidade}<!-- -->}</span>
-                                    <span class="variable-tag assessor" onclick="insertVariableLegacy('equipe')">{<!-- -->{equipe}<!-- -->}</span>
-                                </div>
-                            </div>
-
-                            <div class="variables-section" id="planilhaVariablesSection" style="display: none;">
-                                <div class="variables-section-title planilha">
-                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/>
-                                    </svg>
-                                    Variaveis da Planilha Importada
-                                </div>
-                                <div class="variables-list" id="planilhaVariables">
-                                    <!-- Preenchido via JS -->
-                                </div>
-                            </div>
-
-                            <div class="variables-section" id="customVariablesSection" style="display: none;">
-                                <div class="variables-section-title custom">
-                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
-                                    </svg>
-                                    Campos Customizados Mapeados
-                                </div>
-                                <div class="variables-list" id="customVariables">
-                                    <!-- Preenchido via JS -->
+                                <div class="variables-section" id="planilhaVariablesSection" style="display: none;">
+                                    <div class="variables-section-title planilha">
+                                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Variaveis da Planilha Importada
+                                    </div>
+                                    <div class="variables-list" id="planilhaVariables">
+                                        <!-- Preenchido via JS -->
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1560,7 +1534,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 availableVariables.forEach(varName => {
                     const item = document.createElement('div');
                     item.className = 'var-dropdown-item';
-                    item.innerHTML = `<code>` + '{{' + varName + '}}' + `</code> <span style="color: var(--text-secondary); font-size: 0.8rem;">${getVariableLabel(varName)}</span>`;
+                    item.innerHTML = '<code>' + '{' + '{' + varName + '}' + '}' + '</code> <span style="color: var(--text-secondary); font-size: 0.8rem;">' + getVariableLabel(varName) + '</span>';
                     item.onclick = () => insertVariable(blockType, varName);
                     listContainer.appendChild(item);
                 });
@@ -1574,7 +1548,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             assessorBaseVariables.forEach(varName => {
                 const item = document.createElement('div');
                 item.className = 'var-dropdown-item';
-                item.innerHTML = `<code>` + '{{' + varName + '}}' + `</code> <span style="color: var(--text-secondary); font-size: 0.8rem;">${getVariableLabel(varName)}</span>`;
+                item.innerHTML = '<code>' + '{' + '{' + varName + '}' + '}' + '</code> <span style="color: var(--text-secondary); font-size: 0.8rem;">' + getVariableLabel(varName) + '</span>';
                 item.onclick = () => insertVariable(blockType, varName);
                 listContainer.appendChild(item);
             });
@@ -1598,7 +1572,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
             const text = textarea.value;
-            const varText = '{{' + varName + '}}';
+            const varText = '{' + '{' + varName + '}' + '}';
             
             textarea.value = text.substring(0, start) + varText + text.substring(end);
             textarea.focus();
