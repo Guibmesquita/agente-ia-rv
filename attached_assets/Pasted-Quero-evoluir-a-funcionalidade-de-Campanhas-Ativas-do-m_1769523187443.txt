@@ -1,0 +1,28 @@
+Quero evoluir a funcionalidade de "Campanhas Ativas" do meu aplicativo para torná-la muito mais flexível e inteligente. A nova página deve permitir diferentes tipos de campanhas, controladas por escolhas simples do usuário.
+
+A página deve começar com uma pergunta fundamental: **"Para quem é esta campanha?"**, com duas opções:
+
+1.  **"Para uma lista de assessores que vou selecionar":** Se eu escolher isso, mostre uma lista de todos os assessores cadastrados no sistema com uma caixa de seleção ao lado de cada um. Eu poderei escolher para quem enviar.
+2.  **"Para destinatários em uma base de dados que vou enviar":** Se eu escolher isso, mostre um botão para eu fazer o upload de um arquivo (CSV ou Excel).
+
+Depois dessa escolha, a parte principal da página será a **"Construção da Mensagem"**, que deve ser dividida em três partes claras:
+
+-   **1. Início da Mensagem (Cabeçalho):** Uma caixa de texto para eu escrever a introdução da mensagem. Aqui eu posso usar variáveis como `{{nome_assessor}}`.
+-   **2. Conteúdo Principal (o que se repete):** Uma caixa de texto onde eu defino o modelo para *uma única linha* de recomendação do meu arquivo. Aqui eu usarei as variáveis das colunas do arquivo, como `• Trocar {{ativo_saida}} por {{ativo_compra}}.`.
+-   **3. Fim da Mensagem (Rodapé):** Uma caixa de texto para a conclusão, onde posso novamente usar variáveis gerais e incentivar o assessor a pedir mais informações.
+
+**A Lógica Inteligente de Agrupamento:**
+
+- Se eu tiver feito o upload de um arquivo, quero que apareça uma caixa de seleção: **`[ ] Agrupar conteúdo por cliente`**.
+- **Se eu marcar essa caixa:** O sistema precisa ser inteligente. Ele deve pegar o modelo do "Conteúdo Principal" e aplicá-lo para cada recomendação, mas deve agrupar a saída final por cliente antes de inseri-la entre o "Início" e o "Fim" da mensagem. Isso evita poluir a conversa do assessor. O sistema deve me obrigar a mapear qual coluna do meu arquivo corresponde ao "ID do Cliente".
+- **Se eu não marcar essa caixa:** O sistema deve simplesmente repetir o "Conteúdo Principal" para cada linha do meu arquivo, uma após a outra.
+
+**Mapeamento Flexível de Campos:**
+
+- Quando eu enviar um arquivo, a interface de mapeamento de colunas deve aparecer.
+- A única coluna sempre obrigatória é a que corresponde ao **"ID do Assessor"**.
+- Todas as outras colunas são opcionais. Eu quero poder mapeá-las como **"Campos Customizados"** para criar minhas próprias variáveis (como `{{rating}}` ou `{{data_limite}}`) e usá-las em qualquer uma das três partes da mensagem.
+
+Por fim, antes de disparar, mostre-me uma prévia de como a mensagem final consolidada ficará para um dos assessores. O acesso a toda esta funcionalidade deve continuar restrito aos perfis de "Administrador" e "Gestão RV".
+
+Por favor, implemente esta nova lógica flexível, atualizando a interface, o backend e o banco de dados conforme necessário para suportar esta nova estrutura de campanhas.
