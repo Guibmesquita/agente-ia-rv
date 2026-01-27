@@ -758,7 +758,9 @@ async def preview_campaign(
     db.commit()
     
     messages = []
-    for assessor_id, assessor_data in grouped.items():
+    first_example = None
+    
+    for idx, (assessor_id, assessor_data) in enumerate(grouped.items()):
         message = build_message(template_content, assessor_data, custom_mapping)
         messages.append({
             "assessor_id": assessor_id,
@@ -768,13 +770,29 @@ async def preview_campaign(
             "recommendation_count": assessor_data.get("total_recommendations", 0),
             "message_preview": message
         })
+        
+        if idx == 0:
+            clients_data = assessor_data.get("clients", {})
+            all_recommendations = []
+            for client_id, client_info in clients_data.items():
+                for rec in client_info.get("recommendations", []):
+                    all_recommendations.append(rec)
+            
+            first_example = {
+                "assessor_name": assessor_data.get("nome_assessor", "Assessor"),
+                "assessor_id": assessor_id,
+                "recommendation_count": len(all_recommendations),
+                "recommendations": all_recommendations[:10],
+                "raw_data": assessor_data
+            }
     
     return {
         "campaign_id": campaign.id,
         "total_assessors": len(messages),
         "total_recommendations": campaign.total_recommendations,
         "messages": messages[:5],
-        "template_name": template_name
+        "template_name": template_name,
+        "first_example": first_example
     }
 
 

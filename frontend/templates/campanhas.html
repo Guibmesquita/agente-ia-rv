@@ -2395,30 +2395,74 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                     </div>
                 `;
 
-                const container = document.getElementById('previewMessages');
-                if (data.messages.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-secondary);">Nenhuma mensagem para exibir.</p>';
-                    return;
+                document.getElementById('previewMessages').style.display = 'none';
+
+                if (data.first_example) {
+                    updatePreviewWithRealData(data.first_example);
+                } else if (data.messages && data.messages.length > 0) {
+                    const firstMsg = data.messages[0];
+                    document.getElementById('previewAssessorName').textContent = firstMsg.assessor_name || firstMsg.assessor_id || 'Assessor';
                 }
 
-                container.innerHTML = data.messages.map(msg => `
-                    <div class="preview-card">
-                        <div class="preview-card-header">
-                            <h4>${msg.assessor_name || msg.assessor_id}</h4>
-                            <div>
-                                <span class="preview-badge">${msg.client_count} clientes</span>
-                                <span class="preview-badge">${msg.recommendation_count} recomendacoes</span>
-                            </div>
-                        </div>
-                        <div class="preview-message">${msg.message_preview}</div>
-                    </div>
-                `).join('');
-
             } catch (error) {
+                console.error('Erro ao carregar preview:', error);
                 document.getElementById('previewMessages').innerHTML = `
                     <div class="alert alert-danger">${error.message}</div>
                 `;
+                document.getElementById('previewMessages').style.display = 'block';
             }
+        }
+        
+        function updatePreviewWithRealData(example) {
+            document.getElementById('previewAssessorName').textContent = example.assessor_name || 'Assessor';
+            
+            const headerTemplate = messageBlocks.header || 'Ola, ' + '{' + '{nome_assessor}' + '}' + '!';
+            const contentTemplate = messageBlocks.content || '';
+            const footerTemplate = messageBlocks.footer || '';
+            
+            const rawData = example.raw_data || {};
+            const recommendations = example.recommendations || [];
+            
+            let headerText = headerTemplate;
+            const replaceVars = (text, data) => {
+                let result = text;
+                Object.keys(data).forEach(key => {
+                    const varPattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
+                    result = result.replace(varPattern, data[key] || '');
+                });
+                return result;
+            };
+            
+            headerText = replaceVars(headerText, rawData);
+            headerText = replaceVars(headerText, { nome_assessor: rawData.nome_assessor || example.assessor_name });
+            
+            let contentLines = [];
+            if (contentTemplate && recommendations.length > 0) {
+                recommendations.forEach(rec => {
+                    let line = replaceVars(contentTemplate, rec);
+                    line = replaceVars(line, rawData);
+                    contentLines.push(line);
+                });
+            } else if (recommendations.length > 0) {
+                recommendations.forEach(rec => {
+                    const keys = Object.keys(rec);
+                    contentLines.push(keys.map(k => `${k}: ${rec[k]}`).join(' | '));
+                });
+            }
+            
+            let footerText = replaceVars(footerTemplate, rawData);
+            footerText = replaceVars(footerText, { nome_assessor: rawData.nome_assessor || example.assessor_name });
+            
+            const previewHeader = document.getElementById('previewHeader');
+            const previewContent = document.getElementById('previewContent');
+            const previewFooter = document.getElementById('previewFooter');
+            
+            previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #16a34a; text-transform: uppercase;">Cabecalho</strong><br>${headerText.replace(/\n/g, '<br>')}`;
+            
+            const lineCount = contentLines.length;
+            previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #d97706; text-transform: uppercase;">Conteudo (${lineCount} ${lineCount === 1 ? 'linha' : 'linhas'})</strong><br>${contentLines.join('<br>')}`;
+            
+            previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #2563eb; text-transform: uppercase;">Rodape</strong><br>${footerText.replace(/\n/g, '<br>')}`;
         }
 
         async function dispatchCampaign() {
