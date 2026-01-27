@@ -98,11 +98,15 @@ def get_or_create_conversation(
         conv = db.query(Conversation).filter(Conversation.phone == phone).first()
     
     if not conv:
+        from database.models import ConversationState
+        
         assessor = None
         if phone:
             assessor = db.query(Assessor).filter(
                 Assessor.telefone_whatsapp.contains(phone)
             ).first()
+        
+        initial_state = ConversationState.READY.value if assessor else ConversationState.IDENTIFICATION_PENDING.value
         
         conv = Conversation(
             phone=phone if phone else None,
@@ -111,6 +115,7 @@ def get_or_create_conversation(
             contact_name=sender_name or (assessor.nome if assessor else None),
             assessor_id=assessor.id if assessor else None,
             status=ConversationStatus.BOT_ACTIVE.value,
+            conversation_state=initial_state,
             lid_source="webhook" if sender_lid else None,
             lid_collected_at=datetime.utcnow() if sender_lid else None
         )

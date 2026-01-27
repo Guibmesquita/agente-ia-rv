@@ -251,7 +251,8 @@ async def send_text_message(
         if not conv:
             conv = Conversation(
                 phone=phone,
-                status=ConversationStatus.HUMAN_TAKEOVER.value
+                status=ConversationStatus.HUMAN_TAKEOVER.value,
+                conversation_state=ConversationState.HUMAN_TAKEOVER.value
             )
             db.add(conv)
             db.commit()
@@ -319,7 +320,8 @@ async def send_media_message(
         if not conv:
             conv = Conversation(
                 phone=phone,
-                status=ConversationStatus.HUMAN_TAKEOVER.value
+                status=ConversationStatus.HUMAN_TAKEOVER.value,
+                conversation_state=ConversationState.HUMAN_TAKEOVER.value
             )
             db.add(conv)
             db.commit()
@@ -389,7 +391,8 @@ async def start_new_conversation(
                 phone=phone,
                 contact_name=assessor.nome if assessor else None,
                 assessor_id=assessor.id if assessor else None,
-                status=ConversationStatus.HUMAN_TAKEOVER.value
+                status=ConversationStatus.HUMAN_TAKEOVER.value,
+                conversation_state=ConversationState.HUMAN_TAKEOVER.value
             )
             db.add(conv)
             db.commit()

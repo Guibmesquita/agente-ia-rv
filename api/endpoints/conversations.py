@@ -216,6 +216,7 @@ async def sync_chats_from_zapi(
                 contact_photo=chat.get("profileThumbnail"),
                 assessor_id=assessor.id if assessor else None,
                 status=ConversationStatus.BOT_ACTIVE.value,
+                conversation_state=ConversationState.IDENTIFICATION_PENDING.value if not assessor else ConversationState.READY.value,
                 last_message_at=last_msg_at,
                 unread_count=int(chat.get("unread", 0)) if chat.get("unread") else 0
             )
