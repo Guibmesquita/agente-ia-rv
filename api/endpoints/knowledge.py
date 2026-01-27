@@ -56,6 +56,8 @@ class DocumentResponse(BaseModel):
     chunks_count: int
     is_indexed: bool
     index_error: Optional[str]
+    progress_current: int = 0
+    progress_total: int = 0
     created_at: datetime
     
     class Config:
@@ -222,16 +224,31 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
         if not doc:
             return
         
+        def update_progress(current: int, total: int):
+            """Callback para atualizar progresso no banco."""
+            try:
+                doc.progress_current = current
+                doc.progress_total = total
+                db.commit()
+            except Exception as e:
+                print(f"[KNOWLEDGE] Erro ao atualizar progresso: {e}")
+        
         try:
             processor = get_document_processor()
             vector_store = get_vector_store()
             
             if file_type in [DocumentType.PDF.value]:
                 print(f"[KNOWLEDGE] Processando PDF com IA: {title}")
-                processed_data = processor.process_pdf(pdf_path=file_path, document_title=title)
+                processed_data = processor.process_pdf(
+                    pdf_path=file_path, 
+                    document_title=title,
+                    progress_callback=update_progress
+                )
             elif file_type in [DocumentType.IMAGE.value]:
                 print(f"[KNOWLEDGE] Processando imagem com IA: {title}")
+                update_progress(0, 1)
                 processed_data = processor.process_image(image_path=file_path, document_title=title)
+                update_progress(1, 1)
             else:
                 print(f"[KNOWLEDGE] Tipo {file_type} não suportado para processamento inteligente, usando método padrão")
                 await index_document_background(doc_id, file_path, file_type, title, category)
@@ -240,6 +257,8 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
             if "error" in processed_data and not processed_data.get("all_facts"):
                 doc.is_indexed = False
                 doc.index_error = processed_data.get("error", "Erro desconhecido no processamento")
+                doc.progress_current = 0
+                doc.progress_total = 0
                 db.commit()
                 return
             
@@ -248,6 +267,8 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
             if not chunks:
                 doc.is_indexed = False
                 doc.index_error = "Nenhum conteúdo extraído do documento"
+                doc.progress_current = 0
+                doc.progress_total = 0
                 db.commit()
                 return
             
@@ -267,6 +288,8 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
             doc.chunks_count = len(chunks)
             doc.is_indexed = True
             doc.index_error = None
+            doc.progress_current = 0
+            doc.progress_total = 0
             db.commit()
             
             print(f"[KNOWLEDGE] Documento {doc_id} indexado com IA: {len(chunks)} fatos extraídos de {processed_data.get('total_pages', 1)} página(s)")
@@ -274,6 +297,8 @@ async def index_document_smart(doc_id: int, file_path: str, file_type: str, titl
         except Exception as e:
             doc.is_indexed = False
             doc.index_error = f"Erro no processamento inteligente: {str(e)}"
+            doc.progress_current = 0
+            doc.progress_total = 0
             db.commit()
             print(f"[KNOWLEDGE] Erro ao indexar documento {doc_id} com IA: {str(e)}")
             import traceback

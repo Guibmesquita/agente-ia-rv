@@ -623,6 +623,11 @@
 
                 updateCategoryFilter(categories);
                 renderDocuments(documents);
+                
+                const hasProcessing = documents.some(d => !d.is_indexed && !d.index_error);
+                if (hasProcessing) {
+                    setTimeout(() => loadDocuments(), 2000);
+                }
             } catch (error) {
                 container.innerHTML = `
                     <div class="alert alert-error">
@@ -674,7 +679,12 @@
                 const fileType = doc.file_type.toUpperCase();
                 const typeClass = doc.file_type;
                 const statusClass = doc.is_indexed ? 'indexed' : (doc.index_error ? 'error' : 'pending');
-                const statusText = doc.is_indexed ? 'Indexado' : (doc.index_error ? 'Erro' : 'Processando');
+                let statusText = doc.is_indexed ? 'Indexado' : (doc.index_error ? 'Erro' : 'Processando');
+                
+                if (!doc.is_indexed && !doc.index_error && doc.progress_total > 0) {
+                    statusText = `Pg ${doc.progress_current}/${doc.progress_total}`;
+                }
+                
                 const date = new Date(doc.created_at).toLocaleDateString('pt-BR');
                 const size = formatFileSize(doc.file_size);
 
