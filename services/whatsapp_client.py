@@ -28,10 +28,20 @@ class ZAPIClient:
         }
     
     def _normalize_phone(self, phone: str) -> str:
-        """Normaliza o número de telefone para o formato Z-API (somente números)."""
+        """
+        Normaliza o número de telefone para o formato Z-API.
+        Remove caracteres especiais e garante código do país (55) para Brasil.
+        """
+        if "@lid" in phone:
+            return phone
+        
         clean = ''.join(filter(str.isdigit, phone))
         if clean.endswith("@c.us"):
             clean = clean.replace("@c.us", "")
+        
+        if len(clean) == 10 or len(clean) == 11:
+            clean = "55" + clean
+        
         return clean
     
     def _parse_response(self, response: httpx.Response, raw_data: dict) -> dict:
@@ -462,6 +472,51 @@ class ZAPIClient:
             "chats": all_chats,
             "total": len(all_chats)
         }
+    
+    async def get_chat_messages(self, phone_or_lid: str, amount: int = 100) -> dict:
+        """
+        Busca mensagens de um chat específico via Z-API.
+        
+        Args:
+            phone_or_lid: Número de telefone ou LID do chat (@lid)
+            amount: Quantidade de mensagens a buscar (padrão 100)
+            
+        Returns:
+            Lista de mensagens do chat
+        """
+        identifier = phone_or_lid
+        if "@lid" not in phone_or_lid:
+            identifier = self._normalize_phone(phone_or_lid)
+        
+        url = f"{self.base_url}/chat-messages/{identifier}"
+        params = {"amount": amount}
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    url, 
+                    headers=self._get_headers(), 
+                    params=params, 
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json() if response.content else []
+                    messages = data if isinstance(data, list) else []
+                    return {
+                        "success": True,
+                        "messages": messages,
+                        "count": len(messages)
+                    }
+                else:
+                    data = response.json() if response.content else {}
+                    return {
+                        "success": False,
+                        "error": data.get("error", f"HTTP {response.status_code}"),
+                        "messages": []
+                    }
+            except httpx.HTTPError as e:
+                return {"success": False, "error": str(e), "messages": []}
 
 
 zapi_client = ZAPIClient()

@@ -807,6 +807,11 @@
             container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
 
             try {
+                await fetch(`/api/conversations/${conversationId}/sync-messages`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                
                 const response = await fetch(`/api/conversations/${conversationId}/messages`, { credentials: 'include' });
                 if (!response.ok) throw new Error('Erro ao carregar mensagens');
 
