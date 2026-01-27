@@ -1864,13 +1864,11 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
 
         async function handleStep1Next() {
             if (campaignSource === 'upload') {
-                document.getElementById('groupingOption').style.display = 'block';
                 document.getElementById('mappingSection').style.display = 'block';
                 updatePlanilhaVariables();
                 goToStep(2);
             } else if (campaignSource === 'base') {
                 await createCampaignFromBase();
-                document.getElementById('groupingOption').style.display = 'none';
                 document.getElementById('mappingSection').style.display = 'none';
                 document.getElementById('planilhaVariablesSection').style.display = 'none';
                 goToStep(2);
