@@ -878,32 +878,67 @@ async def preview_campaign_from_base(campaign, db: Session):
     """
     Gera preview para campanhas baseadas em assessores selecionados da base.
     Não tem recomendações de ativos, apenas lista de assessores para disparo.
+    Mostra exatamente o que o usuário preencheu, sem dados de exemplo.
     """
-    template_content = "Ola, {{nome_assessor}}!\n\n"
-    template_name = "Mensagem Simples"
+    header_template = campaign.message_header or ""
+    content_template = campaign.message_content_template or ""
+    footer_template = campaign.message_footer or ""
     
-    if campaign.custom_template_content:
-        template_content = str(campaign.custom_template_content)
-        template_name = "Mensagem Editada"
-    elif campaign.template_id:
-        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
-        if template:
-            template_content = str(template.content)
-            template_name = str(template.name)
+    template_name = "Mensagem Personalizada"
+    if not header_template and not content_template and not footer_template:
+        if campaign.custom_template_content:
+            content_template = str(campaign.custom_template_content)
+            template_name = "Mensagem Editada"
+        elif campaign.template_id:
+            template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+            if template:
+                content_template = str(template.content)
+                template_name = str(template.name)
     
     try:
         data = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
     except json.JSONDecodeError:
         data = []
     
+    first_example = {
+        "assessor_name": "Assessor Exemplo",
+        "header_rendered": header_template.strip() if header_template.strip() else None,
+        "content_lines": [content_template.strip()] if content_template.strip() else [],
+        "footer_rendered": footer_template.strip() if footer_template.strip() else None,
+        "header_empty": not header_template.strip(),
+        "content_empty": not content_template.strip(),
+        "footer_empty": not footer_template.strip()
+    }
+    
     messages = []
-    for assessor in data:
-        message = template_content.replace("{{nome_assessor}}", assessor.get("nome", ""))
-        message = message.replace("{{ nome_assessor }}", assessor.get("nome", ""))
-        message = message.replace("{nome_assessor}", assessor.get("nome", ""))
-        message = message.replace("{{lista_clientes}}", "(Sem recomendacoes de ativos)")
-        message = message.replace("{{ lista_clientes }}", "(Sem recomendacoes de ativos)")
-        message = message.replace("{lista_clientes}", "(Sem recomendacoes de ativos)")
+    
+    for idx, assessor in enumerate(data):
+        variables = build_assessor_variables(assessor)
+        
+        header_rendered = replace_variables_generic(header_template, variables)
+        content_rendered = replace_variables_generic(content_template, variables)
+        footer_rendered = replace_variables_generic(footer_template, variables)
+        
+        message_parts = []
+        if header_rendered.strip():
+            message_parts.append(header_rendered.strip())
+        if content_rendered.strip():
+            message_parts.append(content_rendered.strip())
+        if footer_rendered.strip():
+            message_parts.append(footer_rendered.strip())
+        
+        full_message = "\n\n".join(message_parts) if message_parts else "(Mensagem vazia)"
+        
+        if idx == 0:
+            first_example = {
+                "assessor_name": assessor.get("nome", "Assessor"),
+                "header_rendered": header_rendered.strip() if header_rendered.strip() else None,
+                "content_lines": [content_rendered.strip()] if content_rendered.strip() else [],
+                "footer_rendered": footer_rendered.strip() if footer_rendered.strip() else None,
+                "header_empty": not header_template.strip(),
+                "content_empty": not content_template.strip(),
+                "footer_empty": not footer_template.strip()
+            }
         
         messages.append({
             "assessor_id": str(assessor.get("id", "")),
@@ -911,7 +946,7 @@ async def preview_campaign_from_base(campaign, db: Session):
             "assessor_phone": assessor.get("telefone_whatsapp", ""),
             "client_count": 0,
             "recommendation_count": 0,
-            "message_preview": message
+            "message_preview": full_message
         })
     
     return {
@@ -920,7 +955,8 @@ async def preview_campaign_from_base(campaign, db: Session):
         "total_recommendations": 0,
         "messages": messages[:5],
         "template_name": template_name,
-        "source_type": "base"
+        "source_type": "base",
+        "first_example": first_example
     }
 
 

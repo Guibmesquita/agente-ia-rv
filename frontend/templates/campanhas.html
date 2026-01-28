@@ -2235,34 +2235,62 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 cliente: 'Maria Santos'
             };
             
-            let headerText = messageBlocks.header || 'Ola, ' + '{' + '{nome_assessor}' + '}' + '!';
-            Object.keys(sampleData).forEach(key => {
-                headerText = headerText.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'gi'), sampleData[key]);
-            });
+            const headerEmpty = !messageBlocks.header.trim();
+            const contentEmpty = !messageBlocks.content.trim();
+            const footerEmpty = !messageBlocks.footer.trim();
             
-            let contentTemplate = messageBlocks.content || '• Trocar ' + '{' + '{ativo_saida}' + '}' + ' por ' + '{' + '{ativo_compra}' + '}' + '.';
-            const sampleLines = [
-                { ativo_saida: 'PETR4', ativo_compra: 'VALE3' },
-                { ativo_saida: 'ITUB4', ativo_compra: 'BBDC4' },
-                { ativo_saida: 'MGLU3', ativo_compra: 'VIIA3' }
-            ];
-            
-            let contentText = sampleLines.map(line => {
-                let text = contentTemplate;
-                Object.keys(line).forEach(key => {
-                    text = text.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'gi'), line[key]);
+            if (headerEmpty) {
+                previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase;">Cabecalho</strong><br><span style="color: #9ca3af; font-style: italic;">(Sem cabecalho)</span>`;
+                previewHeader.style.background = '#f9fafb';
+                previewHeader.style.borderLeftColor = '#d1d5db';
+            } else {
+                let headerText = messageBlocks.header;
+                Object.keys(sampleData).forEach(key => {
+                    headerText = headerText.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi'), sampleData[key]);
                 });
-                return text;
-            }).join('\n');
+                previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #16a34a; text-transform: uppercase;">Cabecalho</strong><br>${headerText.replace(/\n/g, '<br>')}`;
+                previewHeader.style.background = '#f0fdf4';
+                previewHeader.style.borderLeftColor = '#22c55e';
+            }
             
-            let footerText = messageBlocks.footer || 'Por favor, entre em contato com cada cliente.';
-            Object.keys(sampleData).forEach(key => {
-                footerText = footerText.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'gi'), sampleData[key]);
-            });
+            if (contentEmpty) {
+                previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase;">Conteudo Repetivel</strong><br><span style="color: #9ca3af; font-style: italic;">(Sem conteudo repetivel)</span>`;
+                previewContent.style.background = '#f9fafb';
+                previewContent.style.borderLeftColor = '#d1d5db';
+            } else {
+                const sampleLines = [
+                    { ativo_saida: 'PETR4', ativo_compra: 'VALE3' },
+                    { ativo_saida: 'ITUB4', ativo_compra: 'BBDC4' },
+                    { ativo_saida: 'MGLU3', ativo_compra: 'VIIA3' }
+                ];
+                let contentText = sampleLines.map(line => {
+                    let text = messageBlocks.content;
+                    Object.keys(line).forEach(key => {
+                        text = text.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi'), line[key]);
+                    });
+                    Object.keys(sampleData).forEach(key => {
+                        text = text.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi'), sampleData[key]);
+                    });
+                    return text;
+                }).join('\n');
+                previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #d97706; text-transform: uppercase;">Conteudo (exemplo com ${sampleLines.length} linhas)</strong><br>${contentText.replace(/\n/g, '<br>')}`;
+                previewContent.style.background = '#fffbeb';
+                previewContent.style.borderLeftColor = '#f59e0b';
+            }
             
-            previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #16a34a; text-transform: uppercase;">Cabecalho</strong><br>${headerText.replace(/\n/g, '<br>')}`;
-            previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #d97706; text-transform: uppercase;">Conteudo (exemplo com ${sampleLines.length} linhas)</strong><br>${contentText.replace(/\n/g, '<br>')}`;
-            previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #2563eb; text-transform: uppercase;">Rodape</strong><br>${footerText.replace(/\n/g, '<br>')}`;
+            if (footerEmpty) {
+                previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase;">Rodape</strong><br><span style="color: #9ca3af; font-style: italic;">(Sem rodape)</span>`;
+                previewFooter.style.background = '#f9fafb';
+                previewFooter.style.borderLeftColor = '#d1d5db';
+            } else {
+                let footerText = messageBlocks.footer;
+                Object.keys(sampleData).forEach(key => {
+                    footerText = footerText.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi'), sampleData[key]);
+                });
+                previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #2563eb; text-transform: uppercase;">Rodape</strong><br>${footerText.replace(/\n/g, '<br>')}`;
+                previewFooter.style.background = '#eff6ff';
+                previewFooter.style.borderLeftColor = '#3b82f6';
+            }
         }
 
         async function handleStep2Next() {
@@ -2472,12 +2500,40 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             const contentLines = example.content_lines || [];
             const footerText = example.footer_rendered || '';
             
-            previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #16a34a; text-transform: uppercase;">Cabecalho</strong><br>${headerText.replace(/\n/g, '<br>')}`;
+            const headerEmpty = example.header_empty === true;
+            const contentEmpty = example.content_empty === true;
+            const footerEmpty = example.footer_empty === true;
             
-            const lineCount = contentLines.length;
-            previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #d97706; text-transform: uppercase;">Conteudo (${lineCount} ${lineCount === 1 ? 'linha' : 'linhas'})</strong><br>${contentLines.join('<br>')}`;
+            if (headerEmpty) {
+                previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase;">Cabecalho</strong><br><span style="color: #9ca3af; font-style: italic;">(Sem cabecalho)</span>`;
+                previewHeader.style.background = '#f9fafb';
+                previewHeader.style.borderLeftColor = '#d1d5db';
+            } else {
+                previewHeader.innerHTML = `<strong style="font-size: 0.75rem; color: #16a34a; text-transform: uppercase;">Cabecalho</strong><br>${headerText.replace(/\n/g, '<br>')}`;
+                previewHeader.style.background = '#f0fdf4';
+                previewHeader.style.borderLeftColor = '#22c55e';
+            }
             
-            previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #2563eb; text-transform: uppercase;">Rodape</strong><br>${footerText.replace(/\n/g, '<br>')}`;
+            if (contentEmpty) {
+                previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase;">Conteudo Repetivel</strong><br><span style="color: #9ca3af; font-style: italic;">(Sem conteudo repetivel)</span>`;
+                previewContent.style.background = '#f9fafb';
+                previewContent.style.borderLeftColor = '#d1d5db';
+            } else {
+                const lineCount = contentLines.length;
+                previewContent.innerHTML = `<strong style="font-size: 0.75rem; color: #d97706; text-transform: uppercase;">Conteudo (${lineCount} ${lineCount === 1 ? 'linha' : 'linhas'})</strong><br>${contentLines.join('<br>')}`;
+                previewContent.style.background = '#fffbeb';
+                previewContent.style.borderLeftColor = '#f59e0b';
+            }
+            
+            if (footerEmpty) {
+                previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase;">Rodape</strong><br><span style="color: #9ca3af; font-style: italic;">(Sem rodape)</span>`;
+                previewFooter.style.background = '#f9fafb';
+                previewFooter.style.borderLeftColor = '#d1d5db';
+            } else {
+                previewFooter.innerHTML = `<strong style="font-size: 0.75rem; color: #2563eb; text-transform: uppercase;">Rodape</strong><br>${footerText.replace(/\n/g, '<br>')}`;
+                previewFooter.style.background = '#eff6ff';
+                previewFooter.style.borderLeftColor = '#3b82f6';
+            }
         }
 
         async function dispatchCampaign() {
