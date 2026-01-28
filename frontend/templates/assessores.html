@@ -266,6 +266,7 @@
                             <option value="">Todos os Brokers</option>
                         </select>
                     </div>
+                    <div id="custom-filters-row" class="filters-bar" style="display: none; margin-top: -8px;"></div>
                 </div>
 
                 <div class="card">
@@ -276,7 +277,7 @@
                     </div>
                     <div style="overflow-x: auto;">
                         <table class="table" id="assessores-table" style="display: none;">
-                            <thead>
+                            <thead id="assessores-head">
                                 <tr>
                                     <th>Código</th>
                                     <th>Nome</th>
@@ -493,6 +494,13 @@
             if (equipe) params.append('equipe', equipe);
             if (broker) params.append('broker', broker);
 
+            customFields.forEach(cf => {
+                const filterEl = document.getElementById(`filter-cf-${cf.slug}`);
+                if (filterEl && filterEl.value) {
+                    params.append(`cf_${cf.slug}`, filterEl.value);
+                }
+            });
+
             try {
                 const [assessoresRes, countRes] = await Promise.all([
                     fetch(`/api/assessores?${params}`),
@@ -533,8 +541,41 @@
                 filterOptions.brokers.forEach(b => {
                     brokerSelect.innerHTML += `<option value="${b}">${b}</option>`;
                 });
+
+                renderCustomFilters();
             } catch (err) {
                 console.error('Erro:', err);
+            }
+        }
+
+        function renderCustomFilters() {
+            const customFiltersRow = document.getElementById('custom-filters-row');
+            if (!customFields || customFields.length === 0) {
+                customFiltersRow.style.display = 'none';
+                return;
+            }
+
+            const customFieldValues = filterOptions.custom_fields || {};
+            let filtersHtml = '';
+            
+            customFields.forEach(cf => {
+                const values = customFieldValues[cf.slug] || [];
+                if (values.length > 0) {
+                    filtersHtml += `
+                        <select class="form-select" id="filter-cf-${cf.slug}" onchange="loadAssessores()">
+                            <option value="">Todos: ${cf.label}</option>
+                            ${values.map(v => `<option value="${v}">${v}</option>`).join('')}
+                        </select>
+                    `;
+                }
+            });
+
+            if (filtersHtml) {
+                customFiltersRow.innerHTML = filtersHtml;
+                customFiltersRow.style.display = 'grid';
+                customFiltersRow.style.gridTemplateColumns = `repeat(${Math.min(customFields.length, 4)}, 1fr)`;
+            } else {
+                customFiltersRow.style.display = 'none';
             }
         }
 
@@ -565,7 +606,29 @@
             empty.style.display = 'none';
             table.style.display = 'table';
 
-            tbody.innerHTML = assessores.map(a => `
+            const thead = document.getElementById('assessores-head');
+            let headerHtml = `<tr>
+                <th>Código</th>
+                <th>Nome</th>
+                <th>E-mail</th>
+                <th>WhatsApp</th>
+                <th>Unidade</th>
+                <th>Equipe</th>
+                <th>Broker</th>`;
+            customFields.forEach(cf => {
+                headerHtml += `<th>${cf.label}</th>`;
+            });
+            headerHtml += `<th style="text-align: right;">Ações</th></tr>`;
+            thead.innerHTML = headerHtml;
+
+            tbody.innerHTML = assessores.map(a => {
+                let customFieldsCells = '';
+                customFields.forEach(cf => {
+                    const value = a.custom_fields?.[cf.slug] || '-';
+                    customFieldsCells += `<td>${value}</td>`;
+                });
+                
+                return `
                 <tr>
                     <td><code style="background: #f1f5f9; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">${a.codigo_ai || '-'}</code></td>
                     <td style="font-weight: 500;">${a.nome || '-'}</td>
@@ -574,6 +637,7 @@
                     <td>${a.unidade || '-'}</td>
                     <td>${a.equipe || '-'}</td>
                     <td>${a.broker_responsavel || '-'}</td>
+                    ${customFieldsCells}
                     <td>
                         <div class="table-actions">
                             <button class="btn-icon btn-icon-edit" onclick="editAssessor(${a.id})" title="Editar">
@@ -584,8 +648,8 @@
                             </button>
                         </div>
                     </td>
-                </tr>
-            `).join('');
+                </tr>`;
+            }).join('');
         }
 
         function renderCustomFields() {

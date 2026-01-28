@@ -7,7 +7,7 @@ import uuid
 import shutil
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel
@@ -136,6 +136,7 @@ def parse_custom_fields(assessor):
 
 @router.get("", response_model=List[dict])
 async def list_assessores(
+    request: Request,
     search: Optional[str] = Query(None),
     unidade: Optional[str] = Query(None),
     equipe: Optional[str] = Query(None),
@@ -145,6 +146,8 @@ async def list_assessores(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_gestao)
 ):
+    import json
+    
     query = db.query(Assessor)
     
     if search:
@@ -161,6 +164,28 @@ async def list_assessores(
     if broker:
         query = query.filter(Assessor.broker_responsavel == broker)
     
+    cf_filters = {k[3:]: v for k, v in request.query_params.items() if k.startswith('cf_') and v}
+    
+    if cf_filters:
+        all_assessores = query.order_by(Assessor.nome).all()
+        filtered = []
+        for a in all_assessores:
+            try:
+                cf_data = json.loads(a.custom_fields) if a.custom_fields else {}
+            except:
+                cf_data = {}
+            
+            match = True
+            for slug, value in cf_filters.items():
+                if str(cf_data.get(slug, '')) != value:
+                    match = False
+                    break
+            
+            if match:
+                filtered.append(a)
+        
+        return [parse_custom_fields(a) for a in filtered[skip:skip+limit]]
+    
     assessores = query.order_by(Assessor.nome).offset(skip).limit(limit).all()
     return [parse_custom_fields(a) for a in assessores]
 
@@ -172,14 +197,33 @@ async def count_assessores(db: Session = Depends(get_db), current_user: User = D
 
 @router.get("/filters")
 async def get_filter_options(db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_gestao)):
+    import json
+    
     unidades = db.query(Assessor.unidade).distinct().filter(Assessor.unidade.isnot(None)).all()
     equipes = db.query(Assessor.equipe).distinct().filter(Assessor.equipe.isnot(None)).all()
     brokers = db.query(Assessor.broker_responsavel).distinct().filter(Assessor.broker_responsavel.isnot(None)).all()
     
+    custom_field_defs = db.query(CustomFieldDefinition).filter(CustomFieldDefinition.is_active == 1).all()
+    custom_field_values = {}
+    
+    if custom_field_defs:
+        assessores = db.query(Assessor.custom_fields).filter(Assessor.custom_fields.isnot(None)).all()
+        for cf in custom_field_defs:
+            values = set()
+            for (cf_json,) in assessores:
+                try:
+                    data = json.loads(cf_json) if cf_json else {}
+                    if cf.slug in data and data[cf.slug]:
+                        values.add(str(data[cf.slug]))
+                except:
+                    pass
+            custom_field_values[cf.slug] = sorted(list(values))
+    
     return {
         "unidades": sorted([u[0] for u in unidades if u[0]]),
         "equipes": sorted([e[0] for e in equipes if e[0]]),
-        "brokers": sorted([b[0] for b in brokers if b[0]])
+        "brokers": sorted([b[0] for b in brokers if b[0]]),
+        "custom_fields": custom_field_values
     }
 
 
