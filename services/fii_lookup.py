@@ -2,6 +2,49 @@
 Serviço de consulta de informações de FIIs via FundsExplorer.
 Usado como fallback quando o fundo não está na base de conhecimento oficial.
 Implementação escalável com sessão persistente, cache e retry logic.
+
+=== ATIVOS SUPORTADOS ===
+
+O FundsExplorer é especializado em Fundos Imobiliários (FIIs) listados na B3.
+Quando o usuário perguntar sobre um ativo que se encaixa nas categorias abaixo
+e NÃO estiver na base de conhecimento oficial da SVN, o Stevan pode usar
+este serviço para buscar informações públicas.
+
+TIPOS DE FIIs SUPORTADOS:
+- FIIs de Tijolo: fundos que investem em imóveis físicos
+  (shoppings, lajes corporativas, galpões logísticos, hospitais, agências bancárias, etc.)
+- FIIs de Papel: fundos que investem em CRIs, LCIs e outros títulos de renda fixa imobiliária
+- FIIs Híbridos: combinação de tijolo e papel
+- FOFs (Fundos de Fundos): fundos que investem em cotas de outros FIIs
+
+INFORMAÇÕES DISPONÍVEIS PARA CADA FII:
+- Cotação atual e variação do dia
+- Dividend Yield (DY) dos últimos 12 meses
+- P/VP (Preço sobre Valor Patrimonial)
+- Valor patrimonial por cota
+- Patrimônio total do fundo
+- Último dividendo pago
+- Liquidez diária média
+- Rentabilidade do mês
+- Número de cotistas
+- Segmento do fundo
+
+ATIVOS NÃO SUPORTADOS (não buscar no FundsExplorer):
+- Ações (PETR4, VALE3, ITUB4, etc.) - padrão: 4 letras + 3/4
+- ETFs de ações (BOVA11, IVVB11, SMAL11, etc.)
+- BDRs (AAPL34, GOOGL34, etc.)
+- Fundos de investimento tradicionais
+- Títulos públicos (Tesouro Direto)
+- Criptomoedas
+
+PADRÃO DE TICKER DE FII:
+- 4 letras maiúsculas + "11" (ex: HABT11, XPLG11, MXRF11, HGLG11)
+- Regex: ^[A-Z]{4}11$
+
+IMPORTANTE:
+- Sempre buscar PRIMEIRO na base de conhecimento oficial da SVN
+- Só usar FundsExplorer como fallback quando o FII não estiver na base
+- Incluir disclaimer quando dados vierem de fonte externa
 """
 import re
 import time
@@ -9,8 +52,115 @@ import random
 import requests
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+
+
+# Definição estruturada dos ativos e informações suportados
+SUPPORTED_ASSET_TYPES = {
+    "fii_tijolo": {
+        "nome": "FIIs de Tijolo",
+        "descricao": "Fundos que investem em imóveis físicos",
+        "exemplos": ["shoppings", "lajes corporativas", "galpões logísticos", "hospitais", "agências bancárias"],
+        "tickers_exemplo": ["HGLG11", "XPLG11", "VISC11", "BTLG11"]
+    },
+    "fii_papel": {
+        "nome": "FIIs de Papel",
+        "descricao": "Fundos que investem em CRIs, LCIs e outros títulos de renda fixa imobiliária",
+        "exemplos": ["CRI", "LCI", "LCA", "títulos imobiliários"],
+        "tickers_exemplo": ["KNIP11", "KNCR11", "MXRF11", "HABT11"]
+    },
+    "fii_hibrido": {
+        "nome": "FIIs Híbridos",
+        "descricao": "Fundos que combinam investimentos em imóveis físicos e títulos",
+        "exemplos": ["mix tijolo/papel"],
+        "tickers_exemplo": ["HGRE11", "KNRI11"]
+    },
+    "fof": {
+        "nome": "FOFs (Fundos de Fundos)",
+        "descricao": "Fundos que investem em cotas de outros FIIs",
+        "exemplos": ["cotas de FIIs diversificados"],
+        "tickers_exemplo": ["BCFF11", "KFOF11", "RVBI11"]
+    }
+}
+
+AVAILABLE_FII_INFO = {
+    "cotacao": "Cotação atual e variação do dia",
+    "dividend_yield": "Dividend Yield (DY) dos últimos 12 meses",
+    "pvp": "P/VP (Preço sobre Valor Patrimonial)",
+    "valor_patrimonial": "Valor patrimonial por cota",
+    "patrimonio": "Patrimônio total do fundo",
+    "ultimo_dividendo": "Último dividendo pago",
+    "liquidez": "Liquidez diária média",
+    "rentabilidade_mes": "Rentabilidade do mês",
+    "cotistas": "Número de cotistas",
+    "segmento": "Segmento do fundo"
+}
+
+UNSUPPORTED_ASSETS = {
+    "acoes": {
+        "nome": "Ações",
+        "padrao": "4 letras + 3 ou 4 (ex: PETR4, VALE3, ITUB4)",
+        "motivo": "FundsExplorer é especializado apenas em FIIs"
+    },
+    "etfs_acoes": {
+        "nome": "ETFs de Ações",
+        "padrao": "Geralmente terminam em 11 mas são ETFs (ex: BOVA11, IVVB11)",
+        "motivo": "Apesar de terminar em 11, não são FIIs"
+    },
+    "bdrs": {
+        "nome": "BDRs",
+        "padrao": "4 letras + 34/35 (ex: AAPL34, GOOGL34)",
+        "motivo": "Representam ações estrangeiras, não FIIs"
+    },
+    "fundos_tradicionais": {
+        "nome": "Fundos de Investimento Tradicionais",
+        "padrao": "CNPJs ou códigos internos",
+        "motivo": "Não são listados em bolsa como FIIs"
+    },
+    "tesouro_direto": {
+        "nome": "Títulos Públicos",
+        "padrao": "Tesouro Selic, Tesouro IPCA+, etc.",
+        "motivo": "Títulos do governo, não FIIs"
+    },
+    "cripto": {
+        "nome": "Criptomoedas",
+        "padrao": "BTC, ETH, etc.",
+        "motivo": "Ativos digitais, não FIIs"
+    }
+}
+
+# Regex para identificar tickers de FII
+FII_TICKER_PATTERN = re.compile(r'^[A-Z]{4}11$')
+
+# Lista de ETFs que terminam em 11 mas NÃO são FIIs (para exclusão)
+ETF_EXCEPTIONS = [
+    "BOVA11", "IVVB11", "SMAL11", "BOVV11", "BRAX11", "ECOO11", 
+    "FIND11", "GOVE11", "ISUS11", "PIBB11", "SPXI11", "XBOV11",
+    "DIVO11", "GOLD11", "HASH11", "QBTC11", "QETH11", "BOVB11"
+]
+
+
+def is_valid_fii_ticker(ticker: str) -> bool:
+    """Verifica se um ticker é válido para busca no FundsExplorer."""
+    ticker_upper = ticker.upper().strip()
+    if not FII_TICKER_PATTERN.match(ticker_upper):
+        return False
+    if ticker_upper in ETF_EXCEPTIONS:
+        return False
+    return True
+
+
+def get_supported_assets_description() -> str:
+    """Retorna descrição dos ativos suportados para uso em prompts."""
+    lines = ["ATIVOS SUPORTADOS PARA CONSULTA EXTERNA (FundsExplorer):"]
+    for key, info in SUPPORTED_ASSET_TYPES.items():
+        lines.append(f"- {info['nome']}: {info['descricao']}")
+        lines.append(f"  Exemplos de tickers: {', '.join(info['tickers_exemplo'])}")
+    lines.append("\nINFORMAÇÕES DISPONÍVEIS:")
+    for key, desc in AVAILABLE_FII_INFO.items():
+        lines.append(f"- {desc}")
+    return "\n".join(lines)
 
 
 class FIIInfoType(Enum):

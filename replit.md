@@ -27,7 +27,13 @@ The application is built using FastAPI, leveraging a modular project structure.
 **Technical Implementations:**
 - **AI Agent:** Integrates OpenAI for embeddings and chat, allowing real-time configuration of personality, rules, restrictions, AI model (GPT-4o, GPT-4 Turbo, GPT-4, GPT-3.5 Turbo), temperature, and response length via the `/agent-brain` panel.
 - **Semantic Search:** Utilizes ChromaDB for vector storage and OpenAI embeddings to enable semantic search over a Notion knowledge base. Documents are chunked and indexed in the background.
-- **FII External Lookup:** When a user asks about a FII (ticker ending in 11) that is NOT in the knowledge base, the agent automatically fetches public data from StatusInvest (cotação, DY, P/VP, dividendos, etc.) and responds with a disclaimer that it's not an official SVN recommendation. The lookup is selective - only fetches the specific info the user requested.
+- **FII External Lookup (services/fii_lookup.py):** When a user asks about a FII that is NOT in the knowledge base, the agent automatically fetches public data from FundsExplorer.com.br and responds with a disclaimer that it's not an official SVN recommendation. 
+  - **Ativos Suportados:** FIIs de Tijolo, FIIs de Papel, FIIs Híbridos, e FOFs (Fundos de Fundos)
+  - **Padrão de Ticker:** 4 letras + "11" (regex: ^[A-Z]{4}11$) - ex: HABT11, XPLG11, MXRF11
+  - **Informações Disponíveis:** Cotação, DY, P/VP, valor patrimonial, patrimônio, último dividendo, liquidez, rentabilidade
+  - **Ativos NÃO Suportados:** Ações (PETR4), ETFs (BOVA11, IVVB11), BDRs (AAPL34), Tesouro Direto, Criptomoedas
+  - **Lista de ETFs Excluídos:** BOVA11, IVVB11, SMAL11, HASH11, QBTC11, etc. (apesar de terminar em 11, não são FIIs)
+  - **Features Técnicas:** Sessão persistente, cache de 5 minutos, rate limiting (1-2s entre requests), retry logic (3 tentativas), scraping seletivo por tipo de informação
 - **WhatsApp Integration:** Uses Z-API for communication, processing various message types (text, audio, image, document, video) and logging all interactions in `whatsapp_messages` table. Features a "Central de Mensagens" interface styled like WhatsApp Web with real-time polling updates. Implements full LID (WhatsApp privacy identifier) support: stores senderLid and chatLid from webhooks, prioritizes LID lookups over phone numbers, and uses fallback chain (phone → chat_lid → sender_lid) for conversation identification.
 - **Authentication & Authorization:** JWT-based authentication secures API endpoints. User roles (`admin`, `gestao_rv`, `broker`, `client`) define access levels, with dynamic menu adjustments.
 - **Database:** PostgreSQL (or SQLite for development) managed with SQLAlchemy ORM, defining models for users, tickets, agent configurations, message templates, campaigns, and knowledge documents.
