@@ -99,14 +99,14 @@ def get_or_create_conversation(
     if not conv and phone:
         conv = db.query(Conversation).filter(Conversation.phone == phone).first()
     
+    from services.conversation_flow import identify_contact
+    
+    assessor = None
+    if phone:
+        assessor, _ = identify_contact(db, phone)
+    
     if not conv:
         from database.models import ConversationState
-        
-        assessor = None
-        if phone:
-            assessor = db.query(Assessor).filter(
-                Assessor.telefone_whatsapp.contains(phone)
-            ).first()
         
         initial_state = ConversationState.READY.value if assessor else ConversationState.IDENTIFICATION_PENDING.value
         
@@ -114,7 +114,7 @@ def get_or_create_conversation(
             phone=phone if phone else None,
             lid=sender_lid,
             chat_lid=chat_lid,
-            contact_name=sender_name or (assessor.nome if assessor else None),
+            contact_name=assessor.nome if assessor else None,
             assessor_id=assessor.id if assessor else None,
             status=ConversationStatus.BOT_ACTIVE.value,
             conversation_state=initial_state,
@@ -137,8 +137,12 @@ def get_or_create_conversation(
         if phone and not conv.phone:
             conv.phone = phone
             updated = True
-        if sender_name and not conv.contact_name:
-            conv.contact_name = sender_name
+        if assessor and not conv.assessor_id:
+            conv.assessor_id = assessor.id
+            conv.contact_name = assessor.nome
+            updated = True
+        elif assessor and not conv.contact_name:
+            conv.contact_name = assessor.nome
             updated = True
         if updated:
             db.commit()
@@ -299,14 +303,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 update_conversation_state(db, conversation, ConversationState.READY.value)
                 conv_state = ConversationState.READY.value
                 
-                extracted_name = extract_first_name(normalized_message)
-                if extracted_name:
-                    conversation.contact_name = extracted_name
-                    db.commit()
-                    
-                    response = f"Oi, {extracted_name}! Sou o Stevan, suporte de RV. Nao encontrei seu cadastro na base, mas posso ajudar com duvidas sobre renda variavel. O que precisa?"
-                else:
-                    response = "Oi! Sou o Stevan, suporte de RV. Nao encontrei seu cadastro na nossa base, mas posso ajudar com duvidas sobre renda variavel. Como posso ajudar?"
+                response = "Oi! Sou o Stevan, suporte de RV. Nao encontrei seu cadastro na nossa base, mas posso ajudar com duvidas sobre renda variavel. Como posso ajudar?"
                 
                 if message_record:
                     message_record.ai_response = response
