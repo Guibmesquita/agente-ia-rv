@@ -4,6 +4,7 @@ Gera respostas contextualizadas para perguntas dos usuários.
 Carrega configurações do banco de dados em tempo real.
 """
 import re
+import json
 from openai import OpenAI
 from typing import List, Optional, Tuple, Dict, Any
 from core.config import get_settings
@@ -173,6 +174,48 @@ Telefone: {assessor.get('telefone', 'N/A')}
         
         return context
     
+    def _extract_products_from_message(self, message: str) -> List[str]:
+        """
+        Usa GPT para extrair nomes de produtos/fundos/ativos mencionados na mensagem.
+        Retorna lista de produtos identificados.
+        """
+        if not self.client:
+            return []
+        
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """Você é um extrator de entidades financeiras. 
+Extraia APENAS nomes de produtos, fundos, ativos ou siglas mencionados na mensagem.
+Retorne uma lista JSON com os nomes encontrados.
+Se não encontrar nenhum, retorne [].
+
+Exemplos:
+- "qual é o público alvo do TG Core?" -> ["TG CORE", "TGRI"]
+- "me fala sobre o fundo XPLG11" -> ["XPLG11"]
+- "como funciona a estratégia de renda variável?" -> []
+- "quero saber sobre TGRI e BTLG" -> ["TGRI", "BTLG"]
+
+Retorne APENAS o JSON, sem explicação."""
+                    },
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=100,
+                temperature=0
+            )
+            
+            result = response.choices[0].message.content.strip()
+            if result.startswith("["):
+                products = json.loads(result)
+                return [p.upper().strip() for p in products if p]
+            return []
+        except Exception as e:
+            print(f"[OpenAI] Erro ao extrair produtos: {e}")
+            return []
+    
     def _get_stevan_base_identity(self) -> str:
         """Retorna a identidade base imutável do Stevan."""
         return """Você é Stevan, um agente de atendimento interno da SVN, integrante da área de Renda Variável.
@@ -321,7 +364,24 @@ Stevan existe para aumentar a eficiência do assessor e gerar mais valor ao clie
         max_tokens = config.get("max_tokens", 500) if config else 500
         
         vs = get_vector_store()
-        context_documents = vs.search(user_message, n_results=5) if vs else []
+        context_documents = []
+        
+        if vs:
+            extracted_products = self._extract_products_from_message(user_message)
+            print(f"[OpenAI] Produtos extraídos da mensagem: {extracted_products}")
+            
+            if extracted_products:
+                for product in extracted_products:
+                    product_docs = vs.search_by_product(product, n_results=10)
+                    print(f"[OpenAI] Encontrados {len(product_docs)} docs para produto '{product}'")
+                    for doc in product_docs:
+                        if doc not in context_documents:
+                            context_documents.append(doc)
+            
+            if not context_documents:
+                context_documents = vs.search(user_message, n_results=5)
+                print(f"[OpenAI] Busca semântica retornou {len(context_documents)} docs")
+        
         context = self._build_context(context_documents)
         
         if assessor_data:

@@ -84,10 +84,16 @@ INSTRUÇÕES:
    - Extraia os pontos principais como fatos independentes
    - Mantenha o contexto necessário para cada fato
 
+5. EXTRAÇÃO DE PRODUTOS/ENTIDADES (MUITO IMPORTANTE):
+   - Identifique TODOS os nomes de produtos, fundos, ativos ou siglas mencionados na página
+   - Inclua variações do nome (ex: "TG Core", "TGRI", "TG RI", etc.)
+   - Liste cada produto/entidade único que aparece no conteúdo
+
 FORMATO DE RESPOSTA (JSON):
 {{
     "content_type": "table|infographic|text|mixed|image_only",
     "summary": "Resumo breve do conteúdo da página",
+    "products_mentioned": ["TGRI", "TG Core", "BTG Pactual", ...],
     "facts": [
         "Fato 1 completo e auto-contido",
         "Fato 2 completo e auto-contido",
@@ -188,6 +194,7 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         total_pages = len(images)
         pages_data = []
         all_facts = []
+        all_products = set()
         
         if progress_callback:
             progress_callback(0, total_pages)
@@ -202,6 +209,9 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
             if progress_callback:
                 progress_callback(i + 1, total_pages)
             
+            for product in page_result.get("products_mentioned", []):
+                all_products.add(product.strip().upper())
+            
             for fact in page_result.get("facts", []):
                 prefixed_fact = f"[{document_title} - Página {i + 1}] {fact}"
                 all_facts.append(prefixed_fact)
@@ -210,7 +220,8 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
             "title": document_title,
             "total_pages": total_pages,
             "pages": pages_data,
-            "all_facts": all_facts
+            "all_facts": all_facts,
+            "all_products": list(all_products)
         }
     
     def process_image(
@@ -235,11 +246,14 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
             prefixed_fact = f"[{document_title}] {fact}"
             all_facts.append(prefixed_fact)
         
+        all_products = [p.strip().upper() for p in result.get("products_mentioned", [])]
+        
         return {
             "title": document_title,
             "total_pages": 1,
             "pages": [result],
-            "all_facts": all_facts
+            "all_facts": all_facts,
+            "all_products": all_products
         }
     
     def generate_indexable_chunks(
@@ -250,9 +264,12 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         """
         Gera chunks otimizados para indexação no vector store.
         Cada fato vira um chunk independente com metadata.
+        Inclui produtos mencionados para busca por tags.
         """
         chunks = []
         title = processed_data.get("title", "Documento")
+        all_products = processed_data.get("all_products", [])
+        products_str = ",".join(all_products) if all_products else ""
         
         if include_summary:
             summaries = []
@@ -266,7 +283,8 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                     "metadata": {
                         "title": title,
                         "type": "summary",
-                        "source": title
+                        "source": title,
+                        "products": products_str
                     }
                 })
         
@@ -276,7 +294,8 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 "metadata": {
                     "title": title,
                     "type": "fact",
-                    "source": title
+                    "source": title,
+                    "products": products_str
                 }
             })
         

@@ -85,13 +85,14 @@ class VectorStore:
             metadatas=metadatas or [{}] * len(texts)
         )
     
-    def search(self, query: str, n_results: int = 3) -> List[dict]:
+    def search(self, query: str, n_results: int = 3, product_filter: str = None) -> List[dict]:
         """
         Busca documentos relevantes para a consulta.
         
         Args:
             query: Pergunta ou consulta do usuário
             n_results: Número máximo de resultados
+            product_filter: Filtrar por produto específico (opcional)
             
         Returns:
             Lista de documentos relevantes com scores
@@ -101,12 +102,23 @@ class VectorStore:
         
         query_embedding = self._generate_embedding(query)
         
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results
-        )
+        where_filter = None
+        if product_filter:
+            where_filter = {"products": {"$contains": product_filter.upper()}}
         
-        # Formata os resultados
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results,
+                where=where_filter
+            )
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro com filtro, buscando sem filtro: {e}")
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results
+            )
+        
         documents = []
         if results and results['documents']:
             for i, doc in enumerate(results['documents'][0]):
@@ -117,6 +129,40 @@ class VectorStore:
                 })
         
         return documents
+    
+    def search_by_product(self, product_name: str, n_results: int = 10) -> List[dict]:
+        """
+        Busca TODOS os chunks que mencionam um produto específico.
+        Faz busca textual nos metadados, não semântica.
+        
+        Args:
+            product_name: Nome do produto para buscar
+            n_results: Número máximo de resultados
+            
+        Returns:
+            Lista de documentos que mencionam o produto
+        """
+        try:
+            product_upper = product_name.upper().strip()
+            
+            results = self.collection.get(
+                where={"products": {"$contains": product_upper}},
+                limit=n_results
+            )
+            
+            documents = []
+            if results and results['documents']:
+                for i, doc in enumerate(results['documents']):
+                    documents.append({
+                        "content": doc,
+                        "metadata": results['metadatas'][i] if results['metadatas'] else {},
+                        "distance": 0
+                    })
+            
+            return documents
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro ao buscar por produto: {e}")
+            return []
     
     def clear(self) -> None:
         """Limpa toda a base de conhecimento."""
