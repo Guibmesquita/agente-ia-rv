@@ -141,6 +141,10 @@ async def list_assessores(
     unidade: Optional[str] = Query(None),
     equipe: Optional[str] = Query(None),
     broker: Optional[str] = Query(None),
+    codigo_ai: Optional[str] = Query(None),
+    nome: Optional[str] = Query(None),
+    email: Optional[str] = Query(None),
+    telefone: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -163,6 +167,14 @@ async def list_assessores(
         query = query.filter(Assessor.equipe == equipe)
     if broker:
         query = query.filter(Assessor.broker_responsavel == broker)
+    if codigo_ai:
+        query = query.filter(Assessor.codigo_ai.ilike(f"%{codigo_ai}%"))
+    if nome:
+        query = query.filter(Assessor.nome.ilike(f"%{nome}%"))
+    if email:
+        query = query.filter(Assessor.email.ilike(f"%{email}%"))
+    if telefone:
+        query = query.filter(Assessor.telefone_whatsapp.ilike(f"%{telefone}%"))
     
     cf_filters = {k[3:]: v for k, v in request.query_params.items() if k.startswith('cf_') and v}
     
@@ -319,6 +331,7 @@ def parse_custom_field(field):
         "field_type": field.field_type,
         "is_required": bool(field.is_required),
         "is_active": bool(field.is_active),
+        "display_order": field.display_order or 0,
         "created_at": field.created_at,
         "options": []
     }
@@ -332,7 +345,9 @@ def parse_custom_field(field):
 
 @custom_fields_router.get("")
 async def list_custom_fields(db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_gestao)):
-    fields = db.query(CustomFieldDefinition).filter(CustomFieldDefinition.is_active == 1).all()
+    fields = db.query(CustomFieldDefinition).filter(
+        CustomFieldDefinition.is_active == 1
+    ).order_by(CustomFieldDefinition.display_order, CustomFieldDefinition.id).all()
     return [parse_custom_field(f) for f in fields]
 
 
@@ -364,6 +379,25 @@ async def delete_custom_field(field_id: int, db: Session = Depends(get_db), curr
     db_field.is_active = 0
     db.commit()
     return {"message": "Campo desativado com sucesso"}
+
+
+class FieldOrderItem(BaseModel):
+    id: int
+    display_order: int
+
+
+class FieldOrderUpdate(BaseModel):
+    fields: List[FieldOrderItem]
+
+
+@custom_fields_router.put("/reorder")
+async def reorder_custom_fields(order_data: FieldOrderUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_gestao)):
+    for item in order_data.fields:
+        db_field = db.query(CustomFieldDefinition).filter(CustomFieldDefinition.id == item.id).first()
+        if db_field:
+            db_field.display_order = item.display_order
+    db.commit()
+    return {"message": "Ordem atualizada com sucesso"}
 
 
 upload_router = APIRouter(prefix="/api/upload", tags=["upload"])

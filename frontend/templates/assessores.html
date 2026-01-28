@@ -149,6 +149,156 @@
             color: var(--text-secondary);
         }
 
+        .more-filters-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .more-filters-toggle:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .more-filters-toggle.active {
+            border-color: var(--primary-color);
+            background: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        .more-filters-toggle svg {
+            transition: transform 0.2s;
+        }
+
+        .more-filters-toggle.active svg {
+            transform: rotate(180deg);
+        }
+
+        .expanded-filters {
+            display: none;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .expanded-filters.show {
+            display: block;
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .active-filters-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 6px;
+            background: var(--primary-color);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 10px;
+        }
+
+        .clear-filters-btn {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            background: #fee2e2;
+            color: #991b1b;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .clear-filters-btn:hover {
+            background: #fecaca;
+        }
+
+        .clear-filters-btn.show {
+            display: flex;
+        }
+
+        .filters-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .filters-header h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .field-item.draggable {
+            cursor: grab;
+            user-select: none;
+        }
+
+        .field-item.draggable:active {
+            cursor: grabbing;
+        }
+
+        .field-item.dragging {
+            opacity: 0.5;
+            background: var(--primary-light);
+        }
+
+        .field-item.drag-over {
+            border: 2px dashed var(--primary-color);
+        }
+
+        .drag-handle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            color: var(--text-secondary);
+            cursor: grab;
+            flex-shrink: 0;
+        }
+
+        .drag-handle:hover {
+            color: var(--text-primary);
+        }
+
+        .fields-list-sortable {
+            min-height: 50px;
+        }
+
         @media (max-width: 1024px) {
             .filters-bar {
                 grid-template-columns: 1fr 1fr;
@@ -251,22 +401,37 @@
                 </div>
 
                 <div class="card" style="padding: 20px; margin-bottom: 24px;">
-                    <div class="filters-bar">
+                    <div class="filters-bar" style="grid-template-columns: 2fr 1fr 1fr 1fr auto;">
                         <div class="search-input">
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                            <input type="text" class="form-input" id="search-input" placeholder="Buscar por nome ou telefone...">
+                            <input type="text" class="form-input" id="search-input" placeholder="Buscar por nome ou telefone..." oninput="debounceFilter()">
                         </div>
-                        <select class="form-select" id="filter-unidade">
+                        <select class="form-select" id="filter-unidade" onchange="loadAssessores(); updateActiveFiltersCount()">
                             <option value="">Todas as Unidades</option>
                         </select>
-                        <select class="form-select" id="filter-equipe">
+                        <select class="form-select" id="filter-equipe" onchange="loadAssessores(); updateActiveFiltersCount()">
                             <option value="">Todas as Equipes</option>
                         </select>
-                        <select class="form-select" id="filter-broker">
+                        <select class="form-select" id="filter-broker" onchange="loadAssessores(); updateActiveFiltersCount()">
                             <option value="">Todos os Brokers</option>
                         </select>
+                        <button class="more-filters-toggle" id="more-filters-btn" onclick="toggleMoreFilters()">
+                            <span>Mais Filtros</span>
+                            <span class="active-filters-badge" id="active-filters-badge" style="display: none;">0</span>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
                     </div>
-                    <div id="custom-filters-row" class="filters-bar" style="display: none; margin-top: -8px;"></div>
+                    
+                    <div class="expanded-filters" id="expanded-filters">
+                        <div class="filters-header">
+                            <h4>Filtros Adicionais</h4>
+                            <button class="clear-filters-btn" id="clear-filters-btn" onclick="clearAllFilters()">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                Limpar Filtros
+                            </button>
+                        </div>
+                        <div class="filters-grid" id="all-filters-grid"></div>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -496,12 +661,21 @@
             const unidade = document.getElementById('filter-unidade').value;
             const equipe = document.getElementById('filter-equipe').value;
             const broker = document.getElementById('filter-broker').value;
+            
+            const expCodigo = document.getElementById('filter-exp-codigo')?.value || '';
+            const expNome = document.getElementById('filter-exp-nome')?.value || '';
+            const expEmail = document.getElementById('filter-exp-email')?.value || '';
+            const expTelefone = document.getElementById('filter-exp-telefone')?.value || '';
 
             const params = new URLSearchParams();
             if (search) params.append('search', search);
             if (unidade) params.append('unidade', unidade);
             if (equipe) params.append('equipe', equipe);
             if (broker) params.append('broker', broker);
+            if (expCodigo) params.append('codigo_ai', expCodigo);
+            if (expNome) params.append('nome', expNome);
+            if (expEmail) params.append('email', expEmail);
+            if (expTelefone) params.append('telefone', expTelefone);
 
             customFields.forEach(cf => {
                 const filterEl = document.getElementById(`filter-cf-${cf.slug}`);
@@ -557,41 +731,135 @@
                     brokerSelect.innerHTML += `<option value="${b}" ${b === currentBroker ? 'selected' : ''}>${b}</option>`;
                 });
 
-                renderCustomFilters();
+                renderExpandedFilters();
             } catch (err) {
                 console.error('Erro:', err);
             }
         }
 
-        function renderCustomFilters() {
-            const customFiltersRow = document.getElementById('custom-filters-row');
-            if (!customFields || customFields.length === 0) {
-                customFiltersRow.style.display = 'none';
-                return;
-            }
-
+        function renderExpandedFilters() {
+            const grid = document.getElementById('all-filters-grid');
             const customFieldValues = filterOptions.custom_fields || {};
+            
             let filtersHtml = '';
+            
+            filtersHtml += `
+                <div class="filter-group">
+                    <label class="filter-label">Código AI</label>
+                    <input type="text" class="form-input" id="filter-exp-codigo" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Nome</label>
+                    <input type="text" class="form-input" id="filter-exp-nome" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">E-mail</label>
+                    <input type="text" class="form-input" id="filter-exp-email" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">WhatsApp</label>
+                    <input type="text" class="form-input" id="filter-exp-telefone" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                </div>
+            `;
             
             customFields.forEach(cf => {
                 const values = customFieldValues[cf.slug] || [];
-                if (values.length > 0) {
+                if (values.length > 0 && values.length <= 20) {
                     filtersHtml += `
-                        <select class="form-select" id="filter-cf-${cf.slug}" onchange="loadAssessores()">
-                            <option value="">Todos: ${cf.label}</option>
-                            ${values.map(v => `<option value="${v}">${v}</option>`).join('')}
-                        </select>
+                        <div class="filter-group">
+                            <label class="filter-label">${cf.label}</label>
+                            <select class="form-select" id="filter-cf-${cf.slug}" onchange="loadAssessores(); updateActiveFiltersCount()">
+                                <option value="">Todos</option>
+                                ${values.map(v => `<option value="${v}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                    `;
+                } else {
+                    filtersHtml += `
+                        <div class="filter-group">
+                            <label class="filter-label">${cf.label}</label>
+                            <input type="text" class="form-input" id="filter-cf-${cf.slug}" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                        </div>
                     `;
                 }
             });
+            
+            grid.innerHTML = filtersHtml;
+        }
 
-            if (filtersHtml) {
-                customFiltersRow.innerHTML = filtersHtml;
-                customFiltersRow.style.display = 'grid';
-                customFiltersRow.style.gridTemplateColumns = `repeat(${Math.min(customFields.length, 4)}, 1fr)`;
+        function toggleMoreFilters() {
+            const btn = document.getElementById('more-filters-btn');
+            const section = document.getElementById('expanded-filters');
+            btn.classList.toggle('active');
+            section.classList.toggle('show');
+        }
+
+        let filterDebounceTimer = null;
+        function debounceFilter() {
+            clearTimeout(filterDebounceTimer);
+            filterDebounceTimer = setTimeout(() => {
+                loadAssessores();
+                updateActiveFiltersCount();
+            }, 300);
+        }
+
+        function getActiveFiltersCount() {
+            let count = 0;
+            
+            if (document.getElementById('search-input')?.value) count++;
+            if (document.getElementById('filter-unidade')?.value) count++;
+            if (document.getElementById('filter-equipe')?.value) count++;
+            if (document.getElementById('filter-broker')?.value) count++;
+            if (document.getElementById('filter-exp-codigo')?.value) count++;
+            if (document.getElementById('filter-exp-nome')?.value) count++;
+            if (document.getElementById('filter-exp-email')?.value) count++;
+            if (document.getElementById('filter-exp-telefone')?.value) count++;
+            
+            customFields.forEach(cf => {
+                const el = document.getElementById(`filter-cf-${cf.slug}`);
+                if (el?.value) count++;
+            });
+            
+            return count;
+        }
+
+        function updateActiveFiltersCount() {
+            const count = getActiveFiltersCount();
+            const badge = document.getElementById('active-filters-badge');
+            const clearBtn = document.getElementById('clear-filters-btn');
+            
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-flex';
+                clearBtn.classList.add('show');
             } else {
-                customFiltersRow.style.display = 'none';
+                badge.style.display = 'none';
+                clearBtn.classList.remove('show');
             }
+        }
+
+        function clearAllFilters() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('filter-unidade').value = '';
+            document.getElementById('filter-equipe').value = '';
+            document.getElementById('filter-broker').value = '';
+            
+            const expCodigo = document.getElementById('filter-exp-codigo');
+            const expNome = document.getElementById('filter-exp-nome');
+            const expEmail = document.getElementById('filter-exp-email');
+            const expTelefone = document.getElementById('filter-exp-telefone');
+            if (expCodigo) expCodigo.value = '';
+            if (expNome) expNome.value = '';
+            if (expEmail) expEmail.value = '';
+            if (expTelefone) expTelefone.value = '';
+            
+            customFields.forEach(cf => {
+                const el = document.getElementById(`filter-cf-${cf.slug}`);
+                if (el) el.value = '';
+            });
+            
+            updateActiveFiltersCount();
+            loadAssessores();
         }
 
         async function loadCustomFields() {
@@ -678,15 +946,110 @@
             }
 
             noFields.style.display = 'none';
-            list.innerHTML = customFields.map(cf => `
-                <div class="field-item">
+            list.classList.add('fields-list-sortable');
+            list.innerHTML = customFields.map((cf, index) => `
+                <div class="field-item draggable" draggable="true" data-field-id="${cf.id}" data-order="${index}">
                     <div class="field-info">
+                        <div class="drag-handle" title="Arraste para reordenar">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm12-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/></svg>
+                        </div>
                         <strong>${cf.label}</strong>
                         <span class="field-slug">${cf.slug}</span>
                     </div>
                     <button class="btn btn-danger btn-sm" onclick="deleteCustomField(${cf.id})">Excluir</button>
                 </div>
             `).join('');
+            
+            initDragAndDrop();
+        }
+
+        let draggedField = null;
+
+        function initDragAndDrop() {
+            const fieldItems = document.querySelectorAll('.field-item.draggable');
+            
+            fieldItems.forEach(item => {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragend', handleDragEnd);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('dragleave', handleDragLeave);
+                item.addEventListener('drop', handleDrop);
+            });
+        }
+
+        function handleDragStart(e) {
+            draggedField = this;
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', this.dataset.fieldId);
+        }
+
+        function handleDragEnd(e) {
+            this.classList.remove('dragging');
+            document.querySelectorAll('.field-item').forEach(item => {
+                item.classList.remove('drag-over');
+            });
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (this !== draggedField) {
+                this.classList.add('drag-over');
+            }
+        }
+
+        function handleDragLeave(e) {
+            this.classList.remove('drag-over');
+        }
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            
+            if (this === draggedField) return;
+            
+            const list = document.getElementById('fields-list');
+            const items = [...list.querySelectorAll('.field-item.draggable')];
+            const draggedIndex = items.indexOf(draggedField);
+            const droppedIndex = items.indexOf(this);
+            
+            if (draggedIndex < droppedIndex) {
+                this.parentNode.insertBefore(draggedField, this.nextSibling);
+            } else {
+                this.parentNode.insertBefore(draggedField, this);
+            }
+            
+            await saveFieldOrder();
+        }
+
+        async function saveFieldOrder() {
+            const list = document.getElementById('fields-list');
+            const items = [...list.querySelectorAll('.field-item.draggable')];
+            
+            const fields = items.map((item, index) => ({
+                id: parseInt(item.dataset.fieldId),
+                display_order: index
+            }));
+            
+            try {
+                const res = await fetch('/api/custom-fields/reorder', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields })
+                });
+                
+                if (res.ok) {
+                    toast.success('Ordem atualizada');
+                    await loadCustomFields();
+                    await loadFilterOptions();
+                } else {
+                    toast.error('Erro ao atualizar ordem');
+                }
+            } catch (err) {
+                console.error('Erro ao salvar ordem:', err);
+                toast.error('Erro ao atualizar ordem');
+            }
         }
 
         function openFormModal(assessor = null) {
