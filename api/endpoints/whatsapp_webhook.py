@@ -20,6 +20,8 @@ from database import crud
 from services.whatsapp_client import zapi_client
 from services.openai_agent import openai_agent
 from services.vector_store import get_vector_store
+from services.sse_manager import get_sse_manager
+import asyncio
 
 router = APIRouter(prefix="/api/webhook", tags=["WhatsApp Webhook"])
 
@@ -232,6 +234,23 @@ def save_message_zapi(
     
     is_inbound = direction == MessageDirection.INBOUND.value
     update_conversation_metadata(db, conversation, body, is_inbound)
+    
+    try:
+        sse_manager = get_sse_manager()
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(sse_manager.notify_new_message(
+                conversation.id,
+                {
+                    "id": message.id,
+                    "direction": direction,
+                    "body": body[:200] if body else None,
+                    "sender_type": sender_type,
+                    "phone": phone
+                }
+            ))
+    except Exception as e:
+        print(f"[SSE] Erro ao notificar nova mensagem: {e}")
     
     return message
 

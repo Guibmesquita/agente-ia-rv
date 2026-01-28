@@ -996,12 +996,51 @@
             }
         }
 
-        setInterval(async () => {
-            await loadConversations();
-            if (currentConversation) {
-                await loadMessages(currentConversation.id);
+        let eventSource = null;
+        
+        function connectSSE() {
+            if (eventSource) {
+                eventSource.close();
             }
-        }, 5000);
+            
+            eventSource = new EventSource('/api/conversations/stream');
+            
+            eventSource.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'new_message') {
+                        console.log('[SSE] Nova mensagem:', data.data);
+                        
+                        await loadConversations();
+                        
+                        if (currentConversation && data.data.conversation_id === currentConversation.id) {
+                            await loadMessages(currentConversation.id);
+                        }
+                    } else if (data.type === 'conversation_updated') {
+                        await loadConversations();
+                    } else if (data.type === 'connected') {
+                        console.log('[SSE] Conectado ao servidor');
+                    }
+                } catch (e) {
+                    console.error('[SSE] Erro ao processar evento:', e);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('[SSE] Erro na conexão:', error);
+                eventSource.close();
+                setTimeout(connectSSE, 5000);
+            };
+        }
+        
+        connectSSE();
+        
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
     </script>
 
     <div class="modal" id="newConversationModal" style="display: none;">

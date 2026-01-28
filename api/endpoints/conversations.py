@@ -3,6 +3,7 @@ API endpoints para gerenciamento de conversas.
 Permite visualizar histórico, buscar por número e intervir humanamente.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
 from typing import List, Optional
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 from datetime import datetime
 import os
 import httpx
+import asyncio
+import json
 
 from database.database import get_db
 from database.models import (
@@ -17,6 +20,7 @@ from database.models import (
     ConversationStatus, ConversationState, SenderType, MessageDirection
 )
 from api.endpoints.auth import get_current_user
+from services.sse_manager import get_sse_manager
 
 
 router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
@@ -683,3 +687,37 @@ def update_conversation_from_message(
         conversation.unread_count = (conversation.unread_count or 0) + 1
     
     db.commit()
+
+
+@router.get("/stream")
+async def stream_conversations():
+    """
+    SSE endpoint para receber notificações em tempo real sobre conversas.
+    """
+    sse_manager = get_sse_manager()
+    queue = await sse_manager.subscribe("conversations")
+    
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'type': 'connected', 'message': 'SSE conectado'})}\n\n"
+            
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(message)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            sse_manager.unsubscribe("conversations", queue)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
