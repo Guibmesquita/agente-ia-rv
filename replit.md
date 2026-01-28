@@ -102,6 +102,14 @@ O agente de IA se chama **Stevan** e possui identidade bem definida:
   - `get_identification_prompt()`: Stevan se apresenta e pede identificação
   - `get_transfer_message()`: Variações para comunicar transferência ao time
   - `get_out_of_scope_redirect()`: Redireciona para foco em RV
+- **Conversation Context Accumulation (services/openai_agent.py):**
+  - `_extract_entities_from_history()`: Extrai produtos/tickers/fundos mencionados ao longo de toda a conversa, iterando do mais recente para o mais antigo
+  - `_is_followup_question()`: Detecta perguntas de follow-up através de padrões linguísticos:
+    - Pronomes anafóricos: "dele", "dessa", "desse", "disso", "nele"
+    - Conectivos de continuidade: "e o", "e a", "e qual", "e como"
+    - Perguntas curtas sem entidade: "qual a data?", "quanto é?"
+  - **Fluxo de Contexto Acumulado:** Quando uma pergunta é detectada como follow-up e não contém entidade própria, o sistema extrai as entidades do histórico da conversa e enriquece a busca semântica com esse contexto
+  - **Exemplo:** Usuário pergunta "TG Core" → depois "e a data de liquidação?" → Sistema busca documentos sobre "TG CORE data de liquidação"
 
 ## External Dependencies
 

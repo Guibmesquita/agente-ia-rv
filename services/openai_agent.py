@@ -240,6 +240,124 @@ Retorne APENAS o JSON."""
             print(f"[OpenAI] Erro ao classificar mensagem: {e}")
             return ("ESCOPO", [])
     
+    def _extract_entities_from_history(self, conversation_history: Optional[List[dict]]) -> List[str]:
+        """
+        Extrai entidades (produtos, tickers, fundos) mencionados ao longo de toda a conversa.
+        Analisa todas as mensagens do usuário no histórico e extrai termos relevantes.
+        Itera do mais recente para o mais antigo para garantir ordem de recência.
+        
+        Returns:
+            Lista de entidades únicas, ordenadas por recência (mais recente primeiro)
+        """
+        if not conversation_history:
+            return []
+        
+        entities = []
+        
+        fii_pattern = re.compile(r'\b[A-Z]{4}11\b', re.IGNORECASE)
+        
+        product_keywords = [
+            r'\b(TG\s*(?:CORE|RI|RENDA))\b',
+            r'\b(KNIP|KNCR|MXRF|HGLG|XPLG|VISC|BTLG|HABT|BCFF|RVBI)\d*\b',
+            r'\b(Fundo\s+[A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\b',
+            r'\b(Estratégia\s+[A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\b',
+            r'\b(Carteira\s+[A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\b',
+        ]
+        
+        for msg in reversed(conversation_history):
+            if msg.get('role') != 'user':
+                continue
+            
+            content = msg.get('content', '')
+            
+            tickers = fii_pattern.findall(content)
+            for ticker in tickers:
+                ticker_upper = ticker.upper()
+                if ticker_upper not in entities:
+                    entities.append(ticker_upper)
+            
+            for pattern in product_keywords:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    entity = match.upper().strip()
+                    entity = re.sub(r'\s+', ' ', entity)
+                    if entity not in entities:
+                        entities.append(entity)
+        
+        print(f"[OpenAI] Entidades extraídas do histórico (recentes primeiro): {entities}")
+        return entities
+    
+    def _is_followup_question(self, message: str) -> bool:
+        """
+        Detecta se a mensagem é uma pergunta de follow-up que depende do contexto anterior.
+        
+        Padrões detectados:
+        - Pronomes anafóricos: "dele", "dessa", "desse", "disso"
+        - Conectivos de continuidade: "e o", "e a", "e qual", "e como"
+        - Perguntas curtas sem sujeito: "qual a data?", "quanto é?", "e o prazo?"
+        - Referências implícitas: "também", "além disso", "mais alguma coisa"
+        """
+        message_lower = message.lower().strip()
+        
+        anaphoric_patterns = [
+            r'\b(dele|dela|deles|delas)\b',
+            r'\b(desse|dessa|desses|dessas)\b',
+            r'\b(disso|disto|daquilo)\b',
+            r'\b(nele|nela|neles|nelas)\b',
+            r'\b(esse|essa|esses|essas)\b',
+            r'\b(este|esta|estes|estas)\b',
+            r'\b(aquele|aquela|aqueles|aquelas)\b',
+            r'\b(o mesmo|a mesma)\b',
+            r'\b(seu|sua|seus|suas)\b',
+        ]
+        
+        continuation_patterns = [
+            r'^e\s+(o|a|qual|como|quanto|quando|onde)\b',
+            r'^e\s+a\s+',
+            r'^e\s+o\s+',
+            r'^qual\s+(é|era|foi|seria)\s+(o|a)\s+',
+            r'^quanto\s+(é|era|foi|custa|vale)\b',
+            r'^quando\s+(é|era|foi|será)\b',
+            r'^como\s+(é|está|funciona)\b',
+            r'^me\s+(fala|diz|conta)\s+(mais|sobre)\b',
+            r'^fala\s+mais\b',
+            r'^mais\s+(detalhes|informações|dados)\b',
+            r'^também\b',
+            r'^além\s+disso\b',
+            r'^outra\s+(coisa|pergunta)\b',
+        ]
+        
+        for pattern in anaphoric_patterns:
+            if re.search(pattern, message_lower):
+                print(f"[OpenAI] Follow-up detectado (pronome anafórico): {message}")
+                return True
+        
+        for pattern in continuation_patterns:
+            if re.search(pattern, message_lower):
+                print(f"[OpenAI] Follow-up detectado (padrão de continuação): {message}")
+                return True
+        
+        words = message_lower.split()
+        if len(words) <= 5:
+            short_question_patterns = [
+                r'^qual\s+',
+                r'^quanto\s+',
+                r'^quando\s+',
+                r'^como\s+',
+                r'^onde\s+',
+                r'^o\s+que\s+',
+            ]
+            has_question_word = any(re.search(p, message_lower) for p in short_question_patterns)
+            
+            has_entity = bool(re.search(r'\b[A-Z]{4}11\b', message, re.IGNORECASE))
+            has_product_name = bool(re.search(r'\b(TG|fundo|carteira|estratégia)\b', message, re.IGNORECASE))
+            
+            if has_question_word and not has_entity and not has_product_name:
+                print(f"[OpenAI] Follow-up detectado (pergunta curta sem entidade): {message}")
+                return True
+        
+        return False
+    
     def _get_stevan_base_identity(self) -> str:
         """Retorna a identidade base imutável do Stevan."""
         return """Você é Stevan, um agente de atendimento interno da SVN, integrante da área de Renda Variável.
@@ -400,6 +518,18 @@ Stevan existe para aumentar a eficiência do assessor e gerar mais valor ao clie
         
         categoria, extracted_products = self._classify_message(user_message)
         
+        is_followup = self._is_followup_question(user_message)
+        
+        history_entities = []
+        enriched_query = user_message
+        
+        if is_followup and not extracted_products and conversation_history:
+            history_entities = self._extract_entities_from_history(conversation_history)
+            if history_entities:
+                recent_entities = history_entities[:3]
+                enriched_query = f"{' '.join(recent_entities)} {user_message}"
+                print(f"[OpenAI] Follow-up detectado - Query enriquecida: '{enriched_query}'")
+        
         vs = get_vector_store()
         context_documents = []
         
@@ -408,7 +538,7 @@ Stevan existe para aumentar a eficiência do assessor e gerar mais valor ao clie
         elif categoria == "FORA_ESCOPO":
             print(f"[OpenAI] Fora de escopo - NÃO consultando documentos")
         elif vs:
-            if categoria == "DOCUMENTAL" and extracted_products:
+            if extracted_products:
                 for product in extracted_products:
                     product_docs = vs.search_by_product(product, n_results=10)
                     print(f"[OpenAI] Encontrados {len(product_docs)} docs para produto '{product}'")
@@ -417,11 +547,23 @@ Stevan existe para aumentar a eficiência do assessor e gerar mais valor ao clie
                             context_documents.append(doc)
                 
                 if not context_documents:
-                    context_documents = vs.search(user_message, n_results=5)
+                    context_documents = vs.search(enriched_query, n_results=5)
                     print(f"[OpenAI] Fallback semântico retornou {len(context_documents)} docs")
-            elif categoria == "ESCOPO":
-                context_documents = vs.search(user_message, n_results=5)
-                print(f"[OpenAI] Busca semântica para ESCOPO retornou {len(context_documents)} docs")
+            elif is_followup and history_entities:
+                print(f"[OpenAI] Follow-up sem entidade - buscando por contexto do histórico: {history_entities[:3]}")
+                for entity in history_entities[:3]:
+                    entity_docs = vs.search_by_product(entity, n_results=10)
+                    print(f"[OpenAI] Encontrados {len(entity_docs)} docs para entidade do histórico '{entity}'")
+                    for doc in entity_docs:
+                        if doc not in context_documents:
+                            context_documents.append(doc)
+                
+                if not context_documents:
+                    context_documents = vs.search(enriched_query, n_results=5)
+                    print(f"[OpenAI] Fallback com query enriquecida retornou {len(context_documents)} docs")
+            else:
+                context_documents = vs.search(enriched_query, n_results=5)
+                print(f"[OpenAI] Busca semântica padrão retornou {len(context_documents)} docs")
         
         fii_lookup_result = None
         fii_service = get_fii_lookup_service()
