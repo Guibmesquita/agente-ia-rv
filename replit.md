@@ -110,6 +110,21 @@ O agente de IA se chama **Stevan** e possui identidade bem definida:
     - Perguntas curtas sem entidade: "qual a data?", "quanto é?"
   - **Fluxo de Contexto Acumulado:** Quando uma pergunta é detectada como follow-up e não contém entidade própria, o sistema extrai as entidades do histórico da conversa e enriquece a busca semântica com esse contexto
   - **Exemplo:** Usuário pergunta "TG Core" → depois "e a data de liquidação?" → Sistema busca documentos sobre "TG CORE data de liquidação"
+- **Ticker Search with Confirmation Flow (services/openai_agent.py + services/vector_store.py):**
+  - `levenshtein_distance()`: Calcula distância de edição entre strings para encontrar tickers similares
+  - `find_exact_ticker()`: Verifica se ticker existe EXATAMENTE na base
+  - `find_similar_tickers()`: Busca tickers/produtos similares usando Levenshtein e prefixo comum
+  - `_detect_ticker_confirmation()`: Detecta confirmação, negação ou ambiguidade na resposta do usuário
+  - **Fluxo de Confirmação:**
+    1. Ticker não encontrado exatamente → busca similares
+    2. Se há similares → pergunta "Você quis dizer X, Y?"
+    3. Usuário confirma (nome, ordinal "primeiro/segundo") → busca o confirmado
+    4. Usuário nega ("não", "nenhum deles") → busca no FundsExplorer
+    5. Resposta ambígua ("sim" com múltiplas opções) → pede clarificação
+  - **NUNCA assume** que o usuário quis dizer outro ativo sem confirmação explícita
+- **Communication Style Improvements:**
+  - Stevan NUNCA termina respostas com "Se precisar de mais alguma coisa" ou frases repetitivas similares
+  - Respostas são diretas e naturais, encerrando após entregar a informação
 
 ## External Dependencies
 
