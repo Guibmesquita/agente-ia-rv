@@ -1729,22 +1729,122 @@ async def dispatch_campaign_stream(
     )
 
 
+def replace_variables_generic(text: str, variables: dict) -> str:
+    """
+    Substitui variáveis no texto de forma genérica.
+    Suporta formatos: {{var}}, {{ var }}, {var}
+    Normaliza nomes de variáveis (remove acentos, lowercase, underscores).
+    """
+    if not text:
+        return ""
+    
+    def normalize_var_name(name: str) -> str:
+        import unicodedata
+        normalized = unicodedata.normalize('NFKD', name.lower())
+        normalized = ''.join(c for c in normalized if not unicodedata.combining(c))
+        normalized = normalized.replace(' ', '_').replace('-', '_')
+        return normalized
+    
+    normalized_vars = {}
+    for key, value in variables.items():
+        str_value = str(value) if value is not None else ""
+        normalized_vars[key] = str_value
+        normalized_vars[normalize_var_name(key)] = str_value
+    
+    result = text
+    
+    pattern = r'\{\{\s*([^}]+?)\s*\}\}'
+    def replacer(match):
+        var_name = match.group(1).strip()
+        normalized_name = normalize_var_name(var_name)
+        if var_name in normalized_vars:
+            return normalized_vars[var_name]
+        if normalized_name in normalized_vars:
+            return normalized_vars[normalized_name]
+        return match.group(0)
+    
+    result = re.sub(pattern, replacer, result)
+    
+    pattern_simple = r'\{([^{}]+)\}'
+    def replacer_simple(match):
+        var_name = match.group(1).strip()
+        normalized_name = normalize_var_name(var_name)
+        if var_name in normalized_vars:
+            return normalized_vars[var_name]
+        if normalized_name in normalized_vars:
+            return normalized_vars[normalized_name]
+        return match.group(0)
+    
+    result = re.sub(pattern_simple, replacer_simple, result)
+    
+    return result
+
+
+def build_assessor_variables(assessor: dict) -> dict:
+    """
+    Constrói dicionário completo de variáveis a partir dos dados do assessor.
+    Inclui aliases comuns para facilitar o uso de variáveis.
+    """
+    variables = {}
+    
+    for key, value in assessor.items():
+        str_value = str(value) if value is not None else ""
+        variables[key] = str_value
+    
+    nome = assessor.get("nome", "")
+    variables["nome_assessor"] = str(nome) if nome else ""
+    variables["assessor"] = str(nome) if nome else ""
+    
+    telefone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
+    variables["telefone"] = str(telefone) if telefone else ""
+    variables["whatsapp"] = str(telefone) if telefone else ""
+    variables["celular"] = str(telefone) if telefone else ""
+    
+    email = assessor.get("email", "")
+    variables["email_assessor"] = str(email) if email else ""
+    
+    codigo = assessor.get("codigo_ai", "")
+    variables["codigo"] = str(codigo) if codigo else ""
+    variables["codigo_assessor"] = str(codigo) if codigo else ""
+    
+    unidade = assessor.get("unidade", "")
+    variables["escritorio"] = str(unidade) if unidade else ""
+    
+    equipe = assessor.get("equipe", "")
+    variables["time"] = str(equipe) if equipe else ""
+    
+    broker = assessor.get("broker_responsavel", "")
+    variables["broker"] = str(broker) if broker else ""
+    
+    variables["data_atual"] = datetime.now().strftime("%d/%m/%Y")
+    variables["data"] = datetime.now().strftime("%d/%m/%Y")
+    
+    variables["lista_clientes"] = "(Campanha informativa)"
+    
+    return variables
+
+
 async def dispatch_campaign_from_base(campaign, db: Session):
     """
     Dispara campanha baseada em assessores selecionados da base.
-    Envia mensagem simples para cada assessor sem lista de clientes.
+    Envia mensagem usando os blocos de header, content e footer definidos na campanha.
     """
     from services.whatsapp_client import zapi_client
     import os
     
-    template_content = "Ola, {{nome_assessor}}!\n\n"
+    header_template = campaign.message_header or ""
+    content_template = campaign.message_content_template or ""
+    footer_template = campaign.message_footer or ""
     
-    if campaign.custom_template_content:
-        template_content = str(campaign.custom_template_content)
-    elif campaign.template_id:
-        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
-        if template:
-            template_content = str(template.content)
+    if not header_template and not content_template and not footer_template:
+        if campaign.custom_template_content:
+            content_template = str(campaign.custom_template_content)
+        elif campaign.template_id:
+            template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+            if template:
+                content_template = str(template.content)
+        else:
+            content_template = "Ola, {{nome_assessor}}!"
     
     try:
         data = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
@@ -1793,15 +1893,28 @@ async def dispatch_campaign_from_base(campaign, db: Session):
             for assessor in data:
                 current_index += 1
                 assessor_name = assessor.get("nome", "")
-                phone = assessor.get("telefone_whatsapp", "")
+                phone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
                 
-                message = template_content
-                for key, value in assessor.items():
-                    message = message.replace(f"{{{{{key}}}}}", str(value) if value else "")
-                    message = message.replace(f"{{{{ {key} }}}}", str(value) if value else "")
-                message = message.replace("{{lista_clientes}}", "(Campanha informativa)")
-                message = message.replace("{{ lista_clientes }}", "(Campanha informativa)")
-                message = message.replace("{lista_clientes}", "(Campanha informativa)")
+                variables = build_assessor_variables(assessor)
+                
+                message_parts = []
+                
+                header_rendered = replace_variables_generic(header_template, variables)
+                if header_rendered.strip():
+                    message_parts.append(header_rendered.strip())
+                
+                content_rendered = replace_variables_generic(content_template, variables)
+                if content_rendered.strip():
+                    message_parts.append(content_rendered.strip())
+                
+                footer_rendered = replace_variables_generic(footer_template, variables)
+                if footer_rendered.strip():
+                    message_parts.append(footer_rendered.strip())
+                
+                message = "\n\n".join(message_parts)
+                
+                leftover_pattern = r'\{\{[^}]+\}\}'
+                message = re.sub(leftover_pattern, '', message)
                 
                 db_session = SessionLocal()
                 try:
