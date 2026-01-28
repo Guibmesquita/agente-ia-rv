@@ -25,9 +25,9 @@
             color: #1e40af;
         }
 
-        .role-client {
-            background: #d1fae5;
-            color: #065f46;
+        .role-gestao_rv {
+            background: #fef3c7;
+            color: #92400e;
         }
 
         .actions-cell {
@@ -152,7 +152,15 @@
                         <h1 class="page-title">Usuários</h1>
                         <p class="page-subtitle">Gerencie os usuários do sistema</p>
                     </div>
-                    <button class="btn btn-primary" onclick="openModal()">+ Novo Usuário</button>
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn btn-secondary" onclick="openImportModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            Importar Base
+                        </button>
+                        <button class="btn btn-primary" onclick="openModal()">+ Novo Usuário</button>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -213,9 +221,9 @@
                     <div class="form-group">
                         <label class="form-label" for="role">Função</label>
                         <select class="form-select" id="role" name="role" required>
-                            <option value="client">Cliente</option>
-                            <option value="broker">Assessor</option>
                             <option value="admin">Administrador</option>
+                            <option value="gestao_rv">Gestor</option>
+                            <option value="broker">Broker</option>
                         </select>
                     </div>
                 </div>
@@ -227,8 +235,285 @@
         </div>
     </div>
     
+    <div class="modal-overlay" id="importModal">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Importar Usuários</h3>
+                <button class="modal-close" onclick="closeImportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="import-step-1">
+                    <div class="form-group">
+                        <label class="form-label">Arquivo Excel ou CSV</label>
+                        <input type="file" class="form-input" id="importFile" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)">
+                        <small style="color: var(--text-secondary);">Formatos aceitos: .xlsx, .xls, .csv</small>
+                    </div>
+                </div>
+                
+                <div id="import-step-2" style="display: none;">
+                    <h4 style="margin-bottom: 16px;">Mapeamento de Colunas</h4>
+                    <p style="color: var(--text-secondary); margin-bottom: 16px;">Associe as colunas do arquivo aos campos do sistema:</p>
+                    
+                    <div class="mapping-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Primeiro Nome</label>
+                            <select class="form-select" id="map_first_name"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nome Completo</label>
+                            <select class="form-select" id="map_full_name"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">E-mail *</label>
+                            <select class="form-select" id="map_email"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Telefone WhatsApp</label>
+                            <select class="form-select" id="map_phone"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Função</label>
+                            <select class="form-select" id="map_role"></select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="updateExisting">
+                            <span>Atualizar registros existentes (por e-mail ou telefone)</span>
+                        </label>
+                    </div>
+                    
+                    <div style="margin-top: 16px;">
+                        <h5 style="margin-bottom: 8px;">Preview dos dados:</h5>
+                        <div style="overflow-x: auto; max-height: 200px; border: 1px solid var(--border-color); border-radius: 8px;">
+                            <table class="table" id="previewTable" style="margin: 0;">
+                                <thead id="previewHead"></thead>
+                                <tbody id="previewBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="import-step-3" style="display: none;">
+                    <div id="import-result"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmImportBtn" style="display: none;" onclick="confirmImport()">Importar</button>
+                <button type="button" class="btn btn-primary" id="closeResultBtn" style="display: none;" onclick="closeImportModal(); loadUsers();">Fechar</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         let currentUserRole = null;
+        let importFileId = null;
+        let importColumns = [];
+        
+        function openImportModal() {
+            document.getElementById('importModal').classList.add('show');
+            document.getElementById('import-step-1').style.display = 'block';
+            document.getElementById('import-step-2').style.display = 'none';
+            document.getElementById('import-step-3').style.display = 'none';
+            document.getElementById('confirmImportBtn').style.display = 'none';
+            document.getElementById('closeResultBtn').style.display = 'none';
+            document.getElementById('importFile').value = '';
+            importFileId = null;
+        }
+        
+        function closeImportModal() {
+            document.getElementById('importModal').classList.remove('show');
+        }
+        
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const uploadResponse = await fetch('/api/users/import/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!uploadResponse.ok) {
+                    const error = await uploadResponse.json();
+                    toast.error(error.detail || 'Erro ao enviar arquivo');
+                    return;
+                }
+                
+                const uploadData = await uploadResponse.json();
+                importFileId = uploadData.file_id;
+                
+                const previewResponse = await fetch(`/api/users/import/preview/${importFileId}`);
+                if (!previewResponse.ok) {
+                    toast.error('Erro ao ler arquivo');
+                    return;
+                }
+                
+                const previewData = await previewResponse.json();
+                importColumns = previewData.columns;
+                
+                populateMappingSelects(previewData.columns);
+                showPreviewTable(previewData.columns, previewData.preview);
+                
+                document.getElementById('import-step-1').style.display = 'none';
+                document.getElementById('import-step-2').style.display = 'block';
+                document.getElementById('confirmImportBtn').style.display = 'inline-flex';
+                
+            } catch (error) {
+                console.error('Erro:', error);
+                toast.error('Erro ao processar arquivo');
+            }
+        }
+        
+        function populateMappingSelects(columns) {
+            const fields = ['first_name', 'full_name', 'email', 'phone', 'role'];
+            const labels = {
+                first_name: ['primeiro', 'first', 'nome'],
+                full_name: ['completo', 'full', 'name', 'nome'],
+                email: ['email', 'e-mail', 'mail'],
+                phone: ['telefone', 'phone', 'whatsapp', 'celular', 'cel'],
+                role: ['função', 'funcao', 'role', 'cargo', 'tipo']
+            };
+            
+            fields.forEach(field => {
+                const select = document.getElementById(`map_${field}`);
+                select.innerHTML = '<option value="">-- Não mapear --</option>';
+                
+                columns.forEach(col => {
+                    const option = document.createElement('option');
+                    option.value = col;
+                    option.textContent = col;
+                    select.appendChild(option);
+                });
+                
+                const keywords = labels[field] || [];
+                for (const col of columns) {
+                    const colLower = col.toLowerCase();
+                    if (keywords.some(k => colLower.includes(k))) {
+                        select.value = col;
+                        break;
+                    }
+                }
+            });
+        }
+        
+        function showPreviewTable(columns, data) {
+            const thead = document.getElementById('previewHead');
+            const tbody = document.getElementById('previewBody');
+            
+            thead.innerHTML = '<tr>' + columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+            tbody.innerHTML = data.map(row => 
+                '<tr>' + columns.map(c => `<td>${row[c] || ''}</td>`).join('') + '</tr>'
+            ).join('');
+        }
+        
+        async function confirmImport() {
+            const mapping = {
+                first_name: document.getElementById('map_first_name').value,
+                full_name: document.getElementById('map_full_name').value,
+                email: document.getElementById('map_email').value,
+                phone: document.getElementById('map_phone').value,
+                role: document.getElementById('map_role').value
+            };
+            
+            if (!mapping.email) {
+                toast.error('E-mail é obrigatório');
+                return;
+            }
+            
+            const updateExisting = document.getElementById('updateExisting').checked;
+            
+            try {
+                document.getElementById('confirmImportBtn').disabled = true;
+                document.getElementById('confirmImportBtn').textContent = 'Importando...';
+                
+                const response = await fetch('/api/users/import/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: importFileId,
+                        mapping: mapping,
+                        update_existing: updateExisting
+                    })
+                });
+                
+                const result = await response.json();
+                
+                document.getElementById('import-step-2').style.display = 'none';
+                document.getElementById('import-step-3').style.display = 'block';
+                document.getElementById('confirmImportBtn').style.display = 'none';
+                document.getElementById('closeResultBtn').style.display = 'inline-flex';
+                
+                let resultHtml = '';
+                const hasErrors = result.errors && result.errors.length > 0;
+                const hasSuccess = result.created > 0 || result.updated > 0;
+                
+                if (hasSuccess && !hasErrors) {
+                    resultHtml = `
+                        <div style="text-align: center; padding: 24px;">
+                            <div style="width: 64px; height: 64px; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                                <svg width="32" height="32" fill="none" stroke="#059669" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                            </div>
+                            <h3 style="color: #059669; margin-bottom: 8px;">Importação Concluída</h3>
+                            <p>${result.created} usuário(s) criado(s)</p>
+                            <p>${result.updated} usuário(s) atualizado(s)</p>
+                            ${result.skipped > 0 ? `<p>${result.skipped} registro(s) ignorado(s)</p>` : ''}
+                        </div>
+                    `;
+                } else if (hasSuccess && hasErrors) {
+                    resultHtml = `
+                        <div style="text-align: center; padding: 24px;">
+                            <div style="width: 64px; height: 64px; background: #fef3c7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                                <svg width="32" height="32" fill="none" stroke="#d97706" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                            </div>
+                            <h3 style="color: #d97706; margin-bottom: 8px;">Importação Parcial</h3>
+                            <p>${result.created} usuário(s) criado(s), ${result.updated} atualizado(s)</p>
+                            <div style="margin-top: 16px; text-align: left; max-height: 150px; overflow-y: auto; background: #fef3c7; padding: 12px; border-radius: 8px;">
+                                <strong>Erros:</strong>
+                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                    ${result.errors.map(e => `<li>${e}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultHtml = `
+                        <div style="text-align: center; padding: 24px;">
+                            <div style="width: 64px; height: 64px; background: #fee2e2; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                                <svg width="32" height="32" fill="none" stroke="#dc2626" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </div>
+                            <h3 style="color: #dc2626; margin-bottom: 8px;">Erro na Importação</h3>
+                            <div style="margin-top: 16px; text-align: left; max-height: 200px; overflow-y: auto; background: #fee2e2; padding: 12px; border-radius: 8px;">
+                                <ul style="margin: 0; padding-left: 20px;">
+                                    ${result.errors.map(e => `<li>${e}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('import-result').innerHTML = resultHtml;
+                
+            } catch (error) {
+                console.error('Erro:', error);
+                toast.error('Erro ao importar usuários');
+            } finally {
+                document.getElementById('confirmImportBtn').disabled = false;
+                document.getElementById('confirmImportBtn').textContent = 'Importar';
+            }
+        }
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -313,8 +598,8 @@
         function getRoleLabel(role) {
             switch(role) {
                 case 'admin': return 'Administrador';
-                case 'broker': return 'Assessor';
-                case 'client': return 'Cliente';
+                case 'gestao_rv': return 'Gestor';
+                case 'broker': return 'Broker';
                 default: return role;
             }
         }
@@ -430,6 +715,12 @@
         document.getElementById('userModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeModal();
+            }
+        });
+        
+        document.getElementById('importModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeImportModal();
             }
         });
     </script>

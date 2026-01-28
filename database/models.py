@@ -73,7 +73,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     phone = Column(String(20), unique=True, index=True, nullable=True)
-    role = Column(String(20), default=UserRole.CLIENT.value)
+    role = Column(String(20), default=UserRole.BROKER.value)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relacionamento com tickets (como cliente)
