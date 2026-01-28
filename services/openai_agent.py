@@ -9,6 +9,7 @@ from openai import OpenAI
 from typing import List, Optional, Tuple, Dict, Any
 from core.config import get_settings
 from services.vector_store import get_vector_store
+from services.fii_lookup import get_fii_lookup_service, FIIInfoType
 
 settings = get_settings()
 
@@ -422,6 +423,27 @@ Stevan existe para aumentar a eficiência do assessor e gerar mais valor ao clie
                 context_documents = vs.search(user_message, n_results=5)
                 print(f"[OpenAI] Busca semântica para ESCOPO retornou {len(context_documents)} docs")
         
+        fii_lookup_result = None
+        fii_service = get_fii_lookup_service()
+        detected_ticker = fii_service.extract_ticker(user_message)
+        
+        if detected_ticker and (not context_documents or len(context_documents) == 0):
+            print(f"[OpenAI] Ticker {detected_ticker} detectado sem resultados na base - buscando no StatusInvest")
+            fii_lookup_result = fii_service.lookup(user_message)
+            if fii_lookup_result:
+                print(f"[OpenAI] Dados do StatusInvest obtidos para {detected_ticker}")
+        elif detected_ticker and context_documents:
+            ticker_in_docs = any(
+                detected_ticker.lower() in str(doc.get('content', '')).lower() or
+                detected_ticker.lower() in str(doc.get('metadata', {})).lower()
+                for doc in context_documents
+            )
+            if not ticker_in_docs:
+                print(f"[OpenAI] Ticker {detected_ticker} não encontrado nos documentos retornados - buscando no StatusInvest")
+                fii_lookup_result = fii_service.lookup(user_message)
+                if fii_lookup_result:
+                    print(f"[OpenAI] Dados do StatusInvest obtidos para {detected_ticker}")
+        
         context = self._build_context(context_documents)
         
         if assessor_data:
@@ -435,10 +457,30 @@ Stevan existe para aumentar a eficiência do assessor e gerar mais valor ao clie
         if conversation_history:
             messages.extend(conversation_history[-6:])
         
-        messages.append({
-            "role": "user",
-            "content": f"""CONTEXTO DA BASE DE CONHECIMENTO:
-{context}
+        user_content = f"""CONTEXTO DA BASE DE CONHECIMENTO:
+{context}"""
+
+        if fii_lookup_result:
+            fii_data = fii_lookup_result.get('data')
+            if fii_data:
+                fii_info = fii_service.format_complete_response(fii_data)
+                user_content += f"""
+
+---
+
+DADOS EXTERNOS (StatusInvest) - FUNDO NÃO ENCONTRADO NA BASE OFICIAL:
+O fundo {fii_lookup_result.get('ticker')} NÃO está na base de conhecimento oficial da SVN.
+Dados obtidos de fonte externa pública (StatusInvest):
+
+{fii_info}
+
+IMPORTANTE: Ao responder sobre este fundo, você DEVE:
+1. Informar que este fundo NÃO está na recomendação oficial da SVN
+2. Apresentar os dados técnicos acima como informação de mercado pública
+3. Não recomendar ou sugerir investimento neste fundo
+4. Se o usuário quiser orientação sobre este fundo, encaminhar para um especialista humano"""
+
+        user_content += f"""
 
 ---
 
@@ -450,7 +492,12 @@ INSTRUÇÕES IMPORTANTES:
 2. Se o contexto contém informações sobre produtos similares ao que foi perguntado, USE essas informações na resposta
 3. Responda de forma clara e objetiva, citando os dados específicos encontrados
 4. Use as informações do assessor identificado se disponíveis
-5. SOMENTE se realmente não houver nenhuma informação relevante no contexto, pergunte se deseja abrir um chamado"""
+5. Se houver DADOS EXTERNOS, apresente com o disclaimer de que não é recomendação oficial
+6. SOMENTE se realmente não houver nenhuma informação relevante no contexto E nem dados externos, pergunte se deseja abrir um chamado"""
+        
+        messages.append({
+            "role": "user",
+            "content": user_content
         })
         
         try:
@@ -473,7 +520,8 @@ INSTRUÇÕES IMPORTANTES:
             return ai_response, False, {
                 "intent": "question", 
                 "documents": context_documents,
-                "identified_assessor": assessor_data
+                "identified_assessor": assessor_data,
+                "fii_external_lookup": fii_lookup_result.get('ticker') if fii_lookup_result else None
             }
             
         except Exception as e:

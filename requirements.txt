@@ -37,3 +37,5 @@ PyPDF2
 python-docx
 pdf2image
 Pillow
+beautifulsoup4
+lxml
