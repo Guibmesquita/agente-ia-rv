@@ -254,7 +254,7 @@ class VectorStore:
         all_tickers = self.get_all_tickers()
         return ticker_upper in all_tickers
     
-    def find_similar_tickers(self, ticker: str, max_distance: int = 2, limit: int = 3) -> List[str]:
+    def find_similar_tickers(self, ticker: str, max_distance: int = 3, limit: int = 3, debug: bool = False) -> List[str]:
         """
         Encontra tickers/produtos similares ao fornecido usando distância de Levenshtein.
         Busca tanto em tickers (padrão XX11) quanto em produtos gerais.
@@ -263,39 +263,62 @@ class VectorStore:
             ticker: Ticker a ser buscado (ex: TGRE11)
             max_distance: Distância máxima de Levenshtein para considerar similar
             limit: Número máximo de sugestões
+            debug: Se True, imprime logs de debug
             
         Returns:
             Lista de tickers/produtos similares ordenados por similaridade
         """
         ticker_upper = ticker.upper().strip()
+        ticker_base = ticker_upper.replace('11', '')
+        is_ticker_format = bool(re.match(r'^[A-Z]{4,5}11$', ticker_upper))
         
         all_tickers = self.get_all_tickers()
         all_products = self.get_all_products()
         all_items = all_tickers.union(all_products)
+        
+        if debug:
+            print(f"[VECTOR_STORE] find_similar_tickers: buscando similares para '{ticker_upper}'")
+            print(f"[VECTOR_STORE] Total de tickers na base: {len(all_tickers)}")
+            print(f"[VECTOR_STORE] Total de produtos na base: {len(all_products)}")
         
         similar = []
         for existing_item in all_items:
             if existing_item == ticker_upper:
                 continue
             
+            item_len = len(existing_item)
+            if item_len > 15:
+                continue
+            
+            existing_base = existing_item.replace('11', '').replace(' ', '')
+            
             distance = levenshtein_distance(ticker_upper, existing_item)
+            base_distance = levenshtein_distance(ticker_base, existing_base)
             
             if distance <= max_distance:
                 similar.append((existing_item, distance))
-            elif ticker_upper[:4] == existing_item[:4] and len(existing_item) >= 4:
+            elif base_distance <= 2 and item_len <= 10:
+                similar.append((existing_item, base_distance + 1))
+            elif ticker_upper[:3] == existing_item[:3] and item_len <= 10 and distance <= 5:
                 similar.append((existing_item, distance))
         
         similar.sort(key=lambda x: x[1])
         
+        if debug:
+            print(f"[VECTOR_STORE] Similares encontrados: {similar[:10]}")
+        
         seen = set()
         unique_similar = []
         for item, dist in similar:
-            if item not in seen:
-                seen.add(item)
-                unique_similar.append(item)
+            normalized = item.replace(' ', '')
+            if normalized not in seen:
+                seen.add(normalized)
+                unique_similar.append(normalized)
                 if len(unique_similar) >= limit:
                     break
         
+        if debug:
+            print(f"[VECTOR_STORE] Retornando: {unique_similar}")
         return unique_similar
     
     def clear(self) -> None:
