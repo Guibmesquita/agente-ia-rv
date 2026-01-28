@@ -110,18 +110,28 @@ O agente de IA se chama **Stevan** e possui identidade bem definida:
     - Perguntas curtas sem entidade: "qual a data?", "quanto é?"
   - **Fluxo de Contexto Acumulado:** Quando uma pergunta é detectada como follow-up e não contém entidade própria, o sistema extrai as entidades do histórico da conversa e enriquece a busca semântica com esse contexto
   - **Exemplo:** Usuário pergunta "TG Core" → depois "e a data de liquidação?" → Sistema busca documentos sobre "TG CORE data de liquidação"
-- **Ticker Search with Confirmation Flow (services/openai_agent.py + services/vector_store.py):**
+- **Ticker Search with AI Intent Classification (services/openai_agent.py + services/vector_store.py):**
   - `levenshtein_distance()`: Calcula distância de edição entre strings para encontrar tickers similares
   - `find_exact_ticker()`: Verifica se ticker existe EXATAMENTE na base
   - `find_similar_tickers()`: Busca tickers/produtos similares usando Levenshtein e prefixo comum
-  - `_detect_ticker_confirmation()`: Detecta confirmação, negação ou ambiguidade na resposta do usuário
+  - `_classify_intent_with_ai()`: **USA GPT PARA INTERPRETAR A INTENÇÃO DO USUÁRIO** - não usa regex patterns
+  - `_extract_suggestion_context()`: Extrai ticker original e sugestões do histórico da conversa
+  - `_detect_ticker_confirmation_async()`: Detecta confirmação/negação usando classificação inteligente com IA
+  - **Classificação de Intenção com IA:**
+    - `CONFIRMA_ORIGINAL`: Usuário quer o ticker que perguntou originalmente (ex: "TGRE11 mesmo", "não, era esse")
+    - `ACEITA_SUGESTAO`: Usuário aceita uma sugestão oferecida (ex: "sim", "o primeiro", mencionar o ticker sugerido)
+    - `NEGA_TODOS`: Usuário não quer nenhum (ex: "nenhum desses", "deixa pra lá")
+    - `NOVA_PERGUNTA`: É uma pergunta diferente ou mudança de assunto
   - **Fluxo de Confirmação:**
     1. Ticker não encontrado exatamente → busca similares
     2. Se há similares → pergunta "Você quis dizer X, Y?"
-    3. Usuário confirma (nome, ordinal "primeiro/segundo") → busca o confirmado
-    4. Usuário nega ("não", "nenhum deles") → busca no FundsExplorer
-    5. Resposta ambígua ("sim" com múltiplas opções) → pede clarificação
+    3. **IA interpreta a resposta** e classifica a intenção
+    4. CONFIRMA_ORIGINAL + FII (XXXX11) → busca no FundsExplorer
+    5. CONFIRMA_ORIGINAL + não-FII → busca na base de conhecimento
+    6. ACEITA_SUGESTAO → busca o ticker sugerido na base
+    7. NEGA_TODOS → encerra fluxo de confirmação
   - **NUNCA assume** que o usuário quis dizer outro ativo sem confirmação explícita
+  - **Vantagem da IA:** Interpreta linguagem natural sem depender de padrões regex fixos
 - **Communication Style Improvements:**
   - Stevan NUNCA termina respostas com "Se precisar de mais alguma coisa" ou frases repetitivas similares
   - Respostas são diretas e naturais, encerrando após entregar a informação
