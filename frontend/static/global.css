@@ -1,20 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-    --primary-color: #4f46e5;
-    --primary-hover: #4338ca;
-    --primary-light: #eef2ff;
+    --primary-color: #772B21;
+    --primary-hover: #381811;
+    --primary-light: #CFE3DA;
     --sidebar-width: 220px;
     --sidebar-collapsed: 70px;
     --topbar-height: 60px;
-    --bg-color: #f8fafc;
+    --bg-color: #FFF8F3;
     --card-bg: #ffffff;
-    --text-primary: #1e293b;
-    --text-secondary: #64748b;
-    --border-color: #e2e8f0;
+    --text-primary: #221B19;
+    --text-secondary: #5a4f4c;
+    --border-color: #e5dcd7;
     --success-color: #10b981;
     --warning-color: #f59e0b;
-    --danger-color: #ef4444;
+    --danger-color: #AC3631;
     --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -364,7 +364,7 @@ body {
 .form-textarea:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    box-shadow: 0 0 0 3px rgba(119, 43, 33, 0.1);
 }
 
 .form-textarea {
@@ -745,7 +745,7 @@ body {
 }
 
 .toast.toast-info .toast-icon {
-    background: rgba(79, 70, 229, 0.1);
+    background: rgba(119, 43, 33, 0.1);
     color: var(--primary-color);
 }
 
@@ -822,7 +822,7 @@ body {
 }
 
 .confirm-modal-icon.icon-info {
-    background: rgba(79, 70, 229, 0.1);
+    background: rgba(119, 43, 33, 0.1);
     color: var(--primary-color);
 }
 

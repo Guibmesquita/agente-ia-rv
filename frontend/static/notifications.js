@@ -49,7 +49,7 @@ const AppNotifications = (function() {
         success: '#10b981',
         error: '#ef4444',
         warning: '#f59e0b',
-        info: '#4f46e5'
+        info: '#772B21'
     };
 
     function showToast(type, message, options = {}) {
@@ -128,7 +128,7 @@ const AppNotifications = (function() {
 
             const iconColor = isDanger ? '#ef4444' : '#f59e0b';
             const iconBg = isDanger ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)';
-            const btnColor = isDanger ? '#ef4444' : '#4f46e5';
+            const btnColor = isDanger ? '#AC3631' : '#772B21';
 
             const iconSvg = isDanger 
                 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:24px;height:24px;"><path d="M18 6L6 18M6 6l12 12"/></svg>`
