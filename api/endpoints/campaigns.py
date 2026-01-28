@@ -6,6 +6,7 @@ import json
 import io
 import re
 import asyncio
+import random
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -17,9 +18,15 @@ from database.models import MessageTemplate, Campaign, CampaignDispatch, Campaig
 from api.endpoints.auth import require_role
 from database.models import User
 
-DISPATCH_DELAY_SECONDS = 5.0
+DISPATCH_DELAY_MIN = 3.0
+DISPATCH_DELAY_MAX = 10.0
 MAX_RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 3.0
+
+
+def get_random_dispatch_delay() -> float:
+    """Retorna um delay aleatório entre 3 e 10 segundos para simular envio manual."""
+    return random.uniform(DISPATCH_DELAY_MIN, DISPATCH_DELAY_MAX)
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -767,11 +774,13 @@ async def preview_campaign(
     campaign.total_assessors = len(grouped)
     db.commit()
     
+    content_line_template = campaign.message_content_template or ""
+    
     messages = []
     first_example = None
     
     for idx, (assessor_id, assessor_data) in enumerate(grouped.items()):
-        message = build_message(template_content, assessor_data, custom_mapping)
+        message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
         messages.append({
             "assessor_id": assessor_id,
             "assessor_name": assessor_data.get("nome_assessor", ""),
@@ -1152,7 +1161,7 @@ def format_currency(value) -> str:
         return str(value) if value else "R$ 0,00"
 
 
-def build_message(template_content: str, assessor_data: dict, custom_mapping: dict) -> str:
+def build_message(template_content: str, assessor_data: dict, custom_mapping: dict, content_template: str = None) -> str:
     """
     Constrói a mensagem final substituindo as variáveis do template.
     
@@ -1162,6 +1171,10 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     - Variáveis da planilha importada: qualquer coluna detectada
     - Campos customizados definidos no mapeamento
     - {{data_atual}} - Data atual (DD/MM/YYYY)
+    
+    Args:
+        content_template: Template para cada linha de recomendação (bloco repetível).
+                         Se fornecido, cada recomendação será processada com este template.
     """
     if not template_content:
         template_content = DEFAULT_TEMPLATE_CONTENT
@@ -1169,17 +1182,23 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     message = str(template_content)
     
     print(f"[BUILD_MSG] Input template (first 200 chars): {message[:200]}")
+    if content_template:
+        print(f"[BUILD_MSG] Content template for blocks: {content_template[:100]}")
+    
+    nome = str(assessor_data.get("nome", "") or "")
+    primeiro_nome = nome.split()[0] if nome else ""
     
     base_vars = {
         "codigo_ai": str(assessor_data.get("codigo_ai", "") or ""),
-        "nome": str(assessor_data.get("nome", "") or ""),
+        "nome": nome,
+        "primeiro_nome": primeiro_nome,
         "email": str(assessor_data.get("email", "") or ""),
         "telefone_whatsapp": str(assessor_data.get("telefone_whatsapp", "") or ""),
         "telefone": str(assessor_data.get("telefone", "") or ""),
         "unidade": str(assessor_data.get("unidade", "") or ""),
         "equipe": str(assessor_data.get("equipe", "") or ""),
         "broker_responsavel": str(assessor_data.get("broker_responsavel", "") or ""),
-        "nome_assessor": str(assessor_data.get("nome", "") or ""),
+        "nome_assessor": nome,
         "assessor_id": str(assessor_data.get("codigo_ai", "") or ""),
     }
     
@@ -1207,7 +1226,7 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     
     clients = assessor_data.get("clients", {})
     if clients:
-        clients_block = build_clients_block(clients)
+        clients_block = build_clients_block(clients, content_template)
         for pattern in ["{{lista_clientes}}", "{{ lista_clientes }}", "{lista_clientes}"]:
             message = message.replace(pattern, clients_block)
     
@@ -1218,17 +1237,57 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     return message
 
 
-def build_clients_block(clients: dict) -> str:
+def build_clients_block(clients: dict, content_template: str = None) -> str:
     """
     Constrói o bloco de texto com as recomendações agrupadas por cliente.
     
-    Formato:
+    Se content_template for fornecido, usa esse template para cada recomendação,
+    substituindo todas as variáveis disponíveis. Caso contrário, usa formato padrão.
+    
+    Formato padrão:
     **Cliente: 12345**
     • Saia de R$ 10.000 em PETR4 e compre R$ 10.000 em VALE3.
     
     **Cliente: 67890**
     • Saia de R$ 20.000 em ITSA4 e compre R$ 20.000 em WEGE3.
     """
+    import unicodedata
+    
+    def normalize_var_name(name: str) -> str:
+        """Remove acentos e normaliza nome de variável."""
+        if not name:
+            return ""
+        normalized = unicodedata.normalize('NFKD', str(name))
+        ascii_text = normalized.encode('ASCII', 'ignore').decode('ASCII')
+        return ascii_text.lower().replace(' ', '_').replace('-', '_')
+    
+    def replace_vars_in_text(text: str, data: dict) -> str:
+        """Substitui variáveis no texto usando os dados fornecidos."""
+        if not text:
+            return ""
+        result = str(text)
+        normalized_data = {}
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                continue
+            str_value = str(value) if value is not None else ""
+            norm_key = normalize_var_name(key)
+            normalized_data[norm_key] = str_value
+            normalized_data[str(key)] = str_value
+        
+        pattern = r'\{\{\s*([^}]+?)\s*\}\}'
+        def replacer(match):
+            var_name = match.group(1).strip()
+            normalized_name = normalize_var_name(var_name)
+            if normalized_name in normalized_data:
+                return normalized_data[normalized_name]
+            if var_name in normalized_data:
+                return normalized_data[var_name]
+            return match.group(0)
+        
+        result = re.sub(pattern, replacer, result)
+        return result
+    
     if not clients:
         print("[BUILD_CLIENTS] No clients provided!")
         return "(Nenhuma recomendação encontrada)"
@@ -1239,7 +1298,7 @@ def build_clients_block(clients: dict) -> str:
         if not client_id:
             client_id = "Sem ID"
         
-        lines.append(f"**Cliente: {client_id}**")
+        lines.append(f"*Cliente: {client_id}*")
         
         if isinstance(client_data, dict):
             recommendations = client_data.get("recommendations", [])
@@ -1247,15 +1306,20 @@ def build_clients_block(clients: dict) -> str:
             recommendations = client_data if isinstance(client_data, list) else []
         
         for rec in recommendations:
-            ativo_saida = rec.get('ativo_saida', 'N/A')
-            valor_saida = rec.get('valor_saida', 'R$ 0,00')
-            ativo_compra = rec.get('ativo_compra', 'N/A')
-            valor_compra = rec.get('valor_compra', 'R$ 0,00')
-            
-            line = f"• Saia de {valor_saida} em {ativo_saida} e compre {valor_compra} em {ativo_compra}."
-            lines.append(line)
+            if content_template:
+                line = replace_vars_in_text(content_template, rec)
+                if line.strip():
+                    lines.append(f"• {line}")
+            else:
+                ativo_saida = rec.get('ativo_saida', 'N/A')
+                valor_saida = rec.get('valor_saida', 'R$ 0,00')
+                ativo_compra = rec.get('ativo_compra', 'N/A')
+                valor_compra = rec.get('valor_compra', 'R$ 0,00')
+                
+                line = f"• Saia de {valor_saida} em {ativo_saida} e compre {valor_compra} em {ativo_compra}."
+                lines.append(line)
         
-        lines.append("")  # Linha em branco entre clientes
+        lines.append("")
     
     result = "\n".join(lines).strip()
     print(f"[BUILD_CLIENTS] Generated block with {len(lines)} lines for {len(clients)} clients")
@@ -1443,9 +1507,10 @@ async def dispatch_campaign(
     zapi_configured = zapi_client.is_configured()
     sent_count = 0
     failed_count = 0
+    content_line_template = campaign.message_content_template or ""
     
     for assessor_id, assessor_data in grouped.items():
-        message = build_message(template_content, assessor_data, custom_mapping)
+        message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
         phone = assessor_data.get("telefone", "")
         
         dispatch = CampaignDispatch(
@@ -1579,6 +1644,8 @@ async def dispatch_campaign_stream(
     attachment_type = campaign.attachment_type
     attachment_filename = campaign.attachment_filename
     
+    content_line_template = campaign.message_content_template or ""
+    
     async def generate_events():
         from services.whatsapp_client import zapi_client
         import os
@@ -1595,7 +1662,7 @@ async def dispatch_campaign_stream(
             
             for assessor_id, assessor_data in grouped.items():
                 current_index += 1
-                message = build_message(template_content, assessor_data, custom_mapping)
+                message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
                 phone = assessor_data.get("telefone", "")
                 assessor_name = assessor_data.get("nome_assessor", "")
                 
@@ -1738,7 +1805,8 @@ async def dispatch_campaign_stream(
                     db_session.close()
                 
                 if current_index < total_assessors:
-                    await asyncio.sleep(DISPATCH_DELAY_SECONDS)
+                    delay = get_random_dispatch_delay()
+                    await asyncio.sleep(delay)
         
         except asyncio.CancelledError:
             cancelled = True
@@ -1838,6 +1906,8 @@ def build_assessor_variables(assessor: dict) -> dict:
         variables[key] = str_value
     
     nome = assessor.get("nome", "")
+    primeiro_nome = str(nome).split()[0] if nome else ""
+    variables["primeiro_nome"] = primeiro_nome
     variables["nome_assessor"] = str(nome) if nome else ""
     variables["assessor"] = str(nome) if nome else ""
     
@@ -2075,7 +2145,8 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                     db_session.close()
                 
                 if current_index < total_assessors:
-                    await asyncio.sleep(DISPATCH_DELAY_SECONDS)
+                    delay = get_random_dispatch_delay()
+                    await asyncio.sleep(delay)
         
         except asyncio.CancelledError:
             cancelled = True
@@ -2350,10 +2421,11 @@ async def debug_campaign(
     if column_mapping and data:
         grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
     
+    content_line_template = campaign.message_content_template or ""
     sample_message = ""
     if grouped:
         first_key = list(grouped.keys())[0]
-        sample_message = build_message(template_content, grouped[first_key], custom_mapping)
+        sample_message = build_message(template_content, grouped[first_key], custom_mapping, content_line_template)
     
     return {
         "campaign_id": campaign_id,
