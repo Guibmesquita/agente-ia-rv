@@ -12,9 +12,8 @@ import enum
 class UserRole(str, enum.Enum):
     """Roles disponíveis para usuários."""
     ADMIN = "admin"
+    GESTOR = "gestao_rv"
     BROKER = "broker"
-    GESTAO_RV = "gestao_rv"
-    CLIENT = "client"
 
 
 class TicketStatus(str, enum.Enum):
