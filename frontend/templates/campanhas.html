@@ -1308,6 +1308,12 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                 </svg>
                                 Voltar
                             </button>
+                            <button class="btn btn-danger" id="cancelDispatchBtn" onclick="cancelDispatch()" style="display: none; background: #dc2626; border-color: #dc2626;">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                Cancelar Envio
+                            </button>
                             <button class="btn btn-primary dispatch-btn" id="dispatchBtn" onclick="dispatchCampaign()">
                                 <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
@@ -2540,10 +2546,12 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             }
         }
 
+        let currentEventSource = null;
+        
         async function dispatchCampaign() {
             const confirmed = await toast.confirm({
                 title: 'Disparar Campanha',
-                message: 'Tem certeza que deseja disparar esta campanha? As mensagens serão enviadas para todos os assessores com intervalo de 2-3 segundos entre cada envio.',
+                message: 'Tem certeza que deseja disparar esta campanha? As mensagens serão enviadas para todos os assessores com intervalo de 3-10 segundos entre cada envio.',
                 confirmText: 'Disparar',
                 type: 'warning'
             });
@@ -2551,18 +2559,21 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
 
             const btn = document.getElementById('dispatchBtn');
             const backBtn = document.getElementById('backBtn');
+            const cancelBtn = document.getElementById('cancelDispatchBtn');
             const progressDiv = document.getElementById('dispatchProgress');
             const previewDiv = document.getElementById('previewMessages');
             
             btn.disabled = true;
+            btn.style.display = 'none';
             backBtn.disabled = true;
-            btn.innerHTML = '<div class="spinner" style="width: 20px; height: 20px;"></div> Iniciando...';
+            cancelBtn.style.display = 'inline-flex';
             
             progressDiv.style.display = 'block';
             previewDiv.style.display = 'none';
 
             try {
                 const eventSource = new EventSource(`${API_BASE}/${campaignId}/dispatch-stream`);
+                currentEventSource = eventSource;
                 
                 eventSource.onmessage = function(event) {
                     const data = JSON.parse(event.data);
@@ -2605,8 +2616,43 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         const retryInfo = data.attempts_made > 1 ? ` (apos ${data.attempts_made} tentativas)` : '';
                         addLogEntry(`[${data.current}/${data.total}] ${data.assessor_name} - ${data.status.toUpperCase()}${retryInfo}${data.error ? ': ' + data.error : ''}`, logStatus);
                     }
+                    else if (data.type === 'cancelled') {
+                        eventSource.close();
+                        currentEventSource = null;
+                        
+                        const cancelBtn = document.getElementById('cancelDispatchBtn');
+                        cancelBtn.style.display = 'none';
+                        cancelBtn.disabled = false;
+                        
+                        const headerHtml = `
+                            <h4 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                                <svg width="24" height="24" fill="none" stroke="#f59e0b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                Envio Cancelado
+                            </h4>
+                        `;
+                        progressDiv.querySelector('h4').parentElement.innerHTML = headerHtml + `<span style="font-size: 24px; font-weight: 700; color: #f59e0b;">${data.current}/${data.total}</span>`;
+                        
+                        addLogEntry(`Envio cancelado pelo usuário. Enviadas: ${data.sent_count}, Falhas: ${data.failed_count}`, 'warning');
+                        
+                        const actionsDiv = document.getElementById('dispatchActions');
+                        actionsDiv.innerHTML = `
+                            <button class="btn btn-primary" onclick="location.reload()">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                Nova Campanha
+                            </button>
+                            <button class="btn btn-secondary" onclick="location.reload()">
+                                Ver Histórico
+                            </button>
+                        `;
+                        
+                        toast.warning(`Envio cancelado! Mensagens enviadas: ${data.sent_count}, Falhas: ${data.failed_count}.`);
+                    }
                     else if (data.type === 'complete') {
                         eventSource.close();
+                        currentEventSource = null;
+                        
+                        const cancelBtn = document.getElementById('cancelDispatchBtn');
+                        cancelBtn.style.display = 'none';
                         
                         document.getElementById('progressPercent').textContent = '100%';
                         document.getElementById('progressBar').style.width = '100%';
@@ -2614,7 +2660,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         const headerHtml = `
                             <h4 style="margin: 0; display: flex; align-items: center; gap: 8px;">
                                 <svg width="24" height="24" fill="none" stroke="#16a34a" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                Disparo Concluido!
+                                Disparo Concluído!
                             </h4>
                         `;
                         progressDiv.querySelector('h4').parentElement.innerHTML = headerHtml + `<span style="font-size: 24px; font-weight: 700; color: #16a34a;">100%</span>`;
@@ -2676,6 +2722,43 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 btn.innerHTML = `
                     <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                     Disparar Campanha
+                `;
+            }
+        }
+        
+        async function cancelDispatch() {
+            const confirmed = await toast.confirm({
+                title: 'Cancelar Envio',
+                message: 'Tem certeza que deseja cancelar o envio? As mensagens já enviadas não serão afetadas.',
+                confirmText: 'Sim, cancelar',
+                type: 'warning'
+            });
+            if (!confirmed) return;
+            
+            const cancelBtn = document.getElementById('cancelDispatchBtn');
+            cancelBtn.disabled = true;
+            cancelBtn.innerHTML = '<div class="spinner" style="width: 16px; height: 16px;"></div> Cancelando...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/${campaignId}/cancel`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Erro ao cancelar envio');
+                }
+                
+                addLogEntry('Solicitação de cancelamento enviada...', 'warning');
+                
+            } catch (error) {
+                toast.error('Erro ao cancelar envio: ' + error.message);
+                cancelBtn.disabled = false;
+                cancelBtn.innerHTML = `
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                    Cancelar Envio
                 `;
             }
         }

@@ -23,6 +23,8 @@ DISPATCH_DELAY_MAX = 10.0
 MAX_RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 3.0
 
+cancelled_campaigns: dict = {}
+
 
 def get_random_dispatch_delay() -> float:
     """Retorna um delay aleatório entre 3 e 10 segundos para simular envio manual."""
@@ -2009,6 +2011,28 @@ async def dispatch_campaign_from_base(campaign, db: Session):
             yield f"data: {json.dumps({'type': 'start', 'total': total_assessors})}\n\n"
             
             for assessor in data:
+                db_check = SessionLocal()
+                try:
+                    campaign_check = db_check.query(Campaign).filter(Campaign.id == campaign.id).first()
+                    should_cancel = (
+                        cancelled_campaigns.get(campaign.id, False) or 
+                        (campaign_check and campaign_check.status in ["cancelling", "cancelled"])
+                    )
+                    if should_cancel:
+                        cancelled = True
+                        cancel_data = {
+                            'type': 'cancelled',
+                            'current': current_index,
+                            'total': total_assessors,
+                            'sent_count': sent_count,
+                            'failed_count': failed_count,
+                            'message': 'Envio cancelado pelo usuário'
+                        }
+                        yield f"data: {json.dumps(cancel_data, ensure_ascii=False)}\n\n"
+                        break
+                finally:
+                    db_check.close()
+                
                 current_index += 1
                 assessor_name = assessor.get("nome", "")
                 phone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
@@ -2153,11 +2177,17 @@ async def dispatch_campaign_from_base(campaign, db: Session):
         except asyncio.CancelledError:
             cancelled = True
         finally:
+            if campaign.id in cancelled_campaigns:
+                del cancelled_campaigns[campaign.id]
+            
             db_final = SessionLocal()
             try:
                 campaign_final = db_final.query(Campaign).filter(Campaign.id == campaign.id).first()
                 if campaign_final:
-                    campaign_final.status = CampaignStatus.SENT.value
+                    if cancelled or campaign_final.status == "cancelling":
+                        campaign_final.status = "cancelled"
+                    elif campaign_final.status in [CampaignStatus.PROCESSING.value, "processing", "sending"]:
+                        campaign_final.status = CampaignStatus.SENT.value
                     campaign_final.messages_sent = sent_count
                     campaign_final.messages_failed = failed_count
                     campaign_final.sent_at = datetime.utcnow()
@@ -2183,6 +2213,28 @@ async def dispatch_campaign_from_base(campaign, db: Session):
             "X-Accel-Buffering": "no"
         }
     )
+
+
+@router.post("/{campaign_id}/cancel")
+async def cancel_campaign_dispatch(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """Cancela o disparo de uma campanha em andamento."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+    
+    if campaign.status not in [CampaignStatus.PROCESSING.value, "processing", "sending"]:
+        raise HTTPException(status_code=409, detail="A campanha não está em andamento")
+    
+    cancelled_campaigns[campaign_id] = True
+    
+    campaign.status = "cancelling"
+    db.commit()
+    
+    return {"success": True, "message": "Solicitação de cancelamento enviada"}
 
 
 @router.get("/")
