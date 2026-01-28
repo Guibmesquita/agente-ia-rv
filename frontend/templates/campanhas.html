@@ -2284,9 +2284,35 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 }
                 
                 await saveMessageConfiguration();
+            } else if (campaignSource === 'base') {
+                await saveMessageConfigurationForBase();
             }
             
             goToStep(3);
+        }
+        
+        async function saveMessageConfigurationForBase() {
+            try {
+                const response = await fetch(`${API_BASE}/${campaignId}/mapping`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message_header: messageBlocks.header || '',
+                        message_content_template: messageBlocks.content || '',
+                        message_footer: messageBlocks.footer || ''
+                    }),
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar configuracao da mensagem');
+                }
+            } catch (error) {
+                console.error('Erro ao salvar configuracao da mensagem:', error);
+                toast.error('Erro ao salvar a configuracao da mensagem. Tente novamente.');
+                throw error;
+            }
         }
 
         async function saveMessageConfiguration() {

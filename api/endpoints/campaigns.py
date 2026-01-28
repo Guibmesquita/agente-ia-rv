@@ -546,6 +546,9 @@ class CampaignMappingRequest(BaseModel):
     custom_fields_mapping: Optional[dict] = None
     message_template: Optional[str] = None
     message_blocks: Optional[dict] = None
+    message_header: Optional[str] = None
+    message_content_template: Optional[str] = None
+    message_footer: Optional[str] = None
     group_by_client: Optional[bool] = False
     content_line_template: Optional[str] = None
     assessor_code_column: Optional[str] = None
@@ -576,6 +579,13 @@ async def update_campaign_mapping(
         campaign.message_header = request.message_blocks.get("header", "")
         campaign.message_content_template = request.message_blocks.get("content", "")
         campaign.message_footer = request.message_blocks.get("footer", "")
+    
+    if request.message_header is not None:
+        campaign.message_header = request.message_header
+    if request.message_content_template is not None:
+        campaign.message_content_template = request.message_content_template
+    if request.message_footer is not None:
+        campaign.message_footer = request.message_footer
     
     if request.content_line_template:
         campaign.message_content_template = request.content_line_template
