@@ -477,10 +477,19 @@
                 document.getElementById('sidebar').classList.add('collapsed');
                 document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
             }
-            loadAssessores();
-            loadFilterOptions();
-            loadCustomFields();
+            initializePage();
         });
+
+        async function initializePage() {
+            await loadCustomFields();
+            await loadFilterOptions();
+            loadAssessores();
+        }
+
+        async function refreshFilters() {
+            await loadCustomFields();
+            await loadFilterOptions();
+        }
 
         async function loadAssessores() {
             const search = document.getElementById('search-input').value;
@@ -528,18 +537,24 @@
                 filterOptions = await res.json();
                 
                 const unidadeSelect = document.getElementById('filter-unidade');
+                const currentUnidade = unidadeSelect.value;
+                unidadeSelect.innerHTML = '<option value="">Todas as Unidades</option>';
                 filterOptions.unidades.forEach(u => {
-                    unidadeSelect.innerHTML += `<option value="${u}">${u}</option>`;
+                    unidadeSelect.innerHTML += `<option value="${u}" ${u === currentUnidade ? 'selected' : ''}>${u}</option>`;
                 });
 
                 const equipeSelect = document.getElementById('filter-equipe');
+                const currentEquipe = equipeSelect.value;
+                equipeSelect.innerHTML = '<option value="">Todas as Equipes</option>';
                 filterOptions.equipes.forEach(e => {
-                    equipeSelect.innerHTML += `<option value="${e}">${e}</option>`;
+                    equipeSelect.innerHTML += `<option value="${e}" ${e === currentEquipe ? 'selected' : ''}>${e}</option>`;
                 });
 
                 const brokerSelect = document.getElementById('filter-broker');
+                const currentBroker = brokerSelect.value;
+                brokerSelect.innerHTML = '<option value="">Todos os Brokers</option>';
                 filterOptions.brokers.forEach(b => {
-                    brokerSelect.innerHTML += `<option value="${b}">${b}</option>`;
+                    brokerSelect.innerHTML += `<option value="${b}" ${b === currentBroker ? 'selected' : ''}>${b}</option>`;
                 });
 
                 renderCustomFilters();
@@ -733,8 +748,8 @@
                     throw new Error(data.detail || 'Erro ao excluir assessor');
                 }
                 toast.success('Assessor excluído com sucesso');
+                await refreshFilters();
                 loadAssessores();
-                loadFilterOptions();
             } catch (err) {
                 console.error('Erro ao excluir assessor:', err);
                 toast.error(err.message || 'Erro ao excluir assessor');
@@ -771,8 +786,8 @@
                     body: JSON.stringify(data)
                 });
                 closeFormModal();
+                await refreshFilters();
                 loadAssessores();
-                loadFilterOptions();
             } catch (err) {
                 toast.error('Erro ao salvar assessor');
             }
@@ -958,10 +973,10 @@
             }
         }
 
-        function finishUpload() {
+        async function finishUpload() {
             closeUploadModal();
+            await refreshFilters();
             loadAssessores();
-            loadFilterOptions();
         }
 
         function openCustomFieldsModal() {
