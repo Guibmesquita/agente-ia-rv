@@ -544,6 +544,35 @@ async def search_knowledge(
         }
 
 
+@router.get("/processing-status")
+async def get_processing_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoint leve que retorna apenas documentos em processamento.
+    Usado para polling eficiente do progresso.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    processing_docs = db.query(KnowledgeDocument).filter(
+        KnowledgeDocument.progress_total > 0
+    ).all()
+    
+    return {
+        "processing": [
+            {
+                "id": doc.id,
+                "title": doc.title,
+                "progress_current": doc.progress_current or 0,
+                "progress_total": doc.progress_total or 0
+            }
+            for doc in processing_docs
+        ]
+    }
+
+
 @router.get("/stats")
 async def get_knowledge_stats(
     db: Session = Depends(get_db),

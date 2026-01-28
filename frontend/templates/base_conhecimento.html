@@ -600,6 +600,8 @@
             }
         }
 
+        let progressPollingInterval = null;
+
         async function loadDocuments() {
             const container = document.getElementById('documentsContainer');
             container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -624,10 +626,7 @@
                 updateCategoryFilter(categories);
                 renderDocuments(documents);
                 
-                const hasProcessing = documents.some(d => !d.is_indexed && !d.index_error);
-                if (hasProcessing) {
-                    setTimeout(() => loadDocuments(), 2000);
-                }
+                startProgressPolling();
             } catch (error) {
                 container.innerHTML = `
                     <div class="alert alert-error">
@@ -635,6 +634,41 @@
                     </div>
                 `;
             }
+        }
+
+        function startProgressPolling() {
+            if (progressPollingInterval) {
+                clearInterval(progressPollingInterval);
+            }
+            
+            const hasProcessing = documents.some(d => !d.is_indexed && !d.index_error);
+            if (!hasProcessing) return;
+            
+            progressPollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/knowledge/processing-status', {credentials: 'same-origin'});
+                    if (!response.ok) return;
+                    
+                    const data = await response.json();
+                    
+                    if (data.processing.length === 0) {
+                        clearInterval(progressPollingInterval);
+                        progressPollingInterval = null;
+                        loadDocuments();
+                        return;
+                    }
+                    
+                    data.processing.forEach(proc => {
+                        const statusCell = document.querySelector(`tr[data-doc-id="${proc.id}"] .status-badge`);
+                        if (statusCell && proc.progress_total > 0) {
+                            statusCell.textContent = `Pg ${proc.progress_current}/${proc.progress_total}`;
+                            statusCell.className = 'status-badge pending';
+                        }
+                    });
+                } catch (error) {
+                    console.error('Erro ao verificar progresso:', error);
+                }
+            }, 2000);
         }
 
         function updateCategoryFilter(cats) {
@@ -691,7 +725,7 @@
                 const size = formatFileSize(doc.file_size);
 
                 html += `
-                    <tr>
+                    <tr data-doc-id="${doc.id}">
                         <td>
                             <div class="file-type-icon ${typeClass}">${fileType.substring(0, 3)}</div>
                         </td>
