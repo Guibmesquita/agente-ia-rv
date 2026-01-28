@@ -1,8 +1,11 @@
 """
-Serviço de consulta de informações de FIIs via StatusInvest.
+Serviço de consulta de informações de FIIs via FundsExplorer.
 Usado como fallback quando o fundo não está na base de conhecimento oficial.
+Implementação escalável com sessão persistente, cache e retry logic.
 """
 import re
+import time
+import random
 import requests
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any, List
@@ -21,6 +24,7 @@ class FIIInfoType(Enum):
     SEGMENTO = "segmento"
     LIQUIDEZ = "liquidez"
     VALORIZACAO_12M = "valorizacao"
+    RENTABILIDADE_MES = "rentabilidade_mes"
     COMPLETO = "completo"
 
 
@@ -40,19 +44,21 @@ class FIIData:
     segmento: str = None
     liquidez: str = None
     valorizacao_12m: str = None
-    administrador: str = None
+    rentabilidade_mes: str = None
+    vacancia: str = None
 
 
 class FIILookupService:
-    """Serviço para buscar informações de FIIs no StatusInvest."""
+    """Serviço para buscar informações de FIIs no FundsExplorer."""
     
-    BASE_URL = "https://statusinvest.com.br/fundos-imobiliarios"
+    BASE_URL = "https://www.fundsexplorer.com.br/funds"
     
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    }
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+    ]
     
     INFO_KEYWORDS = {
         FIIInfoType.COTACAO: ["cotação", "cotacao", "preço", "preco", "valor", "quanto está", "quanto ta", "quanto custa"],
@@ -64,8 +70,56 @@ class FIILookupService:
         FIIInfoType.COTISTAS: ["cotistas", "investidores", "quantos"],
         FIIInfoType.SEGMENTO: ["segmento", "tipo", "setor", "categoria"],
         FIIInfoType.LIQUIDEZ: ["liquidez", "volume"],
-        FIIInfoType.VALORIZACAO_12M: ["valorização", "valorizacao", "rendeu", "subiu", "caiu"],
+        FIIInfoType.VALORIZACAO_12M: ["valorização", "valorizacao", "rendeu", "subiu", "caiu", "12 meses"],
+        FIIInfoType.RENTABILIDADE_MES: ["rentabilidade", "mês", "mes", "mensal"],
     }
+    
+    def __init__(self):
+        self._session = None
+        self._last_request_time = 0
+        self._min_request_interval = 1.0
+        self._cache: Dict[str, tuple] = {}
+        self._cache_ttl = 300
+    
+    def _get_session(self) -> requests.Session:
+        """Retorna sessão HTTP persistente."""
+        if self._session is None:
+            self._session = requests.Session()
+            self._session.headers.update(self._get_headers())
+        return self._session
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Retorna headers que simulam navegador."""
+        return {
+            "User-Agent": random.choice(self.USER_AGENTS),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        }
+    
+    def _rate_limit(self):
+        """Aplica rate limiting entre requisições."""
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self._min_request_interval:
+            sleep_time = self._min_request_interval - elapsed + random.uniform(0.1, 0.3)
+            time.sleep(sleep_time)
+        self._last_request_time = time.time()
+    
+    def _get_from_cache(self, ticker: str) -> Optional[FIIData]:
+        """Retorna dados do cache se ainda válidos."""
+        if ticker in self._cache:
+            data, timestamp = self._cache[ticker]
+            if time.time() - timestamp < self._cache_ttl:
+                print(f"[FII Lookup] Cache hit para {ticker}")
+                return data
+            else:
+                del self._cache[ticker]
+        return None
+    
+    def _set_cache(self, ticker: str, data: FIIData):
+        """Armazena dados no cache."""
+        self._cache[ticker] = (data, time.time())
     
     def extract_ticker(self, message: str) -> Optional[str]:
         """Extrai ticker de FII da mensagem."""
@@ -92,106 +146,163 @@ class FIILookupService:
         
         return FIIInfoType.COMPLETO
     
-    def fetch_fii_data(self, ticker: str) -> Optional[FIIData]:
-        """Busca dados do FII no StatusInvest."""
+    def fetch_fii_data(self, ticker: str, max_retries: int = 3) -> Optional[FIIData]:
+        """Busca dados do FII no FundsExplorer."""
         ticker = ticker.upper()
+        
+        cached = self._get_from_cache(ticker)
+        if cached:
+            return cached
+        
         url = f"{self.BASE_URL}/{ticker.lower()}"
         
+        for attempt in range(max_retries):
+            try:
+                self._rate_limit()
+                
+                session = self._get_session()
+                
+                if attempt > 0:
+                    session.headers.update({"User-Agent": random.choice(self.USER_AGENTS)})
+                
+                response = session.get(url, timeout=15)
+                
+                if response.status_code == 404:
+                    print(f"[FII Lookup] Ticker {ticker} não encontrado (404)")
+                    return None
+                
+                if response.status_code != 200:
+                    print(f"[FII Lookup] Status {response.status_code} para {ticker}, tentativa {attempt + 1}/{max_retries}")
+                    if attempt < max_retries - 1:
+                        time.sleep(1 + attempt)
+                    continue
+                
+                data = self._parse_fundsexplorer_html(ticker, response.text)
+                if data:
+                    self._set_cache(ticker, data)
+                    return data
+                
+            except requests.exceptions.Timeout:
+                print(f"[FII Lookup] Timeout para {ticker}, tentativa {attempt + 1}/{max_retries}")
+            except requests.exceptions.RequestException as e:
+                print(f"[FII Lookup] Erro de rede para {ticker}: {e}")
+            except Exception as e:
+                print(f"[FII Lookup] Erro inesperado para {ticker}: {e}")
+            
+            if attempt < max_retries - 1:
+                time.sleep(1 + attempt)
+        
+        print(f"[FII Lookup] Falha ao buscar {ticker} após {max_retries} tentativas")
+        return None
+    
+    def _parse_fundsexplorer_html(self, ticker: str, html: str) -> Optional[FIIData]:
+        """Extrai dados do HTML do FundsExplorer."""
         try:
-            response = requests.get(url, headers=self.HEADERS, timeout=10)
-            if response.status_code != 200:
-                print(f"[FII Lookup] Erro ao acessar {url}: {response.status_code}")
-                return None
-            
-            soup = BeautifulSoup(response.text, 'lxml')
-            
+            soup = BeautifulSoup(html, 'lxml')
             data = FIIData(ticker=ticker)
             
             title = soup.find('title')
             if title:
-                nome_match = re.search(r'([A-Z]{4}11)\s*-\s*(.+?)\s*\|', title.text)
-                if nome_match:
-                    data.nome = nome_match.group(2).strip()
+                title_text = title.get_text(strip=True)
+                if '-' in title_text:
+                    parts = title_text.split('-')
+                    if len(parts) >= 2:
+                        data.nome = parts[1].strip().split('|')[0].strip()
             
-            cotacao_div = soup.find('div', class_='value')
-            if cotacao_div:
-                cotacao_strong = cotacao_div.find('strong')
-                if cotacao_strong:
-                    data.cotacao = f"R$ {cotacao_strong.text.strip()}"
+            h1 = soup.find('h1')
+            if h1 and not data.nome:
+                data.nome = h1.get_text(strip=True)
             
-            for div in soup.find_all('div', class_='info'):
-                title_elem = div.find('h3', class_='title')
-                value_elem = div.find('strong', class_='value')
-                
-                if not title_elem or not value_elem:
+            price_div = soup.find('div', class_='headerTicker__content__price')
+            if price_div:
+                price_text = price_div.get_text(strip=True)
+                match = re.search(r'R\$\s*([\d.,]+)', price_text)
+                if match:
+                    data.cotacao = f"R$ {match.group(1)}"
+                var_match = re.search(r'([+-]?[\d.,]+)%', price_text)
+                if var_match:
+                    data.variacao = f"{var_match.group(1)}%"
+            
+            if not data.cotacao:
+                quotation_div = soup.find('div', class_=re.compile(r'quotation__grid__box'))
+                if quotation_div:
+                    price_text = quotation_div.get_text(strip=True)
+                    match = re.search(r'R\$\s*([\d.,]+)', price_text)
+                    if match:
+                        data.cotacao = f"R$ {match.group(1)}"
+            
+            indicators = soup.find_all('div', class_='indicators__box')
+            
+            for box in indicators:
+                paragraphs = box.find_all('p')
+                if len(paragraphs) < 2:
                     continue
                 
-                title_text = title_elem.get_text(strip=True).lower()
-                value_text = value_elem.get_text(strip=True)
+                label = paragraphs[0].get_text(strip=True).lower()
+                value_elem = paragraphs[1]
                 
-                if 'dividend yield' in title_text or 'dy' in title_text:
-                    data.dividend_yield = f"{value_text}%"
-                elif 'p/vp' in title_text:
-                    data.pvp = value_text
-                elif 'val. patrim' in title_text or 'valor patrimonial' in title_text:
-                    data.valor_patrimonial = f"R$ {value_text}"
-                elif 'patrimônio' in title_text or 'patrimonio' in title_text:
-                    data.patrimonio = f"R$ {value_text}"
-                elif 'cotistas' in title_text:
-                    data.cotistas = value_text
-                elif 'liquidez' in title_text or 'liq.' in title_text:
-                    data.liquidez = f"R$ {value_text}"
-                elif 'valorização' in title_text and '12' in title_text:
-                    data.valorizacao_12m = f"{value_text}%"
+                value_text = value_elem.get_text(strip=True)
+                value_text = re.sub(r'\s+', ' ', value_text)
+                
+                if 'cotação' in label or 'cotacao' in label:
+                    match = re.search(r'R?\$?\s*([\d.,]+)', value_text)
+                    if match:
+                        data.cotacao = f"R$ {match.group(1)}"
+                
+                elif 'último rendimento' in label or 'ultimo rendimento' in label:
+                    match = re.search(r'R?\$?\s*([\d.,]+)', value_text)
+                    if match:
+                        data.ultimo_dividendo = f"R$ {match.group(1)}"
+                
+                elif 'dividend yield' in label or 'dy' == label:
+                    match = re.search(r'([\d.,]+)\s*%?', value_text)
+                    if match:
+                        data.dividend_yield = f"{match.group(1)}%"
+                
+                elif 'patrimônio' in label or 'patrimonio' in label:
+                    data.patrimonio = value_text.replace('R$', 'R$ ').strip()
+                
+                elif 'valor patrimonial' in label:
+                    match = re.search(r'R?\$?\s*([\d.,]+)', value_text)
+                    if match:
+                        data.valor_patrimonial = f"R$ {match.group(1)}"
+                
+                elif 'p/vp' in label:
+                    match = re.search(r'([\d.,]+)', value_text)
+                    if match:
+                        data.pvp = match.group(1)
+                
+                elif 'rentab' in label and 'mês' in label:
+                    match = re.search(r'([-\d.,]+)\s*%?', value_text)
+                    if match:
+                        data.rentabilidade_mes = f"{match.group(1)}%"
+                
+                elif 'liquidez' in label:
+                    data.liquidez = value_text.replace('R$', 'R$ ').strip()
+                
+                elif 'vacância' in label or 'vacancia' in label:
+                    match = re.search(r'([\d.,]+)\s*%?', value_text)
+                    if match:
+                        data.vacancia = f"{match.group(1)}%"
+                
+                elif 'cotistas' in label:
+                    match = re.search(r'([\d.,]+)', value_text)
+                    if match:
+                        data.cotistas = match.group(1)
             
-            self._extract_from_indicators(soup, data)
+            segment_elem = soup.find('span', class_='badge')
+            if segment_elem:
+                data.segmento = segment_elem.get_text(strip=True)
             
-            segmento_link = soup.find('a', href=re.compile(r'/fundos-imobiliarios/setor/'))
-            if segmento_link:
-                data.segmento = segmento_link.get_text(strip=True)
-            
-            admin_div = soup.find('span', class_='sub-value')
-            if admin_div and 'administrador' in str(admin_div.parent).lower():
-                data.administrador = admin_div.get_text(strip=True)
-            
-            ultimo_div = soup.find('div', class_='top-info', text=re.compile(r'Último rendimento', re.I))
-            if ultimo_div:
-                valor = ultimo_div.find_next('strong')
-                if valor:
-                    data.ultimo_dividendo = f"R$ {valor.get_text(strip=True)}"
+            if not data.cotacao and not data.dividend_yield:
+                print(f"[FII Lookup] Dados não encontrados no HTML para {ticker}")
+                return None
             
             return data
             
         except Exception as e:
-            print(f"[FII Lookup] Erro ao buscar {ticker}: {e}")
+            print(f"[FII Lookup] Erro ao parsear HTML para {ticker}: {e}")
             return None
-    
-    def _extract_from_indicators(self, soup: BeautifulSoup, data: FIIData):
-        """Extrai dados dos cards de indicadores."""
-        indicator_items = soup.find_all('div', class_=re.compile(r'top-info.*item'))
-        
-        for item in indicator_items:
-            title_elem = item.find(['span', 'h3'], class_='title')
-            value_elem = item.find('strong', class_='value')
-            
-            if not title_elem or not value_elem:
-                continue
-            
-            title = title_elem.get_text(strip=True).lower()
-            value = value_elem.get_text(strip=True)
-            
-            if not data.cotacao and 'valor atual' in title:
-                data.cotacao = f"R$ {value}"
-            elif not data.dividend_yield and 'dividend yield' in title:
-                data.dividend_yield = f"{value}%"
-            elif not data.pvp and 'p/vp' in title:
-                data.pvp = value
-            elif not data.valor_patrimonial and 'val. patrim' in title:
-                data.valor_patrimonial = f"R$ {value}"
-            elif not data.cotistas and 'cotistas' in title:
-                data.cotistas = value
-            elif not data.valorizacao_12m and 'valorização' in title and '12' in title:
-                data.valorizacao_12m = f"{value}%"
     
     def get_specific_info(self, data: FIIData, info_type: FIIInfoType) -> str:
         """Retorna informação específica formatada."""
@@ -204,7 +315,7 @@ class FIILookupService:
         
         elif info_type == FIIInfoType.DIVIDEND_YIELD:
             if data.dividend_yield:
-                return f"O Dividend Yield do {ticker} é {data.dividend_yield} ao ano"
+                return f"O Dividend Yield do {ticker} é {data.dividend_yield} (últimos 12 meses)"
             return f"Não consegui encontrar o DY do {ticker}"
         
         elif info_type == FIIInfoType.PVP:
@@ -214,10 +325,7 @@ class FIILookupService:
         
         elif info_type == FIIInfoType.ULTIMO_DIVIDENDO:
             if data.ultimo_dividendo:
-                resp = f"O último dividendo do {ticker} foi de {data.ultimo_dividendo}"
-                if data.data_ultimo_dividendo:
-                    resp += f" (pago em {data.data_ultimo_dividendo})"
-                return resp
+                return f"O último dividendo do {ticker} foi de {data.ultimo_dividendo}"
             return f"Não consegui encontrar o último dividendo do {ticker}"
         
         elif info_type == FIIInfoType.PATRIMONIO:
@@ -250,6 +358,11 @@ class FIILookupService:
                 return f"A valorização do {ticker} nos últimos 12 meses foi de {data.valorizacao_12m}"
             return f"Não consegui encontrar a valorização do {ticker}"
         
+        elif info_type == FIIInfoType.RENTABILIDADE_MES:
+            if data.rentabilidade_mes:
+                return f"A rentabilidade do {ticker} no mês atual é de {data.rentabilidade_mes}"
+            return f"Não consegui encontrar a rentabilidade mensal do {ticker}"
+        
         else:
             return self.format_complete_response(data)
     
@@ -277,8 +390,10 @@ class FIILookupService:
             lines.append(f"• Segmento: {data.segmento}")
         if data.liquidez:
             lines.append(f"• Liquidez Diária: {data.liquidez}")
-        if data.valorizacao_12m:
-            lines.append(f"• Valorização 12m: {data.valorizacao_12m}")
+        if data.rentabilidade_mes:
+            lines.append(f"• Rentabilidade no Mês: {data.rentabilidade_mes}")
+        if data.vacancia:
+            lines.append(f"• Vacância: {data.vacancia}")
         
         return "\n".join(lines)
     
@@ -304,7 +419,7 @@ class FIILookupService:
             "info_type": info_type.value,
             "data": data,
             "response": response,
-            "source": "StatusInvest"
+            "source": "FundsExplorer"
         }
 
 
