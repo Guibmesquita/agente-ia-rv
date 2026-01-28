@@ -8,6 +8,7 @@
             rel="stylesheet"
             href="/static/global.css?v={{ now().timestamp() if now else 1706371200 }}"
         />
+        <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
         <style>
             .main-content {
                 height: 100vh;
@@ -984,6 +985,5 @@
                 loadHistory();
             });
         </script>
-        <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     </body>
 </html>

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Base de Assessores - Agente IA - RV</title>
     <link rel="stylesheet" href="/static/global.css">
+    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .filters-bar {
             display: grid;
@@ -928,6 +929,5 @@
             window.location.href = '/login';
         }
     </script>
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
 </body>
 </html>

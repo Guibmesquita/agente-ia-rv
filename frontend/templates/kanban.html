@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chamados - Agente IA - RV</title>
     <link rel="stylesheet" href="/static/global.css">
+    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         .kanban-container {
@@ -457,6 +458,5 @@
             }
         });
     </script>
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
 </body>
 </html>
