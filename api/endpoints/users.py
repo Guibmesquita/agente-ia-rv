@@ -24,6 +24,8 @@ router = APIRouter(prefix="/api/users", tags=["Usuários"])
 class UserCreate(BaseModel):
     """Schema para criação de usuário."""
     username: str
+    first_name: Optional[str] = None
+    full_name: Optional[str] = None
     email: EmailStr
     password: str
     phone: Optional[str] = None
@@ -33,6 +35,8 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     """Schema para atualização de usuário."""
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    full_name: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
     phone: Optional[str] = None
@@ -43,8 +47,10 @@ class UserResponse(BaseModel):
     """Schema para resposta de usuário."""
     id: int
     username: str
+    first_name: Optional[str] = None
+    full_name: Optional[str] = None
     email: str
-    phone: Optional[str]
+    phone: Optional[str] = None
     role: str
     
     model_config = {"from_attributes": True}
@@ -386,6 +392,8 @@ async def confirm_users_import(
             
             new_user = User(
                 username=username,
+                first_name=user_data.get("first_name"),
+                full_name=user_data.get("full_name"),
                 email=email,
                 hashed_password=hashed_password,
                 phone=phone,

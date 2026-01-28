@@ -44,13 +44,17 @@ def create_user(
     username: str,
     email: str,
     password: str,
+    first_name: Optional[str] = None,
+    full_name: Optional[str] = None,
     phone: Optional[str] = None,
-    role: str = "client"
+    role: str = "broker"
 ) -> User:
     """Cria um novo usuário com senha hasheada."""
     hashed_password = get_password_hash(password)
     db_user = User(
         username=username,
+        first_name=first_name,
+        full_name=full_name,
         email=email,
         hashed_password=hashed_password,
         phone=phone,

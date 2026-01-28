@@ -167,10 +167,10 @@
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Usuário</th>
+                                <th>Primeiro Nome</th>
+                                <th>Nome Completo</th>
                                 <th>E-mail</th>
-                                <th>Telefone</th>
+                                <th>Telefone WhatsApp</th>
                                 <th>Função</th>
                                 <th style="text-align: right;">Ações</th>
                             </tr>
@@ -201,21 +201,22 @@
             <form id="userForm" onsubmit="saveUser(event)">
                 <div class="modal-body">
                     <input type="hidden" id="userId" name="userId">
-                    <div class="form-group">
-                        <label class="form-label" for="username">Nome de Usuário</label>
-                        <input type="text" class="form-input" id="username" name="username" required>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label" for="first_name">Primeiro Nome</label>
+                            <input type="text" class="form-input" id="first_name" name="first_name">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="full_name">Nome Completo</label>
+                            <input type="text" class="form-input" id="full_name" name="full_name">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="email">E-mail</label>
+                        <label class="form-label" for="email">E-mail *</label>
                         <input type="email" class="form-input" id="email" name="email" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="password">Senha</label>
-                        <input type="password" class="form-input" id="password" name="password">
-                        <small style="color: var(--text-secondary); font-size: 0.8rem;">Deixe em branco para manter a senha atual (ao editar)</small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="phone">Telefone</label>
+                        <label class="form-label" for="phone">Telefone WhatsApp</label>
                         <input type="text" class="form-input" id="phone" name="phone" placeholder="5511999999999">
                     </div>
                     <div class="form-group">
@@ -225,6 +226,15 @@
                             <option value="gestao_rv">Gestor</option>
                             <option value="broker">Broker</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="username">Nome de Usuário (login)</label>
+                        <input type="text" class="form-input" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="password">Senha</label>
+                        <input type="password" class="form-input" id="password" name="password">
+                        <small style="color: var(--text-secondary); font-size: 0.8rem;">Deixe em branco para manter a senha atual (ao editar)</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -572,8 +582,8 @@
                 
                 tbody.innerHTML = users.map(user => `
                     <tr>
-                        <td>${user.id}</td>
-                        <td>${user.username}</td>
+                        <td>${user.first_name || '-'}</td>
+                        <td>${user.full_name || '-'}</td>
                         <td>${user.email}</td>
                         <td>${user.phone || '-'}</td>
                         <td><span class="role-badge role-${user.role}">${getRoleLabel(user.role)}</span></td>
@@ -614,10 +624,12 @@
             if (user) {
                 title.textContent = 'Editar Usuário';
                 document.getElementById('userId').value = user.id;
-                document.getElementById('username').value = user.username;
+                document.getElementById('first_name').value = user.first_name || '';
+                document.getElementById('full_name').value = user.full_name || '';
                 document.getElementById('email').value = user.email;
                 document.getElementById('phone').value = user.phone || '';
                 document.getElementById('role').value = user.role;
+                document.getElementById('username').value = user.username;
             } else {
                 title.textContent = 'Novo Usuário';
                 document.getElementById('userId').value = '';
@@ -647,10 +659,12 @@
             const formData = new FormData(event.target);
             
             const data = {
-                username: formData.get('username'),
+                first_name: formData.get('first_name') || null,
+                full_name: formData.get('full_name') || null,
                 email: formData.get('email'),
                 phone: formData.get('phone') || null,
-                role: formData.get('role')
+                role: formData.get('role'),
+                username: formData.get('username')
             };
             
             const password = formData.get('password');

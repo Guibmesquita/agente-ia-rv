@@ -64,12 +64,14 @@ class Interaction(Base):
 class User(Base):
     """
     Modelo de usuário.
-    Pode ser admin, broker ou cliente.
+    Pode ser admin, gestor ou broker.
     """
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, index=True, nullable=False)
+    first_name = Column(String(100), nullable=True)
+    full_name = Column(String(255), nullable=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     phone = Column(String(20), unique=True, index=True, nullable=True)
