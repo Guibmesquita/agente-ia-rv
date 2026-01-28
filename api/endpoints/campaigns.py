@@ -520,11 +520,13 @@ async def create_campaign_from_base(
     for a in assessores:
         assessor_data.append({
             "id": a.id,
+            "codigo_ai": a.codigo_ai,
             "nome": a.nome,
             "email": a.email,
             "telefone_whatsapp": a.telefone_whatsapp,
             "unidade": a.unidade,
-            "equipe": a.equipe
+            "equipe": a.equipe,
+            "broker_responsavel": a.broker_responsavel
         })
     
     campaign = Campaign(
