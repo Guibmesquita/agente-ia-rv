@@ -447,9 +447,9 @@ async def upload_preview(file: UploadFile = File(...), db: Session = Depends(get
 async def get_database_fields(db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_gestao)):
     core_fields = [
         {"slug": "codigo_ai", "label": "Código AAI", "required": False},
-        {"slug": "nome", "label": "Nome do Assessor", "required": True},
-        {"slug": "email", "label": "E-mail", "required": True},
-        {"slug": "telefone_whatsapp", "label": "Telefone WhatsApp", "required": False},
+        {"slug": "nome", "label": "Nome do Assessor", "required": False},
+        {"slug": "email", "label": "E-mail", "required": False},
+        {"slug": "telefone_whatsapp", "label": "Telefone WhatsApp", "required": True},
         {"slug": "unidade", "label": "Unidade", "required": False},
         {"slug": "equipe", "label": "Equipe", "required": False},
         {"slug": "broker_responsavel", "label": "Broker Responsável", "required": False},
@@ -522,7 +522,11 @@ async def confirm_upload(data: UploadConfirm, db: Session = Depends(get_db), cur
                     if pd.isna(value):
                         value = None
                     elif isinstance(value, (int, float)):
-                        value = str(value)
+                        value = str(int(value) if value == int(value) else value)
+                    elif isinstance(value, str):
+                        value = value.strip()
+                        if value == "":
+                            value = None
                     
                     if field.startswith("custom_"):
                         custom_key = field.replace("custom_", "")
@@ -530,16 +534,13 @@ async def confirm_upload(data: UploadConfirm, db: Session = Depends(get_db), cur
                     else:
                         assessor_data[field] = value
                 
-                if not assessor_data.get("nome"):
-                    errors.append(f"Linha {idx + 2}: Nome é obrigatório")
-                    continue
-                
-                if not assessor_data.get("email"):
-                    errors.append(f"Linha {idx + 2}: E-mail é obrigatório")
+                telefone = assessor_data.get("telefone_whatsapp")
+                if not telefone or str(telefone).strip() == "":
+                    errors.append(f"Linha {idx + 2}: Telefone WhatsApp é obrigatório")
                     continue
                 
                 existing = db.query(Assessor).filter(
-                    Assessor.email == assessor_data["email"]
+                    Assessor.telefone_whatsapp == telefone
                 ).first()
                 
                 if existing:

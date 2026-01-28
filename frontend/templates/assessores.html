@@ -590,17 +590,23 @@
                                 <input type="checkbox" id="update-existing" style="width: 18px; height: 18px; margin-top: 2px;">
                                 <div>
                                     <label for="update-existing" style="color: var(--text-primary); font-weight: 500; cursor: pointer;">Atualizar registros existentes</label>
-                                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">Se um assessor com o mesmo e-mail já existir, atualiza seus dados ao invés de ignorar.</p>
+                                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">Se um assessor com o mesmo WhatsApp já existir, atualiza seus dados ao invés de ignorar.</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div id="upload-step-3" style="display: none; text-align: center; padding: 32px 0;">
-                    <div style="width: 64px; height: 64px; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                    <div id="upload-success-icon" style="width: 64px; height: 64px; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
                         <svg width="32" height="32" fill="none" stroke="#065f46" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                     </div>
-                    <h3 style="font-size: 1.2rem; margin-bottom: 16px;">Importação Concluída!</h3>
+                    <div id="upload-error-icon" style="width: 64px; height: 64px; background: #fee2e2; border-radius: 50%; display: none; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                        <svg width="32" height="32" fill="none" stroke="#dc2626" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    </div>
+                    <div id="upload-partial-icon" style="width: 64px; height: 64px; background: #fef3c7; border-radius: 50%; display: none; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                        <svg width="32" height="32" fill="none" stroke="#d97706" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    </div>
+                    <h3 id="upload-title" style="font-size: 1.2rem; margin-bottom: 16px;">Importação Concluída!</h3>
                     <div id="upload-result" style="color: var(--text-secondary);"></div>
                     <div id="upload-errors" class="alert alert-warning" style="display: none; margin-top: 16px; text-align: left; max-height: 120px; overflow-y: auto;"></div>
                 </div>
@@ -1279,6 +1285,11 @@
             document.getElementById('upload-errors').style.display = 'none';
             document.getElementById('replace-all').checked = false;
             document.getElementById('update-existing').checked = false;
+            document.getElementById('upload-success-icon').style.display = 'flex';
+            document.getElementById('upload-error-icon').style.display = 'none';
+            document.getElementById('upload-partial-icon').style.display = 'none';
+            document.getElementById('upload-title').textContent = 'Importação Concluída!';
+            document.getElementById('upload-title').style.color = 'inherit';
             uploadPreview = null;
         }
 
@@ -1414,8 +1425,31 @@
                 document.getElementById('confirm-upload-btn').style.display = 'none';
                 document.getElementById('finish-upload-btn').style.display = 'inline-flex';
 
-                let resultHtml = `<p><strong>${result.created}</strong> registros criados</p>
-                    <p><strong>${result.updated}</strong> registros atualizados</p>`;
+                const successCount = (result.created || 0) + (result.updated || 0);
+                const errorCount = result.total_errors || (result.errors ? result.errors.length : 0);
+                const hasErrors = errorCount > 0;
+                const hasSuccess = successCount > 0;
+
+                document.getElementById('upload-success-icon').style.display = 'none';
+                document.getElementById('upload-error-icon').style.display = 'none';
+                document.getElementById('upload-partial-icon').style.display = 'none';
+
+                if (!hasSuccess && hasErrors) {
+                    document.getElementById('upload-error-icon').style.display = 'flex';
+                    document.getElementById('upload-title').textContent = 'Importação com Erros';
+                    document.getElementById('upload-title').style.color = '#dc2626';
+                } else if (hasSuccess && hasErrors) {
+                    document.getElementById('upload-partial-icon').style.display = 'flex';
+                    document.getElementById('upload-title').textContent = 'Importação Parcial';
+                    document.getElementById('upload-title').style.color = '#d97706';
+                } else {
+                    document.getElementById('upload-success-icon').style.display = 'flex';
+                    document.getElementById('upload-title').textContent = 'Importação Concluída!';
+                    document.getElementById('upload-title').style.color = 'inherit';
+                }
+
+                let resultHtml = `<p><strong>${result.created || 0}</strong> registros criados</p>
+                    <p><strong>${result.updated || 0}</strong> registros atualizados</p>`;
                 if (result.deleted !== undefined && result.deleted > 0) {
                     resultHtml += `<p><strong>${result.deleted}</strong> registros removidos</p>`;
                 }
@@ -1424,10 +1458,10 @@
                 }
                 document.getElementById('upload-result').innerHTML = resultHtml;
 
-                if (result.errors && result.errors.length > 0) {
+                if (hasErrors) {
                     const errorsDiv = document.getElementById('upload-errors');
                     errorsDiv.style.display = 'block';
-                    errorsDiv.innerHTML = `<strong>Erros (${result.total_errors || result.errors.length}):</strong><br>` + 
+                    errorsDiv.innerHTML = `<strong>Erros (${errorCount}):</strong><br>` + 
                         result.errors.slice(0, 10).join('<br>');
                 }
             } catch (err) {
