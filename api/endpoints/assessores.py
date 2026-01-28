@@ -497,9 +497,19 @@ async def confirm_upload(data: UploadConfirm, db: Session = Depends(get_db), cur
         errors = []
         
         if data.replace_all:
-            deleted = db.query(Assessor).count()
-            db.query(Assessor).delete()
-            db.commit()
+            try:
+                deleted = db.query(Assessor).count()
+                db.query(Assessor).delete()
+                db.commit()
+            except Exception as delete_error:
+                db.rollback()
+                error_msg = str(delete_error)
+                if "ForeignKeyViolation" in error_msg or "foreign key constraint" in error_msg:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Não é possível substituir todos os registros porque existem conversas ou campanhas vinculadas aos assessores atuais. Desmarque a opção 'Substituir todos' e use 'Atualizar registros existentes' para atualizar os dados sem perder os vínculos."
+                    )
+                raise
         
         for idx, row in df.iterrows():
             try:
