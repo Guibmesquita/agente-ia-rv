@@ -552,6 +552,17 @@ async def zapi_webhook(
     
     if from_me:
         try:
+            existing_message = db.query(WhatsAppMessage).filter(
+                WhatsAppMessage.message_id == message_id
+            ).first()
+            
+            if existing_message:
+                print(f"[WEBHOOK] Mensagem já existe (id={message_id}), atualizando status")
+                if status:
+                    existing_message.message_status = status
+                    db.commit()
+                return {"status": "updated", "reason": "message already exists"}
+            
             outbound_body = None
             outbound_media_url = None
             outbound_media_mimetype = None
