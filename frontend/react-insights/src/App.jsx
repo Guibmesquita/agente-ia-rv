@@ -25,7 +25,8 @@ import AssessorsBarChart from './components/AssessorsBarChart';
 import ProductsImageChart from './components/ProductsImageChart';
 import ComplexityChart from './components/ComplexityChart';
 import CampaignsSummary from './components/CampaignsSummary';
-import TwoLevelPieChart from './components/TwoLevelPieChart';
+import SemiCirclePieChart from './components/SemiCirclePieChart';
+import AnimatedGauge from './components/AnimatedGauge';
 import FeedbacksList from './components/FeedbacksList';
 
 ChartJS.register(
@@ -174,6 +175,15 @@ function App() {
     value: resolutionData.data[index],
   })) || [];
 
+  const iaPercentage = (() => {
+    if (!resolutionData?.labels || !resolutionData?.data) return 0;
+    const total = resolutionData.data.reduce((sum, val) => sum + val, 0);
+    if (total === 0) return 0;
+    const iaIndex = resolutionData.labels.findIndex(l => l.toLowerCase().includes('ia') || l.toLowerCase() === 'ia');
+    if (iaIndex === -1) return 0;
+    return Math.round((resolutionData.data[iaIndex] / total) * 100);
+  })();
+
   const productsChartFormatted = productsData?.labels?.map((label, index) => ({
     label: label,
     value: productsData.data[index],
@@ -304,14 +314,15 @@ function App() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                <TwoLevelPieChart
+                <SemiCirclePieChart
                   title="Categorias de Duvidas"
                   data={categoriesChartFormatted}
                   tooltip="Distribuicao das conversas por tipo de assunto. Ajuda a identificar os temas mais frequentes."
                 />
-                <TwoLevelPieChart
-                  title="IA vs Humanos"
-                  data={resolutionChartFormatted}
+                <AnimatedGauge
+                  title="Taxa de Resolucao IA"
+                  percentage={iaPercentage}
+                  label="Conversas resolvidas pela IA"
                   tooltip="Proporcao de conversas resolvidas pela IA versus as que necessitaram intervencao humana."
                 />
               </div>
