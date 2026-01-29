@@ -1,14 +1,9 @@
 const BASE_URL = '/api';
 
 async function fetchAPI(endpoint, options = {}) {
-  const token = localStorage.getItem('token');
   const headers = {
     ...options.headers,
   };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
@@ -163,7 +158,7 @@ export const scriptsAPI = {
 };
 
 export const knowledgeAPI = {
-  list: () => fetchAPI('/knowledge'),
+  list: () => fetchAPI('/knowledge/'),
   
   upload: (file, title, category, description) => {
     const formData = new FormData();
