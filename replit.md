@@ -59,6 +59,17 @@ A new design system features a minimizable vertical sidebar, light theme, and th
         - Threshold de similaridade: Filtro com distância máxima de 0.8 para garantir relevância
         - ContentBlock tracking: Campos created_by e updated_by para rastrear autoria
 - **AI Agent Response Framework:** Employs a `ConversationState` machine, message normalization, and flexible contact identification. It integrates AI for classifying user intent (Greeting, Scope, Documental, Out of Scope) and determining human transfer criteria. It also features conversation context accumulation for follow-up questions and AI-driven ticker search with intelligent confirmation flows, ensuring natural language interpretation over fixed regex patterns.
+    - **Insights Dashboard:** Dashboard de gestão para Renda Variável com:
+        - ConversationInsight: Modelo para armazenar insights de conversas (categoria, produtos, tickers, resolução, feedback)
+        - Autoanálise automática via GPT após cada conversa no webhook WhatsApp
+        - 12 categorias de classificação (Dúvida sobre Produto, Análise de Mercado, Estratégia de Investimento, etc.)
+        - Filtros dinâmicos: Período (7/30/90/365 dias, personalizado), Macro Área, Unidade, Broker, Equipe
+        - 3 KPI cards: Total de Interações, Assessores Ativos, Taxa de Resolução IA
+        - 5 gráficos Chart.js: Atividade Diária (linha), Categorias (pizza), Produtos em Alta (barras), IA vs Humanos (pizza), Volume por Unidade (barras horizontal)
+        - Rankings: Top 5 Unidades, Top 10 Assessores
+        - Resumo de Campanhas e Feedbacks expansíveis
+        - Acesso restrito a admin e gestao_rv
+        - 10 endpoints em /api/insights/*
 
 **Feature Specifications:**
 - Dynamic control over AI behavior parameters.
