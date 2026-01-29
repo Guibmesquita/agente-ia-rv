@@ -95,8 +95,8 @@ async def login_form(
         }
     )
     
-    # Redireciona para o dashboard de analytics
-    redirect = RedirectResponse(url="/analytics", status_code=status.HTTP_302_FOUND)
+    # Redireciona para o dashboard de insights
+    redirect = RedirectResponse(url="/insights", status_code=status.HTTP_302_FOUND)
     redirect.set_cookie(
         key="access_token",
         value=access_token,

@@ -326,7 +326,7 @@ async def get_top_units(
     if broker:
         query = query.filter(ConversationInsight.broker_responsavel == broker)
     
-    results = query.group_by(ConversationInsight.unidade).order_by(func.count(ConversationInsight.id).desc()).limit(5).all()
+    results = query.group_by(ConversationInsight.unidade).order_by(func.count(ConversationInsight.id).desc()).all()
     
     return [{"unidade": r.unidade, "count": r.count} for r in results]
 

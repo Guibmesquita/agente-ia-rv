@@ -193,7 +193,7 @@ async def analytics_page(request: Request):
 async def insights_page(request: Request):
     """
     Dashboard de Insights para gestão de Renda Variável.
-    Requer autenticação como admin ou gestao_rv.
+    Versão React. Requer autenticação como admin ou gestao_rv.
     """
     token = request.cookies.get("access_token")
     
@@ -208,7 +208,14 @@ async def insights_page(request: Request):
     if user_role not in ["admin", "gestao_rv"]:
         return RedirectResponse(url="/login?error=permission")
     
-    return templates.TemplateResponse("insights.html", {"request": request, "user_role": user_role})
+    import os
+    react_insights_index = os.path.join(os.path.dirname(__file__), "frontend", "react-insights", "dist", "index.html")
+    if os.path.exists(react_insights_index):
+        with open(react_insights_index, "r") as f:
+            content = f.read()
+        return HTMLResponse(content=content)
+    else:
+        return templates.TemplateResponse("insights.html", {"request": request, "user_role": user_role})
 
 
 @app.get("/tailwind-test", response_class=HTMLResponse)
@@ -276,6 +283,24 @@ if os.path.exists(react_dist_path):
     async def serve_react_static(filename: str):
         import os
         file_path = os.path.join(react_dist_path, filename)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            from fastapi.responses import FileResponse
+            return FileResponse(file_path)
+        return HTMLResponse(content="Not Found", status_code=404)
+
+
+# Monta arquivos estáticos do React Insights
+react_insights_assets_path = os.path.join(os.path.dirname(__file__), "frontend", "react-insights", "dist", "assets")
+if os.path.exists(react_insights_assets_path):
+    app.mount("/insights/assets", StaticFiles(directory=react_insights_assets_path), name="react-insights-assets")
+
+# Serve arquivos estáticos do React Insights
+react_insights_dist_path = os.path.join(os.path.dirname(__file__), "frontend", "react-insights", "dist")
+if os.path.exists(react_insights_dist_path):
+    @app.get("/insights/{filename:path}")
+    async def serve_react_insights_static(filename: str, request: Request):
+        import os
+        file_path = os.path.join(react_insights_dist_path, filename)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             from fastapi.responses import FileResponse
             return FileResponse(file_path)

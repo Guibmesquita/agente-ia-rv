@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #FFF8F3;
+  color: #221B19;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.bg-primary { background-color: #772B21; }
+.bg-primary-dark { background-color: #381811; }
+.bg-primary\/10 { background-color: rgba(119, 43, 33, 0.1); }
+.text-primary { color: #772B21; }
+.text-primary-dark { color: #381811; }
+.bg-background { background-color: #FFF8F3; }
+.bg-card { background-color: #ffffff; }
+.text-foreground { color: #221B19; }
+.text-muted { color: #5a4f4c; }
+.border-border { border-color: #e5dcd7; }
+.text-success { color: #10b981; }
+.bg-success { background-color: #10b981; }
+.text-warning { color: #f59e0b; }
+.bg-warning { background-color: #f59e0b; }
+.text-danger { color: #AC3631; }
+.bg-danger { background-color: #AC3631; }
+.bg-svn-green { background-color: #6b8e23; }
+.ring-primary\/20 { --tw-ring-color: rgba(119, 43, 33, 0.2); }
+
+.shadow-card {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
