@@ -151,7 +151,28 @@
             margin-bottom: 20px;
         }
 
-        /* Detalhes do produto */
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumb a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            color: var(--primary-color);
+        }
+
+        .breadcrumb span {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
         .product-detail-header {
             display: flex;
             justify-content: space-between;
@@ -168,6 +189,11 @@
             display: flex;
             gap: 16px;
             align-items: center;
+        }
+
+        .product-detail-actions {
+            display: flex;
+            gap: 12px;
         }
 
         .tabs {
@@ -207,7 +233,6 @@
             display: block;
         }
 
-        /* Materiais */
         .materials-list {
             display: flex;
             flex-direction: column;
@@ -228,6 +253,12 @@
             margin-bottom: 16px;
         }
 
+        .material-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
         .material-type-badge {
             font-size: 0.8rem;
             font-weight: 600;
@@ -235,6 +266,16 @@
             border-radius: 6px;
             background: #dbeafe;
             color: #1e40af;
+        }
+
+        .material-name {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .material-version {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
         }
 
         .publish-badge {
@@ -246,8 +287,8 @@
         }
 
         .publish-badge.rascunho {
-            background: #fef3c7;
-            color: #92400e;
+            background: #f3f4f6;
+            color: #6b7280;
         }
 
         .publish-badge.publicado {
@@ -255,25 +296,7 @@
             color: #166534;
         }
 
-        .publish-badge.arquivado {
-            background: #f3f4f6;
-            color: #6b7280;
-        }
-
-        .expiry-badge {
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 4px 8px;
-            border-radius: 4px;
-            margin-left: 8px;
-        }
-
-        .expiry-badge.expiring {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .expiry-badge.expired {
+        .publish-badge.expirado {
             background: #fee2e2;
             color: #991b1b;
         }
@@ -282,24 +305,9 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-        }
-
-        .upload-block-area {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 40px;
-            border: 2px dashed var(--border-color);
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-            color: var(--text-secondary);
-        }
-
-        .upload-block-area:hover {
-            border-color: var(--primary-color);
-            background: var(--secondary-color);
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
         }
 
         .content-block {
@@ -326,7 +334,6 @@
         .block-type-texto { color: #059669; }
         .block-type-tabela { color: #7c3aed; }
         .block-type-grafico { color: #ea580c; }
-        .block-type-script { color: #0891b2; }
 
         .block-actions {
             display: flex;
@@ -340,123 +347,6 @@
             white-space: pre-wrap;
         }
 
-        .block-content-table {
-            overflow-x: auto;
-        }
-
-        .block-content-table table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-        }
-
-        .block-content-table th,
-        .block-content-table td {
-            padding: 8px 12px;
-            border: 1px solid var(--border-color);
-            text-align: left;
-        }
-
-        .block-content-table th {
-            background: white;
-            font-weight: 600;
-        }
-
-        .high-risk-badge {
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .status-approved, .status-auto-approved {
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: #d1fae5;
-            color: #065f46;
-        }
-
-        .status-pending {
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .status-rejected {
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .versions-list {
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 8px;
-        }
-
-        .version-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .version-item:last-child {
-            border-bottom: none;
-        }
-
-        .version-item:hover {
-            background: var(--bg-color);
-        }
-
-        .version-info {
-            flex: 1;
-        }
-
-        .version-number {
-            font-weight: 600;
-            color: var(--primary-color);
-        }
-
-        .version-date {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-left: 12px;
-        }
-
-        .version-reason {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }
-
-        .content-block.pending-review {
-            border-left: 3px solid #f59e0b;
-        }
-
-        .btn-icon-approve {
-            background: #d1fae5;
-            color: #065f46;
-        }
-
-        .btn-icon-approve:hover {
-            background: #a7f3d0;
-        }
-
-        /* Scripts */
         .scripts-list {
             display: flex;
             flex-direction: column;
@@ -479,6 +369,17 @@
 
         .script-title {
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .script-version {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--bg-color);
+            padding: 2px 6px;
+            border-radius: 4px;
         }
 
         .script-content {
@@ -489,6 +390,13 @@
             border-radius: 8px;
             white-space: pre-wrap;
             margin-bottom: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .script-actions {
+            display: flex;
+            gap: 8px;
         }
 
         .btn-copy {
@@ -511,63 +419,147 @@
             color: white;
         }
 
-        /* Modal de edição de bloco */
-        .block-editor textarea {
-            font-family: inherit;
-            min-height: 200px;
+        .btn-copy.copied {
+            background: #dcfce7;
+            color: #166534;
         }
 
-        .rich-editor-toolbar {
+        .history-list {
             display: flex;
-            gap: 4px;
-            padding: 8px 12px;
-            background: var(--secondary-color);
-            border: 1px solid var(--border-color);
-            border-bottom: none;
-            border-radius: 8px 8px 0 0;
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .toolbar-btn {
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+
+        .history-info {
+            flex: 1;
+        }
+
+        .history-action {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .history-meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 32px;
-            height: 32px;
             border: none;
-            background: transparent;
-            border-radius: 6px;
             cursor: pointer;
-            color: var(--text-secondary);
             transition: all 0.2s;
         }
 
-        .toolbar-btn:hover {
+        .btn-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .btn-icon-edit {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .btn-icon-edit:hover {
+            background: #bfdbfe;
+        }
+
+        .btn-icon-delete {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .btn-icon-delete:hover {
+            background: #fecaca;
+        }
+
+        .btn-icon-publish {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .btn-icon-publish:hover {
+            background: #bbf7d0;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
             background: white;
-            color: var(--text-primary);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
-        .toolbar-btn:active {
-            background: var(--primary-light);
-            color: var(--primary-color);
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
         }
 
-        .toolbar-divider {
-            width: 1px;
-            height: 24px;
-            background: var(--border-color);
-            margin: 4px 8px;
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
         }
 
-        .rich-textarea {
-            border-radius: 0 0 8px 8px;
-            font-family: 'Inter', sans-serif;
-            line-height: 1.6;
-        }
-
-        .editor-help {
-            font-size: 0.8rem;
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
             color: var(--text-secondary);
-            margin-top: 8px;
+            line-height: 1;
+        }
+
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
         }
 
         .upload-dropzone {
@@ -583,7 +575,8 @@
             text-align: center;
         }
 
-        .upload-dropzone:hover {
+        .upload-dropzone:hover,
+        .upload-dropzone.dragover {
             border-color: var(--primary-color);
             background: var(--primary-light);
         }
@@ -636,42 +629,6 @@
             color: var(--text-secondary);
         }
 
-        .upload-options {
-            margin-top: 16px;
-        }
-
-        .option-group {
-            margin-bottom: 12px;
-        }
-
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-        }
-
-        .checkbox-label input {
-            width: 18px;
-            height: 18px;
-        }
-
-        .info-box {
-            display: flex;
-            gap: 10px;
-            padding: 12px 16px;
-            background: #dbeafe;
-            border-radius: 8px;
-            margin-top: 16px;
-            font-size: 0.85rem;
-            color: #1e40af;
-        }
-
-        .info-box svg {
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-
         .upload-progress {
             margin-top: 16px;
         }
@@ -690,7 +647,7 @@
             transition: width 0.3s;
         }
 
-        #progress-text {
+        .progress-text {
             display: block;
             text-align: center;
             margin-top: 8px;
@@ -698,147 +655,52 @@
             color: var(--text-secondary);
         }
 
-        .table-editor {
-            border: 1px solid var(--border-color);
+        .loading-skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: skeleton 1.5s infinite;
             border-radius: 8px;
-            overflow: hidden;
         }
 
-        .table-editor-controls {
-            display: flex;
-            gap: 8px;
-            padding: 12px;
-            background: var(--secondary-color);
-            border-bottom: 1px solid var(--border-color);
+        @keyframes skeleton {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
         }
 
-        .table-editor-container {
-            max-height: 400px;
-            overflow: auto;
-        }
-
-        .table-editor-grid {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .table-editor-grid input {
-            width: 100%;
-            border: none;
-            padding: 10px 12px;
-            font-size: 0.9rem;
-            background: transparent;
-        }
-
-        .table-editor-grid input:focus {
-            outline: none;
-            background: var(--primary-light);
-        }
-
-        .table-editor-grid td,
-        .table-editor-grid th {
-            border: 1px solid var(--border-color);
-            min-width: 120px;
-        }
-
-        .table-editor-grid th input {
-            font-weight: 600;
-            background: var(--bg-color);
-        }
-
-        .table-editor-actions {
-            display: flex;
-            gap: 8px;
-            padding: 12px;
-            background: var(--bg-color);
-            border-top: 1px solid var(--border-color);
-        }
-
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 0.8rem;
-        }
-
-        /* Upload dentro do material */
-        .upload-block-area {
-            border: 2px dashed var(--border-color);
-            border-radius: 10px;
-            padding: 32px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .upload-block-area:hover {
-            border-color: var(--primary-color);
-            background: var(--primary-light);
-        }
-
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-size: 0.9rem;
+        .skeleton-card {
+            height: 150px;
             margin-bottom: 16px;
         }
 
-        .back-link:hover {
-            color: var(--primary-color);
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
         }
 
-        /* Revisão pendente */
-        .review-alert {
-            background: #fef3c7;
-            border: 1px solid #fcd34d;
-            border-radius: 10px;
-            padding: 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 24px;
+        .toast.success {
+            background: #059669;
         }
 
-        .review-alert svg {
-            width: 24px;
-            height: 24px;
-            color: #92400e;
+        .toast.error {
+            background: #dc2626;
         }
 
-        .review-alert-text {
-            flex: 1;
-        }
-
-        .review-alert-text strong {
-            color: #92400e;
-        }
-
-        .btn-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-icon svg {
-            width: 16px;
-            height: 16px;
-        }
-
-        .btn-icon-edit {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .btn-icon-delete {
-            background: #fee2e2;
-            color: #991b1b;
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
     </style>
 </head>
@@ -906,149 +768,155 @@
         </aside>
 
         <main class="main-content" id="mainContent">
-        <!-- Vista Lista de Produtos -->
-        <div id="products-list-view">
-            <div class="page-header">
-                <div>
-                    <h1 class="page-title">Conhecimento</h1>
-                    <p class="page-subtitle">Gerencie produtos, estratégias, materiais e scripts comerciais</p>
-                </div>
-                <button class="btn btn-primary" onclick="openNewProductModal()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                    Novo Produto
-                </button>
-            </div>
-
-            <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 24px;">
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Queries RAG</div>
-                    <div id="metric-total-queries" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Transferências Humanas</div>
-                    <div id="metric-human-transfers" style="font-size: 1.5rem; font-weight: 700; color: #f59e0b;">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Taxa de Transferência</div>
-                    <div id="metric-transfer-rate" style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Tempo Médio (ms)</div>
-                    <div id="metric-avg-time" style="font-size: 1.5rem; font-weight: 700; color: #16a34a;">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Docs Ingeridos</div>
-                    <div id="metric-docs-ingested" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Blocos Criados</div>
-                    <div id="metric-blocks-created" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Tabelas Detectadas</div>
-                    <div id="metric-tables-detected" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">-</div>
-                </div>
-                <div class="stat-card" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid var(--border-color);">
-                    <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 4px;">Gráficos Detectados</div>
-                    <div id="metric-charts-detected" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">-</div>
-                </div>
-            </div>
-
-            <div class="filters-bar">
-                <div class="search-input">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                    <input type="text" id="search-input" class="form-input" placeholder="Buscar por nome, ticker ou gestora..." oninput="filterProducts()">
-                </div>
-                <select id="filter-category" class="form-input" onchange="filterProducts()">
-                    <option value="">Todas categorias</option>
-                </select>
-                <select id="filter-status" class="form-input" onchange="filterProducts()">
-                    <option value="">Todos status</option>
-                    <option value="ativo">Ativo</option>
-                    <option value="inativo">Inativo</option>
-                </select>
-            </div>
-
-            <div id="products-container" class="products-grid">
-            </div>
-
-            <div id="empty-state" class="empty-state" style="display: none;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-                <h3>Nenhum produto cadastrado</h3>
-                <p>Adicione seu primeiro produto para começar a organizar os materiais</p>
-                <button class="btn btn-primary" onclick="openNewProductModal()">Criar Primeiro Produto</button>
-            </div>
-        </div>
-
-        <!-- Vista Detalhes do Produto -->
-        <div id="product-detail-view" style="display: none;">
-            <a href="#" class="back-link" onclick="showProductsList(); return false;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                Voltar ao catálogo
-            </a>
-
-            <div class="product-detail-header">
-                <div class="product-detail-info">
-                    <h2 id="detail-product-name"></h2>
-                    <div class="product-detail-meta">
-                        <span id="detail-product-ticker" class="product-ticker"></span>
-                        <span id="detail-product-manager" class="product-manager"></span>
-                        <span id="detail-product-status" class="status-badge"></span>
+            <div id="products-list-view" class="page-container">
+                <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1 class="page-title">Conhecimento</h1>
+                        <p class="page-subtitle">Gerencie produtos, estratégias, materiais e scripts comerciais</p>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <a href="/revisao" class="btn btn-secondary" style="display: flex; align-items: center;">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Central de Revisão
+                        </a>
+                        <button class="btn btn-primary" onclick="openNewProductModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Novo Produto
+                        </button>
                     </div>
                 </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-secondary" onclick="openEditProductModal()">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                        Editar
-                    </button>
-                    <button class="btn btn-primary" onclick="openNewMaterialModal()">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                        Adicionar Material
-                    </button>
+
+                <div class="filters-bar">
+                    <div class="search-input">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" id="search-input" class="form-input" placeholder="Buscar por nome ou ticker..." oninput="filterProducts()">
+                    </div>
+                    <select id="filter-category" class="form-input" onchange="filterProducts()">
+                        <option value="">Todas categorias</option>
+                    </select>
+                    <select id="filter-status" class="form-input" onchange="filterProducts()">
+                        <option value="">Todos status</option>
+                        <option value="ativo">Ativo</option>
+                        <option value="inativo">Inativo</option>
+                    </select>
+                </div>
+
+                <div id="products-container" class="products-grid"></div>
+                
+                <div id="products-empty" class="empty-state" style="display: none;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                    </svg>
+                    <h3>Nenhum produto cadastrado</h3>
+                    <p>Comece adicionando seu primeiro produto financeiro</p>
+                    <button class="btn btn-primary" onclick="openNewProductModal()">Adicionar Produto</button>
+                </div>
+
+                <div id="products-loading" style="display: none;">
+                    <div class="loading-skeleton skeleton-card"></div>
+                    <div class="loading-skeleton skeleton-card"></div>
+                    <div class="loading-skeleton skeleton-card"></div>
                 </div>
             </div>
 
-            <div class="tabs">
-                <button class="tab active" data-tab="materials" onclick="switchTab('materials')">Materiais</button>
-                <button class="tab" data-tab="scripts" onclick="switchTab('scripts')">Scripts de WhatsApp</button>
-                <button class="tab" data-tab="history" onclick="switchTab('history')">Histórico</button>
-            </div>
+            <div id="product-detail-view" class="page-container" style="display: none;">
+                <div class="breadcrumb">
+                    <a href="#" onclick="showProductsList(); return false;">Conhecimento</a>
+                    <span>&gt;</span>
+                    <span id="breadcrumb-product-name">Produto</span>
+                </div>
 
-            <div id="tab-materials" class="tab-content active">
-                <div id="materials-container" class="materials-list"></div>
-                <div id="materials-empty" class="empty-state" style="display: none;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
-                    <h3>Nenhum material adicionado</h3>
-                    <p>Adicione materiais como One-page, Apresentações ou Atualizações de Taxa</p>
-                    <button class="btn btn-primary" onclick="openNewMaterialModal()">Adicionar Material</button>
+                <div class="product-detail-header">
+                    <div class="product-detail-info">
+                        <h2 id="detail-product-name">Nome do Produto</h2>
+                        <div class="product-detail-meta">
+                            <span id="detail-product-ticker" class="product-ticker"></span>
+                            <span id="detail-product-manager" style="color: var(--text-secondary);"></span>
+                            <span id="detail-product-status" class="status-badge"></span>
+                        </div>
+                    </div>
+                    <div class="product-detail-actions">
+                        <button class="btn btn-secondary" onclick="showProductsList()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                            </svg>
+                            Voltar
+                        </button>
+                        <button class="btn btn-secondary" onclick="openEditProductModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Editar
+                        </button>
+                        <button class="btn btn-primary" onclick="openNewMaterialModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Adicionar Material
+                        </button>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" data-tab="materials" onclick="switchTab('materials')">Materiais</button>
+                    <button class="tab" data-tab="scripts" onclick="switchTab('scripts')">Scripts WhatsApp</button>
+                    <button class="tab" data-tab="history" onclick="switchTab('history')">Histórico</button>
+                </div>
+
+                <div id="tab-materials" class="tab-content active">
+                    <div id="materials-container" class="materials-list"></div>
+                    <div id="materials-empty" class="empty-state" style="display: none;">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="64" height="64">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <h3>Nenhum material adicionado</h3>
+                        <p>Adicione materiais como One-page, Apresentações ou Atualizações</p>
+                        <button class="btn btn-primary" onclick="openNewMaterialModal()">Adicionar Material</button>
+                    </div>
+                </div>
+
+                <div id="tab-scripts" class="tab-content">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+                        <button class="btn btn-primary" onclick="openNewScriptModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Novo Script
+                        </button>
+                    </div>
+                    <div id="scripts-container" class="scripts-list"></div>
+                    <div id="scripts-empty" class="empty-state" style="display: none;">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="64" height="64">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                        </svg>
+                        <h3>Nenhum script criado</h3>
+                        <p>Crie textos prontos para enviar pelo WhatsApp</p>
+                        <button class="btn btn-primary" onclick="openNewScriptModal()">Criar Script</button>
+                    </div>
+                </div>
+
+                <div id="tab-history" class="tab-content">
+                    <div id="history-container" class="history-list"></div>
+                    <div id="history-empty" class="empty-state" style="display: none;">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="64" height="64">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <h3>Nenhum histórico disponível</h3>
+                        <p>O histórico de alterações aparecerá aqui</p>
+                    </div>
                 </div>
             </div>
+        </main>
+    </div>
 
-            <div id="tab-scripts" class="tab-content">
-                <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
-                    <button class="btn btn-primary btn-small" onclick="openNewScriptModal()">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                        Novo Script
-                    </button>
-                </div>
-                <div id="scripts-container" class="scripts-list"></div>
-                <div id="scripts-empty" class="empty-state" style="display: none;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    <h3>Nenhum script criado</h3>
-                    <p>Crie textos curtos prontos para enviar pelo WhatsApp</p>
-                    <button class="btn btn-primary" onclick="openNewScriptModal()">Criar Script</button>
-                </div>
-            </div>
-
-            <div id="tab-history" class="tab-content">
-                <p style="color: var(--text-secondary);">Histórico de alterações em breve...</p>
-            </div>
-        </div>
-    </main>
-
-    <!-- Modal Novo/Editar Produto -->
     <div id="product-modal" class="modal">
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content">
             <div class="modal-header">
                 <h2 id="product-modal-title">Novo Produto</h2>
                 <button class="modal-close" onclick="closeProductModal()">&times;</button>
@@ -1083,14 +951,14 @@
         </div>
     </div>
 
-    <!-- Modal Novo Material -->
     <div id="material-modal" class="modal">
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content">
             <div class="modal-header">
-                <h2>Novo Material</h2>
+                <h2 id="material-modal-title">Novo Material</h2>
                 <button class="modal-close" onclick="closeMaterialModal()">&times;</button>
             </div>
             <div class="modal-body">
+                <input type="hidden" id="material-id">
                 <div class="form-group">
                     <label class="form-label">Tipo de Material *</label>
                     <select id="material-type" class="form-input">
@@ -1119,188 +987,6 @@
         </div>
     </div>
 
-    <!-- Modal Novo/Editar Bloco -->
-    <div id="block-modal" class="modal">
-        <div class="modal-content" style="max-width: 900px;">
-            <div class="modal-header">
-                <h2 id="block-modal-title">Editar Bloco</h2>
-                <button class="modal-close" onclick="closeBlockModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="block-id">
-                <input type="hidden" id="block-material-id">
-                <div class="form-group">
-                    <label class="form-label">Título do Bloco</label>
-                    <input type="text" id="block-title" class="form-input" placeholder="Ex: Tabela de Taxas">
-                </div>
-                <div class="form-group" id="block-type-group">
-                    <label class="form-label">Tipo</label>
-                    <select id="block-type" class="form-input" onchange="updateBlockEditor()">
-                        <option value="texto">Texto</option>
-                        <option value="tabela">Tabela</option>
-                        <option value="script">Script</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Conteúdo</label>
-                    <div id="block-editor-text">
-                        <div class="rich-editor-toolbar">
-                            <button type="button" class="toolbar-btn" onclick="formatText('bold')" title="Negrito">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>
-                            </button>
-                            <button type="button" class="toolbar-btn" onclick="formatText('italic')" title="Itálico">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></svg>
-                            </button>
-                            <span class="toolbar-divider"></span>
-                            <button type="button" class="toolbar-btn" onclick="formatText('heading')" title="Título">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h8"/></svg>
-                            </button>
-                            <button type="button" class="toolbar-btn" onclick="formatText('bullet')" title="Lista com marcadores">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>
-                            </button>
-                            <button type="button" class="toolbar-btn" onclick="formatText('number')" title="Lista numerada">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
-                            </button>
-                            <span class="toolbar-divider"></span>
-                            <button type="button" class="toolbar-btn" onclick="formatText('highlight')" title="Destacar">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
-                            </button>
-                        </div>
-                        <textarea id="block-content" class="form-input rich-textarea" rows="12" placeholder="Digite o conteúdo aqui..."></textarea>
-                        <div class="editor-help">
-                            <span>Dica: Use **texto** para negrito, *texto* para itálico, # para títulos</span>
-                        </div>
-                    </div>
-                    <div id="block-editor-table" style="display: none;">
-                        <div class="table-editor">
-                            <div class="table-editor-controls">
-                                <button class="btn btn-secondary btn-small" onclick="addTableColumn()">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                                    Coluna
-                                </button>
-                                <button class="btn btn-secondary btn-small" onclick="addTableRow()">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                                    Linha
-                                </button>
-                                <button class="btn btn-secondary btn-small" onclick="removeTableColumn()" style="color: #dc2626;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
-                                    Coluna
-                                </button>
-                                <button class="btn btn-secondary btn-small" onclick="removeTableRow()" style="color: #dc2626;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
-                                    Linha
-                                </button>
-                            </div>
-                            <div class="table-editor-container">
-                                <table class="table-editor-grid" id="table-editor-grid">
-                                    <thead>
-                                        <tr id="table-header-row"></tr>
-                                    </thead>
-                                    <tbody id="table-body"></tbody>
-                                </table>
-                            </div>
-                            <div class="editor-help">
-                                <span>Clique em uma célula para editar. Use Tab para navegar entre células.</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Motivo da alteração</label>
-                    <input type="text" id="block-change-reason" class="form-input" placeholder="Ex: Atualização de taxas para Janeiro">
-                </div>
-                
-                <div id="block-versions-section" class="form-group" style="display: none;">
-                    <label class="form-label">Histórico de Versões</label>
-                    <div id="block-versions-list" class="versions-list"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="btn-show-versions" onclick="toggleVersionHistory()" style="margin-right: auto;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    Histórico
-                </button>
-                <button class="btn btn-secondary" onclick="closeBlockModal()">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveBlock()">Salvar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Upload PDF -->
-    <div id="upload-modal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
-            <div class="modal-header">
-                <h2>Processar PDF</h2>
-                <button class="modal-close" onclick="closeUploadModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="upload-material-id">
-                
-                <div class="upload-preview" id="upload-preview">
-                    <div class="upload-dropzone" id="upload-dropzone" onclick="selectPdfFile()">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                        <p>Clique para selecionar um PDF</p>
-                        <span>ou arraste e solte aqui</span>
-                    </div>
-                </div>
-                
-                <div class="file-info" id="file-info" style="display: none;">
-                    <div class="file-info-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                        <div class="file-details">
-                            <strong id="file-name">documento.pdf</strong>
-                            <span id="file-size">0 KB</span>
-                        </div>
-                        <button class="btn-icon" onclick="clearUploadFile()" title="Remover">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="upload-options" id="upload-options" style="display: none;">
-                    <h4 style="margin-bottom: 12px;">Opções de Processamento</h4>
-                    <div class="option-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="opt-extract-tables" checked>
-                            <span>Extrair tabelas automaticamente</span>
-                        </label>
-                    </div>
-                    <div class="option-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="opt-extract-charts" checked>
-                            <span>Identificar gráficos e infográficos</span>
-                        </label>
-                    </div>
-                    <div class="option-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="opt-auto-approve" checked>
-                            <span>Auto-aprovar textos de alta confiança</span>
-                        </label>
-                    </div>
-                    <div class="info-box">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                        <span>O processamento usa IA para extrair conteúdo. Tabelas com dados financeiros e gráficos serão enviados para revisão manual.</span>
-                    </div>
-                </div>
-
-                <div class="upload-progress" id="upload-progress" style="display: none;">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progress-fill"></div>
-                    </div>
-                    <span id="progress-text">Enviando...</span>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeUploadModal()">Cancelar</button>
-                <button class="btn btn-primary" id="btn-process-pdf" onclick="processPdfFile()" disabled>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
-                    Processar PDF
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Novo/Editar Script -->
     <div id="script-modal" class="modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
@@ -1311,7 +997,7 @@
                 <input type="hidden" id="script-id">
                 <div class="form-group">
                     <label class="form-label">Título *</label>
-                    <input type="text" id="script-title" class="form-input" placeholder="Ex: Venda em 1 minuto">
+                    <input type="text" id="script-title" class="form-input" placeholder="Ex: Pitch de venda rápido">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Tipo de Uso</label>
@@ -1333,12 +1019,87 @@
         </div>
     </div>
 
+    <div id="upload-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Upload de PDF</h2>
+                <button class="modal-close" onclick="closeUploadModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="upload-material-id">
+                
+                <div id="upload-dropzone-container">
+                    <div class="upload-dropzone" id="upload-dropzone" onclick="selectPdfFile()">
+                        <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                        <p>Clique para selecionar um PDF</p>
+                        <span>ou arraste e solte aqui</span>
+                    </div>
+                </div>
+                
+                <div class="file-info" id="file-info" style="display: none;">
+                    <div class="file-info-header">
+                        <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <div class="file-details">
+                            <strong id="file-name">documento.pdf</strong>
+                            <span id="file-size">0 KB</span>
+                        </div>
+                        <button class="btn-icon btn-icon-delete" onclick="clearUploadFile()" title="Remover">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="upload-progress" id="upload-progress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <span class="progress-text" id="progress-text">Enviando...</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeUploadModal()">Cancelar</button>
+                <button class="btn btn-primary" id="btn-upload-pdf" onclick="uploadPdfFile()" disabled>
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Enviar PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let products = [];
+        let categories = [];
         let currentProduct = null;
-        let tableData = { headers: ['Coluna 1', 'Coluna 2'], rows: [['', '']] };
+        let uploadFile = null;
+        let uploadInput = null;
+
+        function showToast(message, type) {
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) existingToast.remove();
+
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(function() {
+                toast.remove();
+            }, 3000);
+        }
 
         async function loadProducts() {
+            document.getElementById('products-loading').style.display = 'block';
+            document.getElementById('products-container').style.display = 'none';
+            document.getElementById('products-empty').style.display = 'none';
+
             try {
                 const response = await fetch('/api/products');
                 const data = await response.json();
@@ -1347,7 +1108,9 @@
                 loadCategories();
             } catch (error) {
                 console.error('Erro ao carregar produtos:', error);
-                showNotification('Erro ao carregar produtos', 'error');
+                showToast('Erro ao carregar produtos', 'error');
+            } finally {
+                document.getElementById('products-loading').style.display = 'none';
             }
         }
 
@@ -1355,10 +1118,14 @@
             try {
                 const response = await fetch('/api/products/categories');
                 const data = await response.json();
+                categories = data.categories || [];
                 const select = document.getElementById('filter-category');
                 select.innerHTML = '<option value="">Todas categorias</option>';
-                (data.categories || []).forEach(cat => {
-                    select.innerHTML += `<option value="${cat}">${cat}</option>`;
+                categories.forEach(function(cat) {
+                    const option = document.createElement('option');
+                    option.value = cat;
+                    option.textContent = cat;
+                    select.appendChild(option);
                 });
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
@@ -1367,20 +1134,22 @@
 
         function renderProducts() {
             const container = document.getElementById('products-container');
-            const emptyState = document.getElementById('empty-state');
+            const emptyState = document.getElementById('products-empty');
             
             const search = document.getElementById('search-input').value.toLowerCase();
             const category = document.getElementById('filter-category').value;
             const status = document.getElementById('filter-status').value;
 
-            let filtered = products.filter(p => {
-                if (search && !p.name.toLowerCase().includes(search) && 
-                    !(p.ticker && p.ticker.toLowerCase().includes(search)) &&
-                    !(p.manager && p.manager.toLowerCase().includes(search))) {
+            let filtered = products.filter(function(p) {
+                if (search && !p.name.toLowerCase().includes(search) && !(p.ticker && p.ticker.toLowerCase().includes(search))) {
                     return false;
                 }
-                if (category && p.category !== category) return false;
-                if (status && p.status !== status) return false;
+                if (category && p.category !== category) {
+                    return false;
+                }
+                if (status && p.status !== status) {
+                    return false;
+                }
                 return true;
             });
 
@@ -1393,29 +1162,26 @@
             container.style.display = 'grid';
             emptyState.style.display = 'none';
 
-            container.innerHTML = filtered.map(p => `
-                <div class="product-card" onclick="openProduct(${p.id})">
-                    <div class="product-header">
-                        <h3 class="product-title">${p.name}</h3>
-                        ${p.ticker ? `<span class="product-ticker">${p.ticker}</span>` : ''}
-                    </div>
-                    <div class="product-manager">${p.manager || 'Sem gestora definida'}</div>
-                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-                        ${p.category ? `<span class="category-badge">${p.category}</span>` : ''}
-                        <span class="status-badge status-${p.status}">${p.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
-                    </div>
-                    <div class="product-stats">
-                        <div class="stat-item">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
-                            ${p.materials_count} materiais
-                        </div>
-                        <div class="stat-item">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                            ${p.scripts_count} scripts
-                        </div>
-                    </div>
-                </div>
-            `).join('');
+            container.innerHTML = filtered.map(function(p) {
+                return '<div class="product-card" onclick="openProduct(' + p.id + ')">' +
+                    '<div class="product-header">' +
+                        '<h3 class="product-title">' + escapeHtml(p.name) + '</h3>' +
+                        (p.ticker ? '<span class="product-ticker">' + escapeHtml(p.ticker) + '</span>' : '') +
+                    '</div>' +
+                    '<p class="product-manager">' + (p.manager ? escapeHtml(p.manager) : 'Sem gestora') + '</p>' +
+                    '<div class="product-stats">' +
+                        '<span class="stat-item">' +
+                            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>' +
+                            (p.materials_count || 0) + ' materiais' +
+                        '</span>' +
+                        '<span class="stat-item">' +
+                            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>' +
+                            (p.scripts_count || 0) + ' scripts' +
+                        '</span>' +
+                        '<span class="status-badge status-' + (p.status || 'ativo') + '">' + (p.status === 'inativo' ? 'Inativo' : 'Ativo') + '</span>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
         }
 
         function filterProducts() {
@@ -1424,48 +1190,62 @@
 
         async function openProduct(productId) {
             try {
-                const response = await fetch(`/api/products/${productId}`);
+                const response = await fetch('/api/products/' + productId);
+                if (!response.ok) throw new Error('Produto não encontrado');
+                
                 currentProduct = await response.json();
                 
-                document.getElementById('products-list-view').style.display = 'none';
-                document.getElementById('product-detail-view').style.display = 'block';
-                
+                document.getElementById('breadcrumb-product-name').textContent = currentProduct.name;
                 document.getElementById('detail-product-name').textContent = currentProduct.name;
                 document.getElementById('detail-product-ticker').textContent = currentProduct.ticker || '';
                 document.getElementById('detail-product-ticker').style.display = currentProduct.ticker ? 'inline-block' : 'none';
                 document.getElementById('detail-product-manager').textContent = currentProduct.manager || '';
                 
-                const statusEl = document.getElementById('detail-product-status');
-                statusEl.textContent = currentProduct.status === 'ativo' ? 'Ativo' : 'Inativo';
-                statusEl.className = `status-badge status-${currentProduct.status}`;
-                
+                const statusBadge = document.getElementById('detail-product-status');
+                statusBadge.textContent = currentProduct.status === 'inativo' ? 'Inativo' : 'Ativo';
+                statusBadge.className = 'status-badge status-' + (currentProduct.status || 'ativo');
+
                 renderMaterials();
                 renderScripts();
+                renderHistory();
+
+                document.getElementById('products-list-view').style.display = 'none';
+                document.getElementById('product-detail-view').style.display = 'block';
+                
+                switchTab('materials');
             } catch (error) {
                 console.error('Erro ao carregar produto:', error);
-                showNotification('Erro ao carregar produto', 'error');
+                showToast('Erro ao carregar produto', 'error');
             }
         }
 
         function showProductsList() {
-            document.getElementById('products-list-view').style.display = 'block';
-            document.getElementById('product-detail-view').style.display = 'none';
             currentProduct = null;
+            document.getElementById('product-detail-view').style.display = 'none';
+            document.getElementById('products-list-view').style.display = 'block';
             loadProducts();
         }
 
         function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
-            document.getElementById(`tab-${tabName}`).classList.add('active');
+            document.querySelectorAll('.tab').forEach(function(tab) {
+                tab.classList.remove('active');
+                if (tab.dataset.tab === tabName) {
+                    tab.classList.add('active');
+                }
+            });
+
+            document.querySelectorAll('.tab-content').forEach(function(content) {
+                content.classList.remove('active');
+            });
+            document.getElementById('tab-' + tabName).classList.add('active');
         }
 
         function renderMaterials() {
             const container = document.getElementById('materials-container');
             const emptyState = document.getElementById('materials-empty');
-            
-            if (!currentProduct.materials || currentProduct.materials.length === 0) {
+            const materials = currentProduct.materials || [];
+
+            if (materials.length === 0) {
                 container.style.display = 'none';
                 emptyState.style.display = 'block';
                 return;
@@ -1474,190 +1254,66 @@
             container.style.display = 'flex';
             emptyState.style.display = 'none';
 
-            const typeLabels = {
-                'one_page': 'One-Page',
-                'apresentacao': 'Apresentação',
-                'argumentos_comerciais': 'Argumentos Comerciais',
-                'atualizacao_taxas': 'Atualização de Taxas',
-                'faq': 'FAQ',
-                'regulatorio': 'Regulatório',
-                'outro': 'Outro'
-            };
+            container.innerHTML = materials.map(function(m) {
+                const typeLabels = {
+                    'one_page': 'One-Page',
+                    'apresentacao': 'Apresentação',
+                    'argumentos_comerciais': 'Argumentos',
+                    'atualizacao_taxas': 'Taxas',
+                    'faq': 'FAQ',
+                    'regulatorio': 'Regulatório',
+                    'outro': 'Outro'
+                };
+                const typeLabel = typeLabels[m.material_type] || m.material_type;
+                const statusClass = m.is_indexed ? 'publicado' : 'rascunho';
+                const statusLabel = m.is_indexed ? 'Publicado' : 'Rascunho';
 
-            container.innerHTML = currentProduct.materials.map(m => `
-                <div class="material-card">
-                    <div class="material-header">
-                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                            <span class="material-type-badge">${typeLabels[m.material_type] || m.material_type}</span>
-                            <strong style="margin-left: 6px;">${m.name || 'Sem nome'}</strong>
-                            <span style="color: var(--text-secondary); font-size: 0.85rem;">v${m.current_version}</span>
-                            ${getPublishBadge(m.publish_status)}
-                            ${getExpiryBadge(m.valid_until)}
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            ${m.publish_status !== 'publicado' ? `
-                                <button class="btn btn-primary btn-small" onclick="publishMaterial(${m.id})" title="Publicar">
-                                    Publicar
-                                </button>
-                            ` : ''}
-                            <button class="btn btn-secondary btn-small" onclick="uploadPdfToMaterial(${m.id})" title="Enviar PDF">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                                PDF
-                            </button>
-                            <button class="btn btn-secondary btn-small" onclick="openNewBlockModal(${m.id})">+ Bloco</button>
-                            <button class="btn-icon btn-icon-delete" onclick="deleteMaterial(${m.id})" title="Excluir">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="blocks-container">
-                        ${m.blocks.map(b => renderBlock(b, m.id)).join('')}
-                        ${m.blocks.length === 0 ? `
-                            <div class="upload-block-area" onclick="uploadPdfToMaterial(${m.id})">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                                <p style="margin: 12px 0 0 0; color: var(--text-secondary);">Clique para enviar um PDF ou adicione blocos manualmente</p>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function renderBlock(block, materialId) {
-            const typeClass = `block-type-${block.block_type}`;
-            let content = block.content || '';
-            
-            if (block.block_type === 'tabela' && content.startsWith('[')) {
-                try {
-                    const tableData = JSON.parse(content);
-                    content = renderTablePreview(tableData);
-                } catch (e) {
-                    content = `<div class="block-content">${content}</div>`;
+                let blocksHtml = '';
+                if (m.blocks && m.blocks.length > 0) {
+                    blocksHtml = '<div class="blocks-container">' +
+                        m.blocks.map(function(b) {
+                            const content = b.content.length > 200 ? b.content.substring(0, 200) + '...' : b.content;
+                            return '<div class="content-block">' +
+                                '<div class="block-header">' +
+                                    '<span class="block-type block-type-' + b.block_type + '">' + (b.title || b.block_type) + '</span>' +
+                                '</div>' +
+                                '<div class="block-content">' + escapeHtml(content) + '</div>' +
+                            '</div>';
+                        }).join('') +
+                    '</div>';
                 }
-            } else {
-                content = `<div class="block-content">${content.substring(0, 300)}${content.length > 300 ? '...' : ''}</div>`;
-            }
 
-            const statusBadge = getStatusBadge(block.status);
-
-            return `
-                <div class="content-block ${block.status === 'pending_review' ? 'pending-review' : ''}">`
-                    <div class="block-header">
-                        <div>
-                            <span class="block-type ${typeClass}">${block.block_type.toUpperCase()}</span>
-                            ${block.title ? `<span style="margin-left: 8px; font-weight: 500;">${block.title}</span>` : ''}
-                            ${statusBadge}
-                            ${block.is_high_risk ? '<span class="high-risk-badge" style="margin-left: 8px;">Alto Risco</span>' : ''}
-                        </div>
-                        <div class="block-actions">
-                            ${block.status === 'pending_review' ? `
-                                <button class="btn-icon btn-icon-approve" onclick="approveBlock(${block.id}, ${materialId})" title="Aprovar">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                                </button>
-                            ` : ''}
-                            <button class="btn-icon btn-icon-edit" onclick="editBlock(${block.id}, ${materialId})" title="Editar">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                            </button>
-                            <button class="btn-icon btn-icon-delete" onclick="deleteBlock(${block.id}, ${materialId})" title="Excluir">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                    ${content}
-                </div>
-            `;
-        }
-
-        function getStatusBadge(status) {
-            const badges = {
-                'approved': '<span class="status-approved" style="margin-left: 8px;">Aprovado</span>',
-                'auto_approved': '<span class="status-auto-approved" style="margin-left: 8px;">Auto-aprovado</span>',
-                'pending_review': '<span class="status-pending" style="margin-left: 8px;">Pendente</span>',
-                'rejected': '<span class="status-rejected" style="margin-left: 8px;">Rejeitado</span>'
-            };
-            return badges[status] || '';
-        }
-
-        function getPublishBadge(status) {
-            if (!status) status = 'rascunho';
-            const labels = {
-                'rascunho': 'Rascunho',
-                'publicado': 'Publicado',
-                'arquivado': 'Arquivado'
-            };
-            return `<span class="publish-badge ${status}">${labels[status] || status}</span>`;
-        }
-
-        function getExpiryBadge(validUntil) {
-            if (!validUntil) return '';
-            
-            const expiry = new Date(validUntil);
-            const now = new Date();
-            const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-            
-            if (diffDays < 0) {
-                return '<span class="expiry-badge expired">Expirado</span>';
-            } else if (diffDays <= 7) {
-                return `<span class="expiry-badge expiring">Expira em ${diffDays} dia${diffDays !== 1 ? 's' : ''}</span>`;
-            }
-            return '';
-        }
-
-        async function publishMaterial(materialId) {
-            if (!confirm('Publicar este material? Isso o tornará visível para a IA.')) return;
-            
-            try {
-                const response = await fetch(`/api/products/materials/${materialId}/publish`, {
-                    method: 'POST'
-                });
-                
-                if (response.ok) {
-                    showNotification('Material publicado e indexado!', 'success');
-                    openProduct(currentProduct.id);
-                } else {
-                    const result = await response.json();
-                    showNotification(result.detail || 'Erro ao publicar', 'error');
-                }
-            } catch (error) {
-                showNotification('Erro ao publicar material', 'error');
-            }
-        }
-
-        async function approveBlock(blockId, materialId) {
-            try {
-                const response = await fetch(`/api/products/blocks/${blockId}/approve`, {
-                    method: 'POST'
-                });
-                
-                if (response.ok) {
-                    showNotification('Bloco aprovado!', 'success');
-                    openProduct(currentProduct.id);
-                } else {
-                    const result = await response.json();
-                    showNotification(result.detail || 'Erro ao aprovar', 'error');
-                }
-            } catch (error) {
-                showNotification('Erro ao aprovar bloco', 'error');
-            }
-        }
-
-        function renderTablePreview(data) {
-            if (!data || !data.headers) return '<p>Tabela vazia</p>';
-            let html = '<div class="block-content-table"><table>';
-            html += '<thead><tr>' + data.headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
-            html += '<tbody>';
-            (data.rows || []).forEach(row => {
-                html += '<tr>' + row.map(c => `<td>${c}</td>`).join('') + '</tr>';
-            });
-            html += '</tbody></table></div>';
-            return html;
+                return '<div class="material-card">' +
+                    '<div class="material-header">' +
+                        '<div class="material-info">' +
+                            '<span class="material-type-badge">' + typeLabel + '</span>' +
+                            '<span class="material-name">' + escapeHtml(m.name || 'Material sem nome') + '</span>' +
+                            '<span class="material-version">v' + (m.current_version || 1) + '</span>' +
+                            '<span class="publish-badge ' + statusClass + '">' + statusLabel + '</span>' +
+                        '</div>' +
+                        '<div class="block-actions">' +
+                            '<button class="btn-icon btn-icon-edit" onclick="uploadPdfToMaterial(' + m.id + ')" title="Upload PDF">' +
+                                '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>' +
+                            '</button>' +
+                            (m.is_indexed ? '' : '<button class="btn-icon btn-icon-publish" onclick="publishMaterial(' + m.id + ')" title="Publicar">' +
+                                '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' +
+                            '</button>') +
+                            '<button class="btn-icon btn-icon-delete" onclick="deleteMaterial(' + m.id + ')" title="Excluir">' +
+                                '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>' +
+                            '</button>' +
+                        '</div>' +
+                    '</div>' +
+                    blocksHtml +
+                '</div>';
+            }).join('');
         }
 
         function renderScripts() {
             const container = document.getElementById('scripts-container');
             const emptyState = document.getElementById('scripts-empty');
-            
-            if (!currentProduct.scripts || currentProduct.scripts.length === 0) {
+            const scripts = currentProduct.scripts || [];
+
+            if (scripts.length === 0) {
                 container.style.display = 'none';
                 emptyState.style.display = 'block';
                 return;
@@ -1666,42 +1322,58 @@
             container.style.display = 'flex';
             emptyState.style.display = 'none';
 
-            const usageLabels = {
-                'whatsapp': 'WhatsApp',
-                'reuniao': 'Reunião',
-                'email': 'E-mail'
-            };
-
-            container.innerHTML = currentProduct.scripts.map(s => `
-                <div class="script-card">
-                    <div class="script-header">
-                        <span class="script-title">${s.title}</span>
-                        <span class="category-badge">${usageLabels[s.usage_type] || s.usage_type}</span>
-                    </div>
-                    <div class="script-content">${s.content}</div>
-                    <div style="display: flex; gap: 8px;">
-                        <button class="btn-copy" onclick="copyScript('${s.content.replace(/'/g, "\\'")}')">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                            Copiar
-                        </button>
-                        <button class="btn-icon btn-icon-edit" onclick="editScript(${s.id})" title="Editar">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                        </button>
-                        <button class="btn-icon btn-icon-delete" onclick="deleteScript(${s.id})" title="Excluir">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+            container.innerHTML = scripts.map(function(s) {
+                return '<div class="script-card">' +
+                    '<div class="script-header">' +
+                        '<span class="script-title">' +
+                            escapeHtml(s.title) +
+                            '<span class="script-version">v' + (s.current_version || 1) + '</span>' +
+                        '</span>' +
+                        '<div class="block-actions">' +
+                            '<button class="btn-icon btn-icon-edit" onclick="editScript(' + s.id + ')" title="Editar">' +
+                                '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>' +
+                            '</button>' +
+                            '<button class="btn-icon btn-icon-delete" onclick="deleteScript(' + s.id + ')" title="Excluir">' +
+                                '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>' +
+                            '</button>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="script-content">' + escapeHtml(s.content) + '</div>' +
+                    '<div class="script-actions">' +
+                        '<button class="btn-copy" id="copy-btn-' + s.id + '" onclick="copyScript(' + s.id + ', \'' + escapeHtml(s.content).replace(/'/g, "\\'").replace(/\n/g, '\\n') + '\')">' +
+                            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>' +
+                            'Copiar' +
+                        '</button>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
         }
 
-        function copyScript(content) {
-            navigator.clipboard.writeText(content).then(() => {
-                showNotification('Script copiado!', 'success');
+        function renderHistory() {
+            const container = document.getElementById('history-container');
+            const emptyState = document.getElementById('history-empty');
+            
+            container.style.display = 'none';
+            emptyState.style.display = 'block';
+        }
+
+        function copyScript(scriptId, content) {
+            navigator.clipboard.writeText(content).then(function() {
+                const btn = document.getElementById('copy-btn-' + scriptId);
+                btn.classList.add('copied');
+                btn.innerHTML = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Copiado!';
+                
+                setTimeout(function() {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg> Copiar';
+                }, 2000);
+                
+                showToast('Script copiado!', 'success');
+            }).catch(function() {
+                showToast('Erro ao copiar', 'error');
             });
         }
 
-        // Modal functions
         function openNewProductModal() {
             document.getElementById('product-modal-title').textContent = 'Novo Produto';
             document.getElementById('product-id').value = '';
@@ -1714,9 +1386,11 @@
         }
 
         function openEditProductModal() {
+            if (!currentProduct) return;
+            
             document.getElementById('product-modal-title').textContent = 'Editar Produto';
             document.getElementById('product-id').value = currentProduct.id;
-            document.getElementById('product-name').value = currentProduct.name;
+            document.getElementById('product-name').value = currentProduct.name || '';
             document.getElementById('product-ticker').value = currentProduct.ticker || '';
             document.getElementById('product-manager').value = currentProduct.manager || '';
             document.getElementById('product-category').value = currentProduct.category || '';
@@ -1730,45 +1404,76 @@
 
         async function saveProduct() {
             const id = document.getElementById('product-id').value;
-            const data = {
-                name: document.getElementById('product-name').value,
-                ticker: document.getElementById('product-ticker').value || null,
-                manager: document.getElementById('product-manager').value || null,
-                category: document.getElementById('product-category').value || null,
-                description: document.getElementById('product-description').value || null
-            };
-
-            if (!data.name) {
-                showNotification('Nome do produto é obrigatório', 'error');
+            const name = document.getElementById('product-name').value.trim();
+            
+            if (!name) {
+                showToast('Nome do produto é obrigatório', 'error');
                 return;
             }
 
+            const data = {
+                name: name,
+                ticker: document.getElementById('product-ticker').value.trim() || null,
+                manager: document.getElementById('product-manager').value.trim() || null,
+                category: document.getElementById('product-category').value.trim() || null,
+                description: document.getElementById('product-description').value.trim() || null
+            };
+
             try {
-                const url = id ? `/api/products/${id}` : '/api/products';
+                const url = id ? '/api/products/' + id : '/api/products';
                 const method = id ? 'PUT' : 'POST';
                 
                 const response = await fetch(url, {
-                    method,
+                    method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
 
-                if (!response.ok) throw new Error('Erro ao salvar');
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar');
+                }
 
-                showNotification(id ? 'Produto atualizado!' : 'Produto criado!', 'success');
+                const result = await response.json();
+                showToast(id ? 'Produto atualizado!' : 'Produto criado!', 'success');
                 closeProductModal();
                 
                 if (id) {
-                    openProduct(parseInt(id));
+                    openProduct(id);
                 } else {
                     loadProducts();
+                    if (result.product_id) {
+                        openProduct(result.product_id);
+                    }
                 }
             } catch (error) {
-                showNotification('Erro ao salvar produto', 'error');
+                console.error('Erro ao salvar produto:', error);
+                showToast(error.message || 'Erro ao salvar produto', 'error');
+            }
+        }
+
+        async function deleteProduct() {
+            if (!currentProduct) return;
+            if (!confirm('Tem certeza que deseja excluir este produto e todos seus materiais?')) return;
+
+            try {
+                const response = await fetch('/api/products/' + currentProduct.id, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) throw new Error('Erro ao excluir');
+
+                showToast('Produto excluído!', 'success');
+                showProductsList();
+            } catch (error) {
+                console.error('Erro ao excluir produto:', error);
+                showToast('Erro ao excluir produto', 'error');
             }
         }
 
         function openNewMaterialModal() {
+            document.getElementById('material-modal-title').textContent = 'Novo Material';
+            document.getElementById('material-id').value = '';
             document.getElementById('material-type').value = 'one_page';
             document.getElementById('material-name').value = '';
             document.getElementById('material-description').value = '';
@@ -1780,327 +1485,68 @@
         }
 
         async function saveMaterial() {
+            if (!currentProduct) return;
+
+            const materialType = document.getElementById('material-type').value;
             const data = {
-                material_type: document.getElementById('material-type').value,
-                name: document.getElementById('material-name').value || null,
-                description: document.getElementById('material-description').value || null
+                material_type: materialType,
+                name: document.getElementById('material-name').value.trim() || null,
+                description: document.getElementById('material-description').value.trim() || null
             };
 
             try {
-                const response = await fetch(`/api/products/${currentProduct.id}/materials`, {
+                const response = await fetch('/api/products/' + currentProduct.id + '/materials', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
 
-                if (!response.ok) throw new Error('Erro ao salvar');
+                if (!response.ok) throw new Error('Erro ao criar material');
 
-                showNotification('Material criado!', 'success');
+                showToast('Material criado!', 'success');
                 closeMaterialModal();
                 openProduct(currentProduct.id);
             } catch (error) {
-                showNotification('Erro ao criar material', 'error');
+                console.error('Erro ao criar material:', error);
+                showToast('Erro ao criar material', 'error');
             }
         }
 
         async function deleteMaterial(materialId) {
-            if (!confirm('Tem certeza que deseja excluir este material e todos seus blocos?')) return;
-            
+            if (!currentProduct) return;
+            if (!confirm('Tem certeza que deseja excluir este material?')) return;
+
             try {
-                const response = await fetch(`/api/products/${currentProduct.id}/materials/${materialId}`, {
+                const response = await fetch('/api/products/' + currentProduct.id + '/materials/' + materialId, {
                     method: 'DELETE'
                 });
 
                 if (!response.ok) throw new Error('Erro ao excluir');
 
-                showNotification('Material excluído!', 'success');
+                showToast('Material excluído!', 'success');
                 openProduct(currentProduct.id);
             } catch (error) {
-                showNotification('Erro ao excluir material', 'error');
+                console.error('Erro ao excluir material:', error);
+                showToast('Erro ao excluir material', 'error');
             }
         }
 
-        function openNewBlockModal(materialId) {
-            document.getElementById('block-modal-title').textContent = 'Novo Bloco';
-            document.getElementById('block-id').value = '';
-            document.getElementById('block-material-id').value = materialId;
-            document.getElementById('block-title').value = '';
-            document.getElementById('block-type').value = 'texto';
-            document.getElementById('block-content').value = '';
-            document.getElementById('block-change-reason').value = '';
-            document.getElementById('block-type-group').style.display = 'block';
-            tableData = { headers: ['Coluna 1', 'Coluna 2'], rows: [['', '']] };
-            updateBlockEditor();
-            document.getElementById('block-modal').classList.add('active');
-        }
+        async function publishMaterial(materialId) {
+            if (!currentProduct) return;
 
-        function editBlock(blockId, materialId) {
-            const material = currentProduct.materials.find(m => m.id === materialId);
-            const block = material.blocks.find(b => b.id === blockId);
-            
-            document.getElementById('block-modal-title').textContent = 'Editar Bloco';
-            document.getElementById('block-id').value = blockId;
-            document.getElementById('block-material-id').value = materialId;
-            document.getElementById('block-title').value = block.title || '';
-            document.getElementById('block-type').value = block.block_type;
-            document.getElementById('block-change-reason').value = '';
-            document.getElementById('block-type-group').style.display = 'none';
-            
-            if (block.block_type === 'tabela') {
-                try {
-                    tableData = JSON.parse(block.content);
-                } catch (e) {
-                    tableData = { headers: ['Coluna 1'], rows: [[block.content]] };
-                }
-            } else {
-                document.getElementById('block-content').value = block.content;
-            }
-            
-            updateBlockEditor();
-            document.getElementById('block-modal').classList.add('active');
-        }
-
-        function closeBlockModal() {
-            document.getElementById('block-modal').classList.remove('active');
-            document.getElementById('block-versions-section').style.display = 'none';
-        }
-
-        async function toggleVersionHistory() {
-            const section = document.getElementById('block-versions-section');
-            const blockId = document.getElementById('block-id').value;
-            const materialId = document.getElementById('block-material-id').value;
-            
-            if (section.style.display === 'block') {
-                section.style.display = 'none';
-                return;
-            }
-            
-            if (!blockId) {
-                showNotification('Salve o bloco primeiro para ver o histórico', 'info');
-                return;
-            }
-            
-            const material = currentProduct.materials.find(m => m.id == materialId);
-            const block = material?.blocks.find(b => b.id == blockId);
-            
-            if (!block || !block.versions || block.versions.length === 0) {
-                document.getElementById('block-versions-list').innerHTML = '<p style="color: var(--text-secondary); padding: 12px;">Nenhuma versão anterior disponível.</p>';
-                section.style.display = 'block';
-                return;
-            }
-            
-            const list = document.getElementById('block-versions-list');
-            list.innerHTML = block.versions.map(v => `
-                <div class="version-item">
-                    <div class="version-info">
-                        <span class="version-number">Versão ${v.version}</span>
-                        <span class="version-date">${formatDate(v.created_at)}</span>
-                        ${v.change_reason ? `<div class="version-reason">${v.change_reason}</div>` : ''}
-                    </div>
-                    ${v.version < block.current_version ? `
-                        <button class="btn btn-secondary btn-small" onclick="restoreVersion(${blockId}, ${materialId}, ${v.version})">
-                            Restaurar
-                        </button>
-                    ` : '<span style="color: var(--text-secondary); font-size: 0.85rem;">Atual</span>'}
-                </div>
-            `).join('');
-            
-            section.style.display = 'block';
-        }
-
-        function formatDate(dateStr) {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleString('pt-BR', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
-
-        async function restoreVersion(blockId, materialId, version) {
-            if (!confirm(`Restaurar para a versão ${version}? Uma nova versão será criada com o conteúdo antigo.`)) return;
-            
             try {
-                const response = await fetch(`/api/products/${currentProduct.id}/materials/${materialId}/blocks/${blockId}/restore/${version}`, {
+                const response = await fetch('/api/products/' + currentProduct.id + '/materials/' + materialId + '/reindex', {
                     method: 'POST'
                 });
-                
-                if (response.ok) {
-                    showNotification('Versão restaurada com sucesso!', 'success');
-                    closeBlockModal();
-                    openProduct(currentProduct.id);
-                } else {
-                    const result = await response.json();
-                    showNotification(result.detail || 'Erro ao restaurar versão', 'error');
-                }
-            } catch (error) {
-                showNotification('Erro ao restaurar versão', 'error');
-            }
-        }
 
-        function updateBlockEditor() {
-            const type = document.getElementById('block-type').value;
-            document.getElementById('block-editor-text').style.display = type !== 'tabela' ? 'block' : 'none';
-            document.getElementById('block-editor-table').style.display = type === 'tabela' ? 'block' : 'none';
-            
-            if (type === 'tabela') {
-                renderTableEditor();
-            }
-        }
+                if (!response.ok) throw new Error('Erro ao publicar');
 
-        function renderTableEditor() {
-            const headerRow = document.getElementById('table-header-row');
-            const tbody = document.getElementById('table-body');
-            
-            headerRow.innerHTML = tableData.headers.map((h, i) => 
-                `<th><input type="text" value="${h}" onchange="tableData.headers[${i}] = this.value"></th>`
-            ).join('');
-            
-            tbody.innerHTML = tableData.rows.map((row, ri) => 
-                '<tr>' + row.map((c, ci) => 
-                    `<td><input type="text" value="${c}" onchange="tableData.rows[${ri}][${ci}] = this.value"></td>`
-                ).join('') + '</tr>'
-            ).join('');
-        }
-
-        function addTableColumn() {
-            tableData.headers.push(`Coluna ${tableData.headers.length + 1}`);
-            tableData.rows.forEach(row => row.push(''));
-            renderTableEditor();
-        }
-
-        function addTableRow() {
-            tableData.rows.push(tableData.headers.map(() => ''));
-            renderTableEditor();
-        }
-
-        function removeTableColumn() {
-            if (tableData.headers.length <= 1) {
-                showNotification('Tabela deve ter pelo menos uma coluna', 'warning');
-                return;
-            }
-            tableData.headers.pop();
-            tableData.rows.forEach(row => row.pop());
-            renderTableEditor();
-        }
-
-        function removeTableRow() {
-            if (tableData.rows.length <= 1) {
-                showNotification('Tabela deve ter pelo menos uma linha', 'warning');
-                return;
-            }
-            tableData.rows.pop();
-            renderTableEditor();
-        }
-
-        function formatText(format) {
-            const textarea = document.getElementById('block-content');
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const text = textarea.value;
-            const selectedText = text.substring(start, end);
-            
-            let replacement = '';
-            let cursorOffset = 0;
-            
-            switch (format) {
-                case 'bold':
-                    replacement = `**${selectedText || 'texto'}**`;
-                    cursorOffset = selectedText ? 0 : -2;
-                    break;
-                case 'italic':
-                    replacement = `*${selectedText || 'texto'}*`;
-                    cursorOffset = selectedText ? 0 : -1;
-                    break;
-                case 'heading':
-                    const lineStart = text.lastIndexOf('\n', start - 1) + 1;
-                    const beforeLine = text.substring(0, lineStart);
-                    const lineEnd = text.indexOf('\n', start);
-                    const afterLine = lineEnd === -1 ? '' : text.substring(lineEnd);
-                    const currentLine = text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd);
-                    
-                    if (currentLine.startsWith('# ')) {
-                        textarea.value = beforeLine + currentLine.substring(2) + afterLine;
-                    } else {
-                        textarea.value = beforeLine + '# ' + currentLine + afterLine;
-                    }
-                    return;
-                case 'bullet':
-                    replacement = selectedText ? `\n• ${selectedText}` : '\n• ';
-                    break;
-                case 'number':
-                    replacement = selectedText ? `\n1. ${selectedText}` : '\n1. ';
-                    break;
-                case 'highlight':
-                    replacement = `==${selectedText || 'destaque'}==`;
-                    cursorOffset = selectedText ? 0 : -2;
-                    break;
-            }
-            
-            textarea.value = text.substring(0, start) + replacement + text.substring(end);
-            textarea.focus();
-            const newPos = start + replacement.length + cursorOffset;
-            textarea.setSelectionRange(newPos, newPos);
-        }
-
-        async function saveBlock() {
-            const id = document.getElementById('block-id').value;
-            const materialId = document.getElementById('block-material-id').value;
-            const type = document.getElementById('block-type').value;
-            
-            const content = type === 'tabela' ? JSON.stringify(tableData) : document.getElementById('block-content').value;
-            
-            const data = {
-                block_type: type,
-                title: document.getElementById('block-title').value || null,
-                content: content,
-                change_reason: document.getElementById('block-change-reason').value || null
-            };
-
-            if (!content) {
-                showNotification('Conteúdo é obrigatório', 'error');
-                return;
-            }
-
-            try {
-                const url = id 
-                    ? `/api/products/${currentProduct.id}/materials/${materialId}/blocks/${id}`
-                    : `/api/products/${currentProduct.id}/materials/${materialId}/blocks`;
-                const method = id ? 'PUT' : 'POST';
-                
-                const response = await fetch(url, {
-                    method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (!response.ok) throw new Error('Erro ao salvar');
-
-                showNotification(id ? 'Bloco atualizado!' : 'Bloco criado!', 'success');
-                closeBlockModal();
+                const result = await response.json();
+                showToast('Material publicado! ' + (result.indexed_count || 0) + ' blocos indexados', 'success');
                 openProduct(currentProduct.id);
             } catch (error) {
-                showNotification('Erro ao salvar bloco', 'error');
-            }
-        }
-
-        async function deleteBlock(blockId, materialId) {
-            if (!confirm('Tem certeza que deseja excluir este bloco?')) return;
-            
-            try {
-                const response = await fetch(`/api/products/${currentProduct.id}/materials/${materialId}/blocks/${blockId}`, {
-                    method: 'DELETE'
-                });
-
-                if (!response.ok) throw new Error('Erro ao excluir');
-
-                showNotification('Bloco excluído!', 'success');
-                openProduct(currentProduct.id);
-            } catch (error) {
-                showNotification('Erro ao excluir bloco', 'error');
+                console.error('Erro ao publicar material:', error);
+                showToast('Erro ao publicar material', 'error');
             }
         }
 
@@ -2114,12 +1560,13 @@
         }
 
         function editScript(scriptId) {
-            const script = currentProduct.scripts.find(s => s.id === scriptId);
-            
+            const script = currentProduct.scripts.find(function(s) { return s.id === scriptId; });
+            if (!script) return;
+
             document.getElementById('script-modal-title').textContent = 'Editar Script';
             document.getElementById('script-id').value = scriptId;
             document.getElementById('script-title').value = script.title;
-            document.getElementById('script-usage').value = script.usage_type;
+            document.getElementById('script-usage').value = script.usage_type || 'whatsapp';
             document.getElementById('script-content').value = script.content;
             document.getElementById('script-modal').classList.add('active');
         }
@@ -2129,50 +1576,71 @@
         }
 
         async function saveScript() {
-            const id = document.getElementById('script-id').value;
-            const data = {
-                title: document.getElementById('script-title').value,
-                usage_type: document.getElementById('script-usage').value,
-                content: document.getElementById('script-content').value
-            };
+            if (!currentProduct) return;
 
-            if (!data.title || !data.content) {
-                showNotification('Título e conteúdo são obrigatórios', 'error');
+            const id = document.getElementById('script-id').value;
+            const title = document.getElementById('script-title').value.trim();
+            const content = document.getElementById('script-content').value.trim();
+
+            if (!title || !content) {
+                showToast('Título e conteúdo são obrigatórios', 'error');
                 return;
             }
 
+            const data = {
+                title: title,
+                usage_type: document.getElementById('script-usage').value,
+                content: content
+            };
+
             try {
                 const url = id 
-                    ? `/api/products/${currentProduct.id}/scripts/${id}`
-                    : `/api/products/${currentProduct.id}/scripts`;
+                    ? '/api/products/' + currentProduct.id + '/scripts/' + id
+                    : '/api/products/' + currentProduct.id + '/scripts';
                 const method = id ? 'PUT' : 'POST';
-                
+
                 const response = await fetch(url, {
-                    method,
+                    method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
 
                 if (!response.ok) throw new Error('Erro ao salvar');
 
-                showNotification(id ? 'Script atualizado!' : 'Script criado!', 'success');
+                showToast(id ? 'Script atualizado!' : 'Script criado!', 'success');
                 closeScriptModal();
                 openProduct(currentProduct.id);
             } catch (error) {
-                showNotification('Erro ao salvar script', 'error');
+                console.error('Erro ao salvar script:', error);
+                showToast('Erro ao salvar script', 'error');
             }
         }
 
-        let uploadFile = null;
-        let uploadInput = null;
+        async function deleteScript(scriptId) {
+            if (!currentProduct) return;
+            if (!confirm('Tem certeza que deseja excluir este script?')) return;
+
+            try {
+                const response = await fetch('/api/products/' + currentProduct.id + '/scripts/' + scriptId, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) throw new Error('Erro ao excluir');
+
+                showToast('Script excluído!', 'success');
+                openProduct(currentProduct.id);
+            } catch (error) {
+                console.error('Erro ao excluir script:', error);
+                showToast('Erro ao excluir script', 'error');
+            }
+        }
 
         function uploadPdfToMaterial(materialId) {
             document.getElementById('upload-material-id').value = materialId;
-            document.getElementById('upload-preview').style.display = 'block';
+            document.getElementById('upload-dropzone-container').style.display = 'block';
             document.getElementById('file-info').style.display = 'none';
-            document.getElementById('upload-options').style.display = 'none';
             document.getElementById('upload-progress').style.display = 'none';
-            document.getElementById('btn-process-pdf').disabled = true;
+            document.getElementById('btn-upload-pdf').disabled = true;
             uploadFile = null;
             document.getElementById('upload-modal').classList.add('active');
         }
@@ -2184,26 +1652,26 @@
                 uploadInput.accept = '.pdf';
                 uploadInput.onchange = handleFileSelect;
             }
+            uploadInput.value = '';
             uploadInput.click();
         }
 
         function handleFileSelect(e) {
             const file = e.target.files[0];
             if (!file) return;
-            
+
             if (!file.name.toLowerCase().endsWith('.pdf')) {
-                showNotification('Apenas arquivos PDF são suportados', 'error');
+                showToast('Apenas arquivos PDF são suportados', 'error');
                 return;
             }
-            
+
             uploadFile = file;
             document.getElementById('file-name').textContent = file.name;
             document.getElementById('file-size').textContent = formatFileSize(file.size);
-            
-            document.getElementById('upload-preview').style.display = 'none';
+
+            document.getElementById('upload-dropzone-container').style.display = 'none';
             document.getElementById('file-info').style.display = 'block';
-            document.getElementById('upload-options').style.display = 'block';
-            document.getElementById('btn-process-pdf').disabled = false;
+            document.getElementById('btn-upload-pdf').disabled = false;
         }
 
         function formatFileSize(bytes) {
@@ -2214,10 +1682,9 @@
 
         function clearUploadFile() {
             uploadFile = null;
-            document.getElementById('upload-preview').style.display = 'block';
+            document.getElementById('upload-dropzone-container').style.display = 'block';
             document.getElementById('file-info').style.display = 'none';
-            document.getElementById('upload-options').style.display = 'none';
-            document.getElementById('btn-process-pdf').disabled = true;
+            document.getElementById('btn-upload-pdf').disabled = true;
         }
 
         function closeUploadModal() {
@@ -2225,85 +1692,58 @@
             uploadFile = null;
         }
 
-        async function processPdfFile() {
-            if (!uploadFile) return;
-            
+        async function uploadPdfFile() {
+            if (!uploadFile || !currentProduct) return;
+
             const materialId = document.getElementById('upload-material-id').value;
-            
+
             document.getElementById('upload-progress').style.display = 'block';
-            document.getElementById('btn-process-pdf').disabled = true;
+            document.getElementById('btn-upload-pdf').disabled = true;
             document.getElementById('progress-fill').style.width = '10%';
             document.getElementById('progress-text').textContent = 'Enviando arquivo...';
-            
+
             const formData = new FormData();
             formData.append('file', uploadFile);
-            
+
             try {
                 document.getElementById('progress-fill').style.width = '30%';
                 document.getElementById('progress-text').textContent = 'Processando...';
-                
-                const response = await fetch(`/api/products/${currentProduct.id}/materials/${materialId}/upload`, {
+
+                const response = await fetch('/api/products/' + currentProduct.id + '/materials/' + materialId + '/upload', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     document.getElementById('progress-fill').style.width = '100%';
                     document.getElementById('progress-text').textContent = 'Concluído!';
-                    
-                    showNotification('PDF enviado! Os blocos serão criados em alguns instantes.', 'success');
-                    
-                    setTimeout(() => {
+
+                    showToast('PDF enviado com sucesso!', 'success');
+
+                    setTimeout(function() {
                         closeUploadModal();
                         openProduct(currentProduct.id);
-                    }, 1500);
+                    }, 1000);
                 } else {
-                    showNotification(result.detail || 'Erro ao enviar PDF', 'error');
-                    document.getElementById('btn-process-pdf').disabled = false;
+                    showToast(result.detail || 'Erro ao enviar PDF', 'error');
+                    document.getElementById('btn-upload-pdf').disabled = false;
                     document.getElementById('upload-progress').style.display = 'none';
                 }
             } catch (error) {
-                showNotification('Erro ao enviar PDF', 'error');
-                document.getElementById('btn-process-pdf').disabled = false;
+                console.error('Erro ao enviar PDF:', error);
+                showToast('Erro ao enviar PDF', 'error');
+                document.getElementById('btn-upload-pdf').disabled = false;
                 document.getElementById('upload-progress').style.display = 'none';
             }
         }
 
-        async function reindexMaterial(materialId) {
-            try {
-                const response = await fetch(`/api/products/${currentProduct.id}/materials/${materialId}/reindex`, {
-                    method: 'POST'
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok) {
-                    showNotification(`Reindexado: ${result.indexed_count} blocos`, 'success');
-                } else {
-                    showNotification(result.detail || 'Erro ao reindexar', 'error');
-                }
-            } catch (error) {
-                showNotification('Erro ao reindexar material', 'error');
-            }
-        }
-
-        async function deleteScript(scriptId) {
-            if (!confirm('Tem certeza que deseja excluir este script?')) return;
-            
-            try {
-                const response = await fetch(`/api/products/${currentProduct.id}/scripts/${scriptId}`, {
-                    method: 'DELETE'
-                });
-
-                if (!response.ok) throw new Error('Erro ao excluir');
-
-                showNotification('Script excluído!', 'success');
-                openProduct(currentProduct.id);
-            } catch (error) {
-                showNotification('Erro ao excluir script', 'error');
-            }
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function toggleSidebar() {
@@ -2316,29 +1756,40 @@
             window.location.href = '/login';
         }
 
-        async function loadRagMetrics() {
-            try {
-                const response = await fetch('/api/analytics/rag-metrics');
-                if (!response.ok) return;
+        const dropzone = document.getElementById('upload-dropzone');
+        if (dropzone) {
+            dropzone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+
+            dropzone.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+            });
+
+            dropzone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
                 
-                const data = await response.json();
-                
-                document.getElementById('metric-total-queries').textContent = data.retrieval?.total_queries || 0;
-                document.getElementById('metric-human-transfers').textContent = data.retrieval?.human_transfers || 0;
-                document.getElementById('metric-transfer-rate').textContent = (data.retrieval?.transfer_rate || 0) + '%';
-                document.getElementById('metric-avg-time').textContent = Math.round(data.retrieval?.avg_response_time_ms || 0);
-                document.getElementById('metric-docs-ingested').textContent = data.ingestion?.total_documents || 0;
-                document.getElementById('metric-blocks-created').textContent = data.ingestion?.total_blocks_created || 0;
-                document.getElementById('metric-tables-detected').textContent = data.ingestion?.tables_detected || 0;
-                document.getElementById('metric-charts-detected').textContent = data.ingestion?.charts_detected || 0;
-            } catch (error) {
-                console.error('Erro ao carregar métricas RAG:', error);
-            }
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    const file = files[0];
+                    if (file.name.toLowerCase().endsWith('.pdf')) {
+                        uploadFile = file;
+                        document.getElementById('file-name').textContent = file.name;
+                        document.getElementById('file-size').textContent = formatFileSize(file.size);
+                        document.getElementById('upload-dropzone-container').style.display = 'none';
+                        document.getElementById('file-info').style.display = 'block';
+                        document.getElementById('btn-upload-pdf').disabled = false;
+                    } else {
+                        showToast('Apenas arquivos PDF são suportados', 'error');
+                    }
+                }
+            });
         }
 
         loadProducts();
-        loadRagMetrics();
     </script>
-    </div>
 </body>
 </html>
