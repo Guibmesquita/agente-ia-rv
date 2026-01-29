@@ -350,15 +350,6 @@ def init_default_integrations(db: Session):
             ]
         },
         {
-            "name": "Notion",
-            "type": "notion",
-            "settings": [
-                {"key": "api_key", "description": "Token de integração do Notion", "is_secret": True},
-                {"key": "database_id", "description": "ID do banco de dados do Notion", "is_secret": False},
-                {"key": "parent_page_id", "description": "ID da página pai (opcional)", "is_secret": False},
-            ]
-        },
-        {
             "name": "WhatsApp (Z-API)",
             "type": "zapi",
             "settings": [

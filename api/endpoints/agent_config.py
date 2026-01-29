@@ -41,7 +41,7 @@ class AgentConfigUpdate(BaseModel):
 
 def require_admin_or_gestao(current_user: User = Depends(get_current_user)):
     """Verifica se o usuário é admin ou gestao_rv."""
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.GESTAO_RV.value]:
+    if current_user.role not in [UserRole.ADMIN.value, UserRole.GESTOR.value]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso restrito a administradores e gestão RV"

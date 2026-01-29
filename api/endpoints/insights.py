@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/insights", tags=["Insights"])
 
 def require_gestao_or_admin(current_user: User = Depends(get_current_user)):
     """Verifica se o usuário é admin ou gestao_rv."""
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.GESTAO_RV.value]:
+    if current_user.role not in [UserRole.ADMIN.value, UserRole.GESTOR.value]:
         raise HTTPException(
             status_code=403,
             detail="Acesso restrito a administradores e gestão RV"

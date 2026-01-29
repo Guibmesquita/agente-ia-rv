@@ -116,11 +116,6 @@ def get_env_var_mapping():
             "max_tokens": {"env": "OPENAI_MAX_TOKENS", "required": False, "default": "2000"},
             "temperature": {"env": "OPENAI_TEMPERATURE", "required": False, "default": "0.7"},
         },
-        "notion": {
-            "api_key": {"env": "NOTION_API_KEY", "required": True, "is_secret": True},
-            "database_id": {"env": "NOTION_DATABASE_ID", "required": False},
-            "parent_page_id": {"env": "NOTION_PARENT_PAGE_ID", "required": False},
-        },
         "zapi": {
             "instance_id": {"env": "ZAPI_INSTANCE_ID", "required": True, "is_secret": False},
             "token": {"env": "ZAPI_TOKEN", "required": True, "is_secret": True},
@@ -371,26 +366,6 @@ async def check_integration_status(
             else:
                 message = "OPENAI_API_KEY não configurada. Configure em Secrets."
         
-        elif integration.type == "notion":
-            api_key = os.getenv("NOTION_API_KEY")
-            if api_key:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        "https://api.notion.com/v1/users/me",
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "Notion-Version": "2022-06-28"
-                        },
-                        timeout=10.0
-                    )
-                    if response.status_code == 200:
-                        is_connected = True
-                        message = "Conexão estabelecida com sucesso!"
-                    else:
-                        message = f"Erro na API: {response.status_code}"
-            else:
-                message = "NOTION_API_KEY não configurada. Configure em Secrets."
-        
         elif integration.type == "zapi":
             instance_id = os.getenv("ZAPI_INSTANCE_ID")
             token = os.getenv("ZAPI_TOKEN")
@@ -461,7 +436,7 @@ class SecretInput(BaseModel):
     value: str
 
 
-ALLOWED_SECRET_KEYS = {"OPENAI_API_KEY", "NOTION_API_KEY", "ZAPI_INSTANCE_ID", "ZAPI_TOKEN", "ZAPI_CLIENT_TOKEN", "NOTION_ROOT_PAGE_ID"}
+ALLOWED_SECRET_KEYS = {"OPENAI_API_KEY", "ZAPI_INSTANCE_ID", "ZAPI_TOKEN", "ZAPI_CLIENT_TOKEN"}
 
 
 @router.post("/save-secrets")
