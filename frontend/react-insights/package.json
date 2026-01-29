@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@amcharts/amcharts5": "^5.15.5",
+    "@amcharts/amcharts5-geodata": "^5.1.5",
     "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.23",
     "chart.js": "^4.5.1",

@@ -1,112 +1,230 @@
-import { motion } from 'framer-motion';
-import { unitsData } from '../data/unitsData';
+import { useLayoutEffect, useRef, useEffect } from 'react';
+import * as am5 from '@amcharts/amcharts5';
+import * as am5map from '@amcharts/amcharts5/map';
+import am5themes_Animated from '@amcharts/amcharts5/themes/Animated';
+import am5geodata_brazilLow from '@amcharts/amcharts5-geodata/brazilLow';
+import { unitsData, getUnitName } from '../data/unitsData';
+import InfoTooltip from './InfoTooltip';
+
+const stateToUnits = {
+  'BR-PR': ['CTB', 'DGT CTB', 'DGT CON', 'FOZ', 'LDB'],
+  'BR-SC': ['CCV'],
+  'BR-RS': [],
+  'BR-SP': ['SAO'],
+  'BR-MG': ['MGF', 'DGT MGF'],
+  'BR-MS': ['CGR'],
+  'BR-MT': ['CBA'],
+  'BR-BA': ['SSA'],
+  'BR-SE': ['AJU'],
+};
+
+const unitCoords = {
+  'CTB': { latitude: -25.4284, longitude: -49.2733 },
+  'DGT CTB': { latitude: -25.45, longitude: -49.15 },
+  'DGT CON': { latitude: -24.95, longitude: -51.5 },
+  'FOZ': { latitude: -25.5163, longitude: -54.5854 },
+  'LDB': { latitude: -23.3045, longitude: -51.1696 },
+  'CCV': { latitude: -26.9034, longitude: -49.0792 },
+  'SAO': { latitude: -23.5505, longitude: -46.6333 },
+  'MGF': { latitude: -23.4273, longitude: -51.9375 },
+  'DGT MGF': { latitude: -23.35, longitude: -51.85 },
+  'CGR': { latitude: -20.4697, longitude: -54.6201 },
+  'CBA': { latitude: -15.601, longitude: -56.0974 },
+  'SSA': { latitude: -12.9714, longitude: -38.5014 },
+  'AJU': { latitude: -10.9472, longitude: -37.0731 },
+};
 
 export default function BrazilMap({ unitVolumes, hoveredUnit, onHover }) {
-  const maxVolume = Math.max(...Object.values(unitVolumes || {}), 1);
+  const chartRef = useRef(null);
+  const rootRef = useRef(null);
+  const pointSeriesRef = useRef(null);
 
-  const getPointSize = (volume) => {
-    if (!volume) return 12;
-    const normalized = volume / maxVolume;
-    return 12 + normalized * 20;
-  };
+  useLayoutEffect(() => {
+    const root = am5.Root.new(chartRef.current);
+    rootRef.current = root;
 
-  const getPointColor = (volume, isHovered) => {
-    if (isHovered) return '#772B21';
-    if (!volume) return '#e5dcd7';
-    const normalized = volume / maxVolume;
-    if (normalized > 0.7) return '#10b981';
-    if (normalized > 0.4) return '#f59e0b';
-    return '#6b8e23';
-  };
+    root.setThemes([am5themes_Animated.new(root)]);
+
+    const chart = root.container.children.push(
+      am5map.MapChart.new(root, {
+        panX: 'none',
+        panY: 'none',
+        wheelY: 'none',
+        projection: am5map.geoMercator(),
+        homeGeoPoint: { latitude: -14, longitude: -53 },
+        homeZoomLevel: 1,
+      })
+    );
+
+    const polygonSeries = chart.series.push(
+      am5map.MapPolygonSeries.new(root, {
+        geoJSON: am5geodata_brazilLow,
+        valueField: 'value',
+        calculateAggregates: true,
+      })
+    );
+
+    polygonSeries.mapPolygons.template.setAll({
+      tooltipText: '{name}',
+      interactive: true,
+      fill: am5.color(0xCFE3DA),
+      stroke: am5.color(0xffffff),
+      strokeWidth: 1,
+    });
+
+    polygonSeries.mapPolygons.template.states.create('hover', {
+      fill: am5.color(0xa8c9b8),
+    });
+
+    polygonSeries.set('heatRules', [
+      {
+        target: polygonSeries.mapPolygons.template,
+        dataField: 'value',
+        min: am5.color(0xCFE3DA),
+        max: am5.color(0x772B21),
+        key: 'fill',
+      },
+    ]);
+
+    const stateData = [];
+    Object.entries(stateToUnits).forEach(([stateId, units]) => {
+      const totalVolume = units.reduce((sum, u) => sum + (unitVolumes?.[u] || 0), 0);
+      stateData.push({ id: stateId, value: totalVolume });
+    });
+
+    am5geodata_brazilLow.features.forEach((feature) => {
+      if (!stateData.find((s) => s.id === feature.id)) {
+        stateData.push({ id: feature.id, value: 0 });
+      }
+    });
+
+    polygonSeries.data.setAll(stateData);
+
+    const pointSeries = chart.series.push(
+      am5map.MapPointSeries.new(root, {})
+    );
+    pointSeriesRef.current = pointSeries;
+
+    pointSeries.bullets.push(function (root, series, dataItem) {
+      const volume = dataItem.dataContext.volume || 0;
+      const maxVolume = Math.max(...Object.values(unitVolumes || {}), 1);
+      const normalized = volume / maxVolume;
+      const size = 8 + normalized * 12;
+
+      let color = am5.color(0xe5dcd7);
+      if (volume > 0) {
+        if (normalized > 0.7) color = am5.color(0x10b981);
+        else if (normalized > 0.4) color = am5.color(0xf59e0b);
+        else color = am5.color(0x6b8e23);
+      }
+
+      const container = am5.Container.new(root, {});
+
+      const circle = container.children.push(
+        am5.Circle.new(root, {
+          radius: size,
+          fill: color,
+          stroke: am5.color(0xffffff),
+          strokeWidth: 2,
+          tooltipText: `{sigla}\n{nome}\n{volume} interações`,
+          cursorOverStyle: 'pointer',
+        })
+      );
+
+      circle.events.on('pointerover', function () {
+        onHover(dataItem.dataContext.sigla);
+      });
+
+      circle.events.on('pointerout', function () {
+        onHover(null);
+      });
+
+      const label = container.children.push(
+        am5.Label.new(root, {
+          text: dataItem.dataContext.sigla,
+          fill: am5.color(0x221B19),
+          fontSize: 10,
+          fontWeight: '600',
+          centerX: am5.percent(50),
+          centerY: am5.percent(50),
+          dy: -size - 8,
+        })
+      );
+
+      return am5.Bullet.new(root, {
+        sprite: container,
+      });
+    });
+
+    const pointData = unitsData.map((unit) => ({
+      geometry: {
+        type: 'Point',
+        coordinates: [unitCoords[unit.sigla]?.longitude || 0, unitCoords[unit.sigla]?.latitude || 0],
+      },
+      sigla: unit.sigla,
+      nome: getUnitName(unit.sigla),
+      volume: unitVolumes?.[unit.sigla] || 0,
+    }));
+
+    pointSeries.data.setAll(pointData);
+
+    return () => {
+      root.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!rootRef.current || !pointSeriesRef.current) return;
+
+    const pointData = unitsData.map((unit) => ({
+      geometry: {
+        type: 'Point',
+        coordinates: [unitCoords[unit.sigla]?.longitude || 0, unitCoords[unit.sigla]?.latitude || 0],
+      },
+      sigla: unit.sigla,
+      nome: getUnitName(unit.sigla),
+      volume: unitVolumes?.[unit.sigla] || 0,
+    }));
+
+    pointSeriesRef.current.data.setAll(pointData);
+  }, [unitVolumes]);
+
+  useEffect(() => {
+    if (!pointSeriesRef.current) return;
+
+    pointSeriesRef.current.dataItems.forEach((dataItem) => {
+      const bullet = dataItem.bullets?.[0];
+      if (bullet) {
+        const container = bullet.get('sprite');
+        if (container) {
+          const circle = container.children.getIndex(0);
+          if (circle) {
+            const isHovered = dataItem.dataContext.sigla === hoveredUnit;
+            circle.animate({
+              key: 'scale',
+              to: isHovered ? 1.3 : 1,
+              duration: 200,
+            });
+            if (isHovered) {
+              circle.set('stroke', am5.color(0x772B21));
+              circle.set('strokeWidth', 3);
+            } else {
+              circle.set('stroke', am5.color(0xffffff));
+              circle.set('strokeWidth', 2);
+            }
+          }
+        }
+      }
+    });
+  }, [hoveredUnit]);
 
   return (
-    <svg viewBox="0 0 100 100" className="w-full h-full" style={{ minHeight: '400px' }}>
-      <defs>
-        <linearGradient id="brazilGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#CFE3DA" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="#e5dcd7" stopOpacity="0.5" />
-        </linearGradient>
-      </defs>
-
-      <path
-        d="M25,15 
-           C30,10 50,5 70,10
-           Q85,15 88,25
-           Q92,35 88,50
-           Q85,60 80,70
-           Q75,78 65,82
-           Q55,88 45,85
-           Q38,82 35,75
-           Q32,70 28,65
-           Q22,55 20,45
-           Q18,35 20,25
-           Q22,18 25,15
-           Z"
-        fill="url(#brazilGradient)"
-        stroke="#c4b8b3"
-        strokeWidth="0.5"
-      />
-
-      <path d="M50,65 Q55,60 60,65" stroke="#c4b8b3" strokeWidth="0.3" fill="none" opacity="0.5" />
-      <path d="M45,50 Q50,45 55,50" stroke="#c4b8b3" strokeWidth="0.3" fill="none" opacity="0.5" />
-      <path d="M55,68 Q58,62 65,65" stroke="#c4b8b3" strokeWidth="0.3" fill="none" opacity="0.5" />
-
-      {unitsData.map((unit) => {
-        const volume = unitVolumes?.[unit.sigla] || 0;
-        const size = getPointSize(volume);
-        const isHovered = hoveredUnit === unit.sigla;
-
-        return (
-          <motion.g
-            key={unit.sigla}
-            onMouseEnter={() => onHover(unit.sigla)}
-            onMouseLeave={() => onHover(null)}
-            style={{ cursor: 'pointer' }}
-            animate={{ scale: isHovered ? 1.2 : 1 }}
-            transition={{ duration: 0.2 }}
-          >
-            <motion.circle
-              cx={unit.x}
-              cy={unit.y}
-              r={size / 5}
-              fill={getPointColor(volume, isHovered)}
-              stroke={isHovered ? '#381811' : '#fff'}
-              strokeWidth={isHovered ? 0.8 : 0.4}
-              animate={{
-                r: isHovered ? size / 4 : size / 5,
-              }}
-            />
-            
-            {(isHovered || volume > 0) && (
-              <motion.text
-                x={unit.x}
-                y={unit.y - size / 4 - 2}
-                textAnchor="middle"
-                fill={isHovered ? '#772B21' : '#5a4f4c'}
-                fontSize={isHovered ? 3.5 : 2.5}
-                fontWeight={isHovered ? 'bold' : 'normal'}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-              >
-                {unit.sigla}
-              </motion.text>
-            )}
-            
-            {volume > 0 && (
-              <motion.text
-                x={unit.x}
-                y={unit.y + 1}
-                textAnchor="middle"
-                fill="#fff"
-                fontSize={2.5}
-                fontWeight="bold"
-              >
-                {volume}
-              </motion.text>
-            )}
-          </motion.g>
-        );
-      })}
-    </svg>
+    <div className="bg-white rounded-xl border border-border p-5 shadow-card h-full">
+      <div className="flex items-center mb-4">
+        <h3 className="text-base font-semibold text-foreground">Mapa de Calor das Unidades</h3>
+        <InfoTooltip text="Visualização geográfica das unidades. O tamanho e cor dos pontos indicam o volume de interações. Estados em tons mais escuros têm maior atividade." />
+      </div>
+      <div ref={chartRef} style={{ width: '100%', height: '400px' }} />
+    </div>
   );
 }
