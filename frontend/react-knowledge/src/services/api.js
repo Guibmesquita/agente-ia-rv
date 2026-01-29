@@ -163,7 +163,7 @@ export const scriptsAPI = {
 };
 
 export const knowledgeAPI = {
-  list: () => fetchAPI('/knowledge/documents'),
+  list: () => fetchAPI('/knowledge'),
   
   upload: (file, title, category, description) => {
     const formData = new FormData();
@@ -178,12 +178,12 @@ export const knowledgeAPI = {
   },
 
   reindex: (docId) =>
-    fetchAPI(`/knowledge/documents/${docId}/reindex`, {
+    fetchAPI(`/knowledge/${docId}/reindex`, {
       method: 'POST',
     }),
 
   delete: (docId) =>
-    fetchAPI(`/knowledge/documents/${docId}`, {
+    fetchAPI(`/knowledge/${docId}`, {
       method: 'DELETE',
     }),
 };
