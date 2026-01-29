@@ -115,3 +115,39 @@ A new design system features a minimizable vertical sidebar, light theme, and th
 - `svn-brown` (#8b4513), `svn-orange` (#dc7f37), `svn-green` (#6b8e23)
 
 **Acesso à página de teste:** `/tailwind-test` (apenas admin)
+
+## React POC - Base de Conhecimento UX
+
+**Status:** POC implementada para validação de UX
+
+**Objetivo:** Testar UX moderna tipo SaaS para a Base de Conhecimento, comparando com a tela atual. A pergunta central: "É mais rápido, mais claro e mais natural atualizar um produto aqui do que na tela atual?"
+
+**Stack:**
+- React 18 + Vite (build estático servido pelo FastAPI)
+- Tailwind CSS (mesmos tokens do Design System SVN)
+- Radix UI (Dialog, Select)
+- Framer Motion (microinterações)
+
+**Localização:** `frontend/react-poc/`
+
+**Componentes criados:**
+- `StatusBadge` - Badge com cores e indicador de ponto
+- `Button` - 5 variantes com animações
+- `SearchBar` - Busca com ícone
+- `SkeletonLoader` - Estado de loading
+- `FilterSelect` - Radix UI Select para filtros
+- `ProductCard` - Card com info, tickers, barra de confiança, hover effects
+- `InlineEditField` - Edição inline com estados (idle, editing, saving, success, error)
+- `ProductDrawer` - Painel lateral com Radix Dialog + Framer Motion
+
+**Features:**
+- Grid de cards de produtos (6 FIIs como mock dinâmico)
+- Busca por nome/ticker em tempo real
+- Filtros por categoria, status, ticker
+- Drawer com edição inline de taxa, one-page, script WhatsApp
+- Estados visuais claros (loading, salvando, sucesso, erro)
+- Microinterações (hover, animação de save)
+
+**Acesso:** `/tailwind-test-knowledge` (apenas admin)
+
+**Build:** `cd frontend/react-poc && npm run build`
