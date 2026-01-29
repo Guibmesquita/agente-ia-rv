@@ -41,7 +41,10 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={{ addToast }}>
       {children}
       {createPortal(
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col items-center gap-2">
+        <div 
+          style={{ left: 'calc(240px + (100% - 240px) / 2)' }}
+          className="fixed top-4 -translate-x-1/2 z-[9999] flex flex-col items-center gap-2"
+        >
           <AnimatePresence>
             {toasts.map((toast) => {
               const Icon = icons[toast.type];
