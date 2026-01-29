@@ -44,6 +44,13 @@ A new design system features a minimizable vertical sidebar, light theme, and th
         - Semantic indexing of approved blocks to ChromaDB
         - WhatsApp scripts per product for commercial use
         - Versionamento automático de blocos de conteúdo
+        - **Vigência e Governança:** Campos valid_from/valid_until para controle de validade de produtos e materiais
+        - **Status de Publicação:** Draft/Published/Archived status para materiais, com workflow de publicação que indexa conteúdo automaticamente
+        - **Filtro de Expiração:** VectorStore filtra automaticamente conteúdo expirado e não-publicado
+        - **Badges Visuais:** Indicadores de "Rascunho", "Publicado", "Expirando em X dias", "Expirado"
+        - **Rollback de Versões:** UI para visualizar histórico de versões de blocos e restaurar versões anteriores
+        - **Priorização de Materiais Vivos:** Busca prioriza one-pages e tabelas de taxas sobre conteúdo de PDF
+        - **Alertas de Expiração:** Endpoint /api/products/expiring para consultar materiais expirando
 - **AI Agent Response Framework:** Employs a `ConversationState` machine, message normalization, and flexible contact identification. It integrates AI for classifying user intent (Greeting, Scope, Documental, Out of Scope) and determining human transfer criteria. It also features conversation context accumulation for follow-up questions and AI-driven ticker search with intelligent confirmation flows, ensuring natural language interpretation over fixed regex patterns.
 
 **Feature Specifications:**

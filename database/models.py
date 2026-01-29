@@ -502,6 +502,13 @@ class ProductStatus(str, enum.Enum):
     INACTIVE = "inativo"
 
 
+class MaterialStatus(str, enum.Enum):
+    """Status de publicação do material."""
+    DRAFT = "rascunho"
+    PUBLISHED = "publicado"
+    ARCHIVED = "arquivado"
+
+
 class MaterialType(str, enum.Enum):
     """Tipos de material de produto."""
     ONE_PAGE = "one_page"
@@ -553,6 +560,8 @@ class Product(Base):
     category = Column(String(100), nullable=True, index=True)
     status = Column(String(20), default=ProductStatus.ACTIVE.value)
     description = Column(Text, nullable=True)
+    valid_from = Column(DateTime(timezone=True), nullable=True)  # Data de início da vigência
+    valid_until = Column(DateTime(timezone=True), nullable=True)  # Data de expiração
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -574,6 +583,10 @@ class Material(Base):
     material_type = Column(String(50), default=MaterialType.ONE_PAGE.value)
     name = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
+    publish_status = Column(String(30), default=MaterialStatus.DRAFT.value)  # rascunho/publicado/arquivado
+    valid_from = Column(DateTime(timezone=True), nullable=True)  # Data de início da vigência
+    valid_until = Column(DateTime(timezone=True), nullable=True)  # Data de expiração
+    published_at = Column(DateTime(timezone=True), nullable=True)  # Data da última publicação
     current_version = Column(Integer, default=1)
     is_indexed = Column(Boolean, default=False)
     source_file_path = Column(String(500), nullable=True)
@@ -647,6 +660,8 @@ class WhatsAppScript(Base):
     title = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
     usage_type = Column(String(50), default="whatsapp")  # whatsapp, reuniao, email
+    publish_status = Column(String(30), default=MaterialStatus.DRAFT.value)  # rascunho/publicado
+    published_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     current_version = Column(Integer, default=1)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -655,6 +670,7 @@ class WhatsAppScript(Base):
     
     product = relationship("Product", back_populates="scripts")
     creator = relationship("User", foreign_keys=[created_by])
+    versions = relationship("ScriptVersion", back_populates="script", cascade="all, delete-orphan", order_by="ScriptVersion.version.desc()")
 
 
 class PendingReviewItem(Base):
@@ -677,3 +693,23 @@ class PendingReviewItem(Base):
     
     block = relationship("ContentBlock", foreign_keys=[block_id])
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+
+class ScriptVersion(Base):
+    """
+    Histórico de versões de scripts WhatsApp.
+    Permite rollback e auditoria.
+    """
+    __tablename__ = "script_versions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    script_id = Column(Integer, ForeignKey("whatsapp_scripts.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    change_reason = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    script = relationship("WhatsAppScript", back_populates="versions")
+    author = relationship("User", foreign_keys=[author_id])

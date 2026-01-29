@@ -296,6 +296,10 @@ class ProductIngestor:
             
             chunk_id = f"product_block_{block.id}"
             
+            valid_until_str = ""
+            if material.valid_until:
+                valid_until_str = material.valid_until.isoformat()
+            
             metadata = {
                 "source": f"{product_name} - {material.name or material.material_type}",
                 "title": f"{product_name}: {block.title}",
@@ -305,7 +309,10 @@ class ProductIngestor:
                 "material_id": str(material_id),
                 "block_id": str(block.id),
                 "page": str(block.source_page or 0),
-                "products": product_ticker.upper() if product_ticker else product_name.upper()
+                "products": product_ticker.upper() if product_ticker else product_name.upper(),
+                "material_type": material.material_type,
+                "publish_status": material.publish_status or "rascunho",
+                "valid_until": valid_until_str
             }
             
             try:

@@ -180,6 +180,48 @@ async def list_categories(
     return {"categories": [c[0] for c in categories if c[0]]}
 
 
+@router.get("/expiring")
+async def get_expiring_materials(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna materiais que expiram nos próximos X dias."""
+    from datetime import timedelta
+    
+    now = datetime.now()
+    expiry_threshold = now + timedelta(days=days)
+    
+    expiring = db.query(Material).join(Product).filter(
+        Material.valid_until.isnot(None),
+        Material.valid_until <= expiry_threshold,
+        Material.valid_until > now
+    ).all()
+    
+    expired = db.query(Material).join(Product).filter(
+        Material.valid_until.isnot(None),
+        Material.valid_until <= now
+    ).all()
+    
+    def material_to_dict(m):
+        return {
+            "id": m.id,
+            "name": m.name,
+            "material_type": m.material_type,
+            "product_name": m.product.name if m.product else None,
+            "product_id": m.product_id,
+            "valid_until": m.valid_until.isoformat() if m.valid_until else None,
+            "days_until_expiry": (m.valid_until - now).days if m.valid_until else None
+        }
+    
+    return {
+        "expiring": [material_to_dict(m) for m in expiring],
+        "expired": [material_to_dict(m) for m in expired],
+        "expiring_count": len(expiring),
+        "expired_count": len(expired)
+    }
+
+
 @router.post("")
 async def create_product(
     data: ProductCreate,
@@ -991,6 +1033,46 @@ async def upload_pdf_to_material(
     return {
         "success": True,
         "message": "PDF enviado para processamento. Os blocos serão criados em alguns instantes."
+    }
+
+
+@router.post("/materials/{material_id}/publish")
+async def publish_material(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Publica um material e indexa seus blocos aprovados no vector store."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    
+    product = db.query(Product).filter(Product.id == material.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    from datetime import datetime
+    material.publish_status = "publicado"
+    material.published_at = datetime.now()
+    db.commit()
+    
+    from services.product_ingestor import get_product_ingestor
+    ingestor = get_product_ingestor()
+    
+    result = ingestor.index_approved_blocks(
+        material_id=material_id,
+        product_name=product.name,
+        product_ticker=product.ticker,
+        db=db
+    )
+    
+    return {
+        "success": True,
+        "message": "Material publicado e indexado",
+        "indexed_count": result.get("indexed_count", 0)
     }
 
 

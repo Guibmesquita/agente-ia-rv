@@ -160,12 +160,34 @@ class VectorStore:
         
         documents = []
         if results and results['documents']:
+            from datetime import datetime
+            now = datetime.now().isoformat()
+            
             for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i] if results['metadatas'] else {}
+                
+                valid_until = metadata.get("valid_until", "")
+                if valid_until and valid_until < now:
+                    continue
+                
+                publish_status = metadata.get("publish_status", "publicado")
+                if publish_status in ["rascunho", "arquivado"]:
+                    continue
+                
+                distance = results['distances'][0][i] if results['distances'] else 0
+                
+                material_type = metadata.get("material_type", "")
+                live_types = ["one_page", "atualizacao_taxas", "argumentos_comerciais"]
+                if material_type in live_types:
+                    distance = distance * 0.8
+                
                 documents.append({
                     "content": doc,
-                    "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
-                    "distance": results['distances'][0][i] if results['distances'] else None
+                    "metadata": metadata,
+                    "distance": distance
                 })
+        
+        documents.sort(key=lambda x: x.get("distance", 0))
         
         return documents
     
@@ -191,12 +213,33 @@ class VectorStore:
             
             documents = []
             if results and results['documents']:
+                from datetime import datetime
+                now = datetime.now().isoformat()
+                
                 for i, doc in enumerate(results['documents']):
+                    metadata = results['metadatas'][i] if results['metadatas'] else {}
+                    
+                    valid_until = metadata.get("valid_until", "")
+                    if valid_until and valid_until < now:
+                        continue
+                    
+                    publish_status = metadata.get("publish_status", "publicado")
+                    if publish_status in ["rascunho", "arquivado"]:
+                        continue
+                    
+                    priority = 0
+                    material_type = metadata.get("material_type", "")
+                    live_types = ["one_page", "atualizacao_taxas", "argumentos_comerciais"]
+                    if material_type in live_types:
+                        priority = -1
+                    
                     documents.append({
                         "content": doc,
-                        "metadata": results['metadatas'][i] if results['metadatas'] else {},
-                        "distance": 0
+                        "metadata": metadata,
+                        "distance": priority
                     })
+            
+            documents.sort(key=lambda x: x.get("distance", 0))
             
             return documents
         except Exception as e:
