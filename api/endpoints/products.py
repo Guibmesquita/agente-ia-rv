@@ -152,6 +152,7 @@ async def list_products(
     for p in products:
         materials_count = db.query(Material).filter(Material.product_id == p.id).count()
         scripts_count = db.query(WhatsAppScript).filter(WhatsAppScript.product_id == p.id).count()
+        blocks_count = db.query(ContentBlock).join(Material).filter(Material.product_id == p.id).count()
         
         result.append({
             "id": p.id,
@@ -163,6 +164,7 @@ async def list_products(
             "description": p.description,
             "materials_count": materials_count,
             "scripts_count": scripts_count,
+            "blocks_count": blocks_count,
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "updated_at": p.updated_at.isoformat() if p.updated_at else None
         })

@@ -21,8 +21,8 @@ function getProductStatus(product) {
 
 export function ProductCard({ product, onClick }) {
   const status = getProductStatus(product);
-  const materialsCount = product.materials?.length || 0;
-  const blocksCount = product.materials?.reduce((acc, m) => acc + (m.blocks?.length || 0), 0) || 0;
+  const materialsCount = product.materials_count ?? product.materials?.length ?? 0;
+  const blocksCount = product.blocks_count ?? product.materials?.reduce((acc, m) => acc + (m.blocks?.length || 0), 0) ?? 0;
 
   return (
     <motion.div
