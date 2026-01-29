@@ -1,202 +1,226 @@
 import { useState, useMemo, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { SearchBar } from './components/SearchBar';
-import { FilterSelect } from './components/FilterSelect';
-import { ProductCard } from './components/ProductCard';
-import { ProductDrawer } from './components/ProductDrawer';
-import { ProductCardSkeleton } from './components/SkeletonLoader';
-import { Button } from './components/Button';
 import { mockProducts, categories, statuses, allTickers } from './data/mockProducts';
+
+console.log('React POC loading...', { mockProducts: mockProducts?.length });
+
+function StatusBadge({ status }) {
+  const config = {
+    ativo: { bg: 'bg-green-100', text: 'text-green-700', label: 'Ativo' },
+    expirando: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Expirando' },
+    expirado: { bg: 'bg-red-100', text: 'text-red-700', label: 'Expirado' },
+  }[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Rascunho' };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+      {config.label}
+    </span>
+  );
+}
+
+function ProductCard({ product, onClick }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2, boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}
+      onClick={() => onClick(product)}
+      className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm cursor-pointer"
+    >
+      <div className="flex justify-between items-start mb-2">
+        <h3 className="font-semibold text-gray-900">{product.name}</h3>
+        <StatusBadge status={product.status} />
+      </div>
+      <p className="text-sm text-gray-500 mb-3">{product.category}</p>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {product.tickers.slice(0, 3).map((ticker) => (
+          <span key={ticker} className="px-2 py-0.5 bg-red-50 text-red-800 text-xs font-medium rounded">
+            {ticker}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full ${product.confidence >= 80 ? 'bg-green-500' : product.confidence >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+            style={{ width: `${product.confidence}%` }}
+          />
+        </div>
+        <span className="text-xs text-gray-500">{product.confidence}%</span>
+      </div>
+    </motion.div>
+  );
+}
+
+function Drawer({ product, open, onClose, onUpdate }) {
+  const [rate, setRate] = useState(product?.rate || '');
+  const [onePage, setOnePage] = useState(product?.onePage || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (product) {
+      setRate(product.rate || '');
+      setOnePage(product.onePage || '');
+    }
+  }, [product]);
+
+  if (!open || !product) return null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 800));
+    onUpdate(product.id, { rate, onePage });
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        className="ml-auto relative w-full max-w-lg bg-white h-full shadow-xl flex flex-col"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div>
+            <h2 className="font-semibold text-lg">{product.name}</h2>
+            <p className="text-sm text-gray-500">{product.category}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-medium mb-1">Taxa</label>
+            <input
+              type="text"
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-200 focus:border-red-500"
+              placeholder="Ex: 1.0% a.a."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">One-Page</label>
+            <textarea
+              value={onePage}
+              onChange={(e) => setOnePage(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-200 focus:border-red-500"
+              placeholder="Descrição do produto..."
+            />
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full py-2 bg-red-800 text-white rounded-lg font-medium hover:bg-red-900 disabled:opacity-50"
+          >
+            {saving ? 'Salvando...' : 'Salvar Alterações'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
 function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [tickerFilter, setTickerFilter] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setProducts(mockProducts);
       setLoading(false);
-    }, 1200);
+    }, 800);
     return () => clearTimeout(timer);
   }, []);
 
   const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
-      const matchesSearch = search === '' ||
-        product.name.toLowerCase().includes(search.toLowerCase()) ||
-        product.tickers.some(t => t.toLowerCase().includes(search.toLowerCase()));
-
-      const matchesCategory = categoryFilter === '' ||
-        product.category.toLowerCase().replace(/\s+/g, '-') === categoryFilter;
-
-      const matchesStatus = statusFilter === '' ||
-        product.status === statusFilter;
-
-      const matchesTicker = tickerFilter === '' ||
-        product.tickers.includes(tickerFilter);
-
-      return matchesSearch && matchesCategory && matchesStatus && matchesTicker;
-    });
-  }, [products, search, categoryFilter, statusFilter, tickerFilter]);
-
-  const handleProductClick = (product) => {
-    setSelectedProduct(product);
-    setDrawerOpen(true);
-  };
+    return products.filter((product) =>
+      search === '' ||
+      product.name.toLowerCase().includes(search.toLowerCase()) ||
+      product.tickers.some(t => t.toLowerCase().includes(search.toLowerCase()))
+    );
+  }, [products, search]);
 
   const handleProductUpdate = (productId, updates) => {
     setProducts((prev) =>
-      prev.map((p) =>
-        p.id === productId
-          ? { ...p, ...updates, updatedAt: new Date().toISOString() }
-          : p
-      )
+      prev.map((p) => p.id === productId ? { ...p, ...updates } : p)
     );
     if (selectedProduct?.id === productId) {
       setSelectedProduct((prev) => ({ ...prev, ...updates }));
     }
   };
 
-  const clearFilters = () => {
-    setSearch('');
-    setCategoryFilter('');
-    setStatusFilter('');
-    setTickerFilter('');
-  };
-
-  const hasActiveFilters = search || categoryFilter || statusFilter || tickerFilter;
-
-  const tickerOptions = allTickers.map(t => ({ value: t, label: t }));
-
   return (
-    <div className="min-h-screen bg-background">
-      <header className="bg-card border-b border-border sticky top-0 z-30">
+    <div className="min-h-screen bg-orange-50">
+      <header className="bg-white border-b sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-xl font-bold text-foreground">Base de Conhecimento</h1>
-              <p className="text-sm text-muted">UX Test - React + Tailwind</p>
+              <h1 className="text-xl font-bold text-gray-900">Base de Conhecimento</h1>
+              <p className="text-sm text-gray-500">POC UX - React + Tailwind</p>
             </div>
-            <Button>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+            <button className="px-4 py-2 bg-red-800 text-white rounded-lg font-medium hover:bg-red-900">
               Novo Produto
-            </Button>
+            </button>
           </div>
-
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 max-w-md">
-              <SearchBar
-                value={search}
-                onChange={setSearch}
-                placeholder="Buscar por nome ou ticker..."
-              />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <FilterSelect
-                label="Categoria"
-                value={categoryFilter}
-                onChange={setCategoryFilter}
-                options={categories}
-                placeholder="Todas"
-              />
-              <FilterSelect
-                label="Status"
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={statuses}
-                placeholder="Todos"
-              />
-              <FilterSelect
-                label="Ticker"
-                value={tickerFilter}
-                onChange={setTickerFilter}
-                options={tickerOptions}
-                placeholder="Todos"
-              />
-              {hasActiveFilters && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex items-end"
-                >
-                  <Button variant="ghost" size="sm" onClick={clearFilters}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Limpar filtros
-                  </Button>
-                </motion.div>
-              )}
-            </div>
-          </div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome ou ticker..."
+            className="w-full max-w-md px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-200 focus:border-red-500"
+          />
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-sm text-muted">
-            {loading ? (
-              'Carregando produtos...'
-            ) : (
-              <>
-                <span className="font-medium text-foreground">{filteredProducts.length}</span>
-                {' '}produto{filteredProducts.length !== 1 ? 's' : ''} encontrado{filteredProducts.length !== 1 ? 's' : ''}
-              </>
-            )}
-          </p>
-        </div>
+        <p className="text-sm text-gray-500 mb-6">
+          {loading ? 'Carregando...' : `${filteredProducts.length} produtos encontrados`}
+        </p>
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <ProductCardSkeleton key={i} />
+              <div key={i} className="bg-white rounded-xl border p-5 animate-pulse">
+                <div className="h-5 bg-gray-200 rounded w-3/4 mb-3" />
+                <div className="h-4 bg-gray-200 rounded w-1/2 mb-3" />
+                <div className="h-6 bg-gray-200 rounded w-1/3" />
+              </div>
             ))}
           </div>
-        ) : filteredProducts.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center py-16"
-          >
-            <svg className="w-16 h-16 text-border mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="text-lg font-medium text-foreground mb-2">Nenhum produto encontrado</h3>
-            <p className="text-muted mb-4">Tente ajustar os filtros ou a busca</p>
-            <Button variant="secondary" onClick={clearFilters}>Limpar filtros</Button>
-          </motion.div>
         ) : (
-          <motion.div
-            layout
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            <AnimatePresence mode="popLayout">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <AnimatePresence>
               {filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
-                  onClick={handleProductClick}
+                  onClick={setSelectedProduct}
                 />
               ))}
             </AnimatePresence>
-          </motion.div>
+          </div>
         )}
       </main>
 
-      <ProductDrawer
-        product={selectedProduct}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onUpdate={handleProductUpdate}
-      />
+      <AnimatePresence>
+        {selectedProduct && (
+          <Drawer
+            product={selectedProduct}
+            open={!!selectedProduct}
+            onClose={() => setSelectedProduct(null)}
+            onUpdate={handleProductUpdate}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
