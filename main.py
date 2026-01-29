@@ -439,29 +439,6 @@ async def campanhas_page(request: Request):
     return templates.TemplateResponse("campanhas.html", {"request": request, "user_role": user_role})
 
 
-@app.get("/base-conhecimento", response_class=HTMLResponse)
-async def base_conhecimento_page(request: Request):
-    """
-    Página de gerenciamento da Base de Conhecimento.
-    Permite upload e indexação de documentos para a IA.
-    Requer autenticação como admin ou gestao_rv.
-    """
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    user_role = payload.get("role")
-    if user_role not in ["admin", "gestao_rv"]:
-        return RedirectResponse(url="/login?error=permission")
-    
-    return templates.TemplateResponse("base_conhecimento.html", {"request": request, "user_role": user_role})
-
-
 @app.get("/teste-agente", response_class=HTMLResponse)
 async def teste_agente_page(request: Request):
     """
