@@ -940,14 +940,14 @@
             loadConversations();
         }
         function openNewConversationModal() {
-            document.getElementById('newConversationModal').style.display = 'flex';
+            document.getElementById('newConversationModal').classList.add('show');
             document.getElementById('newPhoneInput').value = '';
             document.getElementById('newMessageInput').value = '';
-            document.getElementById('newPhoneInput').focus();
+            setTimeout(() => document.getElementById('newPhoneInput').focus(), 100);
         }
 
         function closeNewConversationModal() {
-            document.getElementById('newConversationModal').style.display = 'none';
+            document.getElementById('newConversationModal').classList.remove('show');
         }
 
         async function startNewConversation() {
@@ -1049,22 +1049,21 @@
         });
     </script>
 
-    <div class="modal" id="newConversationModal" style="display: none;">
-        <div class="modal-overlay" onclick="closeNewConversationModal()"></div>
-        <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-overlay" id="newConversationModal">
+        <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
-                <h2>Nova Conversa</h2>
+                <h3 class="modal-title">Nova Conversa</h3>
                 <button class="modal-close" onclick="closeNewConversationModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="newPhoneInput">Número de Telefone</label>
-                    <input type="text" id="newPhoneInput" class="form-input" placeholder="Ex: 5511999999999" style="width: 100%;">
+                    <label class="form-label" for="newPhoneInput">Número de Telefone</label>
+                    <input type="text" id="newPhoneInput" class="form-input" placeholder="Ex: 5511999999999">
                     <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Formato: código do país + DDD + número (apenas números)</small>
                 </div>
                 <div class="form-group" style="margin-top: 16px;">
-                    <label for="newMessageInput">Mensagem Inicial</label>
-                    <textarea id="newMessageInput" class="form-input" rows="4" placeholder="Digite a mensagem para enviar..." style="width: 100%; resize: vertical;"></textarea>
+                    <label class="form-label" for="newMessageInput">Mensagem Inicial</label>
+                    <textarea id="newMessageInput" class="form-input" rows="4" placeholder="Digite a mensagem para enviar..." style="resize: vertical;"></textarea>
                 </div>
             </div>
             <div class="modal-footer">

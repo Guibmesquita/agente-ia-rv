@@ -911,10 +911,10 @@
         </main>
     </div>
 
-    <div id="product-modal" class="modal">
-        <div class="modal-content">
+    <div class="modal-overlay" id="product-modal">
+        <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
-                <h2 id="product-modal-title">Novo Produto</h2>
+                <h3 class="modal-title" id="product-modal-title">Novo Produto</h3>
                 <button class="modal-close" onclick="closeProductModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -947,10 +947,10 @@
         </div>
     </div>
 
-    <div id="material-modal" class="modal">
-        <div class="modal-content">
+    <div class="modal-overlay" id="material-modal">
+        <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
-                <h2 id="material-modal-title">Novo Material</h2>
+                <h3 class="modal-title" id="material-modal-title">Novo Material</h3>
                 <button class="modal-close" onclick="closeMaterialModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -983,10 +983,10 @@
         </div>
     </div>
 
-    <div id="script-modal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-overlay" id="script-modal">
+        <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
-                <h2 id="script-modal-title">Novo Script</h2>
+                <h3 class="modal-title" id="script-modal-title">Novo Script</h3>
                 <button class="modal-close" onclick="closeScriptModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1015,10 +1015,10 @@
         </div>
     </div>
 
-    <div id="upload-modal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-overlay" id="upload-modal">
+        <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
-                <h2>Upload de PDF</h2>
+                <h3 class="modal-title">Upload de PDF</h3>
                 <button class="modal-close" onclick="closeUploadModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1378,7 +1378,7 @@
             document.getElementById('product-manager').value = '';
             document.getElementById('product-category').value = '';
             document.getElementById('product-description').value = '';
-            document.getElementById('product-modal').classList.add('active');
+            document.getElementById('product-modal').classList.add('show');
         }
 
         function openEditProductModal() {
@@ -1391,11 +1391,11 @@
             document.getElementById('product-manager').value = currentProduct.manager || '';
             document.getElementById('product-category').value = currentProduct.category || '';
             document.getElementById('product-description').value = currentProduct.description || '';
-            document.getElementById('product-modal').classList.add('active');
+            document.getElementById('product-modal').classList.add('show');
         }
 
         function closeProductModal() {
-            document.getElementById('product-modal').classList.remove('active');
+            document.getElementById('product-modal').classList.remove('show');
         }
 
         async function saveProduct() {
@@ -1473,11 +1473,11 @@
             document.getElementById('material-type').value = 'one_page';
             document.getElementById('material-name').value = '';
             document.getElementById('material-description').value = '';
-            document.getElementById('material-modal').classList.add('active');
+            document.getElementById('material-modal').classList.add('show');
         }
 
         function closeMaterialModal() {
-            document.getElementById('material-modal').classList.remove('active');
+            document.getElementById('material-modal').classList.remove('show');
         }
 
         async function saveMaterial() {
@@ -1552,7 +1552,7 @@
             document.getElementById('script-title').value = '';
             document.getElementById('script-usage').value = 'whatsapp';
             document.getElementById('script-content').value = '';
-            document.getElementById('script-modal').classList.add('active');
+            document.getElementById('script-modal').classList.add('show');
         }
 
         function editScript(scriptId) {
@@ -1564,11 +1564,11 @@
             document.getElementById('script-title').value = script.title;
             document.getElementById('script-usage').value = script.usage_type || 'whatsapp';
             document.getElementById('script-content').value = script.content;
-            document.getElementById('script-modal').classList.add('active');
+            document.getElementById('script-modal').classList.add('show');
         }
 
         function closeScriptModal() {
-            document.getElementById('script-modal').classList.remove('active');
+            document.getElementById('script-modal').classList.remove('show');
         }
 
         async function saveScript() {
@@ -1638,7 +1638,7 @@
             document.getElementById('upload-progress').style.display = 'none';
             document.getElementById('btn-upload-pdf').disabled = true;
             uploadFile = null;
-            document.getElementById('upload-modal').classList.add('active');
+            document.getElementById('upload-modal').classList.add('show');
         }
 
         function selectPdfFile() {
@@ -1684,7 +1684,7 @@
         }
 
         function closeUploadModal() {
-            document.getElementById('upload-modal').classList.remove('active');
+            document.getElementById('upload-modal').classList.remove('show');
             uploadFile = null;
         }
 
