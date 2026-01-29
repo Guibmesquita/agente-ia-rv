@@ -23,15 +23,14 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
             className="fixed inset-0 bg-black/40 z-[9998]"
             onClick={onClose}
           />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            style={{ left: 'calc(50vw + 120px)' }}
-            className={`fixed top-1/2 -translate-x-1/2 -translate-y-1/2
-                       ${sizeClasses[size]} bg-white rounded-lg 
-                       shadow-2xl z-[9999] max-h-[90vh] flex flex-col`}
-          >
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center pl-[240px]">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className={`${sizeClasses[size]} w-full mx-4 bg-white rounded-lg 
+                         shadow-2xl max-h-[90vh] flex flex-col`}
+            >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <h2 className="font-semibold text-lg text-gray-900">
                 {title}
@@ -46,7 +45,8 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
             <div className="flex-1 overflow-y-auto p-6">
               {children}
             </div>
-          </motion.div>
+            </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>,
