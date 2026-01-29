@@ -4,12 +4,9 @@ import * as am5map from '@amcharts/amcharts5/map';
 import am5themes_Animated from '@amcharts/amcharts5/themes/Animated';
 import am5geodata_brazilLow from '@amcharts/amcharts5-geodata/brazilLow';
 import { unitsData, getUnitName } from '../data/unitsData';
-import InfoTooltip from './InfoTooltip';
 
 const stateToUnits = {
-  'BR-PR': ['CTB', 'DGT CTB', 'DGT CON', 'FOZ', 'LDB'],
-  'BR-SC': ['CCV'],
-  'BR-RS': [],
+  'BR-PR': ['CTB', 'DGT CTB', 'DGT CON', 'FOZ', 'LDB', 'CCV'],
   'BR-SP': ['SAO'],
   'BR-MG': ['MGF', 'DGT MGF'],
   'BR-MS': ['CGR'],
@@ -20,11 +17,11 @@ const stateToUnits = {
 
 const unitCoords = {
   'CTB': { latitude: -25.4284, longitude: -49.2733 },
-  'DGT CTB': { latitude: -25.45, longitude: -49.15 },
+  'DGT CTB': { latitude: -25.50, longitude: -49.15 },
   'DGT CON': { latitude: -24.95, longitude: -51.5 },
   'FOZ': { latitude: -25.5163, longitude: -54.5854 },
   'LDB': { latitude: -23.3045, longitude: -51.1696 },
-  'CCV': { latitude: -26.9034, longitude: -49.0792 },
+  'CCV': { latitude: -24.9578, longitude: -53.4595 },
   'SAO': { latitude: -23.5505, longitude: -46.6333 },
   'MGF': { latitude: -23.4273, longitude: -51.9375 },
   'DGT MGF': { latitude: -23.35, longitude: -51.85 },
@@ -126,7 +123,7 @@ export default function BrazilMap({ unitVolumes, hoveredUnit, onHover }) {
           fill: color,
           stroke: am5.color(0xffffff),
           strokeWidth: 2,
-          tooltipText: `{sigla}\n{nome}\n{volume} interações`,
+          tooltipText: `{sigla}\n{nome}\n{volume} interacoes`,
           cursorOverStyle: 'pointer',
         })
       );
@@ -139,7 +136,7 @@ export default function BrazilMap({ unitVolumes, hoveredUnit, onHover }) {
         onHover(null);
       });
 
-      const label = container.children.push(
+      container.children.push(
         am5.Label.new(root, {
           text: dataItem.dataContext.sigla,
           fill: am5.color(0x221B19),
@@ -219,12 +216,6 @@ export default function BrazilMap({ unitVolumes, hoveredUnit, onHover }) {
   }, [hoveredUnit]);
 
   return (
-    <div className="bg-white rounded-xl border border-border p-5 shadow-card h-full">
-      <div className="flex items-center mb-4">
-        <h3 className="text-base font-semibold text-foreground">Mapa de Calor das Unidades</h3>
-        <InfoTooltip text="Visualização geográfica das unidades. O tamanho e cor dos pontos indicam o volume de interações. Estados em tons mais escuros têm maior atividade." />
-      </div>
-      <div ref={chartRef} style={{ width: '100%', height: '400px' }} />
-    </div>
+    <div ref={chartRef} style={{ width: '100%', height: '400px' }} />
   );
 }
