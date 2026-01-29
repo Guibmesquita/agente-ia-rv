@@ -265,9 +265,21 @@ async def tailwind_test_knowledge_page(request: Request):
 
 # Monta arquivos estáticos do React POC
 import os
-react_dist_path = os.path.join(os.path.dirname(__file__), "frontend", "react-poc", "dist", "assets")
+react_assets_path = os.path.join(os.path.dirname(__file__), "frontend", "react-poc", "dist", "assets")
+if os.path.exists(react_assets_path):
+    app.mount("/tailwind-test-knowledge/assets", StaticFiles(directory=react_assets_path), name="react-poc-assets")
+
+# Serve vite.svg e outros arquivos na raiz do dist
+react_dist_path = os.path.join(os.path.dirname(__file__), "frontend", "react-poc", "dist")
 if os.path.exists(react_dist_path):
-    app.mount("/tailwind-test-knowledge/assets", StaticFiles(directory=react_dist_path), name="react-poc-assets")
+    @app.get("/tailwind-test-knowledge/{filename:path}")
+    async def serve_react_static(filename: str):
+        import os
+        file_path = os.path.join(react_dist_path, filename)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            from fastapi.responses import FileResponse
+            return FileResponse(file_path)
+        return HTMLResponse(content="Not Found", status_code=404)
 
 
 @app.get("/agent-brain", response_class=HTMLResponse)
