@@ -263,7 +263,7 @@ async def global_search(
             filename=d.filename,
             category=d.category,
             description=d.description,
-            chunk_count=d.chunk_count or 0,
+            chunk_count=d.chunks_count or 0,
             is_indexed=d.is_indexed or False,
             match_field=match_field,
             match_context=match_context

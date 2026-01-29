@@ -23,7 +23,7 @@ export function ReviewQueue() {
     try {
       setLoading(true);
       const data = await reviewAPI.listPending();
-      setItems(data.items || data);
+      setItems(data.pending_items || data.items || data || []);
     } catch (err) {
       addToast('Erro ao carregar itens pendentes', 'error');
     } finally {
