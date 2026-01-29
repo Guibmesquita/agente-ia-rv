@@ -1,0 +1,212 @@
+Perfeito. Então vamos elevar o nível: aqui está uma **Checklist Técnica Unificada para IA Dev (Replit)**, pensada para ser usada como **contrato de qualidade de arquitetura, front, back, dados e IA**, cobrindo tudo que desenhamos até agora.
+
+Isso não é só UX.
+É um **“Definition of Correct System”** para o Stevan.
+
+Você pode colar isso como instrução fixa para o Replit revisar cada PR, feature ou release.
+
+---
+
+# Checklist Técnica Unificada — Stevan (Para IA Dev / Replit)
+
+## A. Arquitetura & Modelo de Domínio
+
+* [ ] Produto é entidade central (hub lógico)
+* [ ] Produto ≠ Documento ≠ Bloco ≠ Versão
+* [ ] Blocos têm tipo explícito (text, table, chart, script)
+* [ ] Versões são imutáveis (append-only)
+* [ ] Apenas uma versão ativa por bloco
+* [ ] Versionamento automático em toda edição
+* [ ] Histórico completo recuperável
+* [ ] Rollback funcional sem reprocessar PDF
+
+🚩 Falha crítica:
+Atualização sobrescrevendo registro existente
+
+---
+
+## B. Pipeline de Ingestão Multimodal
+
+* [ ] Detecção por página (texto, tabela, gráfico)
+* [ ] Roteamento correto por tipo
+* [ ] Tabelas nunca fragmentadas
+* [ ] Gráficos sempre classificados como alto risco
+* [ ] Confidence score persistido por item
+* [ ] Status por item (auto_approved, pending_review, approved)
+* [ ] Itens críticos nunca auto-aprovados
+* [ ] PDFs grandes processados sem timeout
+
+🚩 Falha crítica:
+Tabela quebrada em múltiplos chunks
+
+---
+
+## C. Aprovação Híbrida & Governança
+
+* [ ] Revisão mostra só itens críticos
+* [ ] Preview visual confiável
+* [ ] Editor de tabela tipo planilha
+* [ ] Editor de descrição de gráfico
+* [ ] Regras de risco aplicadas corretamente
+* [ ] Nada crítico entra como approved sem ação humana
+* [ ] Aprovação gera nova versão
+* [ ] Auditoria (quem, quando, o quê)
+
+🚩 Falha crítica:
+Gráfico aprovado sem revisão
+
+---
+
+## D. Indexação Vetorial & Freshness
+
+* [ ] Apenas status=approved é indexado
+* [ ] Reindex automático ao publicar nova versão
+* [ ] Versão antiga removida do índice
+* [ ] Filtros por vigência aplicados no retrieval
+* [ ] Chunk sempre ligado à versão
+* [ ] Nunca retornar conteúdo expirado
+
+🚩 Falha crítica:
+IA usando chunk antigo
+
+---
+
+## E. Retrieval, Re-ranking & RAG
+
+* [ ] Extração de ticker antes do retrieval
+* [ ] Filtros de metadata ativos
+* [ ] Threshold mínimo de similaridade
+* [ ] Re-ranking por tipo de pergunta
+* [ ] Pergunta numérica → priorizar tabelas
+* [ ] Pergunta visual → priorizar gráficos
+* [ ] Pergunta conceitual → priorizar texto
+* [ ] Contexto final limitado (sem poluição)
+
+🚩 Falha crítica:
+Texto respondendo número financeiro
+
+---
+
+## F. Scripts WhatsApp (Conteúdo Vivo)
+
+* [ ] Scripts são blocos independentes
+* [ ] Versionamento ativo
+* [ ] Vínculo com produto
+* [ ] Editor simples
+* [ ] Copiar texto em 1 clique
+* [ ] Apenas versão ativa é usada pela IA
+* [ ] Scripts participam do retrieval
+
+🚩 Falha crítica:
+Script antigo sendo usado
+
+---
+
+## G. UX & Front-end (Arquitetural)
+
+* [ ] Navegação centrada em Produto
+* [ ] Produto → Materiais → Blocos
+* [ ] Atualização sem PDF para dados simples
+* [ ] Versão ativa claramente visível
+* [ ] Badges (pendente, aprovado, expirado)
+* [ ] Feedback de processamento
+* [ ] Nenhum hard refresh necessário
+* [ ] Cache invalidado ao publicar
+
+🚩 Falha crítica:
+Broker não sabe se atualização entrou
+
+---
+
+## H. Expiração, Alertas & Freshness
+
+* [ ] Campo de vigência obrigatório quando aplicável
+* [ ] Badge de expirando/expirado
+* [ ] Filtro por vigência no retrieval
+* [ ] Alertas automáticos
+* [ ] Material expirado nunca retornado
+
+🚩 Falha crítica:
+IA usando material vencido
+
+---
+
+## I. Transferência Humana & Fail-safe
+
+* [ ] Threshold mínimo de confiança
+* [ ] Fallback externo funcional
+* [ ] Escalação automática
+* [ ] Logs estruturados
+* [ ] Motivo da transferência registrado
+
+🚩 Falha crítica:
+IA inventando resposta
+
+---
+
+## J. Observabilidade & Auditoria
+
+* [ ] Log de ingestão por documento
+* [ ] Log de aprovação por item
+* [ ] Log de indexação
+* [ ] Log de retrieval por query
+* [ ] Log de versão usada na resposta
+* [ ] Métrica de human_transfer
+* [ ] Métrica de baixa cobertura
+
+🚩 Falha crítica:
+Não saber qual fonte gerou a resposta
+
+---
+
+## K. Performance & Escala
+
+* [ ] PDFs grandes não bloqueiam UI
+* [ ] Processamento assíncrono
+* [ ] Feedback de progresso
+* [ ] Timeouts tratados
+* [ ] Retry seguro
+* [ ] Indexação incremental
+
+---
+
+## L. Red Flags Arquiteturais (Bloqueantes)
+
+Se existir no código, bloquear merge:
+
+* Atualização destrutiva (overwrite)
+* Chunk sem referência à versão
+* Retrieval sem filtro de status/vigência
+* Front-end editando chunk direto
+* PDFs como única fonte de verdade
+* Reindex manual
+* Hard refresh para ver update
+
+---
+
+## Definition of Done Global
+
+Nenhuma feature é considerada pronta se:
+
+* Quebrar o modelo Produto > Bloco > Versão
+* Permitir dado crítico sem revisão
+* Não atualizar o índice automaticamente
+* Permitir IA usar dado antigo
+* Não gerar trilha de auditoria
+
+---
+
+## Como usar com o Replit
+
+Você pode dizer literalmente:
+
+> “Revise este PR usando a Checklist Técnica Unificada do Stevan.
+> Nenhum item pode estar em falso.”
+
+Isso transforma o Replit em **guardião de arquitetura**, não só codador.
+
+Se quiser, posso agora gerar:
+
+* Prompt fixo para colar no Replit como System Instruction
+* Versão curta (1 página) executiva
+* Versão em Given/When/Then completa

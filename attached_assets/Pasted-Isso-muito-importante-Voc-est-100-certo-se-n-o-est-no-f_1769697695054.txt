@@ -1,0 +1,258 @@
+Isso é **muito importante**. Você está 100% certo:
+se não está no front, **não existe para o negócio**.
+
+Então aqui vai uma **Checklist + Testes de UX e Front-end orientados a evidência visual**, feita para forçar o Replit a **materializar tudo em telas, fluxos e estados visíveis**. Isso impede o clássico problema: “tá no back, confia”.
+
+Essa lista é para você literalmente abrir o app e validar, sem ler código.
+
+---
+
+# QA de UX & Front-end — Evidência Visual Obrigatória (Para Replit)
+
+## Regra de Ouro
+
+> Se não existe uma tela, botão, lista ou estado visual, a feature é considerada NÃO IMPLEMENTADA.
+
+---
+
+## 1. Navegação Principal (Produto como Hub)
+
+### Deve existir visualmente:
+
+* [ ] Menu principal com item **Produtos**
+* [ ] Página de lista de produtos
+* [ ] Botão “Criar produto”
+* [ ] Campo de busca por produto
+* [ ] Indicador de quantidade de materiais por produto
+
+### Teste visual:
+
+Você consegue:
+
+* Ver todos os produtos
+* Criar um produto sem erro
+* Entrar no detalhe de um produto
+
+🚩 Falha:
+Produto só existe no banco, sem tela
+
+---
+
+## 2. Página de Produto (Hub Real)
+
+### Deve existir:
+
+* [ ] Header com nome do produto
+* [ ] Tickers visíveis
+* [ ] Status do produto
+* [ ] Aba ou seções:
+
+  * Materiais
+  * Scripts WhatsApp
+  * Histórico / Versões
+* [ ] Botão “Adicionar material”
+* [ ] Botão “Adicionar script”
+
+### Teste:
+
+Você entra no produto e entende:
+
+* O que é esse produto
+* Que materiais existem
+* Qual é o material ativo
+
+🚩 Falha:
+Página vazia ou genérica
+
+---
+
+## 3. Materiais (CMS de Produto)
+
+### Deve existir:
+
+* [ ] Lista de materiais por tipo
+* [ ] Tipo claramente visível (One-page, Tabela, Apresentação)
+* [ ] Versão ativa destacada
+* [ ] Data da última atualização
+* [ ] Status (Rascunho, Publicado, Expirado)
+
+### Teste:
+
+Você consegue:
+
+* Ver versões
+* Entender qual está ativa
+* Clicar para editar
+
+🚩 Falha:
+Lista de arquivos sem semântica
+
+---
+
+## 4. Edição Rápida (Sem PDF)
+
+### Deve existir:
+
+* [ ] Editor de texto inline
+* [ ] Editor de tabela tipo planilha
+* [ ] Botão “Publicar versão”
+* [ ] Confirmação visual de publicação
+* [ ] Histórico de versões acessível
+
+### Teste:
+
+Você altera um número e:
+
+* Publica
+* Vê versão nova ativa
+* Versão antiga ainda existe
+
+🚩 Falha:
+Precisa subir PDF para mudar número
+
+---
+
+## 5. Scripts WhatsApp (Uso Diário)
+
+### Deve existir:
+
+* [ ] Aba Scripts
+* [ ] Lista de scripts
+* [ ] Editor de script
+* [ ] Botão copiar
+* [ ] Indicação de script ativo
+* [ ] Versionamento
+
+### Teste:
+
+Você consegue:
+
+* Criar script
+* Editar script
+* Copiar em 1 clique
+
+🚩 Falha:
+Scripts escondidos em documentos
+
+---
+
+## 6. Upload & Processamento (Clareza Total)
+
+### Deve existir:
+
+* [ ] Drag & drop
+* [ ] Preview do PDF
+* [ ] Status: Processando
+* [ ] Progresso
+* [ ] Resultado final visível
+* [ ] Indicação de itens para revisão
+
+### Teste:
+
+Você sobe PDF e:
+
+* Vê que está processando
+* Sabe quando terminou
+* Sabe o que precisa revisar
+
+🚩 Falha:
+Tela não muda após upload
+
+---
+
+## 7. Revisão por Exceção (UI Dedicada)
+
+### Deve existir:
+
+* [ ] Tela específica de revisão
+* [ ] Lista só de tabelas/gráficos
+* [ ] Preview visual
+* [ ] Confiança visível
+* [ ] Botões Aprovar / Editar
+* [ ] Botão “Indexar documento”
+
+### Teste:
+
+Você não vê:
+
+* Texto simples
+  Você vê:
+* Só itens críticos
+
+🚩 Falha:
+Tela de revisão genérica
+
+---
+
+## 8. Estados & Feedback (UX Profissional)
+
+### Deve existir:
+
+* [ ] Loading skeletons
+* [ ] Empty states explicativos
+* [ ] Toasts de sucesso
+* [ ] Mensagens de erro humanas
+* [ ] Disable de botões durante processamento
+
+### Teste:
+
+Você sempre sabe:
+
+* O que está acontecendo
+* Se deu certo
+* Se deu errado
+
+🚩 Falha:
+Usuário fica em dúvida
+
+---
+
+## 9. Freshness & Expiração (Visual)
+
+### Deve existir:
+
+* [ ] Badge “Expirando”
+* [ ] Badge “Expirado”
+* [ ] Filtro por status
+* [ ] CTA para atualizar
+
+### Teste:
+
+Material vencido:
+
+* Nunca parece normal
+
+🚩 Falha:
+Tudo parece válido
+
+---
+
+## 10. Confiança Visual (Psicológico)
+
+### Testes subjetivos:
+
+* [ ] Dá para confiar sem perguntar?
+* [ ] Dá para explicar para outro broker?
+* [ ] Parece sistema financeiro sério?
+* [ ] Dá segurança para usar com cliente?
+
+🚩 Falha:
+Broker mantém planilha paralela
+
+---
+
+## 11. Evidência para Back-end
+
+### Regra dura para o Replit:
+
+Para cada feature backend, deve existir:
+
+* Tela
+* Botão
+* Lista
+* Estado visual
+* Feedback
+
+Se não houver:
+➡️ Feature considerada incompleta
+
