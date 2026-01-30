@@ -351,7 +351,11 @@ function App() {
   };
 
   const selectConversation = async (conv) => {
-    setCurrentConversation(conv);
+    const updatedConv = { ...conv, unread_count: 0 };
+    setCurrentConversation(updatedConv);
+    setConversations(prev => prev.map(c => 
+      c.id === conv.id ? { ...c, unread_count: 0 } : c
+    ));
     setMessages([]);
     await fetchMessages(conv.id, true);
   };
@@ -497,6 +501,9 @@ function App() {
             await fetchConversations(0, false);
             if (currentConversation && data.data?.conversation_id === currentConversation.id) {
               await fetchMessages(currentConversation.id, false);
+              setConversations(prev => prev.map(c => 
+                c.id === currentConversation.id ? { ...c, unread_count: 0 } : c
+              ));
             }
           }
         } catch {}
