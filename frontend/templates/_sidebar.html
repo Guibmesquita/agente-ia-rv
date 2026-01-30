@@ -1,0 +1,318 @@
+<!-- 
+  SIDEBAR JINJA - Réplica do Sidebar React
+  Fonte da verdade: docs/sidebar-spec.md
+  Status: TEMPORÁRIO - Migração futura para React único
+-->
+
+<aside id="svn-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-gray-200 flex flex-col z-50 transition-all duration-300" style="width: 260px;">
+  
+  <!-- Logo -->
+  <div class="p-4 flex items-center justify-center border-b border-gray-200">
+    <img src="/static/logo.png" alt="SVN" class="h-10 sidebar-logo-full">
+    <img src="/static/logo.png" alt="SVN" class="h-8 w-8 object-contain sidebar-logo-icon hidden">
+  </div>
+
+  <!-- Toggle Button -->
+  <button id="sidebar-toggle" class="absolute -right-3 top-16 w-6 h-6 bg-white border border-gray-200 rounded-full flex items-center justify-center hover:bg-gray-50 shadow-sm z-10">
+    <svg id="sidebar-toggle-icon" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+    </svg>
+  </button>
+
+  <!-- Navigation -->
+  <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
+    
+    <!-- Section: Operação -->
+    <div class="px-4 mb-2 sidebar-label">
+      <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Operação</span>
+    </div>
+
+    {% if user_role in ['admin', 'gestao_rv'] %}
+    <!-- Insights -->
+    <a href="/insights" class="sidebar-item flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg transition-colors {% if request.path == '/insights' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+      </svg>
+      <span class="text-base font-medium sidebar-text">Insights</span>
+    </a>
+    {% endif %}
+
+    <!-- Conversas -->
+    <a href="/conversas" class="sidebar-item flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg transition-colors {% if request.path == '/conversas' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+      </svg>
+      <span class="text-base font-medium sidebar-text">Conversas</span>
+    </a>
+
+    {% if user_role in ['admin', 'gestao_rv'] %}
+    <!-- Campanhas -->
+    <a href="/campanhas" class="sidebar-item flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg transition-colors {% if request.path == '/campanhas' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path>
+      </svg>
+      <span class="text-base font-medium sidebar-text">Campanhas</span>
+    </a>
+
+    <!-- Testar Agente -->
+    <a href="/teste-agente" class="sidebar-item flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg transition-colors {% if request.path == '/teste-agente' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <span class="text-base font-medium sidebar-text">Testar Agente</span>
+    </a>
+    {% endif %}
+
+    <!-- Divider -->
+    <div class="my-4 mx-4 border-t border-gray-200"></div>
+
+    {% if user_role in ['admin', 'gestao_rv'] %}
+    <!-- Configurações Accordion -->
+    <button id="settings-toggle" class="sidebar-accordion flex items-center justify-between w-full px-4 py-2.5 mx-2 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors" style="width: calc(100% - 1rem);">
+      <div class="flex items-center gap-3">
+        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        </svg>
+        <span class="text-base font-medium sidebar-text">Configurações</span>
+      </div>
+      <svg id="settings-chevron" class="w-4 h-4 transition-transform duration-200 sidebar-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+      </svg>
+    </button>
+
+    <!-- Settings Content -->
+    <div id="settings-content" class="overflow-hidden transition-all duration-200" style="max-height: 0;">
+      <div class="pl-4">
+        
+        <!-- Assessores -->
+        <a href="/assessores" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/assessores' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+          </svg>
+          <span class="text-sm font-medium sidebar-text">Assessores</span>
+        </a>
+
+        {% if user_role == 'admin' %}
+        <!-- Usuários -->
+        <a href="/admin" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/admin' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+          </svg>
+          <span class="text-sm font-medium sidebar-text">Usuários</span>
+        </a>
+        {% endif %}
+
+        <!-- Personalidade IA -->
+        <a href="/agent-brain" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/agent-brain' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+          </svg>
+          <span class="text-sm font-medium sidebar-text">Personalidade IA</span>
+        </a>
+
+        <!-- Conhecimento Sub-accordion -->
+        <button id="knowledge-toggle" class="sidebar-accordion flex items-center justify-between w-full px-4 py-2.5 ml-4 mr-6 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors">
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+            </svg>
+            <span class="text-sm font-medium sidebar-text">Conhecimento</span>
+          </div>
+          <svg id="knowledge-chevron" class="w-4 h-4 transition-transform duration-200 sidebar-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+          </svg>
+        </button>
+
+        <!-- Knowledge Content -->
+        <div id="knowledge-content" class="overflow-hidden transition-all duration-200 pl-4" style="max-height: 0;">
+          
+          <!-- Produtos -->
+          <a href="/base-conhecimento" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/base-conhecimento' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+            </svg>
+            <span class="text-sm font-medium sidebar-text">Produtos</span>
+          </a>
+
+          <!-- Upload Inteligente -->
+          <a href="/upload-inteligente" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/upload-inteligente' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+            <span class="text-sm font-medium sidebar-text">Upload Inteligente</span>
+          </a>
+
+          <!-- Fila de Revisão -->
+          <a href="/fila-revisao" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/fila-revisao' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+            </svg>
+            <span class="text-sm font-medium sidebar-text">Fila de Revisão</span>
+          </a>
+
+          <!-- Documentos -->
+          <a href="/documentos" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/documentos' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <span class="text-sm font-medium sidebar-text">Documentos</span>
+          </a>
+        </div>
+
+        {% if user_role == 'admin' %}
+        <!-- Integrações -->
+        <a href="/integrations" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/integrations' %}bg-amber-50 text-amber-700{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+          </svg>
+          <span class="text-sm font-medium sidebar-text">Integrações</span>
+        </a>
+        {% endif %}
+
+      </div>
+    </div>
+    {% endif %}
+
+  </nav>
+
+  <!-- Footer -->
+  <div class="p-4 border-t border-gray-200">
+    <a href="/logout" class="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+      </svg>
+      <span class="text-base font-medium sidebar-text">Sair</span>
+    </a>
+  </div>
+
+</aside>
+
+<!-- Main Content Wrapper -->
+<div id="main-content-wrapper" class="transition-all duration-300" style="margin-left: 260px;">
+</div>
+
+<script>
+(function() {
+  const sidebar = document.getElementById('svn-sidebar');
+  const toggle = document.getElementById('sidebar-toggle');
+  const toggleIcon = document.getElementById('sidebar-toggle-icon');
+  const settingsToggle = document.getElementById('settings-toggle');
+  const settingsContent = document.getElementById('settings-content');
+  const settingsChevron = document.getElementById('settings-chevron');
+  const knowledgeToggle = document.getElementById('knowledge-toggle');
+  const knowledgeContent = document.getElementById('knowledge-content');
+  const knowledgeChevron = document.getElementById('knowledge-chevron');
+  const mainWrapper = document.getElementById('main-content-wrapper');
+  const logoFull = document.querySelector('.sidebar-logo-full');
+  const logoIcon = document.querySelector('.sidebar-logo-icon');
+
+  let isCollapsed = false;
+  let isSettingsOpen = false;
+  let isKnowledgeOpen = false;
+
+  const knowledgeRoutes = ['/base-conhecimento', '/upload-inteligente', '/fila-revisao', '/documentos'];
+  const configRoutes = ['/assessores', '/admin', '/agent-brain', '/integrations'].concat(knowledgeRoutes);
+  const currentPath = window.location.pathname;
+
+  function openSettings() {
+    isSettingsOpen = true;
+    settingsContent.style.maxHeight = settingsContent.scrollHeight + 'px';
+    settingsChevron.style.transform = 'rotate(90deg)';
+  }
+
+  function closeSettings() {
+    isSettingsOpen = false;
+    settingsContent.style.maxHeight = '0';
+    settingsChevron.style.transform = 'rotate(0deg)';
+  }
+
+  function openKnowledge() {
+    isKnowledgeOpen = true;
+    knowledgeContent.style.maxHeight = knowledgeContent.scrollHeight + 'px';
+    knowledgeChevron.style.transform = 'rotate(90deg)';
+    setTimeout(() => {
+      settingsContent.style.maxHeight = settingsContent.scrollHeight + 'px';
+    }, 50);
+  }
+
+  function closeKnowledge() {
+    isKnowledgeOpen = false;
+    knowledgeContent.style.maxHeight = '0';
+    knowledgeChevron.style.transform = 'rotate(0deg)';
+  }
+
+  if (configRoutes.includes(currentPath)) {
+    openSettings();
+  }
+  if (knowledgeRoutes.includes(currentPath)) {
+    openKnowledge();
+  }
+
+  if (settingsToggle) {
+    settingsToggle.addEventListener('click', function() {
+      if (isSettingsOpen) {
+        closeSettings();
+        closeKnowledge();
+      } else {
+        openSettings();
+      }
+    });
+  }
+
+  if (knowledgeToggle) {
+    knowledgeToggle.addEventListener('click', function() {
+      if (isKnowledgeOpen) {
+        closeKnowledge();
+      } else {
+        openKnowledge();
+      }
+    });
+  }
+
+  if (toggle) {
+    toggle.addEventListener('click', function() {
+      isCollapsed = !isCollapsed;
+      
+      if (isCollapsed) {
+        sidebar.style.width = '64px';
+        mainWrapper.style.marginLeft = '64px';
+        toggleIcon.style.transform = 'rotate(180deg)';
+        logoFull.classList.add('hidden');
+        logoIcon.classList.remove('hidden');
+        
+        document.querySelectorAll('.sidebar-text').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.sidebar-label').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.sidebar-accordion').forEach(el => el.classList.add('hidden'));
+        settingsContent.style.maxHeight = '0';
+        knowledgeContent.style.maxHeight = '0';
+      } else {
+        sidebar.style.width = '260px';
+        mainWrapper.style.marginLeft = '260px';
+        toggleIcon.style.transform = 'rotate(0deg)';
+        logoFull.classList.remove('hidden');
+        logoIcon.classList.add('hidden');
+        
+        document.querySelectorAll('.sidebar-text').forEach(el => el.classList.remove('hidden'));
+        document.querySelectorAll('.sidebar-label').forEach(el => el.classList.remove('hidden'));
+        document.querySelectorAll('.sidebar-accordion').forEach(el => el.classList.remove('hidden'));
+        
+        if (configRoutes.includes(currentPath)) {
+          setTimeout(openSettings, 100);
+        }
+        if (knowledgeRoutes.includes(currentPath)) {
+          setTimeout(openKnowledge, 150);
+        }
+      }
+    });
+  }
+})();
+</script>
+
+<style>
+#svn-sidebar .sidebar-item:hover svg,
+#svn-sidebar .sidebar-accordion:hover svg {
+  color: inherit;
+}
+</style>
