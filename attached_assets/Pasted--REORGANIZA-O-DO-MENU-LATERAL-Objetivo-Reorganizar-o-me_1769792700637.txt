@@ -1,0 +1,168 @@
+# REORGANIZAÇÃO DO MENU LATERAL
+
+## Objetivo
+
+Reorganizar o menu lateral para refletir o fluxo real do usuário (broker/operador), separando claramente:
+
+* Operação diária
+* Configuração / backoffice
+
+E criar uma experiência moderna com seção de Configurações colapsável.
+
+---
+
+## Nova Estrutura do Menu (Fonte da Verdade)
+
+### Seção: Operação (topo fixo)
+
+Sempre visível no topo:
+
+1. Insights
+2. Conversas
+3. Campanhas
+4. Testar Agente
+
+---
+
+### Espaço visual obrigatório
+
+Após **Testar Agente**, adicionar:
+
+* Divider visual (linha sutil) OU
+* Espaçamento vertical claro (margin-top significativo)
+
+Objetivo: separar mentalmente **operação** de **configuração**.
+
+---
+
+### Seção: Configurações (colapsável)
+
+Criar item pai:
+
+**Configurações** (accordion / collapsible)
+
+Ao clicar em **Configurações**, expandir/retrair os submenus com animação suave.
+
+Submenus:
+
+* Assessores
+* Usuários
+* Personalidade IA
+* Conhecimento
+
+  * Produtos
+  * Upload Inteligente
+  * Fila de Revisão
+  * Documentos
+* Integrações
+
+---
+
+## Comportamento UX Esperado
+
+### 1. Colapsável moderno
+
+* Configurações deve funcionar como accordion
+* Clique abre/fecha
+* Estado visual claro (seta / chevron rotaciona)
+
+### 2. Animação
+
+* Expand/collapse com transition suave (200–300ms)
+* Não “pular” layout abruptamente
+
+### 3. Hierarquia visual clara
+
+* Submenus com:
+
+  * Recuo (padding-left)
+  * Fonte menor
+  * Cor mais sutil que itens principais
+
+### 4. Estado ativo
+
+* Se o usuário estiver em:
+
+  * /produtos
+    → Configurações deve abrir automaticamente
+    → Conhecimento expandido
+    → Produtos marcado como ativo
+
+---
+
+## Regras Importantes de UX
+
+* Não misturar itens operacionais com configuração
+* Conhecimento é parte de Configurações (backoffice)
+* Upload Inteligente NÃO deve parecer ação principal
+* Fila de Revisão é claramente operacional interna (não do broker final)
+
+---
+
+## Implementação Técnica (sugestão)
+
+Se usando React + Tailwind:
+
+* Criar componente SidebarSection
+* Criar estado:
+
+  * isSettingsOpen
+  * isKnowledgeOpen
+* Usar:
+
+  * Radix Accordion OU
+  * State local + CSS transition
+
+Exemplo conceitual:
+
+```
+<SidebarSection title="Configurações" collapsible>
+  <SidebarItem>Assessores</SidebarItem>
+  <SidebarItem>Usuários</SidebarItem>
+  <SidebarItem>Personalidade IA</SidebarItem>
+
+  <SidebarSubSection title="Conhecimento">
+    <SidebarItem>Produtos</SidebarItem>
+    <SidebarItem>Upload Inteligente</SidebarItem>
+    <SidebarItem>Fila de Revisão</SidebarItem>
+    <SidebarItem>Documentos</SidebarItem>
+  </SidebarSubSection>
+
+  <SidebarItem>Integrações</SidebarItem>
+</SidebarSection>
+```
+
+---
+
+## Critério de Aceite (QA)
+
+Considerar pronto quando:
+
+- Existe separação visual clara após Testar Agente
+- Configurações colapsa/expande
+- Conhecimento colapsa/expande dentro de Configurações
+- Submenus têm indentação clara
+- Rota ativa abre automaticamente o grupo correto
+- Sidebar parece app moderno, não lista estática
+
+---
+
+## Por que isso é importante estrategicamente
+
+Isso:
+
+* Reduz carga cognitiva do broker
+* Deixa Conhecimento como backoffice (correto)
+* Cria sensação de produto enterprise
+* Prepara terreno para crescer (novos módulos)
+
+---
+# OBRIGATÓRIO
+
+- Precisamos definir regras claras para convivência entre páginas React e templates legacy.
+- Não pode existir reset CSS global nem estilos que vazem para o React.
+- Todo React deve ficar dentro de #react-root, e CSS legacy deve ser escopado.
+- Sidebar e layout devem ser únicos, evitando duplicação entre React e HTML.
+- Criar checklist de QA para garantir que novas páginas React não quebrem layout legacy.
+- Objetivo: evitar bugs invisíveis e manter UX consistente.
+
