@@ -2,7 +2,7 @@
 API endpoints para a Central de Mensagens.
 Interface estilo WhatsApp Web para gerenciamento de conversas.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_, func
@@ -13,6 +13,8 @@ import json
 import asyncio
 import os
 import base64
+import tempfile
+import uuid
 
 from database.database import get_db
 from database.models import (
@@ -366,6 +368,128 @@ async def send_media_message(
             status_code=500,
             detail=result.get("error", "Erro ao enviar mídia")
         )
+
+
+UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "whatsapp_uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@router.post("/upload")
+async def upload_media_file(
+    file: UploadFile = File(...),
+    phone: str = Form(...),
+    caption: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Faz upload de um arquivo e envia via WhatsApp.
+    Suporta imagem, áudio e documento.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Nome do arquivo é obrigatório")
+    
+    phone = normalize_phone(phone)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Telefone é obrigatório")
+    
+    content_type = file.content_type or ""
+    extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    
+    if content_type.startswith("image/") or extension in ["jpg", "jpeg", "png", "gif", "webp"]:
+        media_type = "image"
+    elif content_type.startswith("audio/") or extension in ["mp3", "ogg", "wav", "m4a", "opus", "oga"]:
+        media_type = "audio"
+    elif content_type.startswith("video/") or extension in ["mp4", "avi", "mov", "webm"]:
+        media_type = "video"
+    else:
+        media_type = "document"
+    
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        file_base64 = base64.b64encode(content).decode("utf-8")
+        
+        if media_type == "image":
+            data_url = f"data:{content_type or 'image/jpeg'};base64,{file_base64}"
+            result = await zapi_client.send_image(phone, data_url, caption or "")
+        elif media_type == "audio":
+            data_url = f"data:{content_type or 'audio/ogg'};base64,{file_base64}"
+            result = await zapi_client.send_audio(phone, data_url)
+        elif media_type == "video":
+            data_url = f"data:{content_type or 'video/mp4'};base64,{file_base64}"
+            result = await zapi_client.send_video(phone, data_url, caption or "")
+        else:
+            data_url = f"data:{content_type or 'application/octet-stream'};base64,{file_base64}"
+            result = await zapi_client.send_document(phone, data_url, file.filename, caption or "")
+        
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        if result.get("success"):
+            conv = db.query(Conversation).filter(Conversation.phone == phone).first()
+            if not conv:
+                conv = Conversation(
+                    phone=phone,
+                    status=ConversationStatus.HUMAN_TAKEOVER.value,
+                    conversation_state=ConversationState.HUMAN_TAKEOVER.value
+                )
+                db.add(conv)
+                db.commit()
+                db.refresh(conv)
+            
+            message = WhatsAppMessage(
+                message_id=result.get("message_id"),
+                zaap_id=result.get("zaap_id"),
+                chat_id=phone,
+                phone=phone,
+                from_me=True,
+                direction=MessageDirection.OUTBOUND.value,
+                message_type=media_type,
+                message_status=MessageStatus.SENT.value,
+                sender_type=SenderType.HUMAN.value,
+                body=caption,
+                media_filename=file.filename,
+                conversation_id=conv.id
+            )
+            db.add(message)
+            
+            conv.last_message_at = datetime.utcnow()
+            type_icons = {"image": "📷", "audio": "🎤", "video": "🎥", "document": "📄"}
+            preview = f"{type_icons.get(media_type, '📎')} {file.filename}"
+            if caption:
+                preview += f": {caption[:30]}"
+            conv.last_message_preview = preview[:100]
+            
+            db.commit()
+            db.refresh(message)
+            
+            return {
+                "success": True,
+                "message_id": result.get("message_id"),
+                "zaap_id": result.get("zaap_id"),
+                "db_id": message.id,
+                "media_type": media_type,
+                "filename": file.filename
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Erro ao enviar arquivo")
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
+
 
 
 @router.post("/start")

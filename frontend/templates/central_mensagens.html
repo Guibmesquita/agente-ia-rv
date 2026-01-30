@@ -593,6 +593,248 @@
             padding: 40px;
             color: var(--text-secondary);
         }
+
+        .attachment-menu {
+            position: absolute;
+            bottom: 60px;
+            left: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            padding: 8px 0;
+            display: none;
+            z-index: 100;
+            min-width: 200px;
+        }
+
+        .attachment-menu.show {
+            display: block;
+            animation: fadeInUp 0.2s ease;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .attachment-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .attachment-option:hover {
+            background: var(--bg-color);
+        }
+
+        .attachment-option-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .attachment-option-icon.image { background: #e1f5fe; color: #0288d1; }
+        .attachment-option-icon.document { background: #f3e5f5; color: #7b1fa2; }
+        .attachment-option-icon.audio { background: #fff3e0; color: #ef6c00; }
+
+        .upload-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .upload-modal.show {
+            display: flex;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .upload-modal-content {
+            background: white;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow: hidden;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .upload-modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .upload-modal-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .upload-modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+        }
+
+        .upload-modal-close:hover {
+            background: var(--bg-color);
+        }
+
+        .upload-modal-body {
+            padding: 20px;
+        }
+
+        .upload-preview {
+            background: var(--bg-color);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .upload-preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+        }
+
+        .upload-preview-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 12px;
+            background: var(--primary-color);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .upload-preview-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .upload-preview-size {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .upload-caption-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 0.95rem;
+            margin-bottom: 16px;
+        }
+
+        .upload-caption-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .upload-modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .upload-btn-cancel {
+            padding: 10px 20px;
+            border: 1px solid var(--border-color);
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        .upload-btn-cancel:hover {
+            background: var(--bg-color);
+        }
+
+        .upload-btn-send {
+            padding: 10px 24px;
+            border: none;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .upload-btn-send:hover {
+            background: var(--primary-hover);
+        }
+
+        .upload-btn-send:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .upload-progress {
+            display: none;
+            margin-top: 16px;
+        }
+
+        .upload-progress.show {
+            display: block;
+        }
+
+        .upload-progress-bar {
+            height: 4px;
+            background: var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .upload-progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .upload-progress-text {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -733,7 +975,96 @@
         </div>
     </div>
 
-    <input type="file" id="fileInput" style="display: none;" onchange="handleFileSelect(event)">
+    <input type="file" id="fileInput" style="display: none;" onchange="handleFileSelect(event)" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
+    <input type="file" id="imageInput" style="display: none;" onchange="handleFileSelect(event)" accept="image/*">
+    <input type="file" id="audioInput" style="display: none;" onchange="handleFileSelect(event)" accept="audio/*,.ogg,.mp3,.wav,.m4a">
+    <input type="file" id="documentInput" style="display: none;" onchange="handleFileSelect(event)" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx">
+
+    <div class="attachment-menu" id="attachmentMenu">
+        <div class="attachment-option" onclick="selectFileType('image')">
+            <div class="attachment-option-icon image">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+            </div>
+            <div>
+                <div style="font-weight: 500;">Imagem</div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary);">JPG, PNG, GIF</div>
+            </div>
+        </div>
+        <div class="attachment-option" onclick="selectFileType('document')">
+            <div class="attachment-option-icon document">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+            </div>
+            <div>
+                <div style="font-weight: 500;">Documento</div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary);">PDF, DOC, XLS</div>
+            </div>
+        </div>
+        <div class="attachment-option" onclick="selectFileType('audio')">
+            <div class="attachment-option-icon audio">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </div>
+            <div>
+                <div style="font-weight: 500;">Áudio</div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary);">MP3, OGG, WAV</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="upload-modal" id="uploadModal" onclick="closeUploadModal(event)">
+        <div class="upload-modal-content" onclick="event.stopPropagation()">
+            <div class="upload-modal-header">
+                <h3 id="uploadModalTitle">Enviar arquivo</h3>
+                <button class="upload-modal-close" onclick="closeUploadModal()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="upload-modal-body">
+                <div class="upload-preview" id="uploadPreview">
+                    <div class="upload-preview-icon" id="uploadPreviewIcon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                    </div>
+                    <img id="uploadPreviewImage" style="display: none;">
+                    <div class="upload-preview-name" id="uploadPreviewName">arquivo.pdf</div>
+                    <div class="upload-preview-size" id="uploadPreviewSize">1.2 MB</div>
+                </div>
+                <input type="text" class="upload-caption-input" id="uploadCaption" placeholder="Adicionar legenda (opcional)">
+                <div class="upload-progress" id="uploadProgress">
+                    <div class="upload-progress-bar">
+                        <div class="upload-progress-fill" id="uploadProgressFill"></div>
+                    </div>
+                    <div class="upload-progress-text" id="uploadProgressText">Enviando...</div>
+                </div>
+                <div class="upload-modal-actions">
+                    <button class="upload-btn-cancel" onclick="closeUploadModal()">Cancelar</button>
+                    <button class="upload-btn-send" id="uploadSendBtn" onclick="sendUploadedFile()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                        Enviar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         let conversations = [];
@@ -1036,16 +1367,175 @@
             }
         }
 
+        let pendingUploadFile = null;
+        let attachmentMenuOpen = false;
+
         function openAttachmentMenu() {
-            document.getElementById('fileInput').click();
+            const menu = document.getElementById('attachmentMenu');
+            if (attachmentMenuOpen) {
+                menu.classList.remove('show');
+                attachmentMenuOpen = false;
+            } else {
+                menu.classList.add('show');
+                attachmentMenuOpen = true;
+            }
         }
+
+        function selectFileType(type) {
+            document.getElementById('attachmentMenu').classList.remove('show');
+            attachmentMenuOpen = false;
+            
+            if (type === 'image') {
+                document.getElementById('imageInput').click();
+            } else if (type === 'audio') {
+                document.getElementById('audioInput').click();
+            } else {
+                document.getElementById('documentInput').click();
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('attachmentMenu');
+            const btn = e.target.closest('.input-action-btn');
+            if (!btn && attachmentMenuOpen) {
+                menu.classList.remove('show');
+                attachmentMenuOpen = false;
+            }
+        });
 
         async function handleFileSelect(event) {
             const file = event.target.files[0];
-            if (!file || !currentConversation) return;
+            if (!file || !currentConversation) {
+                event.target.value = '';
+                return;
+            }
 
-            toast.info('Funcionalidade de anexos será implementada em breve. Por enquanto, envie arquivos via URL.');
+            pendingUploadFile = file;
+            showUploadModal(file);
             event.target.value = '';
+        }
+
+        function showUploadModal(file) {
+            const modal = document.getElementById('uploadModal');
+            const previewImage = document.getElementById('uploadPreviewImage');
+            const previewIcon = document.getElementById('uploadPreviewIcon');
+            const previewName = document.getElementById('uploadPreviewName');
+            const previewSize = document.getElementById('uploadPreviewSize');
+            const title = document.getElementById('uploadModalTitle');
+            const caption = document.getElementById('uploadCaption');
+            
+            caption.value = '';
+            document.getElementById('uploadProgress').classList.remove('show');
+            document.getElementById('uploadSendBtn').disabled = false;
+            
+            previewName.textContent = file.name;
+            previewSize.textContent = formatFileSize(file.size);
+            
+            if (file.type.startsWith('image/')) {
+                title.textContent = 'Enviar imagem';
+                previewIcon.style.display = 'none';
+                previewImage.style.display = 'block';
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewImage.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else if (file.type.startsWith('audio/')) {
+                title.textContent = 'Enviar áudio';
+                previewIcon.style.display = 'flex';
+                previewImage.style.display = 'none';
+                previewIcon.innerHTML = `
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    </svg>
+                `;
+                previewIcon.style.background = '#fff3e0';
+            } else {
+                title.textContent = 'Enviar documento';
+                previewIcon.style.display = 'flex';
+                previewImage.style.display = 'none';
+                previewIcon.innerHTML = `
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                `;
+                previewIcon.style.background = '#f3e5f5';
+            }
+            
+            modal.classList.add('show');
+        }
+
+        function closeUploadModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('uploadModal').classList.remove('show');
+            pendingUploadFile = null;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        async function sendUploadedFile() {
+            if (!pendingUploadFile || !currentConversation) return;
+            
+            const sendBtn = document.getElementById('uploadSendBtn');
+            const progress = document.getElementById('uploadProgress');
+            const progressFill = document.getElementById('uploadProgressFill');
+            const progressText = document.getElementById('uploadProgressText');
+            const caption = document.getElementById('uploadCaption').value.trim();
+            
+            sendBtn.disabled = true;
+            progress.classList.add('show');
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Preparando envio...';
+            
+            const formData = new FormData();
+            formData.append('file', pendingUploadFile);
+            formData.append('phone', currentConversation.phone);
+            if (caption) {
+                formData.append('caption', caption);
+            }
+            
+            try {
+                progressFill.style.width = '30%';
+                progressText.textContent = 'Enviando arquivo...';
+                
+                const response = await fetch('/api/central/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                progressFill.style.width = '80%';
+                progressText.textContent = 'Finalizando...';
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao enviar arquivo');
+                }
+                
+                const result = await response.json();
+                
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Enviado!';
+                
+                setTimeout(() => {
+                    closeUploadModal();
+                    toast.success('Arquivo enviado com sucesso!');
+                    loadMessages();
+                }, 500);
+                
+            } catch (error) {
+                console.error('Erro ao enviar arquivo:', error);
+                toast.error(error.message || 'Erro ao enviar arquivo');
+                sendBtn.disabled = false;
+                progress.classList.remove('show');
+            }
         }
 
         function searchConversations() {

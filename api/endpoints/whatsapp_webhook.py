@@ -22,6 +22,7 @@ from services.openai_agent import openai_agent
 from services.vector_store import get_vector_store
 from services.sse_manager import get_sse_manager
 from services.insight_analyzer import save_conversation_insight
+from services.media_processor import media_processor
 import asyncio
 
 router = APIRouter(prefix="/api/webhook", tags=["WhatsApp Webhook"])
@@ -521,73 +522,158 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         await zapi_client.send_text(phone, error_msg)
 
 
-async def process_audio_message(phone: str, media_url: str, db: Session, message_record: WhatsAppMessage = None):
+async def process_audio_message(phone: str, media_url: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
     """
     Processa mensagem de áudio.
-    Por enquanto, informa ao usuário que áudio foi recebido.
+    Transcreve o áudio via Whisper e passa pelo pipeline completo da IA.
     """
     try:
-        response = (
-            "Recebi seu áudio! 🎙️\n\n"
-            "No momento, estou processando apenas mensagens de texto. "
-            "Por favor, digite sua dúvida ou solicitação para que eu possa te ajudar."
-        )
+        print(f"[WEBHOOK] Processando áudio de {phone}: {media_url[:50]}...")
         
-        if message_record:
-            message_record.ai_response = response
-            db.commit()
+        transcription, error = await media_processor.transcribe_audio(media_url)
         
-        await zapi_client.send_text(phone, response, delay_typing=1)
-        
-    except Exception as e:
-        print(f"[WEBHOOK] Erro ao processar áudio: {e}")
-
-
-async def process_image_message(phone: str, media_url: str, caption: str, db: Session, message_record: WhatsAppMessage = None):
-    """
-    Processa mensagem de imagem.
-    Se tiver legenda, processa como texto.
-    """
-    try:
-        if caption:
-            await process_text_message(phone, caption, db, message_record)
-        else:
+        if error or not transcription:
             response = (
-                "Recebi sua imagem! 📷\n\n"
-                "Se precisar de ajuda com algo específico relacionado a esta imagem, "
-                "por favor descreva sua dúvida em texto."
+                "Recebi seu áudio! 🎙️\n\n"
+                "Infelizmente não consegui transcrever o áudio. "
+                "Por favor, tente enviar novamente ou digite sua mensagem."
             )
             
             if message_record:
                 message_record.ai_response = response
+                message_record.ai_intent = "audio_transcription_failed"
                 db.commit()
             
             await zapi_client.send_text(phone, response, delay_typing=1)
-            
-    except Exception as e:
-        print(f"[WEBHOOK] Erro ao processar imagem: {e}")
-
-
-async def process_document_message(phone: str, media_url: str, filename: str, db: Session, message_record: WhatsAppMessage = None):
-    """
-    Processa mensagem de documento.
-    Informa ao usuário que o documento foi recebido.
-    """
-    try:
-        response = (
-            f"Recebi o documento '{filename}' 📄\n\n"
-            "Obrigado pelo envio! Se precisar de ajuda com algo relacionado "
-            "a este documento, por favor me informe."
-        )
+            return
         
         if message_record:
-            message_record.ai_response = response
+            if hasattr(message_record, 'body') and not message_record.body:
+                message_record.body = f"[Áudio transcrito]: {transcription}"
             db.commit()
         
+        formatted_message = media_processor.format_transcription_for_ai(transcription, "áudio")
+        print(f"[WEBHOOK] Áudio transcrito, processando via IA: {transcription[:100]}...")
+        
+        await process_text_message(phone, formatted_message, db, message_record, conversation)
+        
+    except Exception as e:
+        print(f"[WEBHOOK] Erro ao processar áudio: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        response = (
+            "Recebi seu áudio, mas ocorreu um erro no processamento. "
+            "Por favor, tente enviar sua mensagem por texto."
+        )
         await zapi_client.send_text(phone, response, delay_typing=1)
+
+
+async def process_image_message(phone: str, media_url: str, caption: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
+    """
+    Processa mensagem de imagem.
+    Analisa a imagem via GPT-4 Vision e passa pelo pipeline completo da IA.
+    """
+    try:
+        print(f"[WEBHOOK] Processando imagem de {phone}: {media_url[:50]}...")
+        
+        analysis, error = await media_processor.analyze_image(media_url, caption)
+        
+        if error or not analysis:
+            if caption:
+                await process_text_message(phone, caption, db, message_record, conversation)
+            else:
+                response = (
+                    "Recebi sua imagem! 📷\n\n"
+                    "Não consegui analisar a imagem no momento. "
+                    "Se precisar de ajuda, por favor descreva sua dúvida em texto."
+                )
+                
+                if message_record:
+                    message_record.ai_response = response
+                    message_record.ai_intent = "image_analysis_failed"
+                    db.commit()
+                
+                await zapi_client.send_text(phone, response, delay_typing=1)
+            return
+        
+        full_context = analysis
+        if caption:
+            full_context = f"{analysis}\n\nLegenda enviada pelo usuário: {caption}"
+        
+        if message_record:
+            if hasattr(message_record, 'body') and not message_record.body:
+                message_record.body = f"[Imagem]: {analysis[:200]}..."
+            db.commit()
+        
+        formatted_message = media_processor.format_transcription_for_ai(full_context, "imagem")
+        print(f"[WEBHOOK] Imagem analisada, processando via IA: {analysis[:100]}...")
+        
+        await process_text_message(phone, formatted_message, db, message_record, conversation)
+        
+    except Exception as e:
+        print(f"[WEBHOOK] Erro ao processar imagem: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        if caption:
+            await process_text_message(phone, caption, db, message_record, conversation)
+        else:
+            response = (
+                "Recebi sua imagem, mas ocorreu um erro no processamento. "
+                "Por favor, descreva sua dúvida em texto."
+            )
+            await zapi_client.send_text(phone, response, delay_typing=1)
+
+
+async def process_document_message(phone: str, media_url: str, filename: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
+    """
+    Processa mensagem de documento.
+    Extrai informações do documento e passa pelo pipeline da IA.
+    """
+    try:
+        print(f"[WEBHOOK] Processando documento de {phone}: {filename or media_url[:50]}...")
+        
+        extracted_text, error = await media_processor.extract_document_text(media_url, filename)
+        
+        if error or not extracted_text:
+            response = (
+                f"Recebi o documento '{filename or 'arquivo'}' 📄\n\n"
+                "Obrigado pelo envio! Se precisar de ajuda com algo relacionado "
+                "a este documento, por favor me descreva sua dúvida."
+            )
+            
+            if message_record:
+                message_record.ai_response = response
+                message_record.ai_intent = "document_processing_failed"
+                db.commit()
+            
+            await zapi_client.send_text(phone, response, delay_typing=1)
+            return
+        
+        if message_record:
+            if hasattr(message_record, 'body') and not message_record.body:
+                message_record.body = f"[Documento: {filename}]: {extracted_text[:200]}..."
+            db.commit()
+        
+        formatted_message = media_processor.format_transcription_for_ai(
+            f"Arquivo: {filename or 'documento'}\n\n{extracted_text}", 
+            "documento"
+        )
+        print(f"[WEBHOOK] Documento processado, enviando para IA: {extracted_text[:100]}...")
+        
+        await process_text_message(phone, formatted_message, db, message_record, conversation)
         
     except Exception as e:
         print(f"[WEBHOOK] Erro ao processar documento: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        response = (
+            f"Recebi o documento '{filename or 'arquivo'}' 📄\n\n"
+            "Obrigado pelo envio! Se tiver alguma dúvida sobre ele, me fale."
+        )
+        await zapi_client.send_text(phone, response, delay_typing=1)
 
 
 @router.post("/zapi")
@@ -784,7 +870,7 @@ async def zapi_webhook(
     
     if message_type == MessageType.TEXT.value:
         if body:
-            background_tasks.add_task(process_text_message, phone, body, db, message_record)
+            background_tasks.add_task(process_text_message, phone, body, db, message_record, conversation)
         else:
             return {"status": "ignored", "reason": "empty text message"}
             
@@ -794,7 +880,8 @@ async def zapi_webhook(
             phone, 
             media_url, 
             db, 
-            message_record
+            message_record,
+            conversation
         )
         
     elif message_type == MessageType.IMAGE.value:
@@ -804,7 +891,8 @@ async def zapi_webhook(
             media_url,
             body,
             db, 
-            message_record
+            message_record,
+            conversation
         )
         
     elif message_type == MessageType.DOCUMENT.value:
@@ -814,7 +902,8 @@ async def zapi_webhook(
             media_url,
             media_filename or "documento",
             db, 
-            message_record
+            message_record,
+            conversation
         )
         
     elif message_type == MessageType.VIDEO.value:
