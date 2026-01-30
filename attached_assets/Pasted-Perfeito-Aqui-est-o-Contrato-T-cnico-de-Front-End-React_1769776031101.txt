@@ -1,0 +1,166 @@
+Perfeito. Aqui está o Contrato Técnico de Front-End (React + Tailwind) da SVN, pronto para você colar no Replit como regra oficial do projeto.
+Ele funciona como guard-rail arquitetural para evitar exatamente o tipo de bug que vocês tiveram.
+
+📜 Contrato Técnico de Front-End — SVN
+Padrão Oficial para Telas React + Tailwind
+
+Este documento define as regras obrigatórias para qualquer tela construída em React + Tailwind no projeto SVN.
+
+Objetivo:
+Garantir UX moderna, consistência visual, isolamento de legado e evitar conflitos de CSS.
+
+1️⃣ Isolamento Total de CSS (Regra Mais Importante)
+❌ PROIBIDO
+
+Nunca usar em telas React:
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+
+Nunca carregar:
+
+global.css legado
+
+style.css legado
+
+Classes genéricas: .btn, .form-group, .page-*, .container, .sidebar-*
+
+✅ OBRIGATÓRIO
+
+Tailwind Preflight como único reset
+
+Spacing controlado EXCLUSIVAMENTE por Tailwind
+
+Exemplo correto:
+
+<div className="p-4 space-y-4">
+
+2️⃣ Regra de Arquitetura por Rota
+Padrão oficial:
+Tipo	Exemplo
+Jinja legado	/conversas
+React moderno	/conversas-react
+React moderno	/tailwind-test-knowledge
+Regras:
+
+Nunca misturar Jinja + React no mesmo layout
+
+Cada rota React deve ter HTML base mínimo
+
+3️⃣ Template HTML Base para React
+
+O template que serve React deve conter SOMENTE:
+
+✅ Sidebar (se necessário)
+✅ <div id="root"></div>
+❌ Nenhum reset CSS
+❌ Nenhum global.css
+❌ Nenhum style inline genérico
+
+Exemplo mínimo:
+
+<body>
+  <div id="root"></div>
+  <script src="react-bundle.js"></script>
+</body>
+
+4️⃣ Design System (Fonte da Verdade)
+Fonte única de UI:
+
+Tailwind tokens
+
+Variáveis no tailwind.config.js
+
+❌ Não duplicar cores no CSS legado
+❌ Não criar novo sistema paralelo
+
+5️⃣ Componentes Obrigatórios (Padrão UX)
+
+Toda tela React moderna deve usar:
+
+Cards com hover
+
+Skeleton loaders
+
+Drawer ou modal (Radix UI)
+
+Inline edit (sem reload)
+
+Search com debounce
+
+Filtros dinâmicos
+
+Empty states visuais
+
+6️⃣ Spacing & Layout
+❌ PROIBIDO
+
+Margens no CSS:
+
+.card { margin: 12px; }
+
+✅ OBRIGATÓRIO
+<div className="mt-3 px-4 gap-2 grid">
+
+7️⃣ Animações e Feedback
+
+Sempre que houver:
+
+Load
+
+Save
+
+Open drawer
+
+Hover
+
+Usar Framer Motion para:
+
+Fade
+
+Slide
+
+Microfeedback
+
+Objetivo: sensação de app moderno, não sistema legado.
+
+8️⃣ Checklist Técnico para Nova Tela React
+
+Antes de marcar como “pronto”, validar:
+
+ Não carrega global.css
+
+ Não existe seletor * {}
+
+ Nenhuma classe .btn, .form-group, .page-*
+
+ Spacing 100% Tailwind
+
+ Skeleton loaders implementados
+
+ Empty state desenhado
+
+ Drawer ou modal Radix funcional
+
+ Search + filtro funcionando
+
+ UX testado sem refresh de página
+
+9️⃣ Regra de Ouro
+
+Se a tela parecer sistema legado, está errada.
+Se parecer SaaS moderno, está certa.
+
+UX vem antes de “funcionar”.
+
+10️⃣ Objetivo Estratégico
+
+Esse padrão existe para:
+
+Evitar regressão visual
+
+Garantir evolução real de UX
+
+Evitar CSS fantasma
+
+Garantir que o usuário veja valor
