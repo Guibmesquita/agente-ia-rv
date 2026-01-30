@@ -273,8 +273,11 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     )
     from database.models import ConversationState, TransferReason
     
+    print(f"[WEBHOOK] Iniciando process_text_message para {phone}: {message[:50]}...")
+    
     try:
         normalized_message = normalize_message(message)
+        print(f"[WEBHOOK] Mensagem normalizada: {normalized_message[:50]}...")
         
         if not conversation:
             conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
@@ -298,6 +301,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             return
         
         assessor, is_known = identify_contact(db, phone)
+        print(f"[WEBHOOK] Assessor identificado: {assessor.nome if assessor else 'Nenhum'}, conhecido: {is_known}")
         
         if not is_known:
             if conv_state == ConversationState.IDENTIFICATION_PENDING.value:
@@ -411,6 +415,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 "broker": assessor.broker_responsavel
             }
         
+        print(f"[WEBHOOK] Chamando OpenAI para gerar resposta...")
         response, should_create_ticket, context = await openai_agent.generate_response(
             normalized_message,
             history,
@@ -418,6 +423,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             sender_phone=phone,
             identified_assessor=assessor_data
         )
+        print(f"[WEBHOOK] Resposta gerada: {response[:100] if response else 'VAZIA'}...")
         
         history.append({"role": "user", "content": normalized_message})
         history.append({"role": "assistant", "content": response})
@@ -472,7 +478,9 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         except Exception as log_err:
             print(f"[WEBHOOK] Erro ao salvar RetrievalLog: {log_err}")
         
+        print(f"[WEBHOOK] Enviando resposta via Z-API para {phone}...")
         send_result = await zapi_client.send_text(phone, response, delay_typing=2)
+        print(f"[WEBHOOK] Resultado envio Z-API: {send_result}")
         
         if send_result.get("success"):
             save_message_zapi(
