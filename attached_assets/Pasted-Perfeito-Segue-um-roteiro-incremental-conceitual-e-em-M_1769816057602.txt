@@ -1,0 +1,345 @@
+Perfeito. Segue um **roteiro incremental, conceitual e em Markdown**, pronto para colar no Replit.
+Ele **não altera nada existente**, não cria nomes de variáveis, não define estruturas de banco, não interfere em preview atual. Apenas orienta como **estender** o agente para suportar áudios, imagens e arquivos usando a Zapi + React + Flowbite.
+
+---
+
+# Melhoria Incremental do Agente de WhatsApp (Zapi)
+
+## Objetivo
+
+Expandir o agente de WhatsApp para:
+
+* Receber áudios
+* Receber imagens
+* Receber arquivos (PDF, DOC, etc)
+* Enviar áudios
+* Enviar imagens
+* Enviar arquivos
+
+Sem alterar fluxos existentes de texto.
+A implementação deve ser **estritamente incremental**.
+
+---
+
+## Princípios Obrigatórios
+
+* ❌ Não alterar lógica atual de mensagens de texto
+
+* ❌ Não renomear variáveis, handlers ou estruturas existentes
+
+* ❌ Não refatorar componentes atuais
+
+* ❌ Não mudar banco de dados, schemas ou storage
+
+* ❌ Não criar lógica de preview persistente
+
+* ✅ Apenas adicionar novos fluxos paralelos
+
+* ✅ Apenas adicionar novos handlers
+
+* ✅ Apenas adicionar novos componentes visuais opcionais
+
+* ✅ Usar a Zapi já conectada
+
+* ✅ Usar React + Flowbite para UI
+
+---
+
+## Escopo Funcional
+
+### Tipos de mídia suportados
+
+Implementar suporte para:
+
+* Áudio (voice / audio)
+* Imagem (image)
+* Arquivo genérico (document / file)
+
+Cada tipo deve ter:
+
+* Recebimento via webhook/evento da Zapi
+* Identificação do tipo de mensagem
+* Tratamento incremental
+* Renderização básica no frontend
+* Envio via Zapi
+
+---
+
+## Backend / API (Incremental)
+
+### 1. Identificação de tipo de mensagem
+
+Adicionar camada de detecção de tipo:
+
+* Texto
+* Áudio
+* Imagem
+* Documento/Arquivo
+
+Sem mudar o fluxo atual de texto.
+
+Apenas:
+
+* Criar ramificações adicionais para tipos não-texto
+* Garantir que texto continue funcionando como hoje
+
+---
+
+### 2. Recebimento de Áudio
+
+Adicionar lógica incremental para:
+
+* Detectar mensagens de áudio no payload da Zapi
+* Extrair metadados básicos:
+
+  * Tipo de mídia
+  * Identificador do arquivo
+  * Link temporário ou referência
+* Encaminhar para o pipeline interno do agente
+
+Sem:
+
+* Transcrição automática (se não existir hoje)
+* Persistência adicional
+* Preview complexo
+
+---
+
+### 3. Recebimento de Imagem
+
+Adicionar lógica incremental para:
+
+* Detectar mensagens de imagem
+* Extrair:
+
+  * Identificador
+  * Link temporário
+  * Metadados básicos
+* Registrar internamente como mensagem recebida do tipo imagem
+
+Sem:
+
+* Processamento de imagem
+* OCR
+* Armazenamento permanente
+
+---
+
+### 4. Recebimento de Arquivo
+
+Adicionar lógica incremental para:
+
+* Detectar documentos/arquivos
+* Extrair:
+
+  * Tipo do arquivo
+  * Nome (se disponível)
+  * Tamanho
+  * Link temporário
+* Encaminhar para o fluxo interno
+
+Sem:
+
+* Download automático
+* Indexação
+* Persistência
+
+---
+
+### 5. Envio de Áudio
+
+Adicionar endpoint ou função incremental para:
+
+* Enviar áudio via Zapi
+* Aceitar:
+
+  * URL pública
+  * Arquivo já disponível
+* Retornar status de envio
+
+Sem:
+
+* Alterar envio de texto
+* Unificar com outros tipos
+
+---
+
+### 6. Envio de Imagem
+
+Adicionar fluxo incremental para:
+
+* Enviar imagem via Zapi
+* Aceitar:
+
+  * URL pública
+  * Arquivo já disponível
+* Registrar como mensagem enviada
+
+---
+
+### 7. Envio de Arquivo
+
+Adicionar fluxo incremental para:
+
+* Enviar documentos/arquivos
+* Aceitar:
+
+  * URL pública
+  * Arquivo já disponível
+* Manter separado de texto
+
+---
+
+## Frontend (React + Flowbite)
+
+### 8. Extensão Visual Incremental
+
+Adicionar suporte visual sem alterar componentes existentes:
+
+* Criar novos componentes opcionais para:
+
+  * Mensagem de áudio
+  * Mensagem de imagem
+  * Mensagem de arquivo
+
+Sem:
+
+* Refatorar chat atual
+* Mudar layout base
+* Alterar renderização de texto
+
+---
+
+### 9. Renderização de Áudio
+
+Adicionar renderização para:
+
+* Player de áudio simples
+* Usando componentes do Flowbite
+* Apenas quando tipo = áudio
+
+---
+
+### 10. Renderização de Imagem
+
+Adicionar renderização para:
+
+* Thumbnail simples
+* Clique para abrir em nova aba
+* Usando Flowbite
+
+---
+
+### 11. Renderização de Arquivo
+
+Adicionar renderização para:
+
+* Nome do arquivo
+* Tipo
+* Botão de download
+* Usando Flowbite
+
+---
+
+## Upload de Mídia (Frontend)
+
+### 12. UI para Envio de Mídia
+
+Adicionar, de forma incremental:
+
+* Botão de upload (Flowbite)
+* Suporte para:
+
+  * Áudio
+  * Imagem
+  * Arquivo
+
+Sem:
+
+* Alterar input de texto existente
+* Unificar com envio de texto
+
+---
+
+### 13. Fluxo de Upload
+
+Criar fluxo incremental para:
+
+* Seleção de arquivo
+* Envio para backend
+* Backend encaminha para Zapi
+
+Sem:
+
+* Persistência local
+* Preview antes de envio
+* Validação avançada
+
+---
+
+## Integração com Zapi
+
+### 14. Uso da Biblioteca Zapi
+
+Garantir que:
+
+* Todas as chamadas usem a biblioteca Zapi já conectada
+* Consultar documentação da Zapi para:
+
+  * Receber áudio
+  * Receber imagem
+  * Receber documento
+  * Enviar áudio
+  * Enviar imagem
+  * Enviar documento
+
+Sem:
+
+* Criar wrappers novos se já existir cliente Zapi
+* Duplicar configuração
+
+---
+
+## Observabilidade e Logs
+
+### 15. Logs Incrementais
+
+Adicionar logs apenas para:
+
+* Tipo de mídia recebido
+* Tipo de mídia enviado
+* Status de sucesso/erro
+
+Sem:
+
+* Alterar logging atual
+* Aumentar nível global de log
+
+---
+
+## Testes Manuais Recomendados
+
+Após implementação:
+
+* Enviar áudio para o número
+* Enviar imagem para o número
+* Enviar PDF para o número
+* Validar renderização no frontend
+* Enviar áudio pelo frontend
+* Enviar imagem pelo frontend
+* Enviar arquivo pelo frontend
+* Validar que texto continua funcionando
+
+---
+
+## Critérios de Aceite
+
+* Texto continua funcionando exatamente igual
+* Mídia é recebida sem quebrar fluxo
+* Mídia é enviada sem interferir em texto
+* UI não quebra layout atual
+* Nenhuma refatoração estrutural
+
+---
+
+Se quiser, posso agora gerar uma **versão ainda mais técnica**, alinhada com a forma que o Replit costuma organizar projetos (pastas, camadas, separação API/UI), mantendo tudo conceitual.
