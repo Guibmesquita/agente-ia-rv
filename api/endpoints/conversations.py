@@ -98,11 +98,13 @@ async def list_conversations(
     search: Optional[str] = Query(None, description="Buscar por número ou nome"),
     status: Optional[str] = Query(None, description="Filtrar por status"),
     skip: int = Query(0, ge=0),
+    offset: int = Query(None, ge=0, description="Alias for skip"),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Lista todas as conversas com filtros e busca."""
+    actual_offset = offset if offset is not None else skip
     query = db.query(Conversation)
     
     if search:
@@ -119,7 +121,7 @@ async def list_conversations(
     if status:
         query = query.filter(Conversation.status == status)
     
-    conversations = query.order_by(desc(Conversation.last_message_at)).offset(skip).limit(limit).all()
+    conversations = query.order_by(desc(Conversation.last_message_at)).offset(actual_offset).limit(limit).all()
     
     result = []
     for conv in conversations:
@@ -690,9 +692,13 @@ def update_conversation_from_message(
 
 
 @router.get("/stream")
-async def stream_conversations():
+async def stream_conversations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     SSE endpoint para receber notificações em tempo real sobre conversas.
+    Requer autenticação.
     """
     sse_manager = get_sse_manager()
     queue = await sse_manager.subscribe("conversations")
