@@ -212,15 +212,21 @@
   const configRoutes = ['/assessores', '/admin', '/agent-brain', '/integrations'].concat(knowledgeRoutes);
   const currentPath = window.location.pathname;
 
+  // Helper to set max-height with !important to override external CSS
+  function setMaxHeight(element, value) {
+    element.style.setProperty('max-height', value, 'important');
+  }
+
   function openSettings() {
     isSettingsOpen = true;
-    settingsContent.style.maxHeight = settingsContent.scrollHeight + 'px';
+    // Use setProperty with important to override any external CSS
+    setMaxHeight(settingsContent, settingsContent.scrollHeight + 'px');
     settingsChevron.style.transform = 'rotate(90deg)';
   }
 
   function closeSettings() {
     isSettingsOpen = false;
-    settingsContent.style.maxHeight = '0';
+    setMaxHeight(settingsContent, '0px');
     settingsChevron.style.transform = 'rotate(0deg)';
   }
 
@@ -235,33 +241,32 @@
     
     // Use requestAnimationFrame to ensure DOM is updated before calculating heights
     requestAnimationFrame(() => {
-      // Temporarily set to auto to get real scrollHeight
-      knowledgeContent.style.maxHeight = 'none';
-      const knowledgeHeight = knowledgeContent.scrollHeight;
-      knowledgeContent.style.maxHeight = '0';
+      // Temporarily remove max-height constraint to measure real height
+      setMaxHeight(knowledgeContent, '9999px');
       
-      // Force reflow then animate
-      knowledgeContent.offsetHeight;
-      knowledgeContent.style.maxHeight = knowledgeHeight + 'px';
-      
-      // Recalculate parent settings height after a short delay
-      setTimeout(() => {
-        settingsContent.style.maxHeight = 'none';
-        const settingsHeight = settingsContent.scrollHeight;
-        settingsContent.style.maxHeight = settingsHeight + 'px';
-      }, 50);
+      // Wait for next frame to get accurate height
+      requestAnimationFrame(() => {
+        const knowledgeHeight = knowledgeContent.scrollHeight;
+        setMaxHeight(knowledgeContent, knowledgeHeight + 'px');
+        
+        // Recalculate parent settings height
+        setTimeout(() => {
+          const settingsHeight = settingsContent.scrollHeight;
+          setMaxHeight(settingsContent, settingsHeight + 'px');
+        }, 100);
+      });
     });
   }
 
   function closeKnowledge() {
     isKnowledgeOpen = false;
-    knowledgeContent.style.maxHeight = '0';
+    setMaxHeight(knowledgeContent, '0px');
     knowledgeChevron.style.transform = 'rotate(0deg)';
     
     // Recalculate parent settings height
     setTimeout(() => {
       if (isSettingsOpen) {
-        settingsContent.style.maxHeight = settingsContent.scrollHeight + 'px';
+        setMaxHeight(settingsContent, settingsContent.scrollHeight + 'px');
       }
     }, 50);
   }
@@ -346,5 +351,24 @@
 #svn-sidebar .sidebar-item:hover svg,
 #svn-sidebar .sidebar-accordion:hover svg {
   color: inherit;
+}
+
+/* Critical: Ensure accordion containers can expand properly */
+#settings-content,
+#knowledge-content {
+  overflow: hidden !important;
+  transition: max-height 0.2s ease !important;
+}
+
+/* Ensure sidebar nav can scroll to show all content */
+#svn-sidebar nav {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Sidebar container must be able to scroll */
+#svn-sidebar {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 </style>

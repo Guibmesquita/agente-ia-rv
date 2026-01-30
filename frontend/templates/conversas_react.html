@@ -7,10 +7,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" crossorigin href="/conversas/assets/{{ css_file }}">
-    <link rel="stylesheet" href="/static/global.css">
+    <!-- Tailwind primeiro para reset e utilities -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/static/tailwind.config.js"></script>
+    <!-- Depois global.css e CSS do React -->
+    <link rel="stylesheet" href="/static/global.css">
+    <link rel="stylesheet" crossorigin href="/conversas/assets/{{ css_file }}">
     <style>
         html, body {
             height: 100%;
@@ -21,7 +23,7 @@
         .app-layout {
             display: flex;
             height: 100vh;
-            overflow: hidden;
+            /* Allow sidebar to scroll internally, main content handles its own overflow */
         }
         
         .main-content {
@@ -41,6 +43,12 @@
             overflow: hidden;
             width: 100%;
             height: 100%;
+        }
+        
+        /* Ensure sidebar can scroll its content */
+        #svn-sidebar {
+            overflow-y: auto;
+            overflow-x: hidden;
         }
     </style>
 </head>
