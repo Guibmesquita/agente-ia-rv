@@ -257,8 +257,8 @@ function App() {
         return;
       }
       const data = await res.json();
-      const items = data.items || [];
-      const total = data.total || 0;
+      const items = Array.isArray(data) ? data : (data.items || []);
+      const total = Array.isArray(data) ? data.length : (data.total || items.length);
       
       setConversations(prev => {
         const newList = append ? [...prev, ...items] : items;
