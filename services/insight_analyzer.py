@@ -65,11 +65,15 @@ Responda APENAS com um JSON válido no seguinte formato:
     "tickers_mentioned": ["lista de tickers/códigos de ativos mencionados, ex: PETR4, VALE3"],
     "has_feedback": true/false,
     "feedback_text": "texto do feedback se houver, ou null",
-    "feedback_type": "agente/campanha/area_rv/produto ou null",
+    "feedback_type": "elogio/sugestao/reclamacao ou null - classifique como: elogio (feedback positivo, agradecimento, satisfação), sugestao (pedido de melhoria, ideia, funcionalidade), reclamacao (crítica, insatisfação, problema)",
     "sentiment": "positivo/negativo/neutro"
 }}
 
-Seja preciso na extração de tickers e produtos. Considere como feedback qualquer sugestão, crítica, elogio ou reclamação."""
+Seja preciso na extração de tickers e produtos. Considere como feedback qualquer sugestão, crítica, elogio ou reclamação.
+IMPORTANTE para feedback_type: Analise o tom e conteúdo do feedback para classificar corretamente:
+- "elogio": Expressões de satisfação, agradecimento, elogios ao serviço ou atendimento
+- "sugestao": Pedidos de melhoria, sugestões de novas funcionalidades, ideias construtivas
+- "reclamacao": Críticas, insatisfação, problemas relatados, frustrações"""
 
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
