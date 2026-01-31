@@ -1078,6 +1078,8 @@ async def smart_upload_without_product(
     material_type: str = Form(...),
     name: str = Form(...),
     description: str = Form(None),
+    valid_from: str = Form(None),
+    valid_until: str = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1102,12 +1104,30 @@ async def smart_upload_without_product(
             detail="Produto de sistema não encontrado. Execute o seed do banco de dados."
         )
     
+    from datetime import datetime
+    
+    parsed_valid_from = None
+    parsed_valid_until = None
+    
+    if valid_from:
+        try:
+            parsed_valid_from = datetime.fromisoformat(valid_from.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+    
+    if valid_until:
+        try:
+            parsed_valid_until = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+    
     material = Material(
         product_id=placeholder_product.id,
         material_type=material_type,
         name=name,
         description=description,
-        created_by_id=current_user.id,
+        valid_from=parsed_valid_from,
+        valid_until=parsed_valid_until,
         publish_status="rascunho"
     )
     db.add(material)

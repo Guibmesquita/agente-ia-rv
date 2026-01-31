@@ -94,6 +94,12 @@ export const materialsAPI = {
     if (materialData.description) {
       formData.append('description', materialData.description);
     }
+    if (materialData.valid_from) {
+      formData.append('valid_from', materialData.valid_from);
+    }
+    if (materialData.valid_until) {
+      formData.append('valid_until', materialData.valid_until);
+    }
     return fetchAPI('/products/smart-upload', {
       method: 'POST',
       body: formData,

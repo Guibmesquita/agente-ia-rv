@@ -530,10 +530,15 @@ async def search_knowledge(
     
     try:
         vector_store = get_vector_store()
-        results = vector_store.search(query, n_results=n_results, similarity_threshold=1.0)
+        from services.vector_store import filter_expired_results
+        results = vector_store.search(query, n_results=n_results * 2, similarity_threshold=1.0)
+        
+        results = filter_expired_results(results, db)
         
         if category:
             results = [r for r in results if r.get("metadata", {}).get("category") == category]
+        
+        results = results[:n_results]
         
         retrieval_time = int((datetime.now() - retrieval_start).total_seconds() * 1000)
         

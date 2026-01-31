@@ -24,7 +24,8 @@ export function SmartUpload() {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState(null);
   const [materialType, setMaterialType] = useState('');
-  const [period, setPeriod] = useState('');
+  const [validFrom, setValidFrom] = useState('');
+  const [validUntil, setValidUntil] = useState('');
   const [tags, setTags] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -45,7 +46,9 @@ export function SmartUpload() {
       const materialData = {
         material_type: materialType,
         name: file.name.replace('.pdf', ''),
-        description: `${period ? `Período: ${period}. ` : ''}${tags ? `Tags: ${tags}` : ''}`.trim() || null,
+        description: tags ? `Tags: ${tags}` : null,
+        valid_from: validFrom || null,
+        valid_until: validUntil || null,
       };
 
       let progress = 0;
@@ -176,33 +179,50 @@ export function SmartUpload() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Período (opcional)
-          </label>
-          <input
-            type="text"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            placeholder="Ex: Jan/2026"
-            className="w-full px-4 py-3 bg-card border border-border rounded-input
-                       text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Período de Validade (opcional)
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="relative">
+            <input
+              type="date"
+              value={validFrom}
+              onChange={(e) => setValidFrom(e.target.value)}
+              className="w-full px-4 py-3 bg-card border border-border rounded-input
+                         text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <span className="absolute -top-2 left-3 px-1 bg-card text-xs text-muted">Início</span>
+          </div>
+          <div className="relative">
+            <input
+              type="date"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
+              min={validFrom || undefined}
+              className="w-full px-4 py-3 bg-card border border-border rounded-input
+                         text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <span className="absolute -top-2 left-3 px-1 bg-card text-xs text-muted">Fim</span>
+          </div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Tags (opcional)
-          </label>
-          <input
-            type="text"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="Ex: renda fixa, estratégia"
-            className="w-full px-4 py-3 bg-card border border-border rounded-input
-                       text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
+        <p className="text-xs text-muted mt-2">
+          Após a data fim, o documento não será mais consultado pelo agente
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Tags (opcional)
+        </label>
+        <input
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="Ex: renda fixa, estratégia"
+          className="w-full px-4 py-3 bg-card border border-border rounded-input
+                     text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
       </div>
 
       <div className="flex gap-3 pt-4">

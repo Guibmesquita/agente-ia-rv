@@ -370,7 +370,10 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         search_results = []
         try:
             vector_store = get_vector_store()
-            search_results = vector_store.search(normalized_message, n_results=3, similarity_threshold=1.0)
+            from services.vector_store import filter_expired_results
+            search_results = vector_store.search(normalized_message, n_results=6, similarity_threshold=1.0)
+            
+            search_results = filter_expired_results(search_results, db)[:3]
             
             if search_results:
                 knowledge_context = "\n\n--- Informações da Base de Conhecimento ---\n"

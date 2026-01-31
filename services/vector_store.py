@@ -456,3 +456,59 @@ try:
     vector_store = VectorStore()
 except Exception:
     pass
+
+
+def filter_expired_results(results: list, db) -> list:
+    """
+    Filtra resultados de busca semântica removendo materiais expirados.
+    Um material é considerado expirado se valid_until < data atual.
+    """
+    from datetime import datetime
+    from database.models import Material, ContentBlock
+    
+    if not results:
+        return results
+    
+    block_ids = []
+    for r in results:
+        meta = r.get("metadata", {})
+        block_id = meta.get("block_id") or meta.get("doc_id")
+        if block_id:
+            try:
+                block_ids.append(int(block_id))
+            except (ValueError, TypeError):
+                pass
+    
+    if not block_ids:
+        return results
+    
+    now = datetime.now()
+    
+    expired_block_ids = set()
+    blocks = db.query(ContentBlock).filter(ContentBlock.id.in_(block_ids)).all()
+    
+    material_ids = {b.material_id for b in blocks}
+    materials = db.query(Material).filter(Material.id.in_(material_ids)).all()
+    material_expiry = {m.id: m.valid_until for m in materials}
+    
+    for block in blocks:
+        valid_until = material_expiry.get(block.material_id)
+        if valid_until and valid_until < now:
+            expired_block_ids.add(block.id)
+    
+    filtered = []
+    for r in results:
+        meta = r.get("metadata", {})
+        block_id = meta.get("block_id") or meta.get("doc_id")
+        if block_id:
+            try:
+                if int(block_id) not in expired_block_ids:
+                    filtered.append(r)
+                else:
+                    print(f"[SEARCH] Bloco {block_id} filtrado - material expirado")
+            except (ValueError, TypeError):
+                filtered.append(r)
+        else:
+            filtered.append(r)
+    
+    return filtered
