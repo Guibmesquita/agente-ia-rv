@@ -530,7 +530,7 @@ async def search_knowledge(
     
     try:
         vector_store = get_vector_store()
-        results = vector_store.search(query, n_results=n_results)
+        results = vector_store.search(query, n_results=n_results, similarity_threshold=1.0)
         
         if category:
             results = [r for r in results if r.get("metadata", {}).get("category") == category]

@@ -336,3 +336,64 @@ async def quick_search(
             for p in products
         ]
     }
+
+
+@router.post("/reindex-chroma")
+async def reindex_chroma(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Reindexa todos os content_blocks aprovados no ChromaDB.
+    Usado para sincronizar a base vetorial com o banco de dados relacional.
+    """
+    from services.vector_store import get_vector_store
+    
+    vector_store = get_vector_store()
+    
+    blocks = db.query(ContentBlock).filter(
+        ContentBlock.status == 'approved'
+    ).all()
+    
+    indexed_count = 0
+    errors = []
+    
+    for block in blocks:
+        try:
+            material = block.material if hasattr(block, 'material') else None
+            product = material.product if material and hasattr(material, 'product') else None
+            
+            metadata = {
+                "block_id": str(block.id),
+                "block_type": block.block_type or "text",
+                "title": block.title or "",
+                "document_title": block.title or (material.name if material else "Documento"),
+                "material_id": str(block.material_id) if block.material_id else "",
+                "product_id": str(product.id) if product else "",
+                "product_name": product.name if product else "",
+                "ticker": product.ticker if product else "",
+                "source_page": str(block.source_page) if block.source_page else "",
+                "version": str(block.current_version) if block.current_version else "1"
+            }
+            
+            doc_id = f"block_{block.id}"
+            text_content = f"{block.title or ''}\n\n{block.content or ''}"
+            
+            try:
+                vector_store.collection.delete(ids=[doc_id])
+            except:
+                pass
+            
+            vector_store.add_document(doc_id, text_content, metadata)
+            indexed_count += 1
+            
+        except Exception as e:
+            errors.append({"block_id": block.id, "error": str(e)})
+    
+    return {
+        "success": True,
+        "total_blocks": len(blocks),
+        "indexed": indexed_count,
+        "errors": errors,
+        "message": f"Reindexação concluída: {indexed_count} de {len(blocks)} blocos indexados"
+    }
