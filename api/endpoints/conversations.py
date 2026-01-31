@@ -19,7 +19,7 @@ from database.models import (
     Conversation, WhatsAppMessage, Assessor, User,
     ConversationStatus, ConversationState, SenderType, MessageDirection
 )
-from api.endpoints.auth import get_current_user
+from api.endpoints.auth import get_current_user, get_current_user_sse
 from services.sse_manager import get_sse_manager
 
 
@@ -694,11 +694,12 @@ def update_conversation_from_message(
 @router.get("/stream")
 async def stream_conversations(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_sse)
 ):
     """
     SSE endpoint para receber notificações em tempo real sobre conversas.
-    Requer autenticação.
+    Requer autenticação via token SSE (query param, cookie ou header).
+    Use /api/auth/sse-token para obter um token de curta duração para este endpoint.
     """
     sse_manager = get_sse_manager()
     queue = await sse_manager.subscribe("conversations")

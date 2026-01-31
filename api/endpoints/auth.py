@@ -156,10 +156,11 @@ async def get_current_user_endpoint(request: Request, db: Session = Depends(get_
 @router.get("/sse-token")
 async def get_sse_token(request: Request, db: Session = Depends(get_db)):
     """
-    Retorna o token JWT para uso em conexões SSE (EventSource).
-    Como EventSource não pode enviar cookies em alguns contextos,
-    este endpoint permite obter o token via fetch normal e usá-lo como query param.
+    Retorna um token SSE de curta duração (5 minutos) para uso em conexões EventSource.
+    Este token é separado do JWT principal e tem escopo limitado apenas para SSE.
     """
+    from datetime import timedelta
+    
     token = request.cookies.get("access_token")
     
     if not token:
@@ -180,7 +181,17 @@ async def get_sse_token(request: Request, db: Session = Depends(get_db)):
             detail="Token inválido"
         )
     
-    return {"token": token}
+    sse_token = create_access_token(
+        data={
+            "sub": payload.get("sub"),
+            "user_id": payload.get("user_id"),
+            "role": payload.get("role"),
+            "purpose": "sse"
+        },
+        expires_delta=timedelta(minutes=5)
+    )
+    
+    return {"token": sse_token, "expires_in": 300}
 
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
@@ -192,9 +203,6 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header[7:]
-    
-    if not token:
-        token = request.query_params.get("token")
     
     if not token:
         raise HTTPException(
@@ -233,3 +241,42 @@ def require_role(allowed_roles: list):
             )
         return user
     return role_checker
+
+
+async def get_current_user_sse(request: Request, db: Session = Depends(get_db)):
+    """
+    Dependência de autenticação específica para endpoints SSE.
+    APENAS aceita token via query string com purpose='sse'.
+    O token deve ser de curta duração, gerado por /api/auth/sse-token.
+    """
+    from database.models import User
+    
+    token = request.query_params.get("token")
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token SSE obrigatório. Use /api/auth/sse-token para obter um token."
+        )
+    
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido ou expirado"
+        )
+    
+    if payload.get("purpose") != "sse":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido para SSE. Use /api/auth/sse-token para obter o token correto."
+        )
+    
+    user = crud.get_user_by_username(db, payload.get("sub"))
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado"
+        )
+    
+    return user

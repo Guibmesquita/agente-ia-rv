@@ -492,6 +492,7 @@ function App() {
 
   useEffect(() => {
     let sseToken = null;
+    let tokenRefreshTimeout = null;
     let pollingInterval = null;
 
     const fetchSseToken = async () => {
@@ -499,17 +500,36 @@ function App() {
         const res = await fetch(`${API_BASE}/auth/sse-token`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
-          return data.token;
+          return { token: data.token, expiresIn: data.expires_in || 300 };
         }
       } catch {}
       return null;
+    };
+
+    const scheduleTokenRefresh = (expiresIn) => {
+      if (tokenRefreshTimeout) clearTimeout(tokenRefreshTimeout);
+      const refreshTime = Math.max((expiresIn - 60) * 1000, 30000);
+      tokenRefreshTimeout = setTimeout(async () => {
+        const newTokenData = await fetchSseToken();
+        if (newTokenData) {
+          sseToken = newTokenData.token;
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+          }
+          connectSSE();
+        }
+      }, refreshTime);
     };
 
     const connectSSE = async () => {
       if (eventSourceRef.current) eventSourceRef.current.close();
       
       if (!sseToken) {
-        sseToken = await fetchSseToken();
+        const tokenData = await fetchSseToken();
+        if (tokenData) {
+          sseToken = tokenData.token;
+          scheduleTokenRefresh(tokenData.expiresIn);
+        }
       }
       
       if (!sseToken) {
@@ -555,6 +575,7 @@ function App() {
     return () => {
       eventSourceRef.current?.close();
       if (pollingInterval) clearInterval(pollingInterval);
+      if (tokenRefreshTimeout) clearTimeout(tokenRefreshTimeout);
     };
   }, [currentConversation, fetchConversations]);
 
