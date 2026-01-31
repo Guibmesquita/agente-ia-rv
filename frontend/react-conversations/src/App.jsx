@@ -491,9 +491,34 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const connectSSE = () => {
+    let sseToken = null;
+    let pollingInterval = null;
+
+    const fetchSseToken = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/sse-token`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          return data.token;
+        }
+      } catch {}
+      return null;
+    };
+
+    const connectSSE = async () => {
       if (eventSourceRef.current) eventSourceRef.current.close();
-      const es = new EventSource(`${API_BASE}/conversations/stream`);
+      
+      if (!sseToken) {
+        sseToken = await fetchSseToken();
+      }
+      
+      if (!sseToken) {
+        startPolling();
+        return;
+      }
+
+      const url = `${API_BASE}/conversations/stream?token=${encodeURIComponent(sseToken)}`;
+      const es = new EventSource(url);
       es.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -510,12 +535,27 @@ function App() {
       };
       es.onerror = () => {
         es.close();
-        setTimeout(connectSSE, 5000);
+        sseToken = null;
+        setTimeout(() => connectSSE(), 5000);
       };
       eventSourceRef.current = es;
     };
+
+    const startPolling = () => {
+      if (pollingInterval) return;
+      pollingInterval = setInterval(async () => {
+        await fetchConversations(0, false);
+        if (currentConversation) {
+          await fetchMessages(currentConversation.id, false);
+        }
+      }, 5000);
+    };
+
     connectSSE();
-    return () => eventSourceRef.current?.close();
+    return () => {
+      eventSourceRef.current?.close();
+      if (pollingInterval) clearInterval(pollingInterval);
+    };
   }, [currentConversation, fetchConversations]);
 
   const contactName = currentConversation?.assessor_name || currentConversation?.contact_name || 'Contato';

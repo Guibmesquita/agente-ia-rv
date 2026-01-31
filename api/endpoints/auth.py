@@ -153,6 +153,36 @@ async def get_current_user_endpoint(request: Request, db: Session = Depends(get_
     }
 
 
+@router.get("/sse-token")
+async def get_sse_token(request: Request, db: Session = Depends(get_db)):
+    """
+    Retorna o token JWT para uso em conexões SSE (EventSource).
+    Como EventSource não pode enviar cookies em alguns contextos,
+    este endpoint permite obter o token via fetch normal e usá-lo como query param.
+    """
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Não autenticado"
+        )
+    
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido"
+        )
+    
+    return {"token": token}
+
+
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
     """Dependência que retorna o usuário autenticado."""
     from database.models import User
@@ -162,6 +192,9 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header[7:]
+    
+    if not token:
+        token = request.query_params.get("token")
     
     if not token:
         raise HTTPException(
