@@ -346,7 +346,11 @@ async def reindex_chroma(
     """
     Reindexa todos os content_blocks aprovados no ChromaDB.
     Usado para sincronizar a base vetorial com o banco de dados relacional.
+    Apenas admin pode executar esta operação.
     """
+    from fastapi import HTTPException
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem reindexar")
     from services.vector_store import get_vector_store
     
     vector_store = get_vector_store()
