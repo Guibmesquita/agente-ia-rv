@@ -462,53 +462,104 @@ def filter_expired_results(results: list, db) -> list:
     """
     Filtra resultados de busca semântica removendo materiais expirados.
     Um material é considerado expirado se valid_until < data atual.
+    Cobre múltiplos formatos de metadados: block_id, material_id, document_id.
     """
     from datetime import datetime
-    from database.models import Material, ContentBlock
+    from database.models import Material, ContentBlock, KnowledgeDocument
     
     if not results:
         return results
     
-    block_ids = []
+    now = datetime.now()
+    
+    block_ids = set()
+    material_ids = set()
+    document_ids = set()
+    
     for r in results:
         meta = r.get("metadata", {})
-        block_id = meta.get("block_id") or meta.get("doc_id")
+        
+        block_id = meta.get("block_id")
         if block_id:
             try:
-                block_ids.append(int(block_id))
+                block_ids.add(int(block_id))
+            except (ValueError, TypeError):
+                pass
+        
+        material_id = meta.get("material_id")
+        if material_id:
+            try:
+                material_ids.add(int(material_id))
+            except (ValueError, TypeError):
+                pass
+        
+        document_id = meta.get("document_id")
+        if document_id:
+            try:
+                document_ids.add(int(document_id))
             except (ValueError, TypeError):
                 pass
     
-    if not block_ids:
-        return results
-    
-    now = datetime.now()
-    
+    expired_material_ids = set()
     expired_block_ids = set()
-    blocks = db.query(ContentBlock).filter(ContentBlock.id.in_(block_ids)).all()
+    expired_document_ids = set()
     
-    material_ids = {b.material_id for b in blocks}
-    materials = db.query(Material).filter(Material.id.in_(material_ids)).all()
-    material_expiry = {m.id: m.valid_until for m in materials}
+    if block_ids:
+        blocks = db.query(ContentBlock).filter(ContentBlock.id.in_(block_ids)).all()
+        for block in blocks:
+            if block.material_id:
+                material_ids.add(block.material_id)
     
-    for block in blocks:
-        valid_until = material_expiry.get(block.material_id)
-        if valid_until and valid_until < now:
-            expired_block_ids.add(block.id)
+    if material_ids:
+        materials = db.query(Material).filter(Material.id.in_(material_ids)).all()
+        for m in materials:
+            if m.valid_until and m.valid_until < now:
+                expired_material_ids.add(m.id)
+    
+    if block_ids:
+        blocks = db.query(ContentBlock).filter(ContentBlock.id.in_(block_ids)).all()
+        for block in blocks:
+            if block.material_id in expired_material_ids:
+                expired_block_ids.add(block.id)
+    
+    if document_ids:
+        docs = db.query(KnowledgeDocument).filter(KnowledgeDocument.id.in_(document_ids)).all()
+        for doc in docs:
+            if doc.valid_until and doc.valid_until < now:
+                expired_document_ids.add(doc.id)
     
     filtered = []
     for r in results:
         meta = r.get("metadata", {})
-        block_id = meta.get("block_id") or meta.get("doc_id")
+        is_expired = False
+        
+        block_id = meta.get("block_id")
         if block_id:
             try:
-                if int(block_id) not in expired_block_ids:
-                    filtered.append(r)
-                else:
-                    print(f"[SEARCH] Bloco {block_id} filtrado - material expirado")
+                if int(block_id) in expired_block_ids:
+                    is_expired = True
             except (ValueError, TypeError):
-                filtered.append(r)
-        else:
+                pass
+        
+        material_id = meta.get("material_id")
+        if material_id and not is_expired:
+            try:
+                if int(material_id) in expired_material_ids:
+                    is_expired = True
+            except (ValueError, TypeError):
+                pass
+        
+        document_id = meta.get("document_id")
+        if document_id and not is_expired:
+            try:
+                if int(document_id) in expired_document_ids:
+                    is_expired = True
+            except (ValueError, TypeError):
+                pass
+        
+        if not is_expired:
             filtered.append(r)
+        else:
+            print(f"[SEARCH] Resultado filtrado - conteúdo expirado: {meta}")
     
     return filtered

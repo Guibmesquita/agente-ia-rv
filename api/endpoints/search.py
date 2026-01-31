@@ -367,6 +367,10 @@ async def reindex_chroma(
             material = block.material if hasattr(block, 'material') else None
             product = material.product if material and hasattr(material, 'product') else None
             
+            valid_until_str = ""
+            if material and material.valid_until:
+                valid_until_str = material.valid_until.isoformat()
+            
             metadata = {
                 "block_id": str(block.id),
                 "block_type": block.block_type or "text",
@@ -377,7 +381,8 @@ async def reindex_chroma(
                 "product_name": product.name if product else "",
                 "ticker": product.ticker if product else "",
                 "source_page": str(block.source_page) if block.source_page else "",
-                "version": str(block.current_version) if block.current_version else "1"
+                "version": str(block.current_version) if block.current_version else "1",
+                "valid_until": valid_until_str
             }
             
             doc_id = f"block_{block.id}"

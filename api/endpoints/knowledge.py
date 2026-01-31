@@ -183,6 +183,10 @@ async def index_document_background(doc_id: int, file_path: str, file_type: str,
             
             vector_store = get_vector_store()
             
+            valid_until_str = ""
+            if doc.valid_until:
+                valid_until_str = doc.valid_until.isoformat()
+            
             for i, chunk in enumerate(chunks):
                 chunk_id = f"doc_{doc_id}_chunk_{i}"
                 metadata = {
@@ -190,7 +194,8 @@ async def index_document_background(doc_id: int, file_path: str, file_type: str,
                     "document_title": title,
                     "category": category or "Outros",
                     "chunk_index": i,
-                    "total_chunks": len(chunks)
+                    "total_chunks": len(chunks),
+                    "valid_until": valid_until_str
                 }
                 vector_store.add_document(chunk_id, chunk, metadata)
             
@@ -271,6 +276,10 @@ def _process_document_smart_sync(doc_id: int, file_path: str, file_type: str, ti
                 db.commit()
                 return
             
+            valid_until_str = ""
+            if doc.valid_until:
+                valid_until_str = doc.valid_until.isoformat()
+            
             for i, chunk in enumerate(chunks):
                 chunk_id = f"doc_{doc_id}_smart_{i}"
                 metadata = {
@@ -280,6 +289,7 @@ def _process_document_smart_sync(doc_id: int, file_path: str, file_type: str, ti
                     "chunk_index": i,
                     "total_chunks": len(chunks),
                     "processing_type": "smart",
+                    "valid_until": valid_until_str,
                     **chunk.get("metadata", {})
                 }
                 vector_store.add_document(chunk_id, chunk["content"], metadata)
