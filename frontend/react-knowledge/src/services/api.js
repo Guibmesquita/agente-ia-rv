@@ -48,6 +48,8 @@ export const productsAPI = {
   getCategories: () => fetchAPI('/products/categories'),
 
   getExpiring: (days = 30) => fetchAPI(`/products/expiring?days=${days}`),
+  
+  search: (query, limit = 5) => fetchAPI(`/search/quick?q=${encodeURIComponent(query)}&limit=${limit}`),
 };
 
 export const materialsAPI = {
@@ -83,6 +85,20 @@ export const materialsAPI = {
     fetchAPI(`/products/${productId}/materials/${materialId}/reindex`, {
       method: 'POST',
     }),
+
+  uploadWithoutProduct: (file, materialData) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('material_type', materialData.material_type);
+    formData.append('name', materialData.name);
+    if (materialData.description) {
+      formData.append('description', materialData.description);
+    }
+    return fetchAPI('/products/smart-upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };
 
 export const blocksAPI = {

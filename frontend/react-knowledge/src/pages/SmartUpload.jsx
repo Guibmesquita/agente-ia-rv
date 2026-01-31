@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
-import { productsAPI, materialsAPI } from '../services/api';
+import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info } from 'lucide-react';
+import { materialsAPI } from '../services/api';
 import { FileUpload } from '../components/FileUpload';
 import { Button } from '../components/Button';
+import { ProductAutocomplete } from '../components/ProductAutocomplete';
 import { useToast } from '../components/Toast';
 
 const MATERIAL_TYPES = [
@@ -25,27 +26,15 @@ export function SmartUpload() {
   const [materialType, setMaterialType] = useState('');
   const [period, setPeriod] = useState('');
   const [tags, setTags] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState('');
-  const [products, setProducts] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadComplete, setUploadComplete] = useState(false);
-
-  useEffect(() => {
-    const loadProducts = async () => {
-      try {
-        const data = await productsAPI.list();
-        setProducts(data.products || data);
-      } catch (err) {
-        console.error('Erro ao carregar produtos:', err);
-      }
-    };
-    loadProducts();
-  }, []);
+  const [createdMaterialId, setCreatedMaterialId] = useState(null);
 
   const handleUpload = async () => {
-    if (!file || !materialType || !selectedProduct) {
-      addToast('Preencha todos os campos obrigatórios', 'warning');
+    if (!file || !materialType) {
+      addToast('Selecione um arquivo e tipo de material', 'warning');
       return;
     }
 
@@ -58,7 +47,6 @@ export function SmartUpload() {
         name: file.name.replace('.pdf', ''),
         description: `${period ? `Período: ${period}. ` : ''}${tags ? `Tags: ${tags}` : ''}`.trim() || null,
       };
-      const material = await materialsAPI.create(selectedProduct, materialData);
 
       let progress = 0;
       const progressInterval = setInterval(() => {
@@ -67,13 +55,26 @@ export function SmartUpload() {
         setUploadProgress(Math.round(progress));
       }, 500);
 
-      await materialsAPI.uploadPDF(selectedProduct, material.id, file);
+      let material;
+      let productId;
+
+      if (selectedProduct) {
+        productId = selectedProduct.id;
+        material = await materialsAPI.create(productId, materialData);
+        await materialsAPI.uploadPDF(productId, material.id, file);
+      } else {
+        const response = await materialsAPI.uploadWithoutProduct(file, materialData);
+        material = response.material;
+        productId = response.product_id;
+      }
+
+      setCreatedMaterialId(material?.id);
 
       clearInterval(progressInterval);
       setUploadProgress(100);
       setUploadComplete(true);
       setUploading(false);
-      addToast('Documento processado com sucesso!', 'success');
+      addToast('Documento processado com sucesso! A IA identificará automaticamente os produtos.', 'success');
 
     } catch (err) {
       addToast(`Erro: ${err.message}`, 'error');
@@ -160,21 +161,19 @@ export function SmartUpload() {
 
       <div>
         <label className="block text-sm font-medium text-foreground mb-2">
-          Produto Relacionado *
+          Produto Relacionado (opcional)
         </label>
-        <select
+        <ProductAutocomplete
           value={selectedProduct}
-          onChange={(e) => setSelectedProduct(e.target.value)}
-          className="w-full px-4 py-3 bg-card border border-border rounded-input
-                     text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">Selecione um produto...</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} {p.ticker ? `(${p.ticker})` : ''}
-            </option>
-          ))}
-        </select>
+          onChange={setSelectedProduct}
+          placeholder="Digite para buscar um produto..."
+        />
+        <div className="flex items-start gap-2 mt-2 p-3 bg-blue-50 rounded-card border border-blue-200">
+          <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-blue-700">
+            Se não selecionar um produto, a IA identificará automaticamente os produtos mencionados em cada página do documento.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -212,7 +211,7 @@ export function SmartUpload() {
         </Button>
         <Button 
           onClick={handleUpload} 
-          disabled={!materialType || !selectedProduct}
+          disabled={!materialType}
           className="flex-1"
         >
           <Sparkles className="w-4 h-4" />
@@ -263,22 +262,31 @@ export function SmartUpload() {
             Documento processado!
           </h2>
           <p className="text-muted mb-6">
-            Os blocos foram extraídos e estão prontos para revisão
+            {selectedProduct 
+              ? 'Os blocos foram extraídos e estão prontos para revisão'
+              : 'Os blocos foram extraídos e vinculados automaticamente aos produtos identificados'}
           </p>
           <div className="flex gap-3 justify-center">
             <Button variant="secondary" onClick={() => {
               setStep(1);
               setFile(null);
               setMaterialType('');
-              setSelectedProduct('');
+              setSelectedProduct(null);
               setUploadComplete(false);
               setUploadProgress(0);
+              setCreatedMaterialId(null);
             }}>
               Novo Upload
             </Button>
-            <Button onClick={() => navigate(`/product/${selectedProduct}`)}>
-              Ver Produto
-            </Button>
+            {selectedProduct ? (
+              <Button onClick={() => navigate(`/product/${selectedProduct.id}`)}>
+                Ver Produto
+              </Button>
+            ) : (
+              <Button onClick={() => navigate('/review')}>
+                Ver Fila de Revisão
+              </Button>
+            )}
           </div>
         </>
       )}

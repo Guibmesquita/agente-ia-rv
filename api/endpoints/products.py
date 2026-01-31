@@ -941,6 +941,39 @@ async def reject_review_item(
 
 # ==================== PDF Upload Endpoints ====================
 
+async def process_pdf_with_auto_product_detection(
+    material_id: int,
+    file_path: str,
+    document_title: str,
+    user_id: int
+):
+    """
+    Processa PDF em background com detecção automática de produtos.
+    A IA identifica tickers e nomes de produtos em cada página e vincula automaticamente.
+    """
+    from database.database import SessionLocal
+    from services.product_ingestor import get_product_ingestor
+    
+    db = SessionLocal()
+    try:
+        ingestor = get_product_ingestor()
+        
+        result = ingestor.process_pdf_with_product_detection(
+            pdf_path=file_path,
+            material_id=material_id,
+            document_title=document_title,
+            db=db,
+            user_id=user_id
+        )
+        
+        print(f"[SMART_UPLOAD] Processamento concluído: {result}")
+        
+    except Exception as e:
+        print(f"[SMART_UPLOAD] Erro no processamento: {e}")
+    finally:
+        db.close()
+
+
 async def process_pdf_background(
     material_id: int,
     product_id: int,
@@ -1035,6 +1068,77 @@ async def upload_pdf_to_material(
     return {
         "success": True,
         "message": "PDF enviado para processamento. Os blocos serão criados em alguns instantes."
+    }
+
+
+@router.post("/smart-upload")
+async def smart_upload_without_product(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    material_type: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload inteligente sem produto vinculado.
+    A IA processará o PDF e identificará automaticamente os produtos mencionados em cada página.
+    Os blocos serão criados e vinculados aos produtos identificados.
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Apenas arquivos PDF são suportados")
+    
+    if not name or not name.strip():
+        raise HTTPException(status_code=400, detail="Nome do material é obrigatório")
+    
+    placeholder_product = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
+    if not placeholder_product:
+        raise HTTPException(
+            status_code=500, 
+            detail="Produto de sistema não encontrado. Execute o seed do banco de dados."
+        )
+    
+    material = Material(
+        product_id=placeholder_product.id,
+        material_type=material_type,
+        name=name,
+        description=description,
+        created_by_id=current_user.id,
+        publish_status="rascunho"
+    )
+    db.add(material)
+    db.commit()
+    db.refresh(material)
+    
+    unique_filename = f"{uuid.uuid4()}.pdf"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    document_title = name or file.filename.replace('.pdf', '')
+    
+    background_tasks.add_task(
+        process_pdf_with_auto_product_detection,
+        material_id=material.id,
+        file_path=file_path,
+        document_title=document_title,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "PDF enviado para processamento inteligente. A IA identificará os produtos automaticamente.",
+        "material": {
+            "id": material.id,
+            "name": material.name
+        },
+        "product_id": placeholder_product.id
     }
 
 

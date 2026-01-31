@@ -46,6 +46,20 @@ async def lifespan(app: FastAPI):
         crud.init_default_integrations(db)
         crud.init_default_categories(db)
         crud.init_default_agent_config(db)
+        
+        from database.models import Product
+        system_product = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
+        if not system_product:
+            system_product = Product(
+                name="[Sistema] Documentos Não Vinculados",
+                ticker="__SYSTEM_UNASSIGNED__",
+                category="sistema",
+                status="ativo",
+                description="Produto de sistema para armazenar materiais sem produto vinculado. Não editar."
+            )
+            db.add(system_product)
+            db.commit()
+            print("Produto de sistema '__SYSTEM_UNASSIGNED__' criado.")
     finally:
         db.close()
     
