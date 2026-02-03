@@ -553,29 +553,6 @@ react_conversations_assets_path = os.path.join(react_conversations_dist_path, "a
 if os.path.exists(react_conversations_assets_path):
     app.mount("/conversas/assets", StaticFiles(directory=react_conversations_assets_path), name="conversas-assets")
 
-@app.get("/central-mensagens", response_class=HTMLResponse)
-async def central_mensagens_page(request: Request):
-    """
-    Central de Mensagens estilo WhatsApp Web.
-    Interface para gerenciamento de conversas com human takeover.
-    Requer autenticação como admin, gestao_rv ou broker.
-    """
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    user_role = payload.get("role")
-    if user_role not in ["admin", "gestao_rv", "broker"]:
-        return RedirectResponse(url="/login?error=permission")
-    
-    return templates.TemplateResponse("central_mensagens.html", {"request": request, "user_role": user_role})
-
-
 @app.get("/conversas", response_class=HTMLResponse)
 async def conversas_page(request: Request):
     """
