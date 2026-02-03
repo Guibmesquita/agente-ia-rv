@@ -81,6 +81,24 @@
             Usuário ou senha incorretos. Tente novamente.
         </div>
         
+        <div id="microsoft-login-container" style="display: none; margin-bottom: 24px;">
+            <a href="/api/auth/microsoft/login" class="btn-microsoft" style="display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 14px; font-size: 1rem; background: #fff; border: 1px solid #8c8c8c; border-radius: 8px; color: #5e5e5e; text-decoration: none; font-weight: 500; transition: all 0.2s ease;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 21 21">
+                    <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                </svg>
+                Entrar com Microsoft
+            </a>
+            
+            <div style="display: flex; align-items: center; margin: 20px 0; gap: 12px;">
+                <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">ou</span>
+                <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+            </div>
+        </div>
+        
         <form action="/api/auth/login-form" method="POST">
             <div class="form-group">
                 <label class="form-label" for="username">Usuário</label>
@@ -104,11 +122,25 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('error')) {
             const errorEl = document.getElementById('error-message');
-            if (urlParams.get('error') === 'permission') {
+            const errorType = urlParams.get('error');
+            
+            if (errorType === 'permission') {
                 errorEl.textContent = 'Você não tem permissão para acessar o painel.';
+            } else if (errorType === 'microsoft') {
+                const detail = urlParams.get('detail') || 'Erro na autenticação com Microsoft';
+                errorEl.textContent = detail;
             }
             errorEl.classList.add('show');
         }
+        
+        fetch('/api/auth/microsoft/enabled')
+            .then(r => r.json())
+            .then(data => {
+                if (data.enabled) {
+                    document.getElementById('microsoft-login-container').style.display = 'block';
+                }
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>

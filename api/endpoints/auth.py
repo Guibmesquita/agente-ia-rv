@@ -1,7 +1,11 @@
 """
 Endpoints de autenticação.
-Gerencia login, logout e validação de tokens JWT.
+Gerencia login, logout, validação de tokens JWT e SSO Microsoft.
 """
+import os
+import secrets
+import hashlib
+import msal
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,6 +18,48 @@ from database import crud
 from core.security import create_access_token, decode_token
 
 router = APIRouter(prefix="/api/auth", tags=["Autenticação"])
+
+MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
+MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
+MICROSOFT_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID")
+MICROSOFT_AUTHORITY = f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}" if MICROSOFT_TENANT_ID else None
+MICROSOFT_SCOPES = ["User.Read", "openid", "profile", "email"]
+
+_pending_oauth_states = {}
+
+def get_msal_app():
+    """Retorna uma instância do app MSAL se as credenciais estiverem configuradas."""
+    if not all([MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID]):
+        return None
+    return msal.ConfidentialClientApplication(
+        MICROSOFT_CLIENT_ID,
+        authority=MICROSOFT_AUTHORITY,
+        client_credential=MICROSOFT_CLIENT_SECRET
+    )
+
+def generate_oauth_state() -> str:
+    """Gera um state parameter único para proteção CSRF."""
+    state = secrets.token_urlsafe(32)
+    _pending_oauth_states[state] = True
+    return state
+
+def validate_oauth_state(state: str) -> bool:
+    """Valida e consome um state parameter."""
+    if state and state in _pending_oauth_states:
+        del _pending_oauth_states[state]
+        return True
+    return False
+
+def get_redirect_uri(request: Request) -> str:
+    """Obtém a URI de redirecionamento considerando proxy headers."""
+    proto = request.headers.get("X-Forwarded-Proto", "https")
+    host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or str(request.base_url.hostname)
+    if ":" in host:
+        return f"{proto}://{host}/api/auth/microsoft/callback"
+    port = request.url.port
+    if port and port not in (80, 443):
+        return f"{proto}://{host}:{port}/api/auth/microsoft/callback"
+    return f"{proto}://{host}/api/auth/microsoft/callback"
 
 
 class Token(BaseModel):
@@ -280,3 +326,139 @@ async def get_current_user_sse(request: Request, db: Session = Depends(get_db)):
         )
     
     return user
+
+
+@router.get("/microsoft/enabled")
+async def microsoft_sso_enabled():
+    """Verifica se o SSO Microsoft está configurado."""
+    enabled = all([MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID])
+    return {"enabled": enabled}
+
+
+@router.get("/microsoft/login")
+async def microsoft_login(request: Request):
+    """Inicia o fluxo de login com Microsoft SSO."""
+    msal_app = get_msal_app()
+    
+    if not msal_app:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SSO Microsoft não configurado. Configure MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET e MICROSOFT_TENANT_ID."
+        )
+    
+    redirect_uri = get_redirect_uri(request)
+    state = generate_oauth_state()
+    nonce = secrets.token_urlsafe(16)
+    
+    auth_url = msal_app.get_authorization_request_url(
+        scopes=MICROSOFT_SCOPES,
+        redirect_uri=redirect_uri,
+        state=state,
+        nonce=nonce,
+        prompt="select_account"
+    )
+    
+    return RedirectResponse(url=auth_url)
+
+
+@router.get("/microsoft/callback")
+async def microsoft_callback(
+    request: Request,
+    code: str = None,
+    state: str = None,
+    error: str = None,
+    error_description: str = None,
+    db: Session = Depends(get_db)
+):
+    """Callback do SSO Microsoft após autenticação."""
+    if error:
+        return RedirectResponse(
+            url=f"/login?error=microsoft&detail={error_description or error}",
+            status_code=status.HTTP_302_FOUND
+        )
+    
+    if not validate_oauth_state(state):
+        return RedirectResponse(
+            url="/login?error=microsoft&detail=Requisição inválida. Tente novamente.",
+            status_code=status.HTTP_302_FOUND
+        )
+    
+    if not code:
+        return RedirectResponse(
+            url="/login?error=microsoft&detail=Código de autorização não recebido",
+            status_code=status.HTTP_302_FOUND
+        )
+    
+    msal_app = get_msal_app()
+    if not msal_app:
+        return RedirectResponse(
+            url="/login?error=microsoft&detail=SSO não configurado",
+            status_code=status.HTTP_302_FOUND
+        )
+    
+    redirect_uri = get_redirect_uri(request)
+    
+    try:
+        result = msal_app.acquire_token_by_authorization_code(
+            code=code,
+            scopes=MICROSOFT_SCOPES,
+            redirect_uri=redirect_uri
+        )
+        
+        if "error" in result:
+            return RedirectResponse(
+                url=f"/login?error=microsoft&detail={result.get('error_description', result.get('error'))}",
+                status_code=status.HTTP_302_FOUND
+            )
+        
+        id_token_claims = result.get("id_token_claims", {})
+        email = id_token_claims.get("preferred_username") or id_token_claims.get("email")
+        name = id_token_claims.get("name", "")
+        
+        if not email:
+            return RedirectResponse(
+                url="/login?error=microsoft&detail=Email não encontrado na conta Microsoft",
+                status_code=status.HTTP_302_FOUND
+            )
+        
+        user = crud.get_user_by_email(db, email)
+        
+        if not user:
+            user = crud.get_user_by_username(db, email)
+        
+        if not user:
+            return RedirectResponse(
+                url=f"/login?error=microsoft&detail=Usuário não encontrado. Solicite cadastro ao administrador.",
+                status_code=status.HTTP_302_FOUND
+            )
+        
+        if user.role not in ["admin", "broker", "gestao_rv"]:
+            return RedirectResponse(
+                url="/login?error=permission",
+                status_code=status.HTTP_302_FOUND
+            )
+        
+        access_token = create_access_token(
+            data={
+                "sub": user.username,
+                "user_id": user.id,
+                "role": user.role,
+                "auth_method": "microsoft_sso"
+            }
+        )
+        
+        redirect = RedirectResponse(url="/insights", status_code=status.HTTP_302_FOUND)
+        redirect.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            max_age=86400,
+            samesite="lax"
+        )
+        return redirect
+        
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/login?error=microsoft&detail=Erro na autenticação: {str(e)[:100]}",
+            status_code=status.HTTP_302_FOUND
+        )
