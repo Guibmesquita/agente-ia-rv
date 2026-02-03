@@ -877,14 +877,18 @@ async def approve_review_item(
     return {"success": True}
 
 
+class EditReviewContent(BaseModel):
+    content: str
+
+
 @router.post("/review/{item_id}/edit")
 async def edit_review_item(
     item_id: int,
-    content: str = Form(...),
+    data: EditReviewContent,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Edita e aprova um item pendente de revisão."""
+    """Edita o conteúdo de um item pendente de revisão."""
     if current_user.role not in ["admin", "gestao_rv"]:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
@@ -894,24 +898,21 @@ async def edit_review_item(
     
     block = db.query(ContentBlock).filter(ContentBlock.id == item.block_id).first()
     if block:
-        block.content = content
-        block.content_hash = compute_hash(content)
+        block.content = data.content
+        block.content_hash = compute_hash(data.content)
         block.current_version += 1
-        block.status = ContentBlockStatus.APPROVED.value
         
         version = BlockVersion(
             block_id=block.id,
             version=block.current_version,
-            content=content,
+            content=data.content,
             content_hash=block.content_hash,
             author_id=current_user.id,
             change_reason="Corrigido na revisão"
         )
         db.add(version)
     
-    item.reviewed_by = current_user.id
-    item.reviewed_at = datetime.utcnow()
-    item.review_action = "edited"
+    item.extracted_content = data.content
     
     db.commit()
     return {"success": True}

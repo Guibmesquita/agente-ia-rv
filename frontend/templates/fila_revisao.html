@@ -195,6 +195,24 @@
         </main>
     </div>
 
+    <!-- Modal de Edição -->
+    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-800">Editar Conteúdo</h2>
+                <p class="text-sm text-gray-500">Faça as correções necessárias antes de aprovar</p>
+            </div>
+            <div class="p-6">
+                <textarea id="editContent" rows="12" class="w-full border border-gray-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none" placeholder="Conteúdo do bloco..."></textarea>
+            </div>
+            <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+                <button onclick="closeEditModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">Cancelar</button>
+                <button onclick="saveEdit()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">Salvar</button>
+                <button onclick="saveAndApprove()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Salvar e Aprovar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let allItems = [];
         let currentFilter = 'all';
@@ -281,6 +299,7 @@
                         <div class="content-preview">${preview}</div>
                         <div class="action-buttons">
                             <button class="btn-approve" onclick="approveItem(${item.id})">Aprovar</button>
+                            <button class="btn-edit" onclick="editItem(${item.id})">Editar</button>
                             <button class="btn-reject" onclick="rejectItem(${item.id})">Rejeitar</button>
                         </div>
                     </div>
@@ -317,6 +336,75 @@
                 renderItems();
             } catch (error) {
                 showNotification('Erro ao rejeitar item', 'error');
+            }
+        }
+
+        let editingItemId = null;
+
+        function editItem(id) {
+            const item = allItems.find(i => i.id === id);
+            if (!item) return;
+            
+            editingItemId = id;
+            document.getElementById('editContent').value = item.extracted_content || item.original_content || '';
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.add('hidden');
+            editingItemId = null;
+        }
+
+        async function saveEdit() {
+            if (!editingItemId) return;
+            
+            const newContent = document.getElementById('editContent').value;
+            
+            try {
+                const response = await fetch(`/api/products/review/${editingItemId}/edit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ content: newContent })
+                });
+                if (!response.ok) throw new Error('Erro ao salvar');
+                
+                const item = allItems.find(i => i.id === editingItemId);
+                if (item) item.extracted_content = newContent;
+                
+                showNotification('Conteúdo atualizado', 'success');
+                closeEditModal();
+                renderItems();
+            } catch (error) {
+                showNotification('Erro ao salvar edição', 'error');
+            }
+        }
+
+        async function saveAndApprove() {
+            if (!editingItemId) return;
+            
+            const newContent = document.getElementById('editContent').value;
+            
+            try {
+                await fetch(`/api/products/review/${editingItemId}/edit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ content: newContent })
+                });
+                
+                await fetch(`/api/products/review/${editingItemId}/approve`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                
+                showNotification('Conteúdo editado e aprovado', 'success');
+                allItems = allItems.filter(i => i.id !== editingItemId);
+                closeEditModal();
+                updateCounters();
+                renderItems();
+            } catch (error) {
+                showNotification('Erro ao salvar e aprovar', 'error');
             }
         }
 
