@@ -1,0 +1,409 @@
+Perfeito. Segue um **roteiro de testes ponta a ponta (E2E) completo, minucioso e em Markdown**, pronto para copiar e colar no Replit.
+Ele cobre **todas as abas, fluxos, modais, integrações, UX e regressões visuais**, com foco em garantir que o app esteja funcional de verdade no front-end.
+
+---
+
+# Roteiro de Testes End-to-End (E2E) — Aplicação SVN
+
+## Objetivo
+
+Validar todas as funcionalidades do aplicativo, garantindo:
+
+* Funcionamento completo de cada aba
+* Fluxos críticos operacionais
+* Upload e processamento de conhecimento
+* Busca do agente
+* Campanhas de WhatsApp (individual e em massa)
+* Envio de mídia (imagem, PDF, Excel)
+* UX, UI e não regressão visual
+
+---
+
+## Pré-requisitos
+
+* Ambiente rodando com frontend e backend conectados
+* Número de WhatsApp para testes configurado:
+
+  * 11947033973
+* Acesso a todas as abas
+* Possibilidade de upload de arquivos
+* APIs de WhatsApp ativas (Zapi)
+
+---
+
+# 1. Login e Navegação Geral
+
+## 1.1 Login
+
+* Acessar a tela de login
+* Efetuar login com usuário válido
+* Verificar:
+
+  * Redirecionamento correto
+  * Sidebar carregada
+  * Nenhum erro visual
+  * Layout consistente
+
+## 1.2 Sidebar e Navegação
+
+* Clicar em todas as opções do menu lateral
+* Verificar:
+
+  * Estado ativo correto
+  * Nenhum menu quebrado
+  * Submenus abrindo corretamente (Configurações)
+  * Espaçamento entre blocos (principal vs configurações)
+
+---
+
+# 2. Aba Conversas (WhatsApp)
+
+## 2.1 Lista de Conversas
+
+* Acessar aba Conversas
+* Verificar:
+
+  * Conversas carregam
+  * Conversa mais recente no topo
+  * Scroll funcional
+  * Nenhum layout quebrado
+
+## 2.2 Abrir Conversa
+
+* Clicar em uma conversa existente
+* Verificar:
+
+  * Histórico completo aparece
+  * Scroll para última mensagem
+  * Nome do contato correto
+
+## 2.3 Enviar Mensagem de Texto
+
+* Enviar uma mensagem de texto
+* Verificar:
+
+  * Mensagem aparece imediatamente no UI
+  * Mensagem é enviada via WhatsApp
+  * Não há duplicação
+  * Estado de loading (se existir) funciona
+
+## 2.4 Receber Mensagem
+
+* Enviar mensagem do celular para o número do bot
+* Verificar:
+
+  * Mensagem aparece no UI sem refresh
+  * Conversa sobe para o topo
+  * Badge de nova mensagem (se existir)
+
+## 2.5 Enviar Imagem
+
+* Enviar imagem pelo frontend
+* Verificar:
+
+  * Upload funciona
+  * Mensagem aparece no chat
+  * Imagem chega no WhatsApp
+  * Preview correto no UI
+
+## 2.6 Enviar Arquivo (PDF ou Excel)
+
+* Enviar PDF ou XLS pelo frontend
+* Verificar:
+
+  * Upload funciona
+  * Nome do arquivo aparece
+  * Arquivo chega no WhatsApp
+  * Link/download funcional no UI
+
+## 2.7 Receber Áudio
+
+* Enviar áudio do WhatsApp para o bot
+* Verificar:
+
+  * Áudio aparece no chat
+  * Player funciona no UI
+  * Não quebra layout
+
+---
+
+# 3. Aba Insights / Dashboard
+
+## 3.1 Carregamento Geral
+
+* Acessar aba Insights
+* Verificar:
+
+  * Gráficos carregam
+  * Nenhum erro no console
+  * Skeleton/loading (se houver)
+
+## 3.2 Dados Fictícios
+
+* Verificar:
+
+  * Gráficos renderizam mesmo com dados mockados
+  * Labels, eixos e legendas aparecem
+  * Layout responsivo
+
+## 3.3 Interações
+
+* Hover nos gráficos
+* Tooltips funcionam
+* Redimensionar janela
+* Verificar responsividade
+
+---
+
+# 4. Base de Conhecimento
+
+## 4.1 Tela de Produtos / Conhecimento
+
+* Acessar tela de Base de Conhecimento
+* Verificar:
+
+  * Lista carrega
+  * Filtros funcionam
+  * Busca funciona
+  * Cards/lista renderizam corretamente
+
+## 4.2 Upload de Conhecimento
+
+* Acessar tela de Upload Inteligente
+* Fazer upload de PDF de apresentação (ex: comitê, produto)
+* Preencher campos obrigatórios:
+
+  * Nome
+  * Categoria
+  * Tipo
+  * Tickers (se aplicável)
+  * Vigência (se aplicável)
+* Verificar:
+
+  * Upload inicia
+  * Status de processamento
+  * Nenhum erro visual
+
+## 4.3 Fila de Revisão
+
+* Acessar Fila de Revisão
+* Verificar:
+
+  * Documento aparece se necessário
+  * Itens marcados para revisão (tabela/gráfico)
+  * Modal de edição abre
+  * Edição de tabela funciona
+  * Campo de descrição de gráfico funciona
+  * Aprovar item
+  * Aprovar documento completo
+
+## 4.4 Indexação
+
+* Após aprovação, verificar:
+
+  * Documento aparece como aprovado
+  * Status atualizado
+  * Documento aparece na lista geral
+
+---
+
+# 5. Busca do Agente (Validação Funcional)
+
+## 5.1 Teste via Conversa
+
+* Ir para Conversas
+* Perguntar algo relacionado ao documento enviado
+* Exemplo:
+
+  * Produto do PDF
+  * Taxas
+  * Estratégia
+* Verificar:
+
+  * Agente encontra conteúdo
+  * Resposta usa informações do documento
+  * Não responde genérico
+  * Não escala para humano sem motivo
+
+---
+
+# 6. Campanhas — Envio Individual
+
+## 6.1 Acessar Campanhas
+
+* Acessar aba Campanhas
+* Verificar:
+
+  * Tela carrega
+  * UI funcional
+
+## 6.2 Envio Manual (Individual)
+
+* Selecionar assessores (ou contato)
+* Inserir texto customizado
+* Anexar:
+
+  * Imagem OU
+  * PDF OU
+  * Excel
+* Definir número de teste: 11947033973
+* Enviar campanha
+
+Verificar:
+
+* Envio é processado
+* Mensagem chega no WhatsApp
+* Anexo chega corretamente
+* UI mostra status de envio
+
+---
+
+# 7. Campanhas — Envio em Massa via Planilha
+
+## 7.1 Upload de Planilha
+
+* Selecionar opção de envio em massa
+* Fazer upload de planilha (CSV ou XLS)
+* Verificar:
+
+  * Upload funciona
+  * Colunas são detectadas
+
+## 7.2 Mapeamento de Campos
+
+* Mapear colunas da planilha:
+
+  * Nome
+  * Telefone
+  * Variáveis de mensagem
+* Verificar:
+
+  * UI de mapeamento funciona
+  * Validações de campo
+
+## 7.3 Montagem de Mensagem
+
+* Criar template de mensagem
+* Usar variáveis da planilha
+* Adicionar anexo (PDF, imagem)
+
+## 7.4 Envio de Teste
+
+* Configurar para enviar apenas para:
+
+  * 11947033973
+* Executar envio
+
+Verificar:
+
+* Mensagem personalizada chega
+* Variáveis foram substituídas corretamente
+* Anexo chegou
+* Não houve envio em massa real
+
+---
+
+# 8. Configurações
+
+## 8.1 Assessores
+
+* Acessar tela de Assessores
+* Criar novo assessor
+* Editar assessor
+* Verificar:
+
+  * CRUD completo
+  * Validações
+  * UI consistente
+
+## 8.2 Usuários
+
+* Acessar tela de Usuários
+* Criar novo usuário
+* Editar permissões
+* Verificar:
+
+  * CRUD completo
+  * Regras de acesso
+
+## 8.3 Personalidade IA
+
+* Acessar Personalidade IA
+* Alterar texto de prompt
+* Salvar
+* Testar impacto em conversa
+* Verificar:
+
+  * Mudança refletida
+  * Não quebra agente
+
+## 8.4 Integrações
+
+* Acessar Integrações
+* Verificar:
+
+  * Status das integrações
+  * Nenhum erro visual
+  * Testar conexão (se houver botão)
+
+---
+
+# 9. Testar Agente
+
+* Acessar tela Testar Agente
+* Fazer perguntas de:
+
+  * Produto
+  * Estratégia
+  * Documento
+* Verificar:
+
+  * Resposta coerente
+  * Uso da base
+  * UX fluido
+
+---
+
+# 10. Regressão Visual e UX
+
+Em todas as telas:
+
+* Verificar:
+
+  * Botões com padding correto
+  * Inputs com espaçamento correto
+  * Nenhum componente esmagado
+  * Nenhum reset CSS afetando React
+  * Sidebar consistente
+  * Scroll funcionando
+  * Responsividade básica
+
+---
+
+# 11. Console e Erros
+
+Durante todo o teste:
+
+* Abrir DevTools
+* Monitorar:
+
+  * Erros JS
+  * Warnings
+  * Falhas de API
+* Nenhum erro crítico deve aparecer
+
+---
+
+# Critérios de Aceite Final
+
+* Todas as abas funcionam
+* WhatsApp envia e recebe texto e mídia
+* Upload e indexação funcionam
+* Agente busca conteúdo enviado
+* Campanhas individuais e em massa funcionam
+* UI estável e sem quebras
+* Nenhuma regressão visual
+
+---
+
+Se quiser, posso gerar uma **versão em Given/When/Then** para automação futura ou para usar como base de testes automatizados depois.
