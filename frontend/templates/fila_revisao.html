@@ -274,7 +274,7 @@
                 renderItems();
             } catch (error) {
                 console.error('Erro:', error);
-                showNotification('Erro ao carregar itens pendentes', 'error');
+                AppNotifications.show('Erro ao carregar itens pendentes', 'error');
             }
         }
 
@@ -350,12 +350,12 @@
                     credentials: 'include'
                 });
                 if (!response.ok) throw new Error('Erro ao aprovar');
-                showNotification('Item aprovado com sucesso', 'success');
+                AppNotifications.show('Item aprovado com sucesso', 'success');
                 allItems = allItems.filter(i => i.id !== id);
                 updateCounters();
                 renderItems();
             } catch (error) {
-                showNotification('Erro ao aprovar item', 'error');
+                AppNotifications.show('Erro ao aprovar item', 'error');
             }
         }
 
@@ -366,12 +366,12 @@
                     credentials: 'include'
                 });
                 if (!response.ok) throw new Error('Erro ao rejeitar');
-                showNotification('Item rejeitado', 'warning');
+                AppNotifications.show('Item rejeitado', 'warning');
                 allItems = allItems.filter(i => i.id !== id);
                 updateCounters();
                 renderItems();
             } catch (error) {
-                showNotification('Erro ao rejeitar item', 'error');
+                AppNotifications.show('Erro ao rejeitar item', 'error');
             }
         }
 
@@ -486,11 +486,11 @@
                 const item = allItems.find(i => i.id === editingItemId);
                 if (item) item.extracted_content = newContent;
                 
-                showNotification('Conteúdo atualizado', 'success');
+                AppNotifications.show('Conteúdo atualizado', 'success');
                 closeEditModal();
                 renderItems();
             } catch (error) {
-                showNotification('Erro ao salvar edição', 'error');
+                AppNotifications.show('Erro ao salvar edição', 'error');
             }
         }
 
@@ -512,13 +512,13 @@
                     credentials: 'include'
                 });
                 
-                showNotification('Conteúdo editado e aprovado', 'success');
+                AppNotifications.show('Conteúdo editado e aprovado', 'success');
                 allItems = allItems.filter(i => i.id !== editingItemId);
                 closeEditModal();
                 updateCounters();
                 renderItems();
             } catch (error) {
-                showNotification('Erro ao salvar e aprovar', 'error');
+                AppNotifications.show('Erro ao salvar e aprovar', 'error');
             }
         }
 
