@@ -195,9 +195,9 @@ def semantic_to_display_text(semantic_model: Dict[str, Any]) -> str:
                 
                 attrs = product.get("attributes", {})
                 for attr_key, attr_value in attrs.items():
-                    if attr_value and attr_value.strip() and attr_value.lower() not in ["n/a", "na", "-", ""]:
-                        display_name = attr_key.replace("_", " ").title()
-                        lines.append(f"         {display_name}: {attr_value}")
+                    display_name = attr_key.replace("_", " ").title()
+                    display_value = attr_value.strip() if attr_value else "—"
+                    lines.append(f"         {display_name}: {display_value}")
                 
                 lines.append("")
     
