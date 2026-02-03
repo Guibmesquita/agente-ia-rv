@@ -661,6 +661,38 @@ async def get_ticket_metrics(
     solved_count = status_dict.get(TicketStatusV2.SOLVED.value, 0)
     resolution_rate = (solved_count / total_tickets * 100) if total_tickets > 0 else 0
     
+    bot_resolved_filters = [
+        Conversation.escalation_level == EscalationLevel.T0_BOT.value,
+        Conversation.bot_resolved_at.isnot(None),
+        Conversation.created_at >= date_start,
+        Conversation.created_at <= date_end
+    ]
+    if assessor_join_needed:
+        bot_resolved = db.query(Conversation).join(
+            Assessor, Conversation.assessor_id == Assessor.id
+        ).filter(*bot_resolved_filters, *assessor_filters).all()
+    else:
+        bot_resolved = db.query(Conversation).filter(*bot_resolved_filters).all()
+    
+    bot_resolved_count = len(bot_resolved)
+    avg_time_saved = 0
+    if bot_resolved:
+        time_saved_list = []
+        for conv in bot_resolved:
+            if conv.created_at and conv.bot_resolved_at:
+                diff = (conv.bot_resolved_at - conv.created_at).total_seconds()
+                if diff > 0:
+                    time_saved_list.append(diff)
+        if time_saved_list:
+            avg_time_saved = sum(time_saved_list) / len(time_saved_list) / 60
+    
+    total_conversations_period = db.query(func.count(Conversation.id)).filter(
+        Conversation.created_at >= date_start,
+        Conversation.created_at <= date_end
+    ).scalar() or 0
+    
+    bot_resolution_rate = (bot_resolved_count / total_conversations_period * 100) if total_conversations_period > 0 else 0
+    
     daily_volume_query = db.query(
         func.date(Conversation.created_at).label('date'),
         func.count(Conversation.id)
@@ -681,6 +713,12 @@ async def get_ticket_metrics(
             "resolution_rate": round(resolution_rate, 1),
             "avg_response_time_minutes": round(avg_response_time, 1),
             "avg_resolution_time_minutes": round(avg_resolution_time, 1)
+        },
+        "bot_metrics": {
+            "bot_resolved_count": bot_resolved_count,
+            "bot_resolution_rate": round(bot_resolution_rate, 1),
+            "avg_time_saved_minutes": round(avg_time_saved, 1),
+            "total_conversations": total_conversations_period
         },
         "by_status": [{"status": s[0], "count": s[1]} for s in status_counts],
         "by_unidade": [{"unidade": u[0], "count": u[1]} for u in by_unidade],

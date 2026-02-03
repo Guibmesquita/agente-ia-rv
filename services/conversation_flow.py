@@ -471,3 +471,142 @@ Quando sugerir transferência, seja breve e natural:
 def get_enhanced_system_prompt(base_prompt: str) -> str:
     """Adiciona instruções de classificação ao prompt base."""
     return base_prompt + "\n\n" + CLASSIFICATION_PROMPT_ADDITION
+
+
+# V2.2 Bot Resolution Confirmation System
+CONFIRMATION_MESSAGES = [
+    "Seria só isso, {nome}?",
+    "Consegui te ajudar com tudo, {nome}?",
+    "Mais alguma coisa, {nome}?",
+    "Ficou alguma dúvida, {nome}?",
+    "Resolvido por aí, {nome}?",
+    "Tudo certo então, {nome}?",
+    "Precisa de mais alguma coisa, {nome}?",
+]
+
+
+def get_confirmation_message(assessor_name: str = None) -> str:
+    """Retorna mensagem de confirmação aleatória com nome do assessor."""
+    message = random.choice(CONFIRMATION_MESSAGES)
+    nome = assessor_name.split()[0] if assessor_name else "aí"
+    return message.format(nome=nome)
+
+
+POSITIVE_CONFIRMATION_PATTERNS = [
+    r'^(sim|s|ss|sss|simmm?)$',
+    r'^(ok|okk|okkk|okay)$',
+    r'^(obrigad[oa]|vlw|valeu|tmj|show|top|blz|beleza)$',
+    r'^(isso|exato|perfeito|certinho|isso mesmo)$',
+    r'^(era isso|só isso|era só isso|só isso mesmo)$',
+    r'^(resolvido|resolveu|conseguiu|ajudou)$',
+    r'^(tudo certo|tá certo|tá bom|pode ser|tranquilo|suave)$',
+    r'^(\u{1F44D}|\u{1F44C}|\u{2705}|\u{1F64F}|\u{1F60A}|\u{1F389})$',  # thumbs up, ok, check, thanks, smile, party
+    r'^(por enquanto é isso|por agora sim|agora sim)$',
+    r'^(massa|dahora|boa|boua|nice|show de bola)$',
+]
+
+
+def is_positive_confirmation(message: str) -> bool:
+    """
+    Detecta se a mensagem é uma confirmação positiva de que o bot resolveu.
+    """
+    if not message:
+        return False
+    
+    text = message.strip().lower()
+    text = re.sub(r'[!.,;:?]+$', '', text)
+    
+    for pattern in POSITIVE_CONFIRMATION_PATTERNS:
+        if re.match(pattern, text, re.IGNORECASE | re.UNICODE):
+            return True
+    
+    positive_keywords = [
+        'obrigado', 'obrigada', 'valeu', 'vlw', 'tmj', 'show', 'top',
+        'blz', 'beleza', 'isso', 'perfeito', 'resolvido', 'ajudou',
+        'era isso', 'só isso', 'tudo certo', 'certinho', 'tranquilo',
+        'massa', 'dahora', 'boa', 'nice', 'show de bola'
+    ]
+    
+    for keyword in positive_keywords:
+        if keyword in text:
+            return True
+    
+    return False
+
+
+async def mark_bot_resolved(db: Session, conversation: Conversation) -> None:
+    """Marca conversa como resolvida pelo bot."""
+    conversation.bot_resolved_at = datetime.utcnow()
+    conversation.awaiting_confirmation = False
+    conversation.ticket_status = TicketStatusV2.SOLVED.value
+    conversation.solved_at = datetime.utcnow()
+    db.commit()
+
+
+async def send_confirmation_request(
+    db: Session,
+    conversation: Conversation,
+    zapi_client
+) -> bool:
+    """
+    Envia mensagem de confirmação após timeout.
+    Retorna True se enviou com sucesso.
+    """
+    from database.models import MessageDirection, MessageType, SenderType
+    from api.endpoints.whatsapp_webhook import save_message_zapi
+    
+    assessor_name = conversation.contact_name
+    message = get_confirmation_message(assessor_name)
+    
+    phone = conversation.phone
+    if not phone:
+        return False
+    
+    try:
+        result = await zapi_client.send_text(phone, message, delay_typing=1)
+        if result.get("success"):
+            save_message_zapi(
+                db,
+                message_id=result.get("message_id"),
+                zaap_id=result.get("zaap_id"),
+                phone=phone,
+                direction=MessageDirection.OUTBOUND.value,
+                message_type=MessageType.TEXT.value,
+                from_me=True,
+                body=message,
+                sender_type=SenderType.BOT.value
+            )
+            conversation.awaiting_confirmation = True
+            conversation.confirmation_sent_at = datetime.utcnow()
+            db.commit()
+            return True
+    except Exception as e:
+        print(f"[FLOW] Erro ao enviar confirmação: {e}")
+    
+    return False
+
+
+async def check_pending_confirmations(db: Session, zapi_client, timeout_minutes: int = 5):
+    """
+    Verifica conversas que aguardam confirmação há mais de X minutos.
+    Chamado periodicamente pelo scheduler.
+    """
+    from datetime import timedelta
+    
+    cutoff_time = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+    
+    pending_conversations = db.query(Conversation).filter(
+        Conversation.escalation_level == EscalationLevel.T0_BOT.value,
+        Conversation.awaiting_confirmation == False,
+        Conversation.bot_resolved_at.is_(None),
+        Conversation.last_bot_response_at.isnot(None),
+        Conversation.last_bot_response_at <= cutoff_time,
+        Conversation.confirmation_sent_at.is_(None)
+    ).all()
+    
+    for conv in pending_conversations:
+        try:
+            await send_confirmation_request(db, conv, zapi_client)
+            print(f"[FLOW] Confirmação enviada para {conv.phone}")
+        except Exception as e:
+            print(f"[FLOW] Erro ao processar confirmação para {conv.phone}: {e}")

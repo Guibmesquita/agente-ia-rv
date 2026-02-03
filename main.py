@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from contextlib import asynccontextmanager
+import asyncio
 
 from database.database import engine, Base, SessionLocal
 from database import crud
@@ -63,9 +64,42 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     
+    confirmation_task = asyncio.create_task(confirmation_timeout_scheduler())
+    
     yield
     
-    # Cleanup (se necessário)
+    confirmation_task.cancel()
+    try:
+        await confirmation_task
+    except asyncio.CancelledError:
+        pass
+
+
+async def confirmation_timeout_scheduler():
+    """
+    Scheduler que verifica conversas aguardando confirmação a cada minuto.
+    Envia mensagem de confirmação após 5 minutos sem resposta do assessor.
+    """
+    from services.conversation_flow import check_pending_confirmations
+    from integrations.zapi_client import get_zapi_client
+    
+    while True:
+        try:
+            await asyncio.sleep(60)
+            
+            db = SessionLocal()
+            try:
+                zapi_client = get_zapi_client()
+                await check_pending_confirmations(db, zapi_client, timeout_minutes=5)
+            except Exception as e:
+                print(f"[SCHEDULER] Erro no scheduler de confirmação: {e}")
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[SCHEDULER] Erro inesperado: {e}")
+            await asyncio.sleep(60)
 
 
 # Inicializa a aplicação FastAPI

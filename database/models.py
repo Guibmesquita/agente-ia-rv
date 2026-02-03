@@ -501,6 +501,12 @@ class Conversation(Base):
     conversation_topic = Column(String(100), nullable=True)
     first_human_response_at = Column(DateTime(timezone=True), nullable=True)
     
+    # V2.2 Bot resolution tracking fields
+    bot_resolved_at = Column(DateTime(timezone=True), nullable=True)
+    awaiting_confirmation = Column(Boolean, default=False)
+    last_bot_response_at = Column(DateTime(timezone=True), nullable=True)
+    confirmation_sent_at = Column(DateTime(timezone=True), nullable=True)
+    
     assessor = relationship("Assessor", foreign_keys=[assessor_id])
     assigned_user = relationship("User", foreign_keys=[assigned_to])
     messages = relationship("WhatsAppMessage", back_populates="conversation", order_by="WhatsAppMessage.created_at")

@@ -270,7 +270,8 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     from services.conversation_flow import (
         normalize_message, extract_first_name, identify_contact,
         get_transfer_message, should_transfer_to_human, update_conversation_state,
-        increment_stalled_counter, reset_stalled_counter, escalate_to_human_with_analysis
+        increment_stalled_counter, reset_stalled_counter, escalate_to_human_with_analysis,
+        is_positive_confirmation, mark_bot_resolved
     )
     from database.models import ConversationState, TransferReason
     
@@ -300,6 +301,41 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 message_record.ai_intent = "blocked_human_takeover"
                 db.commit()
             return
+        
+        if conversation.awaiting_confirmation:
+            if is_positive_confirmation(normalized_message):
+                print(f"[WEBHOOK] Confirmação positiva detectada - marcando como resolvido pelo bot")
+                await mark_bot_resolved(db, conversation)
+                
+                farewell_messages = [
+                    "Boa! Qualquer coisa, é só chamar! 👋",
+                    "Tranquilo! Precisando, estou por aqui!",
+                    "Show! Fico à disposição! 🚀",
+                    "Perfeito! Até mais!",
+                    "Beleza! Qualquer dúvida, só chamar!",
+                ]
+                import random
+                response = random.choice(farewell_messages)
+                
+                if message_record:
+                    message_record.ai_response = response
+                    message_record.ai_intent = "bot_resolution_confirmed"
+                    db.commit()
+                
+                result = await zapi_client.send_text(phone, response, delay_typing=1)
+                if result.get("success"):
+                    save_message_zapi(
+                        db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
+                        phone=phone, direction=MessageDirection.OUTBOUND.value,
+                        message_type=MessageType.TEXT.value, from_me=True, body=response,
+                        sender_type=SenderType.BOT.value
+                    )
+                return
+            else:
+                conversation.awaiting_confirmation = False
+                conversation.confirmation_sent_at = None
+                db.commit()
+                print(f"[WEBHOOK] Nova dúvida após confirmação - continuando atendimento")
         
         assessor, is_known = identify_contact(db, phone)
         print(f"[WEBHOOK] Assessor identificado: {assessor.nome if assessor else 'Nenhum'}, conhecido: {is_known}")
@@ -518,6 +554,10 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 ticket_id=ticket.id if ticket else None,
                 sender_type=SenderType.BOT.value
             )
+            
+            if conversation and conversation.escalation_level == EscalationLevel.T0_BOT.value:
+                conversation.last_bot_response_at = datetime.utcnow()
+                db.commit()
             
             try:
                 await save_conversation_insight(
