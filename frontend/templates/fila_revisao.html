@@ -197,7 +197,7 @@
 
     <!-- Modal de Edição com PDF -->
     <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-2xl w-full max-w-7xl mx-4 max-h-[98vh] overflow-hidden flex flex-col" style="min-height: 85vh;">
+        <div class="bg-white rounded-2xl w-full max-w-7xl mx-4 overflow-hidden flex flex-col" style="height: 90vh;">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center">
                 <div>
                     <h2 class="text-xl font-semibold text-gray-800">Revisar Conteúdo</h2>
@@ -209,9 +209,9 @@
                     </svg>
                 </button>
             </div>
-            <div class="flex-1 flex overflow-hidden">
+            <div class="flex-1 flex overflow-hidden" style="min-height: 0;">
                 <!-- PDF Viewer -->
-                <div class="w-1/2 bg-gray-100 border-r border-gray-200 flex flex-col">
+                <div class="w-1/2 bg-gray-100 border-r border-gray-200 flex flex-col" style="min-height: 0; overflow: hidden;">
                     <div class="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                         <span class="text-sm font-medium text-gray-700">Documento Original</span>
                         <div class="flex items-center gap-2">
@@ -232,8 +232,8 @@
                             </button>
                         </div>
                     </div>
-                    <div class="flex-1 overflow-auto p-4" id="pdfContainer" style="position: relative;">
-                        <div id="pdfWrapper" style="display: flex; justify-content: center; min-width: 100%; min-height: 100%;">
+                    <div class="overflow-auto p-4" id="pdfContainer" style="position: relative; flex: 1 1 0; min-height: 0;">
+                        <div id="pdfWrapper" style="display: inline-flex; justify-content: center; width: max-content; min-width: 100%;">
                             <canvas id="pdfCanvas" class="shadow-lg" style="cursor: crosshair;"></canvas>
                         </div>
                         <!-- Magnifier Lens -->
@@ -243,7 +243,7 @@
                     </div>
                 </div>
                 <!-- Editor -->
-                <div class="w-1/2 flex flex-col">
+                <div class="w-1/2 flex flex-col" style="min-height: 0;">
                     <div class="p-3 bg-gray-50 border-b border-gray-200">
                         <span class="text-sm font-medium text-gray-700">Conteúdo Extraído</span>
                     </div>
@@ -433,7 +433,7 @@
                 document.getElementById('totalPagesNum').textContent = totalPages;
                 
                 document.getElementById('pdfContainer').innerHTML = `
-                    <div id="pdfWrapper" style="display: flex; justify-content: center; min-width: 100%; min-height: 100%;">
+                    <div id="pdfWrapper" style="display: inline-flex; justify-content: center; width: max-content; min-width: 100%;">
                         <canvas id="pdfCanvas" class="shadow-lg" style="cursor: crosshair;"></canvas>
                     </div>
                     <div id="magnifier" style="display: none; position: fixed; width: 180px; height: 180px; border: 3px solid #f59e0b; border-radius: 50%; overflow: hidden; pointer-events: none; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
