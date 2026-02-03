@@ -232,8 +232,14 @@
                             </button>
                         </div>
                     </div>
-                    <div class="flex-1 overflow-auto p-4 flex items-start justify-center" id="pdfContainer" style="cursor: zoom-in;">
-                        <canvas id="pdfCanvas" class="shadow-lg transition-transform duration-200"></canvas>
+                    <div class="flex-1 overflow-auto p-4" id="pdfContainer" style="position: relative;">
+                        <div id="pdfWrapper" style="display: flex; justify-content: center; min-width: 100%; min-height: 100%;">
+                            <canvas id="pdfCanvas" class="shadow-lg" style="cursor: crosshair;"></canvas>
+                        </div>
+                        <!-- Magnifier Lens -->
+                        <div id="magnifier" style="display: none; position: fixed; width: 180px; height: 180px; border: 3px solid #f59e0b; border-radius: 50%; overflow: hidden; pointer-events: none; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                            <canvas id="magnifierCanvas" style="position: absolute;"></canvas>
+                        </div>
                     </div>
                 </div>
                 <!-- Editor -->
@@ -426,8 +432,16 @@
                 
                 document.getElementById('totalPagesNum').textContent = totalPages;
                 
-                document.getElementById('pdfContainer').innerHTML = '<canvas id="pdfCanvas" class="shadow-lg"></canvas>';
+                document.getElementById('pdfContainer').innerHTML = `
+                    <div id="pdfWrapper" style="display: flex; justify-content: center; min-width: 100%; min-height: 100%;">
+                        <canvas id="pdfCanvas" class="shadow-lg" style="cursor: crosshair;"></canvas>
+                    </div>
+                    <div id="magnifier" style="display: none; position: fixed; width: 180px; height: 180px; border: 3px solid #f59e0b; border-radius: 50%; overflow: hidden; pointer-events: none; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                        <canvas id="magnifierCanvas" style="position: absolute;"></canvas>
+                    </div>
+                `;
                 await renderPage(currentPage);
+                setupMagnifier();
             } catch (error) {
                 console.error('Erro ao carregar PDF:', error);
                 document.getElementById('pdfContainer').innerHTML = '<p class="text-red-500 text-center">Erro ao carregar PDF</p>';
@@ -482,6 +496,94 @@
         function resetZoom() {
             zoomScale = 1.0;
         }
+        
+        const MAGNIFIER_ZOOM = 2.5;
+        const MAGNIFIER_SIZE = 180;
+        let magnifierHandlers = null;
+        
+        function cleanupMagnifier() {
+            if (magnifierHandlers) {
+                const canvas = document.getElementById('pdfCanvas');
+                if (canvas) {
+                    canvas.removeEventListener('mouseenter', magnifierHandlers.enter);
+                    canvas.removeEventListener('mouseleave', magnifierHandlers.leave);
+                    canvas.removeEventListener('mousemove', magnifierHandlers.move);
+                    canvas.removeEventListener('click', magnifierHandlers.click);
+                }
+                magnifierHandlers = null;
+            }
+        }
+        
+        function setupMagnifier() {
+            cleanupMagnifier();
+            
+            const canvas = document.getElementById('pdfCanvas');
+            const magnifier = document.getElementById('magnifier');
+            const magnifierCanvas = document.getElementById('magnifierCanvas');
+            
+            if (!canvas || !magnifier || !magnifierCanvas) return;
+            
+            const magnifierCtx = magnifierCanvas.getContext('2d');
+            const sourceSize = MAGNIFIER_SIZE / MAGNIFIER_ZOOM;
+            
+            magnifierCanvas.width = MAGNIFIER_SIZE;
+            magnifierCanvas.height = MAGNIFIER_SIZE;
+            
+            const handleEnter = () => {
+                magnifier.style.display = 'block';
+            };
+            
+            const handleLeave = () => {
+                magnifier.style.display = 'none';
+            };
+            
+            const handleMove = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const sourceX = (x * scaleX) - (sourceSize / 2);
+                const sourceY = (y * scaleY) - (sourceSize / 2);
+                
+                magnifier.style.left = (e.clientX - MAGNIFIER_SIZE / 2) + 'px';
+                magnifier.style.top = (e.clientY - MAGNIFIER_SIZE / 2) + 'px';
+                
+                magnifierCtx.clearRect(0, 0, MAGNIFIER_SIZE, MAGNIFIER_SIZE);
+                magnifierCtx.drawImage(
+                    canvas,
+                    Math.max(0, sourceX),
+                    Math.max(0, sourceY),
+                    sourceSize,
+                    sourceSize,
+                    0,
+                    0,
+                    MAGNIFIER_SIZE,
+                    MAGNIFIER_SIZE
+                );
+            };
+            
+            const handleClick = async (e) => {
+                if (e.shiftKey) {
+                    await zoomOut();
+                } else {
+                    await zoomIn();
+                }
+            };
+            
+            magnifierHandlers = {
+                enter: handleEnter,
+                leave: handleLeave,
+                move: handleMove,
+                click: handleClick
+            };
+            
+            canvas.addEventListener('mouseenter', handleEnter);
+            canvas.addEventListener('mouseleave', handleLeave);
+            canvas.addEventListener('mousemove', handleMove);
+            canvas.addEventListener('click', handleClick);
+        }
 
         async function prevPage() {
             if (currentPage > 1) {
@@ -498,6 +600,7 @@
         }
 
         function closeEditModal() {
+            cleanupMagnifier();
             document.getElementById('editModal').classList.add('hidden');
             editingItemId = null;
             pdfDoc = null;
