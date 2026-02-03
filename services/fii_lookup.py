@@ -516,12 +516,48 @@ class FIILookupService:
         else:
             return self.format_complete_response(data)
     
-    def format_complete_response(self, data: FIIData) -> str:
-        """Formata resposta completa com todos os dados disponíveis."""
-        lines = [f"Informações do {data.ticker}"]
+    def _get_segment_description(self, segmento: str) -> str:
+        """Retorna descrição do segmento do FII."""
+        segmento_lower = segmento.lower() if segmento else ""
         
-        if data.nome:
-            lines.append(f"• Nome: {data.nome}")
+        descriptions = {
+            "logística": "investe em galpões logísticos e centros de distribuição, gerando renda através de aluguéis de empresas de e-commerce e logística",
+            "logístico": "investe em galpões logísticos e centros de distribuição, gerando renda através de aluguéis de empresas de e-commerce e logística",
+            "lajes corporativas": "investe em escritórios e lajes comerciais em edifícios corporativos, com receita proveniente de aluguéis de empresas",
+            "shoppings": "investe em participações de shopping centers, com receita de aluguéis e participação nas vendas dos lojistas",
+            "shopping": "investe em participações de shopping centers, com receita de aluguéis e participação nas vendas dos lojistas",
+            "papel": "investe em títulos de crédito imobiliário como CRIs e LCIs, gerando renda através dos juros recebidos",
+            "recebíveis": "investe em títulos de crédito imobiliário como CRIs e LCIs, gerando renda através dos juros recebidos",
+            "híbrido": "combina investimentos em imóveis físicos e títulos de crédito imobiliário, diversificando fontes de receita",
+            "fundo de fundos": "investe em cotas de outros FIIs, oferecendo diversificação automática entre diferentes segmentos",
+            "fof": "investe em cotas de outros FIIs, oferecendo diversificação automática entre diferentes segmentos",
+            "agências": "investe em agências bancárias e imóveis de varejo, com contratos de aluguel de longo prazo",
+            "hospital": "investe em hospitais e centros médicos, com contratos de aluguel de longo prazo com operadoras de saúde",
+            "educacional": "investe em imóveis educacionais como faculdades e escolas, com contratos de aluguel de longo prazo",
+            "hotel": "investe em hotéis e empreendimentos de hospitalidade, com receita atrelada à ocupação e diárias",
+            "residencial": "investe em imóveis residenciais para locação, gerando renda através de aluguéis de apartamentos",
+            "varejo": "investe em imóveis comerciais de varejo, como lojas e centros comerciais",
+        }
+        
+        for key, desc in descriptions.items():
+            if key in segmento_lower:
+                return desc
+        
+        return "é um fundo imobiliário listado na B3, gerando renda através de seus investimentos"
+    
+    def format_complete_response(self, data: FIIData) -> str:
+        """Formata resposta completa com contexto e indicadores."""
+        lines = []
+        
+        nome_display = data.nome if data.nome else data.ticker
+        segmento = data.segmento if data.segmento else "Fundo Imobiliário"
+        seg_desc = self._get_segment_description(segmento)
+        
+        lines.append(f"📋 Sobre o {data.ticker}:")
+        lines.append(f"{nome_display} é um FII do segmento {segmento}. Este fundo {seg_desc}.")
+        lines.append("")
+        lines.append("📊 Indicadores atuais:")
+        
         if data.cotacao:
             lines.append(f"• Cotação: {data.cotacao}")
         if data.dividend_yield:
@@ -534,16 +570,14 @@ class FIILookupService:
             lines.append(f"• Último Dividendo: {data.ultimo_dividendo}")
         if data.patrimonio:
             lines.append(f"• Patrimônio: {data.patrimonio}")
-        if data.cotistas:
-            lines.append(f"• Cotistas: {data.cotistas}")
-        if data.segmento:
-            lines.append(f"• Segmento: {data.segmento}")
         if data.liquidez:
             lines.append(f"• Liquidez Diária: {data.liquidez}")
         if data.rentabilidade_mes:
             lines.append(f"• Rentabilidade no Mês: {data.rentabilidade_mes}")
         if data.vacancia:
             lines.append(f"• Vacância: {data.vacancia}")
+        if data.cotistas:
+            lines.append(f"• Cotistas: {data.cotistas}")
         
         return "\n".join(lines)
     
