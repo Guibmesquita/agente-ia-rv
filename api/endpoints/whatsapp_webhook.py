@@ -430,7 +430,10 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         print(f"[WEBHOOK] Resposta gerada: {response[:100] if response else 'VAZIA'}...")
         
         history.append({"role": "user", "content": normalized_message})
-        history.append({"role": "assistant", "content": response})
+        assistant_entry = {"role": "assistant", "content": response}
+        if context:
+            assistant_entry["metadata"] = context
+        history.append(assistant_entry)
         conversation_history[phone] = history[-10:]
         
         reset_stalled_counter(db, conversation)

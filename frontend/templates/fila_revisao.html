@@ -197,7 +197,7 @@
 
     <!-- Modal de Edição com PDF -->
     <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-2xl w-full max-w-6xl mx-4 max-h-[95vh] overflow-hidden flex flex-col">
+        <div class="bg-white rounded-2xl w-full max-w-7xl mx-4 max-h-[98vh] overflow-hidden flex flex-col" style="min-height: 85vh;">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center">
                 <div>
                     <h2 class="text-xl font-semibold text-gray-800">Revisar Conteúdo</h2>
@@ -215,6 +215,14 @@
                     <div class="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                         <span class="text-sm font-medium text-gray-700">Documento Original</span>
                         <div class="flex items-center gap-2">
+                            <button onclick="zoomOut()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50" title="Diminuir zoom">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+                            </button>
+                            <span class="text-xs text-gray-500" id="zoomLevel">100%</span>
+                            <button onclick="zoomIn()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50" title="Aumentar zoom">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            </button>
+                            <span class="mx-2 text-gray-300">|</span>
                             <button onclick="prevPage()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                             </button>
@@ -224,8 +232,8 @@
                             </button>
                         </div>
                     </div>
-                    <div class="flex-1 overflow-auto p-4 flex items-start justify-center" id="pdfContainer">
-                        <canvas id="pdfCanvas" class="shadow-lg"></canvas>
+                    <div class="flex-1 overflow-auto p-4 flex items-start justify-center" id="pdfContainer" style="cursor: zoom-in;">
+                        <canvas id="pdfCanvas" class="shadow-lg transition-transform duration-200"></canvas>
                     </div>
                 </div>
                 <!-- Editor -->
@@ -380,6 +388,10 @@
         let currentPage = 1;
         let totalPages = 1;
         let targetPage = 1;
+        let zoomScale = 1.0;
+        const ZOOM_STEP = 0.25;
+        const MIN_ZOOM = 0.5;
+        const MAX_ZOOM = 3.0;
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -388,6 +400,8 @@
             if (!item) return;
             
             editingItemId = id;
+            zoomScale = 1.0;
+            document.getElementById('zoomLevel').textContent = '100%';
             document.getElementById('editContent').value = item.extracted_content || item.original_content || '';
             document.getElementById('editModalSubtitle').textContent = `${item.material_name || 'Material'} - ${item.block_title || 'Bloco'}`;
             document.getElementById('editModal').classList.remove('hidden');
@@ -429,7 +443,8 @@
             
             const containerWidth = document.getElementById('pdfContainer').clientWidth - 32;
             const viewport = page.getViewport({ scale: 1 });
-            const scale = Math.min(containerWidth / viewport.width, 1.5);
+            const baseScale = Math.min(containerWidth / viewport.width, 1.5);
+            const scale = baseScale * zoomScale;
             const scaledViewport = page.getViewport({ scale });
             
             canvas.width = scaledViewport.width;
@@ -441,12 +456,31 @@
             }).promise;
             
             document.getElementById('currentPageNum').textContent = pageNum;
+            document.getElementById('zoomLevel').textContent = Math.round(zoomScale * 100) + '%';
             
             if (pageNum === targetPage) {
                 canvas.style.border = '3px solid #f59e0b';
             } else {
                 canvas.style.border = 'none';
             }
+        }
+        
+        async function zoomIn() {
+            if (zoomScale < MAX_ZOOM) {
+                zoomScale = Math.min(zoomScale + ZOOM_STEP, MAX_ZOOM);
+                await renderPage(currentPage);
+            }
+        }
+        
+        async function zoomOut() {
+            if (zoomScale > MIN_ZOOM) {
+                zoomScale = Math.max(zoomScale - ZOOM_STEP, MIN_ZOOM);
+                await renderPage(currentPage);
+            }
+        }
+        
+        function resetZoom() {
+            zoomScale = 1.0;
         }
 
         async function prevPage() {

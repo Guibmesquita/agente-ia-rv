@@ -804,7 +804,45 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
                 {"intent": "error"}
             )
         
-        if user_message.lower().strip() in ['sim', 'yes', 's', 'quero', 'pode ser']:
+        affirmative_responses = ['sim', 'yes', 's', 'quero', 'pode ser', 'pode', 'busca', 'busque', 'ok', 'beleza', 'por favor', 'claro']
+        is_affirmative = user_message.lower().strip() in affirmative_responses
+        
+        last_intent = None
+        pending_fii_ticker = None
+        if conversation_history:
+            for hist in reversed(conversation_history[-6:]):
+                metadata = hist.get('metadata', {})
+                if metadata.get('intent') == 'fii_external_search_offer':
+                    last_intent = 'fii_external_search_offer'
+                    pending_fii_ticker = metadata.get('ticker')
+                    break
+                elif metadata.get('intent') == 'create_ticket_offer':
+                    last_intent = 'create_ticket_offer'
+                    break
+        
+        if is_affirmative and last_intent == 'fii_external_search_offer' and pending_fii_ticker:
+            print(f"[OpenAI] Usuário confirmou busca externa para FII {pending_fii_ticker} (via intent)")
+            fii_service = get_fii_lookup_service()
+            fii_result = fii_service.lookup(pending_fii_ticker)
+            if fii_result and fii_result.get('data'):
+                fii_info = fii_service.format_complete_response(fii_result['data'])
+                return (
+                    f"Encontrei informações públicas sobre {pending_fii_ticker}. Lembre-se que este fundo NÃO está na nossa base oficial de recomendações.\n\n{fii_info}",
+                    False,
+                    {
+                        "intent": "fii_external_result",
+                        "ticker": pending_fii_ticker,
+                        "source": "fundsexplorer"
+                    }
+                )
+            else:
+                return (
+                    f"Infelizmente não consegui encontrar informações sobre {pending_fii_ticker} nas fontes públicas. Este fundo pode não existir ou o código estar incorreto.",
+                    False,
+                    {"intent": "fii_not_found"}
+                )
+        
+        if is_affirmative and last_intent == 'create_ticket_offer':
             return (
                 "Perfeito! Estou abrindo um chamado para você. "
                 "Um de nossos assessores entrará em contato em breve. "
@@ -814,7 +852,6 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
             )
         
         confirmed_ticker = await self._detect_ticker_confirmation_async(user_message, conversation_history)
-        denial_lookup_ticker = None
         
         if confirmed_ticker and confirmed_ticker.startswith("ORIGINAL:"):
             original_ticker = confirmed_ticker.split(":")[1]
@@ -822,20 +859,38 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
             user_message = original_ticker
             confirmed_ticker = None
         elif confirmed_ticker and confirmed_ticker.startswith("DENIAL:"):
-            denial_lookup_ticker = confirmed_ticker.split(":")[1]
-            print(f"[OpenAI] Usuário negou sugestões e quer FII {denial_lookup_ticker} - buscando no FundsExplorer")
+            denial_ticker = confirmed_ticker.split(":")[1]
+            print(f"[OpenAI] Usuário negou sugestões e quer FII {denial_ticker} - oferecendo busca externa")
+            if denial_ticker.upper().endswith('11'):
+                return (
+                    f"Entendi que você quer informações sobre {denial_ticker}, que não está na nossa base. Quer que eu busque informações públicas sobre este fundo na internet?",
+                    False,
+                    {
+                        "intent": "fii_external_search_offer",
+                        "ticker": denial_ticker
+                    }
+                )
             confirmed_ticker = None
         elif confirmed_ticker == "DENIAL":
-            print(f"[OpenAI] Usuário negou sugestões - verificando ticker original para FundsExplorer")
+            print(f"[OpenAI] Usuário negou todas as sugestões - verificando ticker original")
+            original_ticker = None
             for hist in reversed(conversation_history[-4:] if conversation_history else []):
                 if hist.get('role') == 'assistant':
                     content = hist.get('content', '')
                     if 'não encontrei' in content.lower():
                         ticker_match = re.search(r'não encontrei\s+([A-Z]{4,6}11)', content, re.IGNORECASE)
                         if ticker_match:
-                            denial_lookup_ticker = ticker_match.group(1).upper()
-                            print(f"[OpenAI] Buscando {denial_lookup_ticker} no FundsExplorer após negação")
+                            original_ticker = ticker_match.group(1).upper()
                         break
+            if original_ticker and original_ticker.endswith('11'):
+                return (
+                    f"Entendi. {original_ticker} não está na nossa base oficial. Quer que eu busque informações públicas sobre este fundo na internet?",
+                    False,
+                    {
+                        "intent": "fii_external_search_offer",
+                        "ticker": original_ticker
+                    }
+                )
             confirmed_ticker = None
         elif confirmed_ticker == "AMBIGUOUS":
             print(f"[OpenAI] Resposta ambígua - solicitando clarificação")
@@ -923,13 +978,6 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
         fii_service = get_fii_lookup_service()
         detected_ticker = fii_service.extract_ticker(user_message)
         
-        if denial_lookup_ticker:
-            print(f"[OpenAI] Lookup forçado no FundsExplorer após negação: {denial_lookup_ticker}")
-            fii_lookup_result = fii_service.lookup(denial_lookup_ticker)
-            if fii_lookup_result:
-                print(f"[OpenAI] Dados do FundsExplorer obtidos para {denial_lookup_ticker}")
-            detected_ticker = None
-        
         if detected_ticker:
             ticker_exists_exactly = vs.find_exact_ticker(detected_ticker) if vs else False
             
@@ -956,10 +1004,21 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
                     }
                     print(f"[OpenAI] Sugerindo alternativas para {detected_ticker}: {all_similar[:3]}")
                 else:
-                    print(f"[OpenAI] Nenhum similar - buscando no FundsExplorer")
-                    fii_lookup_result = fii_service.lookup(user_message)
-                    if fii_lookup_result:
-                        print(f"[OpenAI] Dados do FundsExplorer obtidos para {detected_ticker}")
+                    is_fii = detected_ticker.upper().endswith('11')
+                    if is_fii:
+                        print(f"[OpenAI] Nenhum similar para FII {detected_ticker} - oferecendo busca externa")
+                        return (
+                            f"Não encontrei {detected_ticker} na nossa base de conhecimento oficial. Quer que eu busque informações públicas sobre este fundo na internet?",
+                            False,
+                            {
+                                "intent": "fii_external_search_offer",
+                                "ticker": detected_ticker,
+                                "documents": context_documents,
+                                "identified_assessor": assessor_data
+                            }
+                        )
+                    else:
+                        print(f"[OpenAI] Nenhum similar para {detected_ticker} - produto não encontrado")
         
         context = self._build_context(context_documents)
         

@@ -1101,7 +1101,7 @@
         }
 
         function openFormModal(assessor = null) {
-            document.getElementById('form-modal').classList.add('show');
+            document.getElementById('form-modal').classList.add('active');
             document.getElementById('form-title').textContent = assessor ? 'Editar Assessor' : 'Novo Assessor';
             
             document.getElementById('form-id').value = assessor?.id || '';
@@ -1131,7 +1131,7 @@
         }
 
         function closeFormModal() {
-            document.getElementById('form-modal').classList.remove('show');
+            document.getElementById('form-modal').classList.remove('active');
         }
 
         function editAssessor(id) {
@@ -1489,7 +1489,7 @@
         document.querySelectorAll('.modal-overlay').forEach(modal => {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
-                    modal.classList.remove('show');
+                    modal.classList.remove('active');
                 }
             });
         });
