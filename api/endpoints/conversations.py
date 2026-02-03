@@ -17,7 +17,8 @@ import json
 from database.database import get_db
 from database.models import (
     Conversation, WhatsAppMessage, Assessor, User,
-    ConversationStatus, ConversationState, SenderType, MessageDirection
+    ConversationStatus, ConversationState, SenderType, MessageDirection,
+    TicketStatusV2, EscalationLevel, TicketHistory, TicketHistoryActionType
 )
 from api.endpoints.auth import get_current_user, get_current_user_sse
 from services.sse_manager import get_sse_manager
@@ -38,9 +39,40 @@ class ConversationResponse(BaseModel):
     last_message_preview: Optional[str] = None
     unread_count: int = 0
     created_at: Optional[datetime] = None
+    # V2 Zendesk-like fields
+    ticket_status: Optional[str] = None
+    escalation_level: Optional[str] = None
+    first_response_at: Optional[datetime] = None
+    solved_at: Optional[datetime] = None
+    sla_due_at: Optional[datetime] = None
+    reopened_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+class TicketStatusRequest(BaseModel):
+    status: str  # new, open, in_progress, solved
+
+
+class FilterCountsResponse(BaseModel):
+    all: int = 0
+    escalated: int = 0
+    my_tickets: int = 0
+    open: int = 0
+    solved_today: int = 0
+    new: int = 0
+
+
+class TicketMetricsResponse(BaseModel):
+    total_tickets: int = 0
+    bot_resolved: int = 0
+    human_resolved: int = 0
+    escalated: int = 0
+    avg_first_response_minutes: Optional[float] = None
+    avg_resolution_minutes: Optional[float] = None
+    escalation_rate: Optional[float] = None
+    bot_resolution_rate: Optional[float] = None
 
 
 class MessageResponse(BaseModel):
@@ -96,14 +128,17 @@ def normalize_phone(phone: str) -> str:
 @router.get("/", response_model=List[ConversationResponse])
 async def list_conversations(
     search: Optional[str] = Query(None, description="Buscar por número ou nome"),
-    status: Optional[str] = Query(None, description="Filtrar por status"),
+    status: Optional[str] = Query(None, description="Filtrar por status legado"),
+    ticket_status: Optional[str] = Query(None, description="Filtrar por ticket_status V2 (new, open, in_progress, solved)"),
+    escalation_level: Optional[str] = Query(None, description="Filtrar por nível de escalonamento (t0, t1)"),
+    assigned_to_me: Optional[bool] = Query(None, description="Filtrar meus tickets"),
     skip: int = Query(0, ge=0),
     offset: int = Query(None, ge=0, description="Alias for skip"),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Lista todas as conversas com filtros e busca."""
+    """Lista todas as conversas com filtros e busca. Suporta filtros V2 Zendesk-like."""
     actual_offset = offset if offset is not None else skip
     query = db.query(Conversation)
     
@@ -120,6 +155,16 @@ async def list_conversations(
     
     if status:
         query = query.filter(Conversation.status == status)
+    
+    # V2 Zendesk-like filters
+    if ticket_status:
+        query = query.filter(Conversation.ticket_status == ticket_status)
+    
+    if escalation_level:
+        query = query.filter(Conversation.escalation_level == escalation_level)
+    
+    if assigned_to_me:
+        query = query.filter(Conversation.assigned_to == current_user.id)
     
     conversations = query.order_by(desc(Conversation.last_message_at)).offset(actual_offset).limit(limit).all()
     
@@ -139,7 +184,14 @@ async def list_conversations(
             last_message_at=conv.last_message_at,
             last_message_preview=conv.last_message_preview,
             unread_count=conv.unread_count,
-            created_at=conv.created_at
+            created_at=conv.created_at,
+            # V2 fields
+            ticket_status=conv.ticket_status,
+            escalation_level=conv.escalation_level,
+            first_response_at=conv.first_response_at,
+            solved_at=conv.solved_at,
+            sla_due_at=conv.sla_due_at,
+            reopened_count=conv.reopened_count or 0
         ))
     
     return result
@@ -689,6 +741,264 @@ def update_conversation_from_message(
         conversation.unread_count = (conversation.unread_count or 0) + 1
     
     db.commit()
+
+
+def record_ticket_history(
+    db: Session,
+    conversation_id: int,
+    action_type: str,
+    actor_user_id: int = None,
+    from_status: str = None,
+    to_status: str = None,
+    from_escalation: str = None,
+    to_escalation: str = None,
+    assigned_user_id: int = None,
+    notes: str = None
+):
+    """Registra uma ação no histórico do ticket para auditoria e SLA."""
+    history = TicketHistory(
+        conversation_id=conversation_id,
+        action_type=action_type,
+        from_status=from_status,
+        to_status=to_status,
+        from_escalation=from_escalation,
+        to_escalation=to_escalation,
+        actor_user_id=actor_user_id,
+        assigned_user_id=assigned_user_id,
+        notes=notes
+    )
+    db.add(history)
+    db.commit()
+
+
+# ==================== V2 ZENDESK-LIKE ENDPOINTS ====================
+
+@router.get("/filters", response_model=FilterCountsResponse)
+async def get_filter_counts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna contadores para os filtros da fila de tickets."""
+    from sqlalchemy import func
+    from datetime import date
+    
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    
+    all_count = db.query(func.count(Conversation.id)).scalar() or 0
+    escalated = db.query(func.count(Conversation.id)).filter(
+        Conversation.escalation_level == EscalationLevel.T1_HUMAN.value
+    ).scalar() or 0
+    my_tickets = db.query(func.count(Conversation.id)).filter(
+        Conversation.assigned_to == current_user.id
+    ).scalar() or 0
+    open_count = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status.in_([TicketStatusV2.NEW.value, TicketStatusV2.OPEN.value])
+    ).scalar() or 0
+    solved_today = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status == TicketStatusV2.SOLVED.value,
+        Conversation.solved_at >= today_start
+    ).scalar() or 0
+    new_count = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status == TicketStatusV2.NEW.value
+    ).scalar() or 0
+    
+    return FilterCountsResponse(
+        all=all_count,
+        escalated=escalated,
+        my_tickets=my_tickets,
+        open=open_count,
+        solved_today=solved_today,
+        new=new_count
+    )
+
+
+@router.post("/{conversation_id}/take")
+async def take_ticket(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Assume um ticket (Zendesk-like 'Assumir')."""
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    
+    old_status = conv.ticket_status
+    old_escalation = conv.escalation_level
+    
+    conv.assigned_to = current_user.id
+    conv.last_assigned_at = datetime.utcnow()
+    conv.ticket_status = TicketStatusV2.IN_PROGRESS.value
+    conv.escalation_level = EscalationLevel.T1_HUMAN.value
+    conv.status = ConversationStatus.HUMAN_TAKEOVER.value
+    conv.conversation_state = ConversationState.HUMAN_TAKEOVER.value
+    conv.transferred_at = datetime.utcnow()
+    
+    if not conv.first_response_at:
+        conv.first_response_at = datetime.utcnow()
+    
+    db.commit()
+    
+    record_ticket_history(
+        db, conversation_id,
+        TicketHistoryActionType.ASSIGNED.value,
+        actor_user_id=current_user.id,
+        from_status=old_status,
+        to_status=conv.ticket_status,
+        from_escalation=old_escalation,
+        to_escalation=conv.escalation_level,
+        assigned_user_id=current_user.id,
+        notes=f"Ticket assumido por {current_user.username}"
+    )
+    
+    return {
+        "success": True,
+        "message": f"Ticket assumido por {current_user.username}",
+        "ticket_status": conv.ticket_status,
+        "escalation_level": conv.escalation_level,
+        "assigned_to": current_user.username
+    }
+
+
+@router.post("/{conversation_id}/release")
+async def release_ticket(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Libera um ticket (devolve para a fila/bot)."""
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    
+    old_status = conv.ticket_status
+    old_escalation = conv.escalation_level
+    old_assigned = conv.assigned_to
+    
+    conv.assigned_to = None
+    conv.ticket_status = TicketStatusV2.OPEN.value
+    conv.escalation_level = EscalationLevel.T0_BOT.value
+    conv.status = ConversationStatus.BOT_ACTIVE.value
+    conv.conversation_state = ConversationState.IN_PROGRESS.value
+    conv.stalled_interactions = 0
+    
+    db.commit()
+    
+    record_ticket_history(
+        db, conversation_id,
+        TicketHistoryActionType.UNASSIGNED.value,
+        actor_user_id=current_user.id,
+        from_status=old_status,
+        to_status=conv.ticket_status,
+        from_escalation=old_escalation,
+        to_escalation=conv.escalation_level,
+        notes=f"Ticket liberado por {current_user.username}"
+    )
+    
+    return {
+        "success": True,
+        "message": "Ticket liberado e devolvido ao bot",
+        "ticket_status": conv.ticket_status,
+        "escalation_level": conv.escalation_level
+    }
+
+
+@router.post("/{conversation_id}/status")
+async def update_ticket_status(
+    conversation_id: int,
+    request: TicketStatusRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Atualiza o status do ticket (new, open, in_progress, solved)."""
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    
+    valid_statuses = [s.value for s in TicketStatusV2]
+    if request.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Status inválido. Use: {valid_statuses}")
+    
+    old_status = conv.ticket_status
+    conv.ticket_status = request.status
+    
+    if request.status == TicketStatusV2.SOLVED.value:
+        conv.solved_at = datetime.utcnow()
+        conv.status = ConversationStatus.CLOSED.value
+    
+    db.commit()
+    
+    record_ticket_history(
+        db, conversation_id,
+        TicketHistoryActionType.STATUS_CHANGED.value,
+        actor_user_id=current_user.id,
+        from_status=old_status,
+        to_status=conv.ticket_status,
+        notes=f"Status alterado de {old_status} para {request.status}"
+    )
+    
+    return {
+        "success": True,
+        "message": f"Status atualizado para {request.status}",
+        "ticket_status": conv.ticket_status
+    }
+
+
+@router.get("/metrics", response_model=TicketMetricsResponse)
+async def get_ticket_metrics(
+    days: int = Query(30, ge=1, le=365, description="Período em dias para calcular métricas"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna métricas de atendimento estilo Zendesk."""
+    from sqlalchemy import func
+    from datetime import timedelta
+    
+    start_date = datetime.utcnow() - timedelta(days=days)
+    
+    total = db.query(func.count(Conversation.id)).filter(
+        Conversation.created_at >= start_date
+    ).scalar() or 0
+    
+    solved = db.query(Conversation).filter(
+        Conversation.ticket_status == TicketStatusV2.SOLVED.value,
+        Conversation.solved_at >= start_date
+    ).all()
+    
+    bot_resolved = len([c for c in solved if c.escalation_level == EscalationLevel.T0_BOT.value])
+    human_resolved = len([c for c in solved if c.escalation_level == EscalationLevel.T1_HUMAN.value])
+    
+    escalated = db.query(func.count(Conversation.id)).filter(
+        Conversation.escalation_level == EscalationLevel.T1_HUMAN.value,
+        Conversation.created_at >= start_date
+    ).scalar() or 0
+    
+    first_response_times = []
+    resolution_times = []
+    
+    for conv in solved:
+        if conv.first_response_at and conv.created_at:
+            diff = (conv.first_response_at - conv.created_at).total_seconds() / 60
+            first_response_times.append(diff)
+        if conv.solved_at and conv.created_at:
+            diff = (conv.solved_at - conv.created_at).total_seconds() / 60
+            resolution_times.append(diff)
+    
+    avg_first_response = sum(first_response_times) / len(first_response_times) if first_response_times else None
+    avg_resolution = sum(resolution_times) / len(resolution_times) if resolution_times else None
+    escalation_rate = (escalated / total * 100) if total > 0 else None
+    bot_rate = (bot_resolved / len(solved) * 100) if solved else None
+    
+    return TicketMetricsResponse(
+        total_tickets=total,
+        bot_resolved=bot_resolved,
+        human_resolved=human_resolved,
+        escalated=escalated,
+        avg_first_response_minutes=round(avg_first_response, 1) if avg_first_response else None,
+        avg_resolution_minutes=round(avg_resolution, 1) if avg_resolution else None,
+        escalation_rate=round(escalation_rate, 1) if escalation_rate else None,
+        bot_resolution_rate=round(bot_rate, 1) if bot_rate else None
+    )
 
 
 @router.get("/stream")

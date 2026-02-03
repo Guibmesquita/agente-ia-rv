@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, User, Bot, Send, UserCheck, Loader2, MessageCircle, CheckCheck, MoreVertical, Copy, Reply, Trash2, Forward, X, Phone } from 'lucide-react';
+import { Search, Plus, User, Bot, Send, UserCheck, Loader2, MessageCircle, CheckCheck, MoreVertical, Copy, Reply, Trash2, Forward, X, Phone, AlertCircle, Clock, CheckCircle2, ArrowUpCircle, Filter } from 'lucide-react';
 
 const API_BASE = '/api';
 
@@ -43,6 +43,32 @@ function StatusBadge({ status }) {
     <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${c.bg} ${c.text} ${c.border}`}>
       {c.label}
     </span>
+  );
+}
+
+function TicketStatusBadge({ ticketStatus, escalationLevel }) {
+  const statusConfig = {
+    new: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', label: 'Novo', icon: AlertCircle },
+    open: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200', label: 'Aberto', icon: Clock },
+    in_progress: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', label: 'Em Progresso', icon: ArrowUpCircle },
+    solved: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', label: 'Resolvido', icon: CheckCircle2 },
+  };
+  const c = statusConfig[ticketStatus] || statusConfig.new;
+  const Icon = c.icon;
+  const isEscalated = escalationLevel === 't1';
+  
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${c.bg} ${c.text} ${c.border}`}>
+        <Icon className="w-3 h-3" />
+        {c.label}
+      </span>
+      {isEscalated && (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+          T1
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -152,6 +178,8 @@ function ConversationItem({ conversation, isActive, onClick }) {
   const initials = displayName.charAt(0).toUpperCase();
   const preview = conversation.last_message_preview || 'Sem mensagens';
   const time = formatTimeAgo(conversation.last_message_at || conversation.updated_at);
+  const assignedTo = conversation.assigned_to_name;
+  const isEscalated = conversation.escalation_level === 't1';
   
   return (
     <div
@@ -159,7 +187,9 @@ function ConversationItem({ conversation, isActive, onClick }) {
       className={`flex items-center gap-4 px-4 py-4 cursor-pointer transition-all border-b border-gray-100 ${
         isActive 
           ? 'bg-primary/5 border-l-4 border-l-primary' 
-          : 'hover:bg-gray-50 border-l-4 border-l-transparent'
+          : isEscalated
+            ? 'bg-red-50/50 hover:bg-red-50 border-l-4 border-l-red-400'
+            : 'hover:bg-gray-50 border-l-4 border-l-transparent'
       }`}
     >
       <div className="relative flex-shrink-0">
@@ -180,10 +210,21 @@ function ConversationItem({ conversation, isActive, onClick }) {
           <span className="font-semibold text-gray-900 text-sm truncate max-w-[160px]">{displayName}</span>
           <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{time}</span>
         </div>
-        <div className="text-xs text-gray-500 mb-1.5">{formatPhone(conversation.phone)}</div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+          <span>{formatPhone(conversation.phone)}</span>
+          {assignedTo && (
+            <span className="text-primary font-medium">• {assignedTo}</span>
+          )}
+          {!assignedTo && conversation.status === 'bot_active' && (
+            <span className="text-gray-400">• BOT</span>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-gray-500 truncate flex-1">{preview}</p>
-          <StatusBadge status={conversation.status} />
+          <TicketStatusBadge 
+            ticketStatus={conversation.ticket_status || 'new'} 
+            escalationLevel={conversation.escalation_level}
+          />
         </div>
       </div>
       
@@ -275,6 +316,8 @@ function App() {
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [ticketFilter, setTicketFilter] = useState('');
+  const [filterCounts, setFilterCounts] = useState({ all: 0, escalated: 0, my_tickets: 0, open: 0, solved_today: 0, new: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -295,6 +338,18 @@ function App() {
     }
   }, []);
 
+  const fetchFilterCounts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/conversations/filters`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setFilterCounts(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar contadores:', err);
+    }
+  }, []);
+
   const fetchConversations = useCallback(async (pageNum = 0, append = false) => {
     setIsLoading(true);
     try {
@@ -302,6 +357,11 @@ function App() {
       let url = `${API_BASE}/conversations/?limit=${PAGE_SIZE}&offset=${offset}`;
       if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
       if (statusFilter) url += `&status=${statusFilter}`;
+      if (ticketFilter === 'escalated') url += `&escalation_level=t1`;
+      else if (ticketFilter === 'my_tickets') url += `&assigned_to_me=true`;
+      else if (ticketFilter === 'open') url += `&ticket_status=open`;
+      else if (ticketFilter === 'new') url += `&ticket_status=new`;
+      else if (ticketFilter === 'solved') url += `&ticket_status=solved`;
       const res = await fetch(url, { credentials: 'include' });
       if (res.status === 401) {
         window.location.href = '/login';
@@ -408,6 +468,80 @@ function App() {
     }
   };
 
+  const takeTicket = async () => {
+    if (!currentConversation) return;
+    try {
+      const res = await fetch(`${API_BASE}/conversations/${currentConversation.id}/take`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Erro ao assumir ticket');
+        return;
+      }
+      const result = await res.json();
+      setCurrentConversation(prev => ({ 
+        ...prev, 
+        assigned_to_id: result.assigned_to_id,
+        assigned_to_name: result.assigned_to_name,
+        ticket_status: result.ticket_status 
+      }));
+      await fetchConversations(0, false);
+      fetchFilterCounts();
+    } catch (err) {
+      alert('Erro ao assumir ticket');
+    }
+  };
+
+  const releaseTicket = async () => {
+    if (!currentConversation) return;
+    try {
+      const res = await fetch(`${API_BASE}/conversations/${currentConversation.id}/release`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Erro ao liberar ticket');
+        return;
+      }
+      const result = await res.json();
+      setCurrentConversation(prev => ({ 
+        ...prev, 
+        assigned_to_id: null,
+        assigned_to_name: null 
+      }));
+      await fetchConversations(0, false);
+      fetchFilterCounts();
+    } catch (err) {
+      alert('Erro ao liberar ticket');
+    }
+  };
+
+  const updateTicketStatus = async (newStatus) => {
+    if (!currentConversation) return;
+    try {
+      const res = await fetch(`${API_BASE}/conversations/${currentConversation.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ticket_status: newStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Erro ao alterar status');
+        return;
+      }
+      const result = await res.json();
+      setCurrentConversation(prev => ({ ...prev, ticket_status: result.ticket_status }));
+      await fetchConversations(0, false);
+      fetchFilterCounts();
+    } catch (err) {
+      alert('Erro ao alterar status');
+    }
+  };
+
   const startNewConversation = async ({ phone, message }) => {
     setIsCreating(true);
     try {
@@ -466,15 +600,19 @@ function App() {
         await fetch(`${API_BASE}/conversations/sync`, { method: 'POST', credentials: 'include' });
       } catch {}
       fetchConversations(0, false);
+      fetchFilterCounts();
     };
     syncAndLoad();
   }, []);
 
   useEffect(() => {
     setPage(0);
-    const timer = setTimeout(() => fetchConversations(0, false), 300);
+    const timer = setTimeout(() => {
+      fetchConversations(0, false);
+      fetchFilterCounts();
+    }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, ticketFilter]);
 
   useEffect(() => {
     if (messages.length > 0 && shouldScrollRef.current) {
@@ -600,7 +738,7 @@ function App() {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <div className="w-[380px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-200">
-            <div className="relative mb-4">
+            <div className="relative mb-3">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
@@ -610,15 +748,46 @@ function App() {
                 className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white outline-none transition-all"
               />
             </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {[
+                { value: '', label: 'Todos', count: filterCounts.all },
+                { value: 'escalated', label: 'Escalados', count: filterCounts.escalated, highlight: true },
+                { value: 'my_tickets', label: 'Meus', count: filterCounts.my_tickets },
+                { value: 'new', label: 'Novos', count: filterCounts.new },
+                { value: 'open', label: 'Abertos', count: filterCounts.open },
+                { value: 'solved', label: 'Resolvidos', count: filterCounts.solved_today },
+              ].map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setTicketFilter(f.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                    ticketFilter === f.value
+                      ? 'bg-primary text-white'
+                      : f.highlight && f.count > 0
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {f.label}
+                  {f.count > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                      ticketFilter === f.value ? 'bg-white/20' : 'bg-gray-200'
+                    }`}>
+                      {f.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2">
               {[{ value: '', label: 'Todas' }, { value: 'bot_active', label: 'Bot' }, { value: 'human_takeover', label: 'Humano' }].map(f => (
                 <button
                   key={f.value}
                   onClick={() => setStatusFilter(f.value)}
-                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                     statusFilter === f.value
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-primary/10 text-primary border border-primary/20'
+                      : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-transparent'
                   }`}
                 >
                   {f.label}
@@ -666,38 +835,79 @@ function App() {
         <div className="flex-1 flex flex-col bg-gray-50 min-h-0">
           {currentConversation ? (
             <>
-              <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg ${
-                    currentConversation.status === 'human_takeover' ? 'bg-amber-500' : 'bg-gray-400'
-                  }`}>
-                    {contactName.charAt(0).toUpperCase()}
+              <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg ${
+                      currentConversation.status === 'human_takeover' ? 'bg-amber-500' : 'bg-gray-400'
+                    }`}>
+                      {contactName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-semibold text-gray-900 text-lg">{contactName}</h2>
+                        <TicketStatusBadge 
+                          ticketStatus={currentConversation.ticket_status || 'new'} 
+                          escalationLevel={currentConversation.escalation_level}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span>{formatPhone(currentConversation.phone)}</span>
+                        {currentConversation.assigned_to_name && (
+                          <span className="text-primary font-medium">• {currentConversation.assigned_to_name}</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="font-semibold text-gray-900 text-lg">{contactName}</h2>
-                    <p className="text-sm text-gray-500">{formatPhone(currentConversation.phone)}</p>
+                  <div className="flex items-center gap-2">
+                    {!currentConversation.assigned_to_id ? (
+                      <button
+                        onClick={takeTicket}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors bg-primary text-white hover:bg-primary/90"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        Assumir Ticket
+                      </button>
+                    ) : (
+                      <button
+                        onClick={releaseTicket}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      >
+                        Liberar
+                      </button>
+                    )}
+                    <select
+                      value={currentConversation.ticket_status || 'new'}
+                      onChange={e => updateTicketStatus(e.target.value)}
+                      className="px-3 py-2 rounded-lg text-sm border border-gray-200 bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="new">Novo</option>
+                      <option value="open">Aberto</option>
+                      <option value="in_progress">Em Andamento</option>
+                      <option value="solved">Resolvido</option>
+                    </select>
+                    <button
+                      onClick={toggleTakeover}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+                        currentConversation.status === 'human_takeover'
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          : 'bg-primary/10 text-primary hover:bg-primary/20'
+                      }`}
+                    >
+                      {currentConversation.status === 'human_takeover' ? (
+                        <>
+                          <Bot className="w-4 h-4" />
+                          Bot
+                        </>
+                      ) : (
+                        <>
+                          <UserCheck className="w-4 h-4" />
+                          Humano
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={toggleTakeover}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-                    currentConversation.status === 'human_takeover'
-                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                      : 'bg-primary/10 text-primary hover:bg-primary/20'
-                  }`}
-                >
-                  {currentConversation.status === 'human_takeover' ? (
-                    <>
-                      <Bot className="w-5 h-5" />
-                      Devolver ao Bot
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck className="w-5 h-5" />
-                      Assumir Conversa
-                    </>
-                  )}
-                </button>
               </div>
 
               <div 

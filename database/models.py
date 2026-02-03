@@ -374,6 +374,34 @@ class ConversationStatus(str, enum.Enum):
     CLOSED = "closed"
 
 
+# ==================== ZENDESK-LIKE TICKET SYSTEM ====================
+
+class TicketStatusV2(str, enum.Enum):
+    """Status de ticket estilo Zendesk para a V2."""
+    NEW = "new"                    # Mensagem nova, ainda não processada
+    OPEN = "open"                  # Bot tentando resolver
+    IN_PROGRESS = "in_progress"    # Humano ou bot trabalhando
+    SOLVED = "solved"              # Resolvido
+
+
+class EscalationLevel(str, enum.Enum):
+    """Nível de escalonamento do atendimento."""
+    T0_BOT = "t0"      # Tier 0 - Bot (autoatendimento)
+    T1_HUMAN = "t1"    # Tier 1 - Humano
+
+
+class TicketHistoryActionType(str, enum.Enum):
+    """Tipos de ação para histórico de ticket."""
+    STATUS_CHANGED = "status_changed"
+    ASSIGNED = "assigned"
+    UNASSIGNED = "unassigned"
+    ESCALATED = "escalated"
+    REOPENED = "reopened"
+    MESSAGE_SENT = "message_sent"
+    MESSAGE_RECEIVED = "message_received"
+    SLA_BREACHED = "sla_breached"
+
+
 class TransferReason(str, enum.Enum):
     """Motivos de transferência para humano."""
     EXCESSIVE_SPECIFICITY = "excessive_specificity"
@@ -416,6 +444,7 @@ class Conversation(Base):
     Permite controle de takeover humano e histórico.
     O LID é o identificador preferencial do WhatsApp para privacidade.
     Inclui máquina de estados para fluxo de identificação e atendimento.
+    V2: Inclui campos de ticket estilo Zendesk para fila de atendimento.
     """
     __tablename__ = "conversations"
     
@@ -441,9 +470,19 @@ class Conversation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
+    # V2 Zendesk-like ticket fields (campos opcionais para compatibilidade)
+    ticket_status = Column(String(20), default=TicketStatusV2.NEW.value, index=True)
+    escalation_level = Column(String(10), default=EscalationLevel.T0_BOT.value, index=True)
+    first_response_at = Column(DateTime(timezone=True), nullable=True)
+    solved_at = Column(DateTime(timezone=True), nullable=True)
+    sla_due_at = Column(DateTime(timezone=True), nullable=True)
+    reopened_count = Column(Integer, default=0)
+    last_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    
     assessor = relationship("Assessor", foreign_keys=[assessor_id])
     assigned_user = relationship("User", foreign_keys=[assigned_to])
     messages = relationship("WhatsAppMessage", back_populates="conversation", order_by="WhatsAppMessage.created_at")
+    ticket_history = relationship("TicketHistory", back_populates="conversation", order_by="TicketHistory.created_at")
 
 
 class MessageStatus(str, enum.Enum):
@@ -493,6 +532,31 @@ class WhatsAppMessage(Base):
     ticket = relationship("Ticket", foreign_keys=[ticket_id])
     campaign = relationship("Campaign", foreign_keys=[campaign_id])
     conversation = relationship("Conversation", back_populates="messages")
+
+
+class TicketHistory(Base):
+    """
+    Histórico de ações no ticket para auditoria e cálculo de SLA.
+    Registra todas as transições de status, atribuições e eventos importantes.
+    """
+    __tablename__ = "ticket_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False, index=True)
+    action_type = Column(String(50), nullable=False, index=True)
+    from_status = Column(String(30), nullable=True)
+    to_status = Column(String(30), nullable=True)
+    from_escalation = Column(String(10), nullable=True)
+    to_escalation = Column(String(10), nullable=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    extra_data = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    conversation = relationship("Conversation", back_populates="ticket_history")
+    actor = relationship("User", foreign_keys=[actor_user_id])
+    assigned_user = relationship("User", foreign_keys=[assigned_user_id])
 
 
 # ==================== CMS DE PRODUTOS ====================
