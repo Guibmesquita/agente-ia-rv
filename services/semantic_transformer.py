@@ -3,203 +3,106 @@ Serviço de transformação semântica para o CMS de Produtos.
 Implementa a arquitetura de 3 camadas:
 
 1. Extração Técnica (JSON bruto do GPT-4 Vision)
-2. Modelo Semântico Normalizado (hierarquia editável pelo usuário)
+2. Modelo Semântico Normalizado (estrutura genérica para qualquer tabela)
 3. Camada Vetorial/Indexação (chunks narrativos para IA)
+
+IMPORTANTE: Este serviço é AGNÓSTICO à estrutura da tabela.
+Não assume campos específicos como "classe", "gestora", "fundo".
+Cada tabela pode ter colunas e linhas completamente diferentes.
 """
 import json
-import re
-from typing import Dict, Any, List, Optional, Tuple
-
-
-FINANCIAL_PRODUCT_SCHEMA = {
-    "hierarchy": ["classe", "gestora", "fundo"],
-    "primary_identifier": "ticker",
-    "key_attributes": [
-        "ticker", "veiculo", "publico_alvo", "oferta_base", "reservas",
-        "liquidacao_oferta", "objetivo_retorno", "prazo_alvo", "duracao_estimada",
-        "distribuicao_rendimentos", "tributacao", "investimento_minimo",
-        "fee_topo", "repasse_adm", "repasse_pfee", "roa_total"
-    ],
-    "aliases": {
-        "classe": ["classe", "class", "category", "categoria"],
-        "gestora": ["gestora", "gestora/corretora", "manager", "asset manager", "asset"],
-        "fundo": ["fundo", "fund", "nome do fundo", "fund name"],
-        "ticker": ["ticker", "codigo", "code", "símbolo", "symbol"],
-        "veiculo": ["veículo", "veiculo", "vehicle", "tipo", "type", "fii cetip", "instrumento"],
-        "publico_alvo": ["público - alvo", "público alvo", "público-alvo", "target", "publico"],
-        "oferta_base": ["oferta base", "oferta base (r$ mm)", "volume", "size"],
-        "reservas": ["reservas", "reserves", "período reservas"],
-        "liquidacao_oferta": ["liquidação oferta", "liquidacao", "settlement"],
-        "objetivo_retorno": ["objetivo de retorno", "objetivo retorno", "retorno alvo", "target return"],
-        "prazo_alvo": ["prazo alvo", "prazo", "duration", "term"],
-        "duracao_estimada": ["duração estimada", "duration estimated", "prazo estimado"],
-        "distribuicao_rendimentos": ["distribuição de rendimentos", "distribuição", "distribution"],
-        "tributacao": ["tributação de rendimentos", "tributação", "taxation", "tax"],
-        "tributacao_ganho_capital": ["tributação ganho de capital", "ganho capital", "capital gain tax"],
-        "investimento_minimo": ["investimento min.", "investimento mínimo", "min investment"],
-        "fee_topo": ["fee topo", "fee top", "upfront fee"],
-        "repasse_adm": ["repasse adm", "admin fee", "taxa adm"],
-        "repasse_pfee": ["repasse pfee", "performance fee", "pfee"],
-        "roa_total": ["roa total est*", "roa total", "total roa"],
-        "alocacao_carteira": ["alocação carteira xp", "alocação", "allocation"]
-    }
-}
-
-
-def normalize_header(header: str) -> str:
-    """Normaliza um cabeçalho para o nome padronizado."""
-    header_lower = header.lower().strip()
-    
-    for normalized, aliases in FINANCIAL_PRODUCT_SCHEMA["aliases"].items():
-        for alias in aliases:
-            if alias.lower() == header_lower or alias.lower() in header_lower:
-                return normalized
-    
-    clean = re.sub(r'[^a-z0-9]+', '_', header_lower)
-    clean = re.sub(r'_+', '_', clean).strip('_')
-    return clean if clean else "unknown"
+from typing import Dict, Any, List, Tuple
 
 
 def parse_table_to_semantic(table_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Converte JSON de tabela em modelo semântico hierárquico.
+    Converte JSON de tabela em modelo semântico genérico.
     
     Input: {"headers": [...], "rows": [[...], ...]}
     Output: {
-        "type": "product_table",
-        "hierarchy": ["classe", "gestora", "fundo"],
-        "products": [
-            {
-                "classe": "PR+",
-                "gestora": "TG Core",
-                "fundo": "ALIAR",
-                "ticker": "ALIAR11",
-                "attributes": {
-                    "veiculo": "FII Cetip Prazo Determinado",
-                    "prazo_alvo": "7 anos",
-                    ...
-                }
-            },
-            ...
+        "type": "table",
+        "headers": ["Col A", "Col B", "Col C"],
+        "rows": [
+            {"Col A": "valor1", "Col B": "valor2", "Col C": "valor3"},
+            {"Col A": "valor4", "Col B": "valor5", "Col C": "valor6"},
         ],
-        "headers_map": {"Classe": "classe", ...}
+        "row_count": 2,
+        "col_count": 3
     }
     """
     if not table_data:
-        return {"type": "empty", "products": []}
+        return {"type": "empty", "headers": [], "rows": []}
     
     headers = table_data.get("headers", [])
-    rows = table_data.get("rows", [])
+    raw_rows = table_data.get("rows", [])
     
-    if not headers or not rows:
+    if not headers and not raw_rows:
         if isinstance(table_data, list):
             if len(table_data) > 0 and isinstance(table_data[0], dict):
                 headers = list(table_data[0].keys())
-                rows = [list(item.values()) for item in table_data]
+                raw_rows = [list(item.values()) for item in table_data]
             else:
                 return {"type": "raw_list", "items": table_data}
     
-    headers_map = {}
-    for h in headers:
-        normalized = normalize_header(h)
-        headers_map[h] = normalized
-    
-    products = []
-    for row in rows:
+    rows = []
+    for row in raw_rows:
         if len(row) != len(headers):
             continue
         
-        product = {"attributes": {}}
-        
-        for i, (header, value) in enumerate(zip(headers, row)):
-            normalized = headers_map.get(header, f"col_{i}")
-            value_str = str(value).strip() if value else ""
-            
-            if normalized in FINANCIAL_PRODUCT_SCHEMA["hierarchy"]:
-                product[normalized] = value_str
-            elif normalized == FINANCIAL_PRODUCT_SCHEMA["primary_identifier"]:
-                product[normalized] = value_str
-            else:
-                product["attributes"][normalized] = value_str
-        
-        products.append(product)
+        row_dict = {}
+        for header, value in zip(headers, row):
+            row_dict[header] = str(value).strip() if value else ""
+        rows.append(row_dict)
     
     return {
-        "type": "product_table",
-        "hierarchy": FINANCIAL_PRODUCT_SCHEMA["hierarchy"],
-        "primary_identifier": FINANCIAL_PRODUCT_SCHEMA["primary_identifier"],
-        "products": products,
-        "headers_map": headers_map,
-        "original_headers": headers
+        "type": "table",
+        "headers": headers,
+        "rows": rows,
+        "row_count": len(rows),
+        "col_count": len(headers)
     }
 
 
 def semantic_to_display_text(semantic_model: Dict[str, Any]) -> str:
     """
-    Converte modelo semântico em texto hierárquico para exibição.
+    Converte modelo semântico em texto legível para exibição.
     
-    Output:
-    1. Classe: PR+
-       1.1 Gestora: TG Core
-           1.1.1 Fundo: ALIAR
-                 Ticker: ALIAR11
-                 Veículo: FII Cetip Prazo Determinado
-                 Prazo Alvo: 7 anos
-                 ...
+    Formato genérico linha por linha:
+    
+    Linha 1:
+      • Coluna A: valor1
+      • Coluna B: valor2
+      • Coluna C: valor3
+    
+    Linha 2:
+      • Coluna A: valor4
+      • Coluna B: valor5
+      • Coluna C: valor6
     """
     if semantic_model.get("type") == "empty":
         return "(Sem dados)"
     
     if semantic_model.get("type") == "raw_list":
-        return "\n".join([f"• {item}" for item in semantic_model.get("items", [])])
+        items = semantic_model.get("items", [])
+        return "\n".join([f"• {item}" for item in items])
     
-    products = semantic_model.get("products", [])
-    if not products:
-        return "(Sem produtos)"
+    rows = semantic_model.get("rows", [])
+    headers = semantic_model.get("headers", [])
     
-    hierarchy = semantic_model.get("hierarchy", ["classe", "gestora", "fundo"])
-    
-    grouped = {}
-    for product in products:
-        key1 = product.get(hierarchy[0], "N/A") if len(hierarchy) > 0 else "Geral"
-        key2 = product.get(hierarchy[1], "N/A") if len(hierarchy) > 1 else "Geral"
-        key3 = product.get(hierarchy[2], "N/A") if len(hierarchy) > 2 else None
-        
-        if key1 not in grouped:
-            grouped[key1] = {}
-        if key2 not in grouped[key1]:
-            grouped[key1][key2] = []
-        grouped[key1][key2].append(product)
+    if not rows:
+        return "(Sem dados na tabela)"
     
     lines = []
-    level1_idx = 0
     
-    for class_name, gestoras in grouped.items():
-        level1_idx += 1
-        lines.append(f"{level1_idx}. {hierarchy[0].title()}: {class_name}")
+    for i, row in enumerate(rows, start=1):
+        lines.append(f"Linha {i}:")
         
-        level2_idx = 0
-        for gestora_name, products_list in gestoras.items():
-            level2_idx += 1
-            lines.append(f"   {level1_idx}.{level2_idx} {hierarchy[1].title()}: {gestora_name}")
-            
-            for product in products_list:
-                level3_name = product.get(hierarchy[2], None) if len(hierarchy) > 2 else None
-                
-                if level3_name:
-                    lines.append(f"       • {hierarchy[2].title()}: {level3_name}")
-                
-                ticker = product.get("ticker")
-                if ticker:
-                    lines.append(f"         Ticker: {ticker}")
-                
-                attrs = product.get("attributes", {})
-                for attr_key, attr_value in attrs.items():
-                    display_name = attr_key.replace("_", " ").title()
-                    display_value = attr_value.strip() if attr_value else "—"
-                    lines.append(f"         {display_name}: {display_value}")
-                
-                lines.append("")
+        for header in headers:
+            value = row.get(header, "")
+            display_value = value if value else "—"
+            lines.append(f"  • {header}: {display_value}")
+        
+        lines.append("")
     
     return "\n".join(lines)
 
@@ -208,107 +111,37 @@ def generate_narrative_chunks(semantic_model: Dict[str, Any], material_title: st
     """
     Gera chunks narrativos para indexação vetorial.
     
-    Cada produto vira um chunk narrativo como:
-    "O fundo TGPR PR+, da gestora TG Core, é um FII Cetip de prazo determinado,
-     com estratégia pré-fixada, voltado ao público geral, com objetivo de retorno
-     de 15% ao ano, prazo alvo de 7 anos e distribuição mensal."
+    Cada linha da tabela vira um chunk com todos os seus dados.
+    Formato: "Registro: Coluna A = valor1, Coluna B = valor2, ..."
     """
     chunks = []
     
-    if semantic_model.get("type") != "product_table":
+    if semantic_model.get("type") not in ["table", "product_table"]:
         return chunks
     
-    products = semantic_model.get("products", [])
+    rows = semantic_model.get("rows", [])
+    headers = semantic_model.get("headers", [])
     
-    for i, product in enumerate(products):
-        classe = product.get("classe", "")
-        gestora = product.get("gestora", "")
-        fundo = product.get("fundo", "")
-        ticker = product.get("ticker", "")
-        attrs = product.get("attributes", {})
+    for i, row in enumerate(rows):
+        parts = []
+        for header in headers:
+            value = row.get(header, "")
+            if value and value.strip() and value.lower() not in ["n/a", "na", "-", ""]:
+                parts.append(f"{header}: {value}")
         
-        veiculo = attrs.get("veiculo", "")
-        publico = attrs.get("publico_alvo", "")
-        objetivo_retorno = attrs.get("objetivo_retorno", "")
-        prazo_alvo = attrs.get("prazo_alvo", "")
-        distribuicao = attrs.get("distribuicao_rendimentos", "")
-        oferta_base = attrs.get("oferta_base", "")
-        
-        narrative_parts = []
-        
-        if fundo or ticker:
-            identity = f"O fundo {fundo}" if fundo else f"O produto {ticker}"
-            if ticker and fundo:
-                identity = f"O fundo {fundo} ({ticker})"
-            narrative_parts.append(identity)
-        
-        if gestora:
-            narrative_parts.append(f"da gestora {gestora}")
-        
-        if classe:
-            narrative_parts.append(f"classe {classe}")
-        
-        if veiculo:
-            narrative_parts.append(f"é um {veiculo}")
-        
-        if publico:
-            narrative_parts.append(f"voltado ao público {publico}")
-        
-        if objetivo_retorno:
-            narrative_parts.append(f"com objetivo de retorno de {objetivo_retorno}")
-        
-        if prazo_alvo:
-            narrative_parts.append(f"prazo alvo de {prazo_alvo}")
-        
-        if distribuicao:
-            narrative_parts.append(f"distribuição {distribuicao}")
-        
-        if oferta_base:
-            narrative_parts.append(f"oferta base de R$ {oferta_base}")
-        
-        if len(narrative_parts) >= 2:
-            narrative = ", ".join(narrative_parts[:2])
-            if len(narrative_parts) > 2:
-                narrative += ", " + ", ".join(narrative_parts[2:])
-            narrative = narrative.replace("  ", " ").strip()
-            if not narrative.endswith("."):
-                narrative += "."
+        if parts:
+            narrative = "Registro: " + ", ".join(parts) + "."
+            
+            if material_title:
+                narrative = f"[{material_title}] " + narrative
             
             chunks.append({
                 "text": narrative,
                 "metadata": {
-                    "chunk_type": "product_narrative",
-                    "classe": classe,
-                    "gestora": gestora,
-                    "fundo": fundo,
-                    "ticker": ticker,
+                    "chunk_type": "table_row",
                     "source": material_title,
-                    "product_index": i
-                }
-            })
-        
-        detailed_parts = []
-        for attr_key, attr_value in attrs.items():
-            if attr_value and attr_value.strip() and attr_value.lower() not in ["n/a", "na", "-", ""]:
-                display_name = attr_key.replace("_", " ")
-                detailed_parts.append(f"{display_name}: {attr_value}")
-        
-        if detailed_parts and (fundo or ticker):
-            header = f"Detalhes de {fundo or ticker}"
-            if gestora:
-                header += f" ({gestora})"
-            detail_text = f"{header}. " + "; ".join(detailed_parts) + "."
-            
-            chunks.append({
-                "text": detail_text,
-                "metadata": {
-                    "chunk_type": "product_details",
-                    "classe": classe,
-                    "gestora": gestora,
-                    "fundo": fundo,
-                    "ticker": ticker,
-                    "source": material_title,
-                    "product_index": i
+                    "row_index": i,
+                    "row_data": row
                 }
             })
     

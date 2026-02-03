@@ -50,10 +50,12 @@
             border-radius: 8px;
             padding: 16px;
             margin: 16px 0;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
             color: #4b5563;
-            line-height: 1.6;
-            max-height: 120px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            max-height: 600px;
             overflow-y: auto;
         }
         
@@ -334,7 +336,6 @@
             container.innerHTML = filtered.map(item => {
                 const risk = getRiskLevel(item.confidence_score);
                 const content = item.display_content || item.extracted_content || item.original_content || 'Sem conteúdo';
-                const preview = content.length > 300 ? content.substring(0, 300) + '...' : content;
                 
                 return `
                     <div class="review-card ${risk}-risk" data-id="${item.id}">
@@ -346,7 +347,7 @@
                             <span class="risk-badge ${risk}">${getRiskLabel(risk)}</span>
                         </div>
                         ${item.risk_reason ? `<p class="text-sm text-red-600 mb-2"><strong>Motivo:</strong> ${item.risk_reason}</p>` : ''}
-                        <div class="content-preview">${preview}</div>
+                        <div class="content-preview">${content}</div>
                         <div class="action-buttons">
                             <button class="btn-approve" onclick="approveItem(${item.id})">Aprovar</button>
                             <button class="btn-edit" onclick="editItem(${item.id})">Editar</button>
