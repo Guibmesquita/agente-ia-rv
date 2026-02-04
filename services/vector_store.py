@@ -435,7 +435,7 @@ class VectorStore:
         Returns:
             Dict com informações do produto ou None se não encontrado
         """
-        from database.connection import SessionLocal
+        from database.database import SessionLocal
         from database.models import Product, Material, ContentBlock
         import unicodedata
         
