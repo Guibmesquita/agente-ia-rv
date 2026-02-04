@@ -15,7 +15,7 @@ from database.database import get_db, SessionLocal
 from database.models import (
     WhatsAppMessage, MessageDirection, MessageType, MessageStatus,
     Conversation, ConversationStatus, SenderType, Assessor, RetrievalLog,
-    EscalationLevel, TicketStatusV2
+    EscalationLevel, TicketStatusV2, ConversationTicket
 )
 from database import crud
 from services.whatsapp_client import zapi_client
@@ -543,18 +543,45 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 print(f"[WEBHOOK] Erro na escalação via OpenAI, usando fallback: {e}")
                 import traceback
                 traceback.print_exc()
-                conversation.escalation_category = "other"
-                conversation.escalation_reason_detail = str(transfer_reason) if transfer_reason else "Transferência automática"
-                conversation.ticket_summary = normalized_message[:200] if normalized_message else "Solicitação de atendimento"
-                conversation.conversation_topic = "Geral"
-                conversation.ticket_status = TicketStatusV2.NEW.value
-                conversation.escalation_level = EscalationLevel.T1_HUMAN.value
-                conversation.status = ConversationStatus.HUMAN_TAKEOVER.value
-                conversation.conversation_state = ConversationState.HUMAN_TAKEOVER.value
-                conversation.transfer_reason = transfer_reason
-                conversation.transferred_at = datetime.utcnow()
-                db.commit()
-                response = "Registrado! O broker responsável já tá sendo avisado e responde em breve."
+                
+                fresh_conv = db.query(Conversation).filter(Conversation.id == conversation.id).first()
+                if fresh_conv:
+                    ticket_count = db.query(ConversationTicket).filter(
+                        ConversationTicket.conversation_id == fresh_conv.id
+                    ).count()
+                    
+                    fallback_ticket = ConversationTicket(
+                        conversation_id=fresh_conv.id,
+                        ticket_number=ticket_count + 1,
+                        status=TicketStatusV2.NEW.value,
+                        escalation_level=EscalationLevel.T1_HUMAN.value,
+                        escalation_category="other",
+                        escalation_reason_detail=str(transfer_reason) if transfer_reason else "Transferência automática",
+                        ticket_summary=normalized_message[:200] if normalized_message else "Solicitação de atendimento",
+                        conversation_topic="Geral",
+                        transfer_reason=transfer_reason,
+                        transferred_at=datetime.utcnow()
+                    )
+                    db.add(fallback_ticket)
+                    db.flush()
+                    
+                    fresh_conv.active_ticket_id = fallback_ticket.id
+                    fresh_conv.ticket_status = TicketStatusV2.NEW.value
+                    fresh_conv.escalation_level = EscalationLevel.T1_HUMAN.value
+                    fresh_conv.status = ConversationStatus.HUMAN_TAKEOVER.value
+                    fresh_conv.conversation_state = ConversationState.HUMAN_TAKEOVER.value
+                    fresh_conv.transfer_reason = transfer_reason
+                    fresh_conv.transferred_at = datetime.utcnow()
+                    fresh_conv.escalation_category = "other"
+                    fresh_conv.ticket_summary = normalized_message[:200] if normalized_message else "Solicitação de atendimento"
+                    fresh_conv.conversation_topic = "Geral"
+                    db.commit()
+                    
+                    created_ticket_id = fallback_ticket.id
+                    print(f"[WEBHOOK] Fallback ticket #{fallback_ticket.id} criado com sucesso")
+                    response = f"Registrado! O broker responsável já tá sendo avisado e responde em breve.\n\nChamado #{fallback_ticket.id} criado com sucesso!"
+                else:
+                    response = "Registrado! O broker responsável já tá sendo avisado e responde em breve."
         
         if message_record:
             if response:

@@ -350,6 +350,11 @@ async def escalate_to_human_with_analysis(
     from services.openai_agent import OpenAIAgent
     from database.models import ConversationTicket
     
+    conversation_id = conversation.id
+    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conversation:
+        raise ValueError(f"Conversation {conversation_id} not found")
+    
     broker_name = None
     assessor_name = None
     
