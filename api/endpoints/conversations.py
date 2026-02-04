@@ -1210,6 +1210,9 @@ async def update_ticket_status(
     if request.status == TicketStatusV2.SOLVED.value:
         conv.solved_at = now_naive
         conv.status = ConversationStatus.BOT_ACTIVE.value
+        conv.conversation_state = ConversationState.IN_PROGRESS.value
+        conv.escalation_level = EscalationLevel.T0_BOT.value
+        conv.stalled_interactions = 0
         conv.assigned_to = None
         conv.active_ticket_id = None
     
