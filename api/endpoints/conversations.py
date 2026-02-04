@@ -1098,10 +1098,13 @@ async def release_ticket(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
     
+    from datetime import timezone
+    
     old_status = conv.ticket_status
     old_escalation = conv.escalation_level
     old_assigned = conv.assigned_to
     now = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     
     active_ticket = None
     resolution_time = None
@@ -1115,7 +1118,12 @@ async def release_ticket(
             active_ticket.solved_at = now
             
             if active_ticket.transferred_at:
-                resolution_time = int((now - active_ticket.transferred_at).total_seconds())
+                transferred = active_ticket.transferred_at
+                if transferred.tzinfo is not None:
+                    transferred_utc = transferred.astimezone(timezone.utc)
+                else:
+                    transferred_utc = transferred.replace(tzinfo=timezone.utc)
+                resolution_time = int((now_utc - transferred_utc).total_seconds())
                 active_ticket.resolution_time_seconds = resolution_time
             
             if resolution:
@@ -1200,7 +1208,7 @@ async def update_ticket_status(
     conv.ticket_status = request.status
     
     if request.status == TicketStatusV2.SOLVED.value:
-        conv.solved_at = now
+        conv.solved_at = now_naive
         conv.status = ConversationStatus.BOT_ACTIVE.value
         conv.assigned_to = None
         conv.active_ticket_id = None
