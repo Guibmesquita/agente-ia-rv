@@ -1083,13 +1083,18 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
             print(f"[OpenAI] Saudação detectada - NÃO consultando documentos")
         elif categoria == "ATENDIMENTO_HUMANO":
             print(f"[OpenAI] Pedido de atendimento humano detectado - Marcando para escalação")
-            assessor_name = context.get("assessor_name", "").split()[0] if context.get("assessor_name") else ""
-            return AgentResponse(
-                response=f"{assessor_name}, estou abrindo um chamado para a equipe de Renda Variável. Em breve um especialista entrará em contato com você por aqui mesmo. Aguarde um momento!",
-                human_transfer=True,
-                should_create_ticket=True,
-                transfer_reason="explicit_human_request",
-                confidence=1.0
+            assessor_name = ""
+            if identified_assessor and identified_assessor.get("nome"):
+                assessor_name = identified_assessor["nome"].split()[0]
+            greeting = f"{assessor_name}, estou" if assessor_name else "Estou"
+            return (
+                f"{greeting} abrindo um chamado para a equipe de Renda Variável. Em breve um especialista entrará em contato com você por aqui mesmo. Aguarde um momento!",
+                True,
+                {
+                    "human_transfer": True,
+                    "should_create_ticket": True,
+                    "transfer_reason": "explicit_human_request"
+                }
             )
         elif categoria == "FORA_ESCOPO":
             print(f"[OpenAI] Fora de escopo - NÃO consultando documentos")
