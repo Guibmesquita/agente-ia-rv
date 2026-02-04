@@ -1035,7 +1035,7 @@ function App() {
                           onClick={releaseTicket}
                           className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors bg-primary text-white hover:bg-primary-dark shadow-sm"
                         >
-                          Liberar
+                          Devolver ao agente
                         </button>
                       </>
                     )}
