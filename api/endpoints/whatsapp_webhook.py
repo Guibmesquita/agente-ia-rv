@@ -634,9 +634,14 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 sender_type=SenderType.BOT.value
             )
             
-            if conversation and conversation.escalation_level == EscalationLevel.T0_BOT.value:
-                conversation.last_bot_response_at = datetime.utcnow()
-                db.commit()
+            if conversation:
+                conv_id = conversation.id
+                fresh_conversation = db.query(Conversation).filter(Conversation.id == conv_id).first()
+                if fresh_conversation and fresh_conversation.escalation_level == EscalationLevel.T0_BOT.value:
+                    print(f"[WEBHOOK] Atualizando last_bot_response_at para conversa {conv_id}")
+                    fresh_conversation.last_bot_response_at = datetime.utcnow()
+                    db.commit()
+                    print(f"[WEBHOOK] last_bot_response_at atualizado: {fresh_conversation.last_bot_response_at}")
             
             try:
                 await save_conversation_insight(
