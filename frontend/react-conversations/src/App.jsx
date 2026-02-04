@@ -90,7 +90,7 @@ function TicketStatusBadge({ ticketStatus, escalationLevel }) {
   const statusConfig = {
     new: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', label: 'Novo', icon: AlertCircle },
     open: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', label: 'Aberto', icon: Clock },
-    in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', label: 'Em Andamento', icon: ArrowUpCircle },
+    in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', label: 'Aberto', icon: Clock },
     solved: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', label: 'Concluído', icon: CheckCircle2 },
   };
   

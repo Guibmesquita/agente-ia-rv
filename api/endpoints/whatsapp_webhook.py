@@ -502,10 +502,11 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         print(f"[WEBHOOK] Resposta gerada: {response[:100] if response else 'VAZIA'}...")
         
         history.append({"role": "user", "content": normalized_message})
-        assistant_entry = {"role": "assistant", "content": response}
-        if context:
-            assistant_entry["metadata"] = context
-        history.append(assistant_entry)
+        if response:
+            assistant_entry = {"role": "assistant", "content": response}
+            if context:
+                assistant_entry["metadata"] = context
+            history.append(assistant_entry)
         conversation_history[phone] = history[-10:]
         
         reset_stalled_counter(db, conversation)
@@ -556,7 +557,8 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 response = "Registrado! O broker responsável já tá sendo avisado e responde em breve."
         
         if message_record:
-            message_record.ai_response = response
+            if response:
+                message_record.ai_response = response
             message_record.ai_intent = context.get("intent") if context else None
             if created_ticket_id:
                 message_record.ticket_id = created_ticket_id
@@ -583,9 +585,13 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         except Exception as log_err:
             print(f"[WEBHOOK] Erro ao salvar RetrievalLog: {log_err}")
         
-        print(f"[WEBHOOK] Enviando resposta via Z-API para {phone}...")
-        send_result = await zapi_client.send_text(phone, response, delay_typing=2)
-        print(f"[WEBHOOK] Resultado envio Z-API: {send_result}")
+        if response:
+            print(f"[WEBHOOK] Enviando resposta via Z-API para {phone}...")
+            send_result = await zapi_client.send_text(phone, response, delay_typing=2)
+            print(f"[WEBHOOK] Resultado envio Z-API: {send_result}")
+        else:
+            print(f"[WEBHOOK] Resposta vazia - não enviando mensagem ao WhatsApp")
+            send_result = {"success": False, "reason": "empty_response"}
         
         if send_result.get("success"):
             save_message_zapi(

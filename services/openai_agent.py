@@ -1365,8 +1365,7 @@ INSTRUÇÕES IMPORTANTES:
         except Exception as e:
             print(f"[OpenAI] Erro ao gerar resposta: {e}")
             return (
-                "Desculpe, ocorreu um erro ao processar sua mensagem. "
-                "Deseja abrir um chamado para falar com um assessor?",
+                None,
                 False,
                 {"intent": "error", "error": str(e), "identified_assessor": assessor_data}
             )

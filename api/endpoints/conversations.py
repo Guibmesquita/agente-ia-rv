@@ -833,11 +833,12 @@ async def resolve_conversation(
     if request.summary:
         conv.resolution_notes = request.summary
     
+    previous_status = conv.ticket_status or TicketStatusV2.OPEN.value
     history_entry = TicketHistory(
         conversation_id=conv.id,
         user_id=current_user.id,
         action_type=TicketHistoryActionType.STATUS_CHANGE.value,
-        from_value=TicketStatusV2.IN_PROGRESS.value,
+        from_value=previous_status,
         to_value=TicketStatusV2.SOLVED.value,
         notes=request.summary or "Ticket resolvido"
     )
