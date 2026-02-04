@@ -31,6 +31,9 @@ from services.semantic_transformer import transform_content_for_display, transfo
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
+# Queue para rastrear progresso de uploads
+upload_progress_queues = {}
+
 def reindex_block(block: ContentBlock, db: Session):
     """Reindexa um bloco de conteúdo no vetor de busca."""
     try:
