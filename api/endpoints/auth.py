@@ -23,7 +23,7 @@ MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID")
 MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET")
 MICROSOFT_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID")
 MICROSOFT_AUTHORITY = f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}" if MICROSOFT_TENANT_ID else None
-MICROSOFT_SCOPES = ["User.Read", "openid", "profile", "email"]
+MICROSOFT_SCOPES = ["User.Read", "email"]
 
 _pending_oauth_states = {}
 
