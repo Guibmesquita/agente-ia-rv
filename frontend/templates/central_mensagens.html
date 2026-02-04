@@ -215,11 +215,6 @@
             font-size: 1rem;
         }
 
-        .chat-contact-status {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-
         .chat-actions {
             display: flex;
             gap: 8px;
@@ -1060,7 +1055,6 @@
                     <div class="avatar" id="chatAvatar">A</div>
                     <div class="chat-contact-info">
                         <div class="chat-contact-name" id="chatContactName">Contato</div>
-                        <div class="chat-contact-status" id="chatContactStatus">Online</div>
                     </div>
                     <div class="chat-actions">
                         <button class="chat-action-btn" id="takeoverBtn" onclick="toggleTakeover()" title="Alternar modo humano/bot">
@@ -1324,9 +1318,6 @@
             const initial = (currentConversation.contact_name || currentConversation.phone).charAt(0).toUpperCase();
             document.getElementById('chatAvatar').textContent = initial;
             document.getElementById('chatContactName').textContent = currentConversation.contact_name || formatPhone(currentConversation.phone);
-            
-            const statusText = currentConversation.status === 'human_takeover' ? 'Atendimento humano ativo' : 'Bot ativo';
-            document.getElementById('chatContactStatus').textContent = statusText;
 
             updateTakeoverButton();
             renderConversations();
@@ -1518,8 +1509,6 @@
                     const result = await response.json();
                     currentConversation.status = result.status;
                     updateTakeoverButton();
-                    document.getElementById('chatContactStatus').textContent = 
-                        result.status === 'human_takeover' ? 'Atendimento humano ativo' : 'Bot ativo';
                 }
             } catch (error) {
                 console.error('Erro ao alternar takeover:', error);

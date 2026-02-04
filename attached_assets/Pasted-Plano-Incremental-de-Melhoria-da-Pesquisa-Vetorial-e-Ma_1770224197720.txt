@@ -1,0 +1,350 @@
+Plano Incremental de Melhoria da Pesquisa Vetorial e Matching Semântico
+Objetivo
+
+Garantir que o sistema consiga localizar produtos e ativos mesmo quando:
+
+O usuário escreve errado
+
+Usa apelidos, siglas ou abreviações
+
+Mistura ticker, nome do produto e nome da gestora
+
+Fornece informação incompleta
+
+Usa linguagem natural via WhatsApp
+
+O foco é tornar a busca tolerante a erro, contextual e resiliente, sem quebrar a base atual.
+
+Camada 1 — Normalização Forte de Texto (Pré-Processamento)
+Objetivo
+
+Reduzir variações artificiais antes de qualquer busca.
+
+Regras conceituais
+
+Antes de enviar qualquer termo para busca:
+
+Converter tudo para lowercase
+
+Remover acentuação
+
+Remover caracteres especiais
+
+Remover múltiplos espaços
+
+Normalizar hífens, barras e underscores
+
+Remover palavras irrelevantes comuns (stopwords financeiras genéricas)
+
+Benefício
+
+Reduz falhas por:
+
+“Itaú” vs “itau”
+
+“XP-Long Biased” vs “xp long biased”
+
+“Kinea Crédito Privado” vs “kinea credito”
+
+Camada 2 — Tokenização Inteligente
+Objetivo
+
+Quebrar a mensagem em partes úteis para busca.
+
+Estratégia
+
+Separar a mensagem em:
+
+Possível ticker
+
+Possível nome de fundo
+
+Possível nome de gestora
+
+Palavras-chave financeiras
+
+Palavras de contexto (ex: “crédito”, “ações”, “fundo”, “long”, “prev”)
+
+Benefício
+
+Permite múltiplas tentativas de matching com subconjuntos da frase.
+
+Camada 3 — Tabela de Sinônimos e Alias (Lookup Semântico)
+Objetivo
+
+Criar uma camada lógica de equivalências.
+
+Estrutura conceitual
+
+Manter uma estrutura paralela contendo:
+
+Ticker → Nome completo
+
+Nome abreviado → Nome oficial
+
+Nome da gestora com variações
+
+Apelidos comuns usados por assessores
+
+Exemplos conceituais
+
+“XP LB” → “XP Long Biased”
+
+“Kinea CP” → “Kinea Crédito Privado”
+
+“Verde” → “Verde AM / Verde Master”
+
+“Itaú” → “Itaú Asset”
+
+Benefício
+
+Resolve casos onde o usuário não escreve o nome formal.
+
+Camada 4 — Indexação Vetorial com Campos Separados
+Objetivo
+
+Melhorar recall separando semântica por tipo de informação.
+
+Estratégia conceitual
+
+Ao indexar cada produto, gerar embeddings separados para:
+
+Nome do produto
+
+Ticker
+
+Nome da gestora
+
+Categoria
+
+Descrição
+
+Tags financeiras
+
+Palavras-chave derivadas
+
+Cada campo gera uma representação semântica própria.
+
+Benefício
+
+Permite match mesmo se o usuário só escrever:
+
+Ticker
+
+Gestora
+
+Categoria
+
+Parte do nome
+
+Camada 5 — Busca Multi-Query com Fusão de Resultados
+Objetivo
+
+Não depender de uma única busca vetorial.
+
+Fluxo conceitual
+
+Para cada mensagem do usuário:
+
+Buscar com a frase completa
+
+Buscar com tokens isolados
+
+Buscar só com possíveis tickers
+
+Buscar só com nome de gestora
+
+Buscar com contexto financeiro inferido
+
+Depois:
+
+Unificar resultados
+
+Remover duplicatas
+
+Reordenar por score combinado
+
+Benefício
+
+Reduz falso negativo quando a frase é ruim.
+
+Camada 6 — Fuzzy Matching (Texto Aproximado)
+Objetivo
+
+Capturar erros de digitação.
+
+Estratégia conceitual
+
+Adicionar uma etapa de:
+
+Similaridade de string
+
+Distância de edição
+
+Matching aproximado
+
+Aplicado principalmente em:
+
+Tickers
+
+Nome do fundo
+
+Nome da gestora
+
+Benefício
+
+Resolve:
+
+“Kineaa”
+
+“Itaúu”
+
+“XPLB”
+
+Camada 7 — Uso do Contexto da Conversa
+Objetivo
+
+Aproveitar histórico recente.
+
+Estratégia
+
+Manter contexto temporário da conversa:
+
+Últimos produtos mencionados
+
+Última gestora citada
+
+Última categoria discutida
+
+Se o usuário disser algo como:
+
+“Esse aí mesmo”
+
+Ou:
+
+“O da Kinea”
+
+O sistema deve:
+
+Reutilizar contexto anterior
+
+Priorizar produtos relacionados
+
+Benefício
+
+Conversa natural, menos dependente de repetição.
+
+Camada 8 — Fallback Estruturado
+Objetivo
+
+Evitar resposta “não encontrei” cedo demais.
+
+Estratégia
+
+Se a busca não retornar resultado confiável:
+
+Relaxar filtros
+
+Usar apenas gestora
+
+Usar apenas categoria
+
+Sugerir produtos similares
+
+Retornar top N candidatos com baixa confiança
+
+Benefício
+
+Evita frustração e mantém conversa fluida.
+
+Camada 9 — Score Composto de Confiança
+Objetivo
+
+Decidir se o match é forte o suficiente.
+
+Estrutura conceitual
+
+Criar um score composto baseado em:
+
+Similaridade vetorial
+
+Similaridade textual
+
+Match de ticker
+
+Match de gestora
+
+Consistência com contexto
+
+Frequência histórica de acesso
+
+Decisão
+
+Score alto → responder direto
+
+Score médio → confirmar com usuário
+
+Score baixo → sugerir opções
+
+Camada 10 — Auditoria e Log de Falhas de Busca
+Objetivo
+
+Aprender com erros reais.
+
+Estratégia
+
+Registrar:
+
+Texto original do usuário
+
+Resultados retornados
+
+Se o usuário confirmou ou corrigiu
+
+Produtos que deveriam ter sido encontrados
+
+Usar isso para:
+
+Atualizar aliases
+
+Criar novos sinônimos
+
+Ajustar pesos
+
+Entregáveis Técnicos Esperados no Replit
+
+O desenvolvedor deve implementar incrementalmente:
+
+Normalização de texto antes da busca
+
+Tokenização semântica
+
+Lookup de aliases
+
+Indexação vetorial por múltiplos campos
+
+Busca multi-query
+
+Fuzzy matching
+
+Uso de contexto da conversa
+
+Fallback progressivo
+
+Score composto
+
+Log estruturado de falhas
+
+Resultado Esperado
+
+Após esse plano:
+
+Usuário encontra produtos com menos informação
+
+Menos falhas por erro humano
+
+Conversa mais natural no WhatsApp
+
+Menos necessidade de escrever nome exato
+
+Sistema aprende com uso real
