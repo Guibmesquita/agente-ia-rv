@@ -1104,8 +1104,24 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
         
         fii_lookup_result = None
         similar_tickers_suggestion = None
+        database_fallback_product = None
         fii_service = get_fii_lookup_service()
         detected_ticker = fii_service.extract_ticker(user_message)
+        
+        if not context_documents or len(context_documents) == 0:
+            print(f"[OpenAI] Busca semântica vazia - tentando fallback no banco de dados")
+            database_fallback_product = vs.search_product_in_database(user_message) if vs else None
+            
+            if not database_fallback_product:
+                product_pattern = re.search(r'\b([A-Z]{3,6}\s*(?:PRE|PRÉ|POS|PÓS|CDI|IPCA|DI|11)?)\b', user_message.upper())
+                if product_pattern:
+                    potential_product = product_pattern.group(1).strip()
+                    if potential_product != user_message.upper().strip():
+                        print(f"[OpenAI] Tentando busca com padrão extraído: {potential_product}")
+                        database_fallback_product = vs.search_product_in_database(potential_product) if vs else None
+            
+            if database_fallback_product:
+                print(f"[OpenAI] Fallback encontrou produto: {database_fallback_product.get('name')} ({database_fallback_product.get('ticker')})")
         
         if detected_ticker:
             ticker_exists_exactly = vs.find_exact_ticker(detected_ticker) if vs else False
@@ -1150,6 +1166,30 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
                         print(f"[OpenAI] Nenhum similar para {detected_ticker} - produto não encontrado")
         
         context = self._build_context(context_documents)
+        
+        if database_fallback_product:
+            materials_count = database_fallback_product.get('materials_count', 0)
+            blocks_count = database_fallback_product.get('blocks_count', 0)
+            
+            if blocks_count > 0:
+                material_note = f"O produto possui {materials_count} material(is) e {blocks_count} bloco(s) de conteúdo indexados."
+            elif materials_count > 0:
+                material_note = f"O produto possui {materials_count} material(is) cadastrado(s), mas ainda sem conteúdo indexado para busca."
+            else:
+                material_note = "O produto está cadastrado, mas ainda não possui materiais comerciais detalhados. Sugira que o assessor entre em contato com a área de produtos para obter materiais específicos."
+            
+            product_info = f"""
+PRODUTO ENCONTRADO NA BASE:
+- Nome: {database_fallback_product.get('name', 'N/A')}
+- Ticker: {database_fallback_product.get('ticker', 'N/A')}
+- Gestora: {database_fallback_product.get('manager', 'N/A')}
+- Categoria: {database_fallback_product.get('category', 'Sem categoria')}
+- Descrição: {database_fallback_product.get('description') or 'Não disponível'}
+- Status: {database_fallback_product.get('status', 'N/A')}
+
+NOTA: {material_note}
+"""
+            context = product_info + "\n" + context
         
         if assessor_data:
             context = self._build_assessor_context(assessor_data) + "\n" + context

@@ -424,6 +424,97 @@ class VectorStore:
             print(f"[VECTOR_STORE] Retornando: {unique_similar}")
         return unique_similar
     
+    def search_product_in_database(self, query: str) -> Optional[dict]:
+        """
+        Fallback: busca produtos diretamente no banco de dados PostgreSQL.
+        Útil quando o produto existe mas não tem blocos indexados no ChromaDB.
+        
+        Args:
+            query: Nome do produto ou ticker a buscar
+            
+        Returns:
+            Dict com informações do produto ou None se não encontrado
+        """
+        from database.connection import SessionLocal
+        from database.models import Product, Material, ContentBlock
+        import unicodedata
+        
+        def normalize_text(text: str) -> str:
+            if not text:
+                return ""
+            text = unicodedata.normalize('NFD', text)
+            text = ''.join(c for c in text if not unicodedata.combining(c))
+            return text.upper().strip()
+        
+        query_normalized = normalize_text(query)
+        query_words = query_normalized.split()
+        
+        db = SessionLocal()
+        try:
+            product = db.query(Product).filter(
+                Product.ticker.ilike(f"%{query}%"),
+                Product.name != '__SYSTEM_UNASSIGNED__'
+            ).first()
+            
+            if not product:
+                product = db.query(Product).filter(
+                    Product.name.ilike(f"%{query}%"),
+                    Product.name != '__SYSTEM_UNASSIGNED__'
+                ).first()
+            
+            if not product:
+                all_products = db.query(Product).filter(
+                    Product.status == 'ativo',
+                    Product.name != '__SYSTEM_UNASSIGNED__'
+                ).all()
+                
+                for p in all_products:
+                    ticker_norm = normalize_text(p.ticker) if p.ticker else ""
+                    name_norm = normalize_text(p.name) if p.name else ""
+                    
+                    if query_normalized in ticker_norm or query_normalized in name_norm:
+                        product = p
+                        break
+                    if ticker_norm and ticker_norm in query_normalized:
+                        product = p
+                        break
+                    for word in query_words:
+                        if len(word) >= 4 and (word in ticker_norm or word in name_norm):
+                            product = p
+                            break
+                    if product:
+                        break
+            
+            if product:
+                materials_count = db.query(Material).filter(
+                    Material.product_id == product.id
+                ).count()
+                
+                blocks_count = db.query(ContentBlock).join(Material).filter(
+                    Material.product_id == product.id
+                ).count()
+                
+                return {
+                    'id': product.id,
+                    'name': product.name,
+                    'ticker': product.ticker,
+                    'manager': product.manager,
+                    'category': product.category,
+                    'description': product.description,
+                    'status': product.status,
+                    'materials_count': materials_count,
+                    'blocks_count': blocks_count,
+                    'source': 'database_fallback'
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro na busca de fallback: {e}")
+            return None
+        finally:
+            db.close()
+    
     def clear(self) -> None:
         """Limpa toda a base de conhecimento."""
         try:
