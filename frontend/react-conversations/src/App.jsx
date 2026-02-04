@@ -687,7 +687,8 @@ function App() {
   useEffect(() => {
     let sseToken = null;
     let tokenRefreshTimeout = null;
-    let pollingInterval = null;
+    let fallbackPollingTimeout = null;
+    let sseConnected = false;
 
     const fetchSseToken = async () => {
       try {
@@ -715,6 +716,22 @@ function App() {
       }, refreshTime);
     };
 
+    const startFallbackPolling = () => {
+      if (fallbackPollingTimeout) return;
+      const poll = async () => {
+        if (sseConnected) {
+          fallbackPollingTimeout = null;
+          return;
+        }
+        await fetchConversations(0, false);
+        if (currentConversation) {
+          await fetchMessages(currentConversation.id, false);
+        }
+        fallbackPollingTimeout = setTimeout(poll, 30000);
+      };
+      fallbackPollingTimeout = setTimeout(poll, 30000);
+    };
+
     const connectSSE = async () => {
       if (eventSourceRef.current) eventSourceRef.current.close();
       
@@ -727,12 +744,19 @@ function App() {
       }
       
       if (!sseToken) {
-        startPolling();
+        startFallbackPolling();
         return;
       }
 
       const url = `${API_BASE}/conversations/stream?token=${encodeURIComponent(sseToken)}`;
       const es = new EventSource(url);
+      es.onopen = () => {
+        sseConnected = true;
+        if (fallbackPollingTimeout) {
+          clearTimeout(fallbackPollingTimeout);
+          fallbackPollingTimeout = null;
+        }
+      };
       es.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -750,26 +774,18 @@ function App() {
       es.onerror = () => {
         es.close();
         sseToken = null;
+        sseConnected = false;
+        startFallbackPolling();
         setTimeout(() => connectSSE(), 5000);
       };
       eventSourceRef.current = es;
     };
 
-    const startPolling = () => {
-      if (pollingInterval) return;
-      pollingInterval = setInterval(async () => {
-        await fetchConversations(0, false);
-        if (currentConversation) {
-          await fetchMessages(currentConversation.id, false);
-        }
-      }, 5000);
-    };
-
     connectSSE();
     return () => {
       eventSourceRef.current?.close();
-      if (pollingInterval) clearInterval(pollingInterval);
       if (tokenRefreshTimeout) clearTimeout(tokenRefreshTimeout);
+      if (fallbackPollingTimeout) clearTimeout(fallbackPollingTimeout);
     };
   }, [currentConversation, fetchConversations]);
 

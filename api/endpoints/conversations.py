@@ -249,6 +249,81 @@ async def list_conversations(
     return result
 
 
+# ==================== ROTAS ESTÁTICAS (devem vir ANTES de rotas com {conversation_id}) ====================
+
+@router.get("/filter-options", response_model=FilterOptionsResponse)
+async def get_filter_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna opções disponíveis para os filtros avançados."""
+    from sqlalchemy import func, distinct
+    
+    units = db.query(distinct(Assessor.unidade)).filter(
+        Assessor.unidade.isnot(None),
+        Assessor.unidade != ''
+    ).all()
+    
+    brokers = db.query(distinct(Assessor.broker_responsavel)).filter(
+        Assessor.broker_responsavel.isnot(None),
+        Assessor.broker_responsavel != ''
+    ).all()
+    
+    categories = db.query(distinct(Conversation.escalation_category)).filter(
+        Conversation.escalation_category.isnot(None),
+        Conversation.escalation_category != ''
+    ).all()
+    
+    return FilterOptionsResponse(
+        units=sorted([u[0] for u in units if u[0]]),
+        brokers=sorted([b[0] for b in brokers if b[0]]),
+        categories=sorted([c[0] for c in categories if c[0]])
+    )
+
+
+@router.get("/filters", response_model=FilterCountsResponse)
+async def get_filter_counts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna contadores para os filtros da fila de tickets."""
+    from sqlalchemy import func
+    from datetime import date
+    
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    
+    all_count = db.query(func.count(Conversation.id)).scalar() or 0
+    escalated = db.query(func.count(Conversation.id)).filter(
+        Conversation.escalation_level == EscalationLevel.T1_HUMAN.value
+    ).scalar() or 0
+    my_tickets = db.query(func.count(Conversation.id)).filter(
+        Conversation.assigned_to == current_user.id
+    ).scalar() or 0
+    open_count = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status.in_([TicketStatusV2.NEW.value, TicketStatusV2.OPEN.value])
+    ).scalar() or 0
+    solved_today = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status == TicketStatusV2.SOLVED.value,
+        Conversation.solved_at >= today_start
+    ).scalar() or 0
+    new_count = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status == TicketStatusV2.NEW.value
+    ).scalar() or 0
+    in_progress_count = db.query(func.count(Conversation.id)).filter(
+        Conversation.ticket_status == TicketStatusV2.IN_PROGRESS.value
+    ).scalar() or 0
+    
+    return FilterCountsResponse(
+        all=all_count,
+        escalated=escalated,
+        my_tickets=my_tickets,
+        open=open_count,
+        solved_today=solved_today,
+        new=new_count,
+        in_progress=in_progress_count
+    )
+
+
 @router.post("/sync")
 async def sync_chats_from_zapi(
     db: Session = Depends(get_db),
@@ -915,79 +990,6 @@ def record_ticket_history(
 
 
 # ==================== V2 ZENDESK-LIKE ENDPOINTS ====================
-
-@router.get("/filter-options", response_model=FilterOptionsResponse)
-async def get_filter_options(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Retorna opções disponíveis para os filtros avançados."""
-    from sqlalchemy import func, distinct
-    
-    units = db.query(distinct(Assessor.unidade)).filter(
-        Assessor.unidade.isnot(None),
-        Assessor.unidade != ''
-    ).all()
-    
-    brokers = db.query(distinct(Assessor.broker_responsavel)).filter(
-        Assessor.broker_responsavel.isnot(None),
-        Assessor.broker_responsavel != ''
-    ).all()
-    
-    categories = db.query(distinct(Conversation.escalation_category)).filter(
-        Conversation.escalation_category.isnot(None),
-        Conversation.escalation_category != ''
-    ).all()
-    
-    return FilterOptionsResponse(
-        units=sorted([u[0] for u in units if u[0]]),
-        brokers=sorted([b[0] for b in brokers if b[0]]),
-        categories=sorted([c[0] for c in categories if c[0]])
-    )
-
-
-@router.get("/filters", response_model=FilterCountsResponse)
-async def get_filter_counts(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Retorna contadores para os filtros da fila de tickets."""
-    from sqlalchemy import func
-    from datetime import date
-    
-    today_start = datetime.combine(date.today(), datetime.min.time())
-    
-    all_count = db.query(func.count(Conversation.id)).scalar() or 0
-    escalated = db.query(func.count(Conversation.id)).filter(
-        Conversation.escalation_level == EscalationLevel.T1_HUMAN.value
-    ).scalar() or 0
-    my_tickets = db.query(func.count(Conversation.id)).filter(
-        Conversation.assigned_to == current_user.id
-    ).scalar() or 0
-    open_count = db.query(func.count(Conversation.id)).filter(
-        Conversation.ticket_status.in_([TicketStatusV2.NEW.value, TicketStatusV2.OPEN.value])
-    ).scalar() or 0
-    solved_today = db.query(func.count(Conversation.id)).filter(
-        Conversation.ticket_status == TicketStatusV2.SOLVED.value,
-        Conversation.solved_at >= today_start
-    ).scalar() or 0
-    new_count = db.query(func.count(Conversation.id)).filter(
-        Conversation.ticket_status == TicketStatusV2.NEW.value
-    ).scalar() or 0
-    in_progress_count = db.query(func.count(Conversation.id)).filter(
-        Conversation.ticket_status == TicketStatusV2.IN_PROGRESS.value
-    ).scalar() or 0
-    
-    return FilterCountsResponse(
-        all=all_count,
-        escalated=escalated,
-        my_tickets=my_tickets,
-        open=open_count,
-        solved_today=solved_today,
-        new=new_count,
-        in_progress=in_progress_count
-    )
-
 
 def get_takeover_greeting(user_name: str) -> str:
     """Retorna variações de mensagem de boas-vindas ao assumir."""
