@@ -94,11 +94,35 @@ INSTRUÇÕES:
    - Inclua variações do nome (ex: "TG Core", "TGRI", "TG RI", etc.)
    - Liste cada produto/entidade único que aparece no conteúdo
 
+6. EXTRAÇÃO AUTOMÁTICA DE TAGS (IMPORTANTE):
+   Analise o conteúdo e identifique tags nas 4 categorias abaixo:
+   
+   a) CONTEXTO DE USO - quando o broker usaria este material:
+      Opções: abordagem, fechamento, objecao, follow-up, renovacao, rebalanceamento
+   
+   b) PERFIL DO CLIENTE - para qual perfil de investidor:
+      Opções: conservador, moderado, arrojado, institucional, pf, pj
+   
+   c) MOMENTO DE MERCADO - em qual cenário é mais relevante:
+      Opções: alta, baixa, volatilidade, selic-alta, selic-baixa, dolar-forte
+   
+   d) TIPO DE INFORMAÇÃO - que tipo de dado contém:
+      Opções: indicadores, historico, comparativo, projecao, risco, estrategia
+
+   Selecione APENAS as tags que se aplicam claramente ao conteúdo.
+   Se não houver evidência clara, deixe a categoria vazia.
+
 FORMATO DE RESPOSTA (JSON):
 {{
     "content_type": "table|infographic|text|mixed|image_only",
     "summary": "Resumo breve do conteúdo da página",
     "products_mentioned": ["TGRI", "TG Core", "BTG Pactual", ...],
+    "auto_tags": {{
+        "contexto": ["abordagem", "objecao"],
+        "perfil": ["conservador"],
+        "momento": ["selic-alta"],
+        "informacao": ["indicadores", "comparativo"]
+    }},
     "facts": [
         "Fato 1 completo e auto-contido",
         "Fato 2 completo e auto-contido",

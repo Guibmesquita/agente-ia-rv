@@ -1447,6 +1447,8 @@ async def smart_upload_stream(
     description: str = Form(None),
     valid_from: str = Form(None),
     valid_until: str = Form(None),
+    material_categories: str = Form("[]"),
+    tags: str = Form("[]"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1484,6 +1486,19 @@ async def smart_upload_stream(
         except ValueError:
             pass
     
+    import json as json_lib
+    
+    parsed_tags = []
+    parsed_categories = []
+    try:
+        parsed_tags = json_lib.loads(tags) if tags else []
+    except:
+        parsed_tags = []
+    try:
+        parsed_categories = json_lib.loads(material_categories) if material_categories else []
+    except:
+        parsed_categories = []
+    
     material = Material(
         product_id=placeholder_product.id,
         material_type=material_type,
@@ -1491,6 +1506,8 @@ async def smart_upload_stream(
         description=description,
         valid_from=parsed_valid_from,
         valid_until=parsed_valid_until,
+        tags=json_lib.dumps(parsed_tags),
+        material_categories=json_lib.dumps(parsed_categories),
         publish_status="rascunho"
     )
     db.add(material)

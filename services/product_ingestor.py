@@ -471,6 +471,13 @@ class ProductIngestor:
             "pending_review": 0
         }
         
+        all_auto_tags = {
+            "contexto": set(),
+            "perfil": set(),
+            "momento": set(),
+            "informacao": set()
+        }
+        
         block_order = 0
         
         for page in processed.get("pages", []):
@@ -480,6 +487,12 @@ class ProductIngestor:
             facts = page.get("facts", [])
             raw_data = page.get("raw_data", {})
             products_in_page = page.get("products", [])
+            
+            page_auto_tags = page.get("auto_tags", {})
+            for category in ["contexto", "perfil", "momento", "informacao"]:
+                tags_in_category = page_auto_tags.get(category, [])
+                if isinstance(tags_in_category, list):
+                    all_auto_tags[category].update(tags_in_category)
             
             matched_product = None
             for prod_name in products_in_page:
@@ -596,6 +609,24 @@ class ProductIngestor:
         if original_material:
             original_material.source_file_path = pdf_path
             original_material.source_filename = os.path.basename(pdf_path)
+            
+            auto_tags_flat = []
+            for category, tag_set in all_auto_tags.items():
+                auto_tags_flat.extend(list(tag_set))
+            
+            if auto_tags_flat:
+                original_material.auto_generated_tags = json.dumps(auto_tags_flat)
+                log(f"Tags auto-geradas: {', '.join(auto_tags_flat)}", "info")
+                
+                existing_tags = []
+                try:
+                    existing_tags = json.loads(original_material.tags or "[]")
+                except:
+                    existing_tags = []
+                
+                merged_tags = list(set(existing_tags + auto_tags_flat))
+                original_material.tags = json.dumps(merged_tags)
+            
             db.commit()
             
             from database.models import ContentBlock as CB
@@ -607,6 +638,7 @@ class ProductIngestor:
                 log("Material placeholder removido - blocos redistribuídos para produtos identificados")
         
         stats["products_matched"] = list(stats["products_matched"])
+        stats["auto_tags"] = {k: list(v) for k, v in all_auto_tags.items()}
         
         log(f"Processamento finalizado: {stats['blocks_created']} blocos, {len(stats['products_matched'])} produtos identificados", "success")
         
@@ -720,6 +752,23 @@ class ProductIngestor:
         
         indexed_count = 0
         
+        material_tags = []
+        try:
+            material_tags = json.loads(material.tags or "[]")
+        except:
+            material_tags = []
+        
+        material_categories = []
+        try:
+            material_categories = json.loads(material.material_categories or "[]")
+        except:
+            material_categories = []
+        
+        tags_text = ""
+        if material_tags or material_categories:
+            all_enrichment = material_tags + material_categories
+            tags_text = f"\n\n[Tags: {', '.join(all_enrichment)}]"
+        
         for block in blocks:
             content_for_indexing = block.content
             if block.block_type == ContentBlockType.TABLE.value:
@@ -730,11 +779,15 @@ class ProductIngestor:
                 except:
                     pass
             
+            content_for_indexing += tags_text
+            
             chunk_id = f"product_block_{block.id}"
             
             valid_until_str = ""
             if material.valid_until:
                 valid_until_str = material.valid_until.isoformat()
+            
+            tags_str = ",".join(material_tags) if material_tags else ""
             
             metadata = {
                 "source": f"{product_name} - {material.name or material.material_type}",
@@ -748,7 +801,8 @@ class ProductIngestor:
                 "products": product_ticker.upper() if product_ticker else product_name.upper(),
                 "material_type": material.material_type,
                 "publish_status": material.publish_status or "rascunho",
-                "valid_until": valid_until_str
+                "valid_until": valid_until_str,
+                "tags": tags_str
             }
             
             try:
