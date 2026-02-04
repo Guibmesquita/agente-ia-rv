@@ -343,9 +343,11 @@ async def escalate_to_human_with_analysis(
 ) -> Dict[str, Any]:
     """
     Escala conversa para humano com análise inteligente via GPT.
-    Gera resumo, categoriza motivo e atualiza campos V2.1.
+    Cria um novo ConversationTicket para cada escalação.
+    Preserva histórico de tickets anteriores.
     """
     from services.openai_agent import OpenAIAgent
+    from database.models import ConversationTicket
     
     messages = db.query(WhatsAppMessage).filter(
         WhatsAppMessage.conversation_id == conversation.id
@@ -359,21 +361,42 @@ async def escalate_to_human_with_analysis(
     agent = OpenAIAgent()
     analysis = await agent.analyze_escalation(history, last_message)
     
-    conversation.escalation_category = analysis.get("category", "other")
-    conversation.escalation_reason_detail = analysis.get("reason_detail", "")
-    conversation.ticket_summary = analysis.get("summary", last_message[:200])
-    conversation.conversation_topic = analysis.get("topic", "Outro")
+    ticket_count = db.query(ConversationTicket).filter(
+        ConversationTicket.conversation_id == conversation.id
+    ).count()
+    
+    new_ticket = ConversationTicket(
+        conversation_id=conversation.id,
+        ticket_number=ticket_count + 1,
+        status=TicketStatusV2.NEW.value,
+        escalation_level=EscalationLevel.T1_HUMAN.value,
+        escalation_category=analysis.get("category", "other"),
+        escalation_reason_detail=analysis.get("reason_detail", ""),
+        ticket_summary=analysis.get("summary", last_message[:200]),
+        conversation_topic=analysis.get("topic", "Outro"),
+        transfer_reason=transfer_reason,
+        transferred_at=datetime.utcnow()
+    )
+    db.add(new_ticket)
+    db.flush()
+    
+    conversation.active_ticket_id = new_ticket.id
     conversation.ticket_status = TicketStatusV2.NEW.value
     conversation.escalation_level = EscalationLevel.T1_HUMAN.value
     conversation.status = ConversationStatus.HUMAN_TAKEOVER.value
     conversation.conversation_state = ConversationState.HUMAN_TAKEOVER.value
     conversation.transfer_reason = transfer_reason
     conversation.transferred_at = datetime.utcnow()
+    conversation.escalation_category = analysis.get("category", "other")
+    conversation.ticket_summary = analysis.get("summary", last_message[:200])
+    conversation.conversation_topic = analysis.get("topic", "Outro")
     
     db.commit()
     
     return {
         "success": True,
+        "ticket_id": new_ticket.id,
+        "ticket_number": new_ticket.ticket_number,
         "category": analysis.get("category"),
         "summary": analysis.get("summary"),
         "topic": analysis.get("topic")

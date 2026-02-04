@@ -454,6 +454,57 @@ class MessageType(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+class ResolutionCategory(str, enum.Enum):
+    """Categorias de resolução de tickets."""
+    INFORMATION_PROVIDED = "information_provided"
+    DOCUMENT_SENT = "document_sent"
+    REDIRECTED_TO_SPECIALIST = "redirected_to_specialist"
+    ISSUE_RESOLVED = "issue_resolved"
+    CLIENT_SATISFIED = "client_satisfied"
+    NO_FURTHER_ACTION = "no_further_action"
+    ESCALATED_INTERNALLY = "escalated_internally"
+    OTHER = "other"
+
+
+class ConversationTicket(Base):
+    """
+    Representa cada instância de atendimento humano.
+    Uma Conversation pode ter múltiplos tickets ao longo do tempo.
+    Preserva histórico de cada chamado separadamente.
+    """
+    __tablename__ = "conversation_tickets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False, index=True)
+    ticket_number = Column(Integer, nullable=False)
+    
+    status = Column(String(20), default=TicketStatusV2.NEW.value, index=True)
+    escalation_level = Column(String(10), default=EscalationLevel.T1_HUMAN.value)
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    escalation_category = Column(String(50), nullable=True, index=True)
+    escalation_reason_detail = Column(Text, nullable=True)
+    ticket_summary = Column(Text, nullable=True)
+    conversation_topic = Column(String(100), nullable=True)
+    transfer_reason = Column(String(50), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    transferred_at = Column(DateTime(timezone=True), nullable=True)
+    first_response_at = Column(DateTime(timezone=True), nullable=True)
+    first_human_response_at = Column(DateTime(timezone=True), nullable=True)
+    solved_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    resolution_time_seconds = Column(Integer, nullable=True)
+    resolution_category = Column(String(50), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    contributed_to_kb = Column(Boolean, default=False)
+    kb_contribution_id = Column(Integer, nullable=True)
+    
+    conversation = relationship("Conversation", back_populates="tickets", foreign_keys=[conversation_id])
+    assigned_user = relationship("User", foreign_keys=[assigned_to])
+
+
 class Conversation(Base):
     """
     Agrupa mensagens de uma conversa por número de telefone ou LID.
@@ -510,10 +561,14 @@ class Conversation(Base):
     confirmation_sent_at = Column(DateTime(timezone=True), nullable=True)
     resolution_notes = Column(Text, nullable=True)
     
+    active_ticket_id = Column(Integer, ForeignKey("conversation_tickets.id"), nullable=True)
+    
     assessor = relationship("Assessor", foreign_keys=[assessor_id])
     assigned_user = relationship("User", foreign_keys=[assigned_to])
     messages = relationship("WhatsAppMessage", back_populates="conversation", order_by="WhatsAppMessage.created_at")
     ticket_history = relationship("TicketHistory", back_populates="conversation", order_by="TicketHistory.created_at")
+    tickets = relationship("ConversationTicket", back_populates="conversation", foreign_keys="ConversationTicket.conversation_id", order_by="ConversationTicket.created_at")
+    active_ticket = relationship("ConversationTicket", foreign_keys=[active_ticket_id], post_update=True)
 
 
 class MessageStatus(str, enum.Enum):

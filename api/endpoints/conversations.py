@@ -1013,6 +1013,7 @@ async def take_ticket(
 ):
     """Assume um ticket (Zendesk-like 'Assumir'). Envia mensagem automática ao contato."""
     from services.whatsapp_client import zapi_client
+    from database.models import ConversationTicket
     
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
@@ -1020,20 +1021,34 @@ async def take_ticket(
     
     old_status = conv.ticket_status
     old_escalation = conv.escalation_level
+    now = datetime.utcnow()
+    
+    if conv.active_ticket_id:
+        active_ticket = db.query(ConversationTicket).filter(
+            ConversationTicket.id == conv.active_ticket_id
+        ).first()
+        
+        if active_ticket:
+            active_ticket.status = TicketStatusV2.IN_PROGRESS.value
+            active_ticket.assigned_to = current_user.id
+            if not active_ticket.first_response_at:
+                active_ticket.first_response_at = now
+            if not active_ticket.first_human_response_at:
+                active_ticket.first_human_response_at = now
     
     conv.assigned_to = current_user.id
-    conv.last_assigned_at = datetime.utcnow()
+    conv.last_assigned_at = now
     conv.ticket_status = TicketStatusV2.IN_PROGRESS.value
     conv.escalation_level = EscalationLevel.T1_HUMAN.value
     conv.status = ConversationStatus.HUMAN_TAKEOVER.value
     conv.conversation_state = ConversationState.HUMAN_TAKEOVER.value
-    conv.transferred_at = datetime.utcnow()
+    conv.transferred_at = now
     
     if not conv.first_response_at:
-        conv.first_response_at = datetime.utcnow()
+        conv.first_response_at = now
     
     if not conv.first_human_response_at:
-        conv.first_human_response_at = datetime.utcnow()
+        conv.first_human_response_at = now
     
     db.commit()
     
@@ -1059,8 +1074,6 @@ async def take_ticket(
     except Exception as e:
         print(f"[Take] Erro ao enviar saudação: {e}")
     
-    assigned_user = db.query(User).filter(User.id == current_user.id).first()
-    
     return {
         "success": True,
         "message": f"Ticket assumido por {current_user.username}",
@@ -1072,13 +1085,23 @@ async def take_ticket(
     }
 
 
+class TicketResolutionRequest(BaseModel):
+    resolution_category: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    contribute_to_kb: bool = False
+    kb_content: Optional[str] = None
+
+
 @router.post("/{conversation_id}/release")
 async def release_ticket(
     conversation_id: int,
+    resolution: Optional[TicketResolutionRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Libera um ticket (devolve para o bot e conclui o chamado)."""
+    from database.models import ConversationTicket
+    
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
@@ -1086,14 +1109,36 @@ async def release_ticket(
     old_status = conv.ticket_status
     old_escalation = conv.escalation_level
     old_assigned = conv.assigned_to
+    now = datetime.utcnow()
+    
+    active_ticket = None
+    resolution_time = None
+    if conv.active_ticket_id:
+        active_ticket = db.query(ConversationTicket).filter(
+            ConversationTicket.id == conv.active_ticket_id
+        ).first()
+        
+        if active_ticket:
+            active_ticket.status = TicketStatusV2.SOLVED.value
+            active_ticket.solved_at = now
+            
+            if active_ticket.transferred_at:
+                resolution_time = int((now - active_ticket.transferred_at).total_seconds())
+                active_ticket.resolution_time_seconds = resolution_time
+            
+            if resolution:
+                active_ticket.resolution_category = resolution.resolution_category
+                active_ticket.resolution_notes = resolution.resolution_notes
+                active_ticket.contributed_to_kb = resolution.contribute_to_kb
     
     conv.assigned_to = None
     conv.ticket_status = TicketStatusV2.SOLVED.value
-    conv.solved_at = datetime.utcnow()
+    conv.solved_at = now
     conv.escalation_level = EscalationLevel.T0_BOT.value
     conv.status = ConversationStatus.BOT_ACTIVE.value
     conv.conversation_state = ConversationState.IN_PROGRESS.value
     conv.stalled_interactions = 0
+    conv.active_ticket_id = None
     
     db.commit()
     
@@ -1112,7 +1157,9 @@ async def release_ticket(
         "success": True,
         "message": "Ticket concluído e devolvido ao bot",
         "ticket_status": conv.ticket_status,
-        "escalation_level": conv.escalation_level
+        "escalation_level": conv.escalation_level,
+        "ticket_id": active_ticket.id if active_ticket else None,
+        "resolution_time_seconds": resolution_time
     }
 
 
@@ -1124,6 +1171,8 @@ async def update_ticket_status(
     current_user: User = Depends(get_current_user)
 ):
     """Atualiza o status do ticket (new, open, in_progress, solved)."""
+    from database.models import ConversationTicket
+    
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
@@ -1133,12 +1182,28 @@ async def update_ticket_status(
         raise HTTPException(status_code=400, detail=f"Status inválido. Use: {valid_statuses}")
     
     old_status = conv.ticket_status
+    now = datetime.utcnow()
+    
+    if conv.active_ticket_id:
+        active_ticket = db.query(ConversationTicket).filter(
+            ConversationTicket.id == conv.active_ticket_id
+        ).first()
+        
+        if active_ticket:
+            active_ticket.status = request.status
+            
+            if request.status == TicketStatusV2.SOLVED.value:
+                active_ticket.solved_at = now
+                if active_ticket.transferred_at:
+                    active_ticket.resolution_time_seconds = int((now - active_ticket.transferred_at).total_seconds())
+    
     conv.ticket_status = request.status
     
     if request.status == TicketStatusV2.SOLVED.value:
-        conv.solved_at = datetime.utcnow()
+        conv.solved_at = now
         conv.status = ConversationStatus.BOT_ACTIVE.value
-        conv.assigned_to_id = None
+        conv.assigned_to = None
+        conv.active_ticket_id = None
     
     db.commit()
     
