@@ -497,24 +497,66 @@
         function processDocument(materialId, productId) {
             showConfirmModal(
                 'Reprocessar documento',
-                'Deseja reprocessar este documento? Isso pode demorar alguns segundos.',
+                'O documento será reprocessado página por página. Isso pode demorar alguns minutos dependendo do tamanho.',
                 false,
                 async () => {
                     setCardProcessing(materialId, true, 'Iniciando reprocessamento...');
                     try {
-                        setCardProcessing(materialId, true, 'Enviando para reindexação...');
-                        const response = await fetch(`/api/products/${productId}/materials/${materialId}/reindex`, {
+                        const response = await fetch(`/api/products/materials/${materialId}/resume-upload`, {
                             method: 'POST',
                             credentials: 'include'
                         });
-                        if (!response.ok) throw new Error('Erro ao processar');
-                        setCardProcessing(materialId, true, 'Documento reindexado com sucesso!');
-                        toast.success('Documento reprocessado com sucesso!');
+                        
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.detail || 'Erro ao iniciar reprocessamento');
+                        }
+                        
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+                        
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop();
+                            
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data = JSON.parse(line.substring(6));
+                                        
+                                        if (data.type === 'progress') {
+                                            setCardProcessing(materialId, true, `Processando página ${data.current}/${data.total} (${data.percent}%)`);
+                                        } else if (data.type === 'log') {
+                                            setCardProcessing(materialId, true, data.message);
+                                        } else if (data.type === 'start') {
+                                            setCardProcessing(materialId, true, data.message);
+                                        } else if (data.type === 'complete') {
+                                            setCardProcessing(materialId, true, 'Processamento concluído com sucesso!');
+                                            toast.success('Documento reprocessado com sucesso!');
+                                            setTimeout(() => loadDocuments(), 1500);
+                                        } else if (data.type === 'error') {
+                                            throw new Error(data.message);
+                                        }
+                                    } catch (parseErr) {
+                                        console.log('SSE parse:', line);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        toast.success('Documento reprocessado!');
                         setTimeout(() => loadDocuments(), 1500);
+                        
                     } catch (error) {
                         console.error('Erro:', error);
-                        setCardProcessing(materialId, false);
-                        toast.error('Erro ao processar documento');
+                        setCardProcessing(materialId, true, `Erro: ${error.message}`);
+                        toast.error(error.message || 'Erro ao reprocessar documento');
+                        setTimeout(() => loadDocuments(), 2000);
                     }
                 }
             );
