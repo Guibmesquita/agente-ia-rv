@@ -1,0 +1,693 @@
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MTd9.iYoOGJ_hSQW67zn5r1Ju7NDAik9oBhxLeZvkrKPMZfI^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MjB9.pz86WF-1QhcYjpJow61MRChcyH4AVoUJnuq3fJSrtXU^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/26/status^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -H ^"Content-Type: application/json^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Origin: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" ^
+  --data-raw ^"^{^\^"status^\^":^\^"solved^\^"^}^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MjN9.uvCdcw0QBvobAnZ8E5swe4N3TjAdtx54l_Vjgef3b4w^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MjN9.uvCdcw0QBvobAnZ8E5swe4N3TjAdtx54l_Vjgef3b4w^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MjZ9.3gxmaiCkqY0qSc2roKf_DawNOuR7nwaxs4lTb578F3I^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5Mjh9.eLB1hOHw1QKtSpJ_vzZZ8CwIy8gWHzjUOVv5n9ZaySA^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5Mjh9.eLB1hOHw1QKtSpJ_vzZZ8CwIy8gWHzjUOVv5n9ZaySA^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MzF9.RsxdnfEt0LemmbPlsIGZrPyiak0JxPWFXdqMdVtuaWs^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MzR9.q6IpDacVeDO4NYv-XDwkMbGJ6wYkBHC00Yuh8L0opdI^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5MzR9.q6IpDacVeDO4NYv-XDwkMbGJ6wYkBHC00Yuh8L0opdI^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5Mzd9.-G8xJDIEV5HXKpoi4R9wwgm7DAGQIAqcfAgfkgMCwSA^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NDB9.iWlrmq2_JtcCzLNywWCVjs9-4t38OWu3OFSbWin-qyY^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NDB9.iWlrmq2_JtcCzLNywWCVjs9-4t38OWu3OFSbWin-qyY^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/?limit=20^&offset=0^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/26/sync-messages^" ^
+  -X ^"POST^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -H ^"Content-Length: 0^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Origin: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/26/messages^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NDN9.KVfKsMJRF3YvE94yacF1pny9lgUQI2hpaV-QsIcvzvk^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NDV9.-8Yyy_fDiKuwSPEDeTSY_fDiClv7yV4XbyP0qTE-s14^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NDV9.-8Yyy_fDiKuwSPEDeTSY_fDiClv7yV4XbyP0qTE-s14^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NDh9.9VcWqBE2ZN9OYLjGvLPnVbXlnCj0-jeLRJk3cXrDm0o^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NTF9.KjxjzAGu5pQibS7_FePuiEtHooJXQVQcqqY3XDMKnjA^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NTR9.YCyts35C5GuToiKr2OQAd_eaEHQKMmzpPLp0imuNpiw^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NTZ9.KkZElwqpmWgJ_QcKZNPJizTZS7MKESat4CBfcsQtx7w^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NTl9.oomMufcBjBGxT2rz_HLWO1xmoOgO7YFlnBj_89bsE-c^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NjF9.fNCL-bEKhZ67ViLt03GijissydzVVnSY4ZDysIvfl5Y^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5NjR9.3udPFldSanXOnmOO1lP_2P0Ajw0uE12UbxtKyBG_-is^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/auth/sse-token^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" &
+curl ^"https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/api/conversations/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsInB1cnBvc2UiOiJzc2UiLCJleHAiOjE3NzAyMzg5Njd9.-u2XsrAx7dSJUAYbQGlS8D2WVGYPCWVPC00f-vjV75A^" ^
+  -H ^"Accept: text/event-stream^" ^
+  -H ^"Accept-Language: en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuaWNvbGFzLmdhcmNpYUBzdm5pbnZlc3QuY29tLmJyIiwidXNlcl9pZCI6MjEsInJvbGUiOiJhZG1pbiIsImF1dGhfbWV0aG9kIjoibWljcm9zb2Z0X3NzbyIsImV4cCI6MTc3MDMwMjM2NX0.gxCvpAl8QuE4DiO8FFqDZb7NPRdLTuYhzyiOxJ9iFHU^" ^
+  -H ^"Referer: https://a83084f9-d29a-496c-8fe5-2cb8e04c6f72-00-2obh7ubbxn1hs.janeway.replit.dev/conversas^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not(A:Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"144^\^", ^\^"Google Chrome^\^";v=^\^"144^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^"
