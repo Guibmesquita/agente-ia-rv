@@ -566,7 +566,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 message_type=MessageType.TEXT.value,
                 from_me=True,
                 body=response,
-                ticket_id=ticket.id if ticket else None,
+                ticket_id=created_ticket_id,
                 sender_type=SenderType.BOT.value
             )
             
@@ -582,7 +582,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     agent_response=response,
                     resolved_by_ai=not is_human_transfer,
                     escalated_to_human=is_human_transfer,
-                    ticket_id=ticket.id if ticket else None,
+                    ticket_id=created_ticket_id,
                     assessor_phone=phone
                 )
             except Exception as insight_err:
