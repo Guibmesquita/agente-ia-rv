@@ -119,19 +119,22 @@
             margin-left: 8px;
         }
 
-        .status-bot_active {
-            background: #dcfce7;
-            color: #166534;
+        /* Novo = azul */
+        .status-new, .status-bot_active {
+            background: #dbeafe;
+            color: #1e40af;
         }
 
-        .status-human_takeover {
+        /* Em andamento = amarelo */
+        .status-in_progress, .status-human_takeover {
             background: #fef3c7;
             color: #92400e;
         }
 
-        .status-closed {
-            background: #e5e7eb;
-            color: #4b5563;
+        /* Concluído = verde */
+        .status-solved, .status-closed {
+            background: #dcfce7;
+            color: #166534;
         }
 
         .unread-badge {
@@ -231,8 +234,8 @@
         }
 
         .btn-resolve {
-            background: #dbeafe;
-            color: #1e40af;
+            background: #16a34a;
+            color: white;
             border: none;
             padding: 10px 16px;
             border-radius: 8px;
@@ -247,7 +250,7 @@
         }
 
         .btn-resolve:hover {
-            background: #bfdbfe;
+            background: #15803d;
         }
 
         .chat-messages {
@@ -538,8 +541,8 @@
                             </div>
                             <div class="filters-row">
                                 <button class="filter-btn active" data-status="" onclick="filterByStatus(this, '')">Todas</button>
-                                <button class="filter-btn" data-status="bot_active" onclick="filterByStatus(this, 'bot_active')">Bot</button>
-                                <button class="filter-btn" data-status="human_takeover" onclick="filterByStatus(this, 'human_takeover')">Humano</button>
+                                <button class="filter-btn" data-status="bot_active" onclick="filterByStatus(this, 'bot_active')">Novo</button>
+                                <button class="filter-btn" data-status="human_takeover" onclick="filterByStatus(this, 'human_takeover')">Em andamento</button>
                             </div>
                         </div>
                         <div class="conversations-items" id="conversationsList">
@@ -577,7 +580,7 @@
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                     </svg>
-                                    <span>Concluir Ticket</span>
+                                    <span>Concluir</span>
                                 </button>
                             </div>
                         </div>
@@ -690,9 +693,12 @@
 
             container.innerHTML = conversations.map(conv => {
                 const statusLabel = {
-                    'bot_active': 'Bot',
-                    'human_takeover': 'Humano',
-                    'closed': 'Encerrada'
+                    'bot_active': 'Novo',
+                    'new': 'Novo',
+                    'human_takeover': 'Em andamento',
+                    'in_progress': 'Em andamento',
+                    'closed': 'Concluído',
+                    'solved': 'Concluído'
                 };
                 const displayName = conv.assessor_name || conv.contact_name || 'Desconhecido';
                 const initial = displayName.charAt(0).toUpperCase();
