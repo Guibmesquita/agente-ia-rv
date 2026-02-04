@@ -322,20 +322,15 @@ async def get_current_user_sse(request: Request, db: Session = Depends(get_db)):
         )
     
     sub = payload.get("sub")
-    print(f"[SSE Auth] Looking up user with sub: {sub}")
     user = crud.get_user_by_username_icase(db, sub)
-    print(f"[SSE Auth] User by username: {user}")
     if not user and "@" in sub:
         user = crud.get_user_by_email_icase(db, sub)
-        print(f"[SSE Auth] User by email: {user}")
     if not user:
-        print(f"[SSE Auth] User not found for sub: {sub}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado"
         )
     
-    print(f"[SSE Auth] User found: {user.username}")
     return user
 
 
