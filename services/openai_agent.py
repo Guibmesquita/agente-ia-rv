@@ -5,6 +5,7 @@ Carrega configurações do banco de dados em tempo real.
 """
 import re
 import json
+import random
 from openai import OpenAI
 from typing import List, Optional, Tuple, Dict, Any
 from core.config import get_settings
@@ -387,9 +388,11 @@ CLASSIFIQUE a mensagem em UMA das categorias:
 3. ESCOPO - Perguntas gerais sobre renda variável que não citam produto específico:
    "como funciona a estratégia de RV?", "quais setores estão aquecidos?", "o que é um FII?"
 
-4. ATENDIMENTO_HUMANO - Pedidos EXPLÍCITOS de atendimento humano, abrir chamado, falar com alguém:
+4. ATENDIMENTO_HUMANO - Pedidos EXPLÍCITOS de atendimento humano, abrir chamado/ticket, falar com alguém:
    "preciso de ajuda humana", "quero falar com alguém", "abre um chamado", "pode me transferir",
-   "preciso de atendimento", "chama um especialista", "quero suporte humano"
+   "preciso de atendimento", "chama um especialista", "quero suporte humano", "abre um ticket",
+   "preciso de um chamado", "cria um chamado", "abre chamado", "quero um ticket", "cria um ticket",
+   "preciso abrir um chamado", "me ajuda com um chamado", "ticket por favor"
 
 5. FORA_ESCOPO - Perguntas fora do domínio: piadas, assuntos pessoais, outros temas NÃO relacionados a pedido de atendimento.
 
@@ -402,6 +405,8 @@ Exemplos:
 "como funciona renda variável?" -> {"categoria": "ESCOPO", "produtos": []}
 "preciso de ajuda humana" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
 "abre um chamado pra mim" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
+"abre um ticket" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
+"preciso de um chamado" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
 "conta uma piada" -> {"categoria": "FORA_ESCOPO", "produtos": []}
 
 Retorne APENAS o JSON."""
@@ -1086,9 +1091,22 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
             assessor_name = ""
             if identified_assessor and identified_assessor.get("nome"):
                 assessor_name = identified_assessor["nome"].split()[0]
-            greeting = f"{assessor_name}, estou" if assessor_name else "Estou"
+            
+            ticket_response_variations = [
+                "abrindo o chamado agora! Vou passar pro broker que cuida de você, ele já te responde por aqui.",
+                "chamado aberto! Já tô passando pro seu broker, ele já responde aqui mesmo.",
+                "pronto, chamado criado! Passando pro broker que te atende, ele já retorna por aqui.",
+                "feito! Vou direcionar pro broker responsável por você, ele já te atende aqui.",
+                "chamado aberto! Tô notificando o broker que cuida da sua carteira, ele já responde.",
+                "tudo certo! Passando agora pro seu broker, ele já te responde por aqui.",
+                "registrado! O broker que te acompanha já tá sendo avisado e responde em breve."
+            ]
+            
+            variation = random.choice(ticket_response_variations)
+            greeting = f"{assessor_name}, " if assessor_name else ""
+            
             return (
-                f"{greeting} abrindo um chamado para a equipe de Renda Variável. Em breve um especialista entrará em contato com você por aqui mesmo. Aguarde um momento!",
+                f"{greeting}{variation}",
                 True,
                 {
                     "human_transfer": True,
