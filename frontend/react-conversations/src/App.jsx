@@ -1087,24 +1087,15 @@ function App() {
               >
                 {currentConversation.ticket_summary && currentConversation.escalation_level === 't1' && (
                   <div className="flex justify-center mb-6">
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 max-w-md shadow-sm">
-                      <div className="flex items-center gap-2 text-amber-700 text-xs font-medium mb-2">
-                        <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                        RESUMO DO CHAMADO
+                    <div className="bg-amber-50 border-l-4 border-amber-300 rounded-r-lg px-4 py-3 max-w-2xl w-full shadow-sm">
+                      <p className="text-sm text-gray-800 leading-relaxed">
+                        <span className="font-semibold text-amber-700">Nota interna - {contactName || 'Assessor'}:</span>{' '}
+                        Resumo: "{currentConversation.ticket_summary}"
                         {currentConversation.conversation_topic && (
-                          <span className="ml-auto bg-amber-100 px-2 py-0.5 rounded text-amber-600">
-                            {currentConversation.conversation_topic}
-                          </span>
+                          <span className="text-amber-600"> Tópico: {currentConversation.conversation_topic}</span>
                         )}
-                      </div>
-                      <p className="text-sm text-gray-700 leading-relaxed">
-                        {currentConversation.ticket_summary}
+                        <span className="text-gray-500"> - {formatTime(currentConversation.first_human_response_at || currentConversation.last_message_at)}</span>
                       </p>
-                      {currentConversation.escalation_category && (
-                        <div className="mt-2 text-xs text-amber-600">
-                          Motivo: {CATEGORY_LABELS[currentConversation.escalation_category] || currentConversation.escalation_category}
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
