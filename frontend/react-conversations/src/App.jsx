@@ -1085,20 +1085,6 @@ function App() {
                 onScroll={handleMessagesScroll}
                 className="flex-1 overflow-y-auto p-6 min-h-0"
               >
-                {currentConversation.ticket_summary && currentConversation.escalation_level === 't1' && (
-                  <div className="flex justify-center mb-6">
-                    <div className="bg-amber-50 border-l-4 border-amber-300 rounded-r-lg px-4 py-3 max-w-2xl w-full shadow-sm">
-                      <p className="text-sm text-gray-800 leading-relaxed">
-                        <span className="font-semibold text-amber-700">Nota interna - {contactName || 'Assessor'}:</span>{' '}
-                        Resumo: "{currentConversation.ticket_summary}"
-                        {currentConversation.conversation_topic && (
-                          <span className="text-amber-600"> Tópico: {currentConversation.conversation_topic}</span>
-                        )}
-                        <span className="text-gray-500"> - {formatTime(currentConversation.first_human_response_at || currentConversation.last_message_at)}</span>
-                      </p>
-                    </div>
-                  </div>
-                )}
                 {messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-gray-400">
                     <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
@@ -1114,6 +1100,20 @@ function App() {
                         onContextMenu={handleMessageContextMenu}
                       />
                     ))}
+                    {currentConversation.ticket_summary && currentConversation.escalation_level === 't1' && (
+                      <div className="flex justify-center my-4">
+                        <div className="bg-amber-50 border-l-4 border-amber-300 rounded-r-lg px-4 py-3 max-w-2xl w-full shadow-sm">
+                          <p className="text-sm text-gray-800 leading-relaxed">
+                            <span className="font-semibold text-amber-700">Nota interna - {contactName || 'Assessor'}:</span>{' '}
+                            Resumo: "{currentConversation.ticket_summary}"
+                            {currentConversation.conversation_topic && (
+                              <span className="text-amber-600"> Tópico: {currentConversation.conversation_topic}</span>
+                            )}
+                            <span className="text-gray-500"> - {formatTime(currentConversation.first_human_response_at || currentConversation.last_message_at)}</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     <div ref={messagesEndRef} />
                   </>
                 )}
