@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   ArrowLeft, FileText, MessageSquare, Edit, Trash2, Plus,
   Upload, ChevronDown, ChevronRight, Clock, Check, AlertTriangle,
-  RefreshCw, History, Send,
+  RefreshCw, History, Send, Table2,
 } from 'lucide-react';
 import { productsAPI, materialsAPI, blocksAPI, scriptsAPI } from '../services/api';
 import { Button } from '../components/Button';
@@ -14,6 +14,76 @@ import { InlineEdit } from '../components/InlineEdit';
 import { Modal } from '../components/Modal';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { useToast } from '../components/Toast';
+
+function convertTableToTopics(content) {
+  if (!content) return null;
+  
+  try {
+    let parsed = content;
+    if (typeof content === 'string') {
+      parsed = JSON.parse(content);
+    }
+    
+    if (parsed && parsed.headers && Array.isArray(parsed.headers) && parsed.rows && Array.isArray(parsed.rows)) {
+      const topics = [];
+      const headers = parsed.headers;
+      
+      parsed.rows.forEach((row) => {
+        const rowTopics = [];
+        row.forEach((cell, cellIdx) => {
+          if (cell && cell.toString().trim()) {
+            const header = headers[cellIdx] || `Campo ${cellIdx + 1}`;
+            rowTopics.push(`${header}: ${cell}`);
+          }
+        });
+        if (rowTopics.length > 0) {
+          topics.push(rowTopics.join(' | '));
+        }
+      });
+      
+      return topics.join('\n');
+    }
+  } catch (e) {
+  }
+  return null;
+}
+
+function ContentDisplay({ content, blockType }) {
+  const displayContent = useMemo(() => {
+    if (blockType === 'tabela' || blockType === 'table') {
+      const topics = convertTableToTopics(content);
+      return topics || content;
+    }
+    return content;
+  }, [content, blockType]);
+
+  const isTable = blockType === 'tabela' || blockType === 'table';
+  const hasTopics = isTable && convertTableToTopics(content);
+
+  if (hasTopics) {
+    const lines = displayContent.split('\n');
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-muted mb-2">
+          <Table2 className="w-3.5 h-3.5" />
+          <span>Dados extraídos</span>
+        </div>
+        {lines.map((line, i) => (
+          <div key={i} className="flex items-start gap-2 text-sm text-muted">
+            <span className="text-primary mt-0.5">•</span>
+            <span>{line}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-sm text-muted whitespace-pre-wrap">
+      {content}
+    </p>
+  );
+}
 
 function getMaterialStatus(material) {
   const now = new Date();
@@ -185,11 +255,9 @@ function MaterialSection({ material, productId, onRefresh }) {
                         </div>
                       </div>
                       
-                      <InlineEdit
-                        value={block.content}
-                        onSave={(value) => handleUpdateBlock(block.id, value)}
-                        multiline
-                        placeholder="Conteúdo do bloco..."
+                      <ContentDisplay 
+                        content={block.content} 
+                        blockType={block.block_type} 
                       />
 
                       {block.status === 'pending_review' && block.review_reason && (
