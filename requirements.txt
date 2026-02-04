@@ -41,3 +41,4 @@ beautifulsoup4
 lxml
 httpx
 msal
+pymupdf
