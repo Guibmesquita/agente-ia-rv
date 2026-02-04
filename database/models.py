@@ -604,14 +604,17 @@ class MaterialStatus(str, enum.Enum):
 
 class MaterialType(str, enum.Enum):
     """Tipos de material de produto."""
-    ONE_PAGE = "one_page"
-    PRESENTATION = "apresentacao"
-    COMMERCIAL_ARGS = "argumentos_comerciais"
-    RATES_UPDATE = "atualizacao_taxas"
-    WHATSAPP_SCRIPT = "script_whatsapp"
-    FAQ = "faq"
-    REGULATORY = "regulatorio"
-    OTHER = "outro"
+    COMITE = "comite"                    # Decisões e teses de comitê de investimentos
+    RESEARCH = "research"                # Análises de mercado, setoriais, cenários
+    ONE_PAGE = "one_page"                # Resumo comercial de produto (1 página)
+    APRESENTACAO = "apresentacao"        # Decks para reuniões com clientes
+    TAXAS = "taxas"                      # Tabelas de taxas, rendimentos (dados "vivos")
+    CAMPANHA = "campanha"                # Materiais promocionais com prazo
+    TREINAMENTO = "treinamento"          # Capacitação interna, playbooks
+    FAQ = "faq"                          # Perguntas frequentes, objeções
+    REGULATORIO = "regulatorio"          # Disclaimers, compliance, regras
+    SCRIPT = "script"                    # Roteiros de abordagem WhatsApp/reunião
+    OTHER = "outro"                      # Outros materiais
 
 
 class ContentBlockType(str, enum.Enum):
@@ -684,6 +687,9 @@ class Material(Base):
     is_indexed = Column(Boolean, default=False)
     source_file_path = Column(String(500), nullable=True)
     source_filename = Column(String(255), nullable=True)
+    tags = Column(Text, default="[]")  # JSON array de tags estruturadas
+    material_categories = Column(Text, default="[]")  # JSON array de categorias selecionadas
+    auto_generated_tags = Column(Text, default="[]")  # Tags geradas automaticamente pelo GPT-4 Vision
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

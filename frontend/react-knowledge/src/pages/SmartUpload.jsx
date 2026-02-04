@@ -6,16 +6,9 @@ import { materialsAPI } from '../services/api';
 import { FileUpload } from '../components/FileUpload';
 import { Button } from '../components/Button';
 import { ProductAutocomplete } from '../components/ProductAutocomplete';
+import { MaterialCategories } from '../components/MaterialCategories';
+import { StructuredTags } from '../components/StructuredTags';
 import { useToast } from '../components/Toast';
-
-const MATERIAL_TYPES = [
-  { value: 'comite', label: 'Comitê' },
-  { value: 'research', label: 'Research' },
-  { value: 'produto', label: 'Produto' },
-  { value: 'campanha', label: 'Campanha' },
-  { value: 'treinamento', label: 'Treinamento' },
-  { value: 'outro', label: 'Outro' },
-];
 
 export function SmartUpload() {
   const navigate = useNavigate();
@@ -24,10 +17,10 @@ export function SmartUpload() {
   
   const [step, setStep] = useState(1);
   const [file, setFile] = useState(null);
-  const [materialType, setMaterialType] = useState('');
+  const [materialCategories, setMaterialCategories] = useState([]);
   const [validFrom, setValidFrom] = useState('');
   const [validUntil, setValidUntil] = useState('');
-  const [tags, setTags] = useState('');
+  const [tags, setTags] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -58,9 +51,10 @@ export function SmartUpload() {
 
     try {
       const materialData = {
-        material_type: materialType,
+        material_type: materialCategories[0] || 'outro',
+        material_categories: materialCategories,
         name: file.name.replace('.pdf', ''),
-        description: tags ? `Tags: ${tags}` : null,
+        tags: tags,
         valid_from: validFrom || null,
         valid_until: validUntil || null,
       };
@@ -105,9 +99,10 @@ export function SmartUpload() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('material_type', materialType);
+      formData.append('material_type', materialCategories[0] || 'outro');
+      formData.append('material_categories', JSON.stringify(materialCategories));
       formData.append('name', file.name.replace('.pdf', ''));
-      if (tags) formData.append('description', `Tags: ${tags}`);
+      formData.append('tags', JSON.stringify(tags));
       if (validFrom) formData.append('valid_from', validFrom);
       if (validUntil) formData.append('valid_until', validUntil);
 
@@ -179,8 +174,8 @@ export function SmartUpload() {
   };
 
   const handleUpload = async () => {
-    if (!file || !materialType) {
-      addToast('Selecione um arquivo e tipo de material', 'warning');
+    if (!file || materialCategories.length === 0) {
+      addToast('Selecione um arquivo e pelo menos uma categoria', 'warning');
       return;
     }
 
@@ -255,25 +250,10 @@ export function SmartUpload() {
         </button>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-2">
-          Tipo de Material *
-        </label>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {MATERIAL_TYPES.map((type) => (
-            <button
-              key={type.value}
-              onClick={() => setMaterialType(type.value)}
-              className={`px-4 py-3 rounded-card border text-sm font-medium transition-colors
-                         ${materialType === type.value 
-                           ? 'bg-primary text-white border-primary' 
-                           : 'bg-card border-border text-foreground hover:border-primary/50'}`}
-            >
-              {type.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <MaterialCategories 
+        value={materialCategories} 
+        onChange={setMaterialCategories} 
+      />
 
       <div>
         <label className="block text-sm font-medium text-foreground mb-2">
@@ -324,19 +304,10 @@ export function SmartUpload() {
         </p>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-2">
-          Tags (opcional)
-        </label>
-        <input
-          type="text"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          placeholder="Ex: renda fixa, estratégia"
-          className="w-full px-4 py-3 bg-card border border-border rounded-input
-                     text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </div>
+      <StructuredTags 
+        value={tags} 
+        onChange={setTags} 
+      />
 
       <div className="flex gap-3 pt-4">
         <Button variant="secondary" onClick={() => setStep(1)} className="flex-1">
@@ -344,7 +315,7 @@ export function SmartUpload() {
         </Button>
         <Button 
           onClick={handleUpload} 
-          disabled={!materialType}
+          disabled={materialCategories.length === 0}
           className="flex-1"
         >
           <Sparkles className="w-4 h-4" />
@@ -475,7 +446,8 @@ export function SmartUpload() {
             <Button variant="secondary" onClick={() => {
               setStep(1);
               setFile(null);
-              setMaterialType('');
+              setMaterialCategories([]);
+              setTags([]);
               setSelectedProduct(null);
               setUploadComplete(false);
               setUploadProgress(0);
