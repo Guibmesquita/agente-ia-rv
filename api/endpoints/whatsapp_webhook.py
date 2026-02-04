@@ -378,15 +378,32 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         should_transfer, transfer_reason = should_transfer_to_human(normalized_message, conversation)
         
         if should_transfer:
-            response = get_transfer_message(transfer_reason)
-            
             try:
-                await escalate_to_human_with_analysis(
+                escalation_result = await escalate_to_human_with_analysis(
                     db, conversation, normalized_message, transfer_reason
                 )
-                print(f"[WEBHOOK] Escalação V2.1 completa - categoria: {conversation.escalation_category}")
+                created_ticket_id = escalation_result.get("ticket_id") if escalation_result else None
+                broker_name = escalation_result.get("broker_name") if escalation_result else None
+                assessor_first_name = escalation_result.get("assessor_name") if escalation_result else None
+                
+                print(f"[WEBHOOK] Escalação V2.1 completa - categoria: {conversation.escalation_category}, ticket: {created_ticket_id}, broker: {broker_name}")
+                
+                if assessor_first_name and broker_name:
+                    response = f"{assessor_first_name}, registrado! O {broker_name} já tá sendo avisado e responde em breve."
+                elif broker_name:
+                    response = f"Registrado! O {broker_name} já tá sendo avisado e responde em breve."
+                elif assessor_first_name:
+                    response = f"{assessor_first_name}, registrado! O broker que te acompanha já tá sendo avisado e responde em breve."
+                else:
+                    response = get_transfer_message(transfer_reason)
+                
+                if created_ticket_id:
+                    response += f"\n\nChamado #{created_ticket_id} criado com sucesso!"
+                    
             except Exception as e:
                 print(f"[WEBHOOK] Erro na análise de escalação, usando fallback: {e}")
+                import traceback
+                traceback.print_exc()
                 conversation.escalation_category = "other"
                 conversation.escalation_reason_detail = str(transfer_reason) if transfer_reason else "Transferência automática"
                 conversation.ticket_summary = normalized_message[:200] if normalized_message else "Solicitação de atendimento"
@@ -398,6 +415,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 conversation.transfer_reason = transfer_reason
                 conversation.transferred_at = datetime.utcnow()
                 db.commit()
+                response = get_transfer_message(transfer_reason)
             
             if message_record:
                 message_record.ai_response = response
@@ -504,9 +522,21 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     db, conversation, normalized_message, transfer_reason
                 )
                 created_ticket_id = escalation_result.get("ticket_id") if escalation_result else None
-                print(f"[WEBHOOK] Escalação via OpenAI completa - ticket_status: {conversation.ticket_status}, ticket_id: {created_ticket_id}")
+                broker_name = escalation_result.get("broker_name") if escalation_result else None
+                assessor_first_name = escalation_result.get("assessor_name") if escalation_result else None
+                
+                print(f"[WEBHOOK] Escalação via OpenAI completa - ticket_status: {conversation.ticket_status}, ticket_id: {created_ticket_id}, broker: {broker_name}")
                 
                 if created_ticket_id:
+                    if assessor_first_name and broker_name:
+                        response = f"{assessor_first_name}, registrado! O {broker_name} já tá sendo avisado e responde em breve."
+                    elif broker_name:
+                        response = f"Registrado! O {broker_name} já tá sendo avisado e responde em breve."
+                    elif assessor_first_name:
+                        response = f"{assessor_first_name}, registrado! O broker que te acompanha já tá sendo avisado e responde em breve."
+                    else:
+                        response = "Registrado! O broker responsável já tá sendo avisado e responde em breve."
+                    
                     response += f"\n\nChamado #{created_ticket_id} criado com sucesso!"
             except Exception as e:
                 print(f"[WEBHOOK] Erro na escalação via OpenAI, usando fallback: {e}")
@@ -523,6 +553,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 conversation.transfer_reason = transfer_reason
                 conversation.transferred_at = datetime.utcnow()
                 db.commit()
+                response = "Registrado! O broker responsável já tá sendo avisado e responde em breve."
         
         if message_record:
             message_record.ai_response = response

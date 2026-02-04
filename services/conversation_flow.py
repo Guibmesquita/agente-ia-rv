@@ -345,9 +345,22 @@ async def escalate_to_human_with_analysis(
     Escala conversa para humano com análise inteligente via GPT.
     Cria um novo ConversationTicket para cada escalação.
     Preserva histórico de tickets anteriores.
+    Retorna também informações do broker responsável.
     """
     from services.openai_agent import OpenAIAgent
     from database.models import ConversationTicket
+    
+    broker_name = None
+    assessor_name = None
+    
+    try:
+        if conversation.assessor_id:
+            assessor = db.query(Assessor).filter(Assessor.id == conversation.assessor_id).first()
+            if assessor:
+                assessor_name = assessor.nome.split()[0] if assessor.nome else None
+                broker_name = assessor.broker_responsavel
+    except Exception as e:
+        print(f"[ESCALATION] Erro ao buscar assessor/broker: {e}")
     
     messages = db.query(WhatsAppMessage).filter(
         WhatsAppMessage.conversation_id == conversation.id
@@ -393,6 +406,10 @@ async def escalate_to_human_with_analysis(
     conversation.conversation_topic = analysis.get("topic", "Outro")
     
     db.commit()
+    db.refresh(conversation)
+    db.refresh(new_ticket)
+    
+    print(f"[ESCALATION] Ticket #{new_ticket.id} criado - conversation.active_ticket_id={conversation.active_ticket_id}, ticket_status={conversation.ticket_status}")
     
     return {
         "success": True,
@@ -400,7 +417,9 @@ async def escalate_to_human_with_analysis(
         "ticket_number": new_ticket.ticket_number,
         "category": analysis.get("category"),
         "summary": analysis.get("summary"),
-        "topic": analysis.get("topic")
+        "topic": analysis.get("topic"),
+        "broker_name": broker_name,
+        "assessor_name": assessor_name
     }
 
 
