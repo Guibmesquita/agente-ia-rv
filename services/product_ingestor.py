@@ -20,46 +20,46 @@ from database.models import (
 )
 
 
-HIGH_RISK_KEYWORDS = [
-    "taxa", "taxas", "custo", "custos", "rentabilidade", "dy", "dividend",
-    "yield", "preço", "price", "cdi", "ipca", "selic", "performance",
-    "retorno", "fee", "spread", "anbima", "cota", "cotas", "pgbl", "vgbl",
-    "pgto", "pagamento", "ir", "come-cotas", "iof", "tributação"
-]
-
-
 def compute_hash(content: str) -> str:
     """Computa hash SHA-256 do conteúdo."""
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def detect_high_risk(content: str, content_type: str) -> Tuple[bool, str, int]:
+def detect_high_risk(content: str, content_type: str, image_quality: str = "good") -> Tuple[bool, str, int]:
     """
-    Detecta se o conteúdo é de alto risco.
+    Detecta se o conteúdo é de alto risco e precisa de revisão humana.
+    
+    Nova política de autonomia aumentada:
+    - Tabelas: Auto-aprovado (mesmo com taxas/percentuais)
+    - Texto corrido: Auto-aprovado (mesmo sobre taxas)
+    - Gráficos/Infográficos: Requer revisão (validação visual necessária)
+    - Imagens com qualidade ruim: Requer revisão
+    - Páginas com muitas imagens: Requer revisão
+    
+    Args:
+        content: O conteúdo extraído
+        content_type: Tipo do conteúdo (table, text, infographic, etc)
+        image_quality: Qualidade da imagem (good, poor, uncertain)
     
     Returns:
         (is_high_risk, reason, confidence_score)
     """
-    content_lower = content.lower()
     
     if content_type in ["table", "tabela"]:
-        for keyword in HIGH_RISK_KEYWORDS:
-            if keyword in content_lower:
-                return True, f"Tabela contém '{keyword}'", 70
-        if "%" in content:
-            return True, "Tabela contém percentuais", 75
-        return False, "", 90
+        return False, "", 95
+    
+    if content_type in ["text", "texto", "mixed"]:
+        return False, "", 95
     
     if content_type in ["infographic", "grafico", "chart"]:
-        return True, "Gráfico requer validação visual", 60
+        return True, "Gráfico/infográfico requer validação visual", 60
     
-    risk_count = sum(1 for kw in HIGH_RISK_KEYWORDS if kw in content_lower)
-    has_percentage = "%" in content
+    if content_type in ["image_only", "image", "imagem"]:
+        if image_quality in ["poor", "uncertain", "low", "baixa"]:
+            return True, "Imagem com qualidade duvidosa", 50
+        return True, "Página com predominância de imagens", 65
     
-    if risk_count >= 3 or (risk_count >= 1 and has_percentage):
-        return True, f"Texto contém {risk_count} termos de risco", 80
-    
-    return False, "", 95
+    return False, "", 90
 
 
 def determine_block_type(content_type: str) -> str:
