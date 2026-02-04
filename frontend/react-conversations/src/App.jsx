@@ -1092,28 +1092,66 @@ function App() {
                   </div>
                 ) : (
                   <>
-                    {messages.map(msg => (
-                      <ChatBubble
-                        key={msg.id}
-                        message={msg}
-                        contactName={contactName}
-                        onContextMenu={handleMessageContextMenu}
-                      />
-                    ))}
-                    {currentConversation.ticket_summary && currentConversation.escalation_level === 't1' && (
-                      <div className="flex justify-center my-4">
-                        <div className="bg-amber-50 border-l-4 border-amber-300 rounded-r-lg px-4 py-3 max-w-2xl w-full shadow-sm">
-                          <p className="text-sm text-gray-800 leading-relaxed">
-                            <span className="font-semibold text-amber-700">Nota interna - {contactName || 'Assessor'}:</span>{' '}
-                            Resumo: "{currentConversation.ticket_summary}"
-                            {currentConversation.conversation_topic && (
-                              <span className="text-amber-600"> Tópico: {currentConversation.conversation_topic}</span>
-                            )}
-                            <span className="text-gray-500"> - {formatTime(currentConversation.first_human_response_at || currentConversation.last_message_at)}</span>
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                    {(() => {
+                      const noteTimestamp = currentConversation.first_human_response_at || currentConversation.last_message_at;
+                      const showNote = currentConversation.ticket_summary && currentConversation.escalation_level === 't1';
+                      let noteInserted = false;
+                      
+                      return messages.map((msg, index) => {
+                        const elements = [];
+                        
+                        if (showNote && !noteInserted && noteTimestamp) {
+                          const msgTime = new Date(msg.created_at).getTime();
+                          const noteTime = new Date(noteTimestamp).getTime();
+                          
+                          if (msgTime >= noteTime) {
+                            noteInserted = true;
+                            elements.push(
+                              <div key="internal-note" className="flex justify-center my-4">
+                                <div className="bg-amber-50 border-l-4 border-amber-300 rounded-r-lg px-4 py-3 max-w-2xl w-full shadow-sm">
+                                  <p className="text-sm text-gray-800 leading-relaxed">
+                                    <span className="font-semibold text-amber-700">Nota interna - {contactName || 'Assessor'}:</span>{' '}
+                                    Resumo: "{currentConversation.ticket_summary}"
+                                    {currentConversation.conversation_topic && (
+                                      <span className="text-amber-600"> Tópico: {currentConversation.conversation_topic}</span>
+                                    )}
+                                    <span className="text-gray-500"> - {formatTime(noteTimestamp)}</span>
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          }
+                        }
+                        
+                        elements.push(
+                          <ChatBubble
+                            key={msg.id}
+                            message={msg}
+                            contactName={contactName}
+                            onContextMenu={handleMessageContextMenu}
+                          />
+                        );
+                        
+                        if (showNote && !noteInserted && index === messages.length - 1) {
+                          elements.push(
+                            <div key="internal-note" className="flex justify-center my-4">
+                              <div className="bg-amber-50 border-l-4 border-amber-300 rounded-r-lg px-4 py-3 max-w-2xl w-full shadow-sm">
+                                <p className="text-sm text-gray-800 leading-relaxed">
+                                  <span className="font-semibold text-amber-700">Nota interna - {contactName || 'Assessor'}:</span>{' '}
+                                  Resumo: "{currentConversation.ticket_summary}"
+                                  {currentConversation.conversation_topic && (
+                                    <span className="text-amber-600"> Tópico: {currentConversation.conversation_topic}</span>
+                                  )}
+                                  <span className="text-gray-500"> - {formatTime(noteTimestamp)}</span>
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        return elements;
+                      });
+                    })()}
                     <div ref={messagesEndRef} />
                   </>
                 )}
