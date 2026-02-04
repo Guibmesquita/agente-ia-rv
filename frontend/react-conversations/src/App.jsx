@@ -1033,32 +1033,12 @@ function App() {
                         </button>
                         <button
                           onClick={releaseTicket}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors bg-primary text-white hover:bg-primary-dark shadow-sm"
                         >
                           Liberar
                         </button>
                       </>
                     )}
-                    <button
-                      onClick={toggleTakeover}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm transition-colors ${
-                        currentConversation.status === 'human_takeover'
-                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          : 'bg-primary/10 text-primary hover:bg-primary/20'
-                      }`}
-                    >
-                      {currentConversation.status === 'human_takeover' ? (
-                        <>
-                          <Bot className="w-4 h-4" />
-                          Bot
-                        </>
-                      ) : (
-                        <>
-                          <UserCheck className="w-4 h-4" />
-                          Humano
-                        </>
-                      )}
-                    </button>
                   </div>
                 </div>
               </div>
