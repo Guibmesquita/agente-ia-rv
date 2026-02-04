@@ -1078,7 +1078,7 @@ async def release_ticket(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Libera um ticket (devolve para a fila/bot)."""
+    """Libera um ticket (devolve para o bot e conclui o chamado)."""
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
@@ -1088,7 +1088,8 @@ async def release_ticket(
     old_assigned = conv.assigned_to
     
     conv.assigned_to = None
-    conv.ticket_status = TicketStatusV2.OPEN.value
+    conv.ticket_status = TicketStatusV2.SOLVED.value
+    conv.solved_at = datetime.utcnow()
     conv.escalation_level = EscalationLevel.T0_BOT.value
     conv.status = ConversationStatus.BOT_ACTIVE.value
     conv.conversation_state = ConversationState.IN_PROGRESS.value
@@ -1098,18 +1099,18 @@ async def release_ticket(
     
     record_ticket_history(
         db, conversation_id,
-        TicketHistoryActionType.UNASSIGNED.value,
+        TicketHistoryActionType.RESOLVED.value,
         actor_user_id=current_user.id,
         from_status=old_status,
         to_status=conv.ticket_status,
         from_escalation=old_escalation,
         to_escalation=conv.escalation_level,
-        notes=f"Ticket liberado por {current_user.username}"
+        notes=f"Ticket concluído e devolvido ao bot por {current_user.username}"
     )
     
     return {
         "success": True,
-        "message": "Ticket liberado e devolvido ao bot",
+        "message": "Ticket concluído e devolvido ao bot",
         "ticket_status": conv.ticket_status,
         "escalation_level": conv.escalation_level
     }

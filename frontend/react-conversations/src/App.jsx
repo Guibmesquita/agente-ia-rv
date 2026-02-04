@@ -62,7 +62,7 @@ function TicketStatusBadge({ ticketStatus, escalationLevel }) {
   const statusConfig = {
     new: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', label: 'Novo', icon: AlertCircle },
     open: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200', label: 'Aberto', icon: Clock },
-    in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', label: 'Em Andamento', icon: ArrowUpCircle },
+    in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', label: 'Aberto', icon: ArrowUpCircle },
     solved: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', label: 'Concluído', icon: CheckCircle2 },
   };
   
@@ -843,7 +843,7 @@ function App() {
               <div className="flex flex-wrap gap-1.5">
                 {[
                   { value: 'new', label: 'Novos', count: filterCounts.new, color: 'blue', icon: AlertCircle },
-                  { value: 'in_progress', label: 'Em Andamento', count: filterCounts.in_progress || filterCounts.open, color: 'amber', icon: Clock },
+                  { value: 'in_progress', label: 'Aberto', count: filterCounts.in_progress || filterCounts.open, color: 'amber', icon: Clock },
                   { value: 'solved', label: 'Concluídos', count: filterCounts.solved_today, color: 'green', icon: CheckCircle2 },
                   { value: 'my_tickets', label: 'Meus', count: filterCounts.my_tickets, color: 'purple', icon: User },
                 ].map(f => {
