@@ -517,6 +517,25 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         transfer_reason = None
         if is_human_transfer:
             transfer_reason = context.get("transfer_reason", "Solicitação de atendimento") if context else "Solicitação de atendimento"
+            
+            try:
+                await escalate_to_human_with_analysis(
+                    db, conversation, normalized_message, transfer_reason
+                )
+                print(f"[WEBHOOK] Escalação via OpenAI completa - ticket_status: {conversation.ticket_status}")
+            except Exception as e:
+                print(f"[WEBHOOK] Erro na escalação via OpenAI, usando fallback: {e}")
+                conversation.escalation_category = "other"
+                conversation.escalation_reason_detail = str(transfer_reason) if transfer_reason else "Transferência automática"
+                conversation.ticket_summary = normalized_message[:200] if normalized_message else "Solicitação de atendimento"
+                conversation.conversation_topic = "Geral"
+                conversation.ticket_status = TicketStatusV2.NEW.value
+                conversation.escalation_level = EscalationLevel.T1_HUMAN.value
+                conversation.status = ConversationStatus.HUMAN_TAKEOVER.value
+                conversation.conversation_state = ConversationState.HUMAN_TAKEOVER.value
+                conversation.transfer_reason = transfer_reason
+                conversation.transferred_at = datetime.utcnow()
+                db.commit()
         
         try:
             retrieval_log = RetrievalLog(
