@@ -1136,7 +1136,8 @@ async def update_ticket_status(
     
     if request.status == TicketStatusV2.SOLVED.value:
         conv.solved_at = datetime.utcnow()
-        conv.status = ConversationStatus.CLOSED.value
+        conv.status = ConversationStatus.BOT_ACTIVE.value
+        conv.assigned_to_id = None
     
     db.commit()
     
