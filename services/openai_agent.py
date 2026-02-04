@@ -387,7 +387,11 @@ CLASSIFIQUE a mensagem em UMA das categorias:
 3. ESCOPO - Perguntas gerais sobre renda variável que não citam produto específico:
    "como funciona a estratégia de RV?", "quais setores estão aquecidos?", "o que é um FII?"
 
-4. FORA_ESCOPO - Perguntas fora do domínio: piadas, assuntos pessoais, outros temas.
+4. ATENDIMENTO_HUMANO - Pedidos EXPLÍCITOS de atendimento humano, abrir chamado, falar com alguém:
+   "preciso de ajuda humana", "quero falar com alguém", "abre um chamado", "pode me transferir",
+   "preciso de atendimento", "chama um especialista", "quero suporte humano"
+
+5. FORA_ESCOPO - Perguntas fora do domínio: piadas, assuntos pessoais, outros temas NÃO relacionados a pedido de atendimento.
 
 Retorne JSON: {"categoria": "XXXX", "produtos": ["PROD1", "PROD2"]}
 Se não houver produtos, retorne lista vazia.
@@ -396,6 +400,8 @@ Exemplos:
 "boa tarde" -> {"categoria": "SAUDACAO", "produtos": []}
 "qual o público do TG Core?" -> {"categoria": "DOCUMENTAL", "produtos": ["TG CORE"]}
 "como funciona renda variável?" -> {"categoria": "ESCOPO", "produtos": []}
+"preciso de ajuda humana" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
+"abre um chamado pra mim" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
 "conta uma piada" -> {"categoria": "FORA_ESCOPO", "produtos": []}
 
 Retorne APENAS o JSON."""
@@ -1075,6 +1081,16 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
         
         if categoria == "SAUDACAO":
             print(f"[OpenAI] Saudação detectada - NÃO consultando documentos")
+        elif categoria == "ATENDIMENTO_HUMANO":
+            print(f"[OpenAI] Pedido de atendimento humano detectado - Marcando para escalação")
+            assessor_name = context.get("assessor_name", "").split()[0] if context.get("assessor_name") else ""
+            return AgentResponse(
+                response=f"{assessor_name}, estou abrindo um chamado para a equipe de Renda Variável. Em breve um especialista entrará em contato com você por aqui mesmo. Aguarde um momento!",
+                human_transfer=True,
+                should_create_ticket=True,
+                transfer_reason="explicit_human_request",
+                confidence=1.0
+            )
         elif categoria == "FORA_ESCOPO":
             print(f"[OpenAI] Fora de escopo - NÃO consultando documentos")
         elif vs:
