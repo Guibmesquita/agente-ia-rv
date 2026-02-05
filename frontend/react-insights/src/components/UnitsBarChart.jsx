@@ -214,13 +214,15 @@ export default function UnitsBarChart({ data }) {
     seriesRef.current.data.setAll(chartData);
   }, [data]);
 
+  const chartHeight = Math.max(520, (data?.length || 0) * 52);
+
   return (
     <div className="bg-white rounded-xl border border-border p-5 shadow-card h-full">
       <div className="flex items-center mb-4">
         <h3 className="text-base font-semibold text-foreground">Unidades por Engajamento</h3>
         <InfoTooltip text="Ranking de unidades com maior volume de interações com o agente IA no período selecionado." />
       </div>
-      <div ref={chartRef} style={{ width: '100%', height: '520px' }} />
+      <div ref={chartRef} style={{ width: '100%', height: `${chartHeight}px` }} />
     </div>
   );
 }
