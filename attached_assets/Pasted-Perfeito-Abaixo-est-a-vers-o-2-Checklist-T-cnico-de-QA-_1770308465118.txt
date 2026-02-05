@@ -1,0 +1,260 @@
+Perfeito. Abaixo está a **versão 2 — Checklist Técnico de QA e Validação**, extremamente detalhada, pensada para o Replit (e para você) validarem se a ingestão, estruturação, indexação e busca estão realmente funcionando no nível esperado para um agente financeiro profissional.
+
+Está em Markdown, pronta para copiar e colar.
+
+---
+
+# Checklist Técnico de QA — Ingestão, Base de Conhecimento e Busca Semântica
+
+## Objetivo do QA
+
+Garantir que:
+
+* PDFs complexos são corretamente interpretados
+* Contexto financeiro é preservado
+* Produtos, tickers e gestoras são encontrados mesmo com erro humano
+* A base vetorial é confiável
+* A IA responde com precisão e consistência
+* Não há perda de informação crítica
+* O sistema é tolerante a escrita informal
+
+---
+
+# A. QA de Ingestão de Documentos
+
+## A1. Upload e Pré-processamento
+
+* [ ] PDF grande (20+ páginas) é aceito sem timeout
+* [ ] PDF digital e PDF escaneado funcionam
+* [ ] Cada página é processada individualmente
+* [ ] Páginas em branco são detectadas e ignoradas
+* [ ] Páginas com rotação são corrigidas
+* [ ] Páginas com baixa qualidade são sinalizadas
+
+---
+
+## A2. Leitura Visual (OCR + Document Understanding)
+
+Para cada página:
+
+* [ ] Título da página é identificado corretamente
+* [ ] Subtítulos são detectados
+* [ ] Texto em caixas, colunas e layouts é lido na ordem correta
+* [ ] Rodapés e notas legais são capturados
+* [ ] Percentuais são corretamente extraídos
+* [ ] Datas são corretamente reconhecidas
+* [ ] Nomes próprios não são alterados
+* [ ] Códigos e tickers são preservados
+
+---
+
+## A3. Tabelas
+
+* [ ] Tabelas são detectadas como tabelas
+* [ ] Colunas mantêm alinhamento semântico
+* [ ] Cabeçalhos são corretamente identificados
+* [ ] Linhas não são mescladas incorretamente
+* [ ] Valores numéricos não perdem casas decimais
+* [ ] Percentuais não perdem o símbolo %
+* [ ] Tabelas grandes não são fragmentadas em múltiplos chunks
+* [ ] Cada tabela gera um bloco único lógico
+
+---
+
+## A4. Gráficos e Infográficos
+
+* [ ] Gráficos são detectados como gráficos
+* [ ] Legenda do gráfico é capturada
+* [ ] Texto do eixo X e Y é capturado quando visível
+* [ ] Tipo de gráfico é identificado (barras, linha, pizza, etc.)
+* [ ] Uma descrição textual útil é gerada
+* [ ] Não há invenção de dados não visíveis
+
+---
+
+# B. QA de Normalização Semântica
+
+## B1. Produtos
+
+* [ ] Nome completo do produto é identificado
+* [ ] Nome curto é identificado (se existir)
+* [ ] Produto é associado corretamente ao documento
+* [ ] Produto não é duplicado com variação de escrita
+* [ ] Produto com acento e sem acento são tratados como o mesmo
+
+---
+
+## B2. Tickers
+
+* [ ] Ticker é detectado corretamente
+* [ ] Ticker é salvo em formato padronizado
+* [ ] Variações humanas são mapeadas
+* [ ] Busca por ticker incompleto retorna resultados
+* [ ] Busca por ticker com erro retorna resultados
+
+---
+
+## B3. Gestoras e Administradores
+
+* [ ] Nome da gestora é identificado
+* [ ] Nome é normalizado
+* [ ] Abreviações são reconhecidas
+* [ ] Escritas alternativas são mapeadas
+* [ ] Busca por gestora retorna produtos relacionados
+
+---
+
+# C. QA de Enriquecimento de Contexto
+
+* [ ] Documento possui resumo conceitual
+* [ ] Documento possui tema principal
+* [ ] Documento possui tipo corretamente classificado
+* [ ] Documento indica para que tipo de pergunta ele é útil
+* [ ] Contexto global é anexado a todos os chunks
+
+---
+
+# D. QA de Chunking
+
+## D1. Regras de divisão
+
+* [ ] Chunks respeitam limites de tamanho
+* [ ] Chunks não cortam frases no meio
+* [ ] Título e conteúdo permanecem juntos
+* [ ] Tabelas nunca são fragmentadas
+* [ ] Gráficos nunca são fragmentados
+* [ ] Cada chunk possui metadados completos
+
+---
+
+## D2. Metadados por Chunk
+
+Para cada chunk:
+
+* [ ] Produto associado
+* [ ] Ticker associado
+* [ ] Gestora associada
+* [ ] Tema associado
+* [ ] Página de origem
+* [ ] Tipo de conteúdo (texto, tabela, gráfico)
+* [ ] Data ou vigência se aplicável
+
+---
+
+# E. QA de Indexação Vetorial
+
+* [ ] Todos os chunks aprovados são indexados
+* [ ] Nenhum chunk pendente é indexado
+* [ ] Metadados são persistidos junto com vetores
+* [ ] Contexto global é incluído no embedding
+* [ ] Não há chunks órfãos sem metadados
+
+---
+
+# F. QA de Busca Semântica
+
+## F1. Busca por Produto
+
+Testes manuais:
+
+* [ ] Nome completo
+* [ ] Nome parcial
+* [ ] Nome com erro
+* [ ] Nome sem acento
+* [ ] Nome abreviado
+
+---
+
+## F2. Busca por Ticker
+
+Testes manuais:
+
+* [ ] Ticker correto
+* [ ] Ticker incompleto
+* [ ] Ticker com erro
+* [ ] Ticker com espaço
+* [ ] Ticker junto com outras palavras
+
+---
+
+## F3. Busca por Gestora
+
+* [ ] Nome completo
+* [ ] Nome abreviado
+* [ ] Nome com erro
+* [ ] Nome parcial
+
+---
+
+## F4. Busca por Tema
+
+* [ ] “fundos do mês”
+* [ ] “produtos recomendados”
+* [ ] “renda fixa”
+* [ ] “multimercado”
+* [ ] “fundos com liquidez”
+
+---
+
+# G. QA de Contexto Conversacional
+
+* [ ] Sistema lembra último produto citado
+* [ ] Sistema usa último tema como contexto
+* [ ] Sistema infere produto mesmo sem repetir nome
+* [ ] Mudança de assunto é corretamente detectada
+
+---
+
+# H. QA de Re-ranking
+
+* [ ] Resultados mais relevantes aparecem primeiro
+* [ ] Match exato é priorizado
+* [ ] Documentos mais recentes são priorizados
+* [ ] Contexto da conversa influencia ranking
+
+---
+
+# I. QA de Casos Ambíguos
+
+* [ ] Sistema pede esclarecimento quando há ambiguidade
+* [ ] Sistema sugere produtos similares
+* [ ] Sistema não responde com dados errados
+* [ ] Sistema não inventa informação
+
+---
+
+# J. QA de Governança da Base
+
+* [ ] Detecção de duplicatas
+* [ ] Consolidação de nomes
+* [ ] Relatório de inconsistências
+* [ ] Alertas para documentos sem metadados
+
+---
+
+# K. QA Funcional com WhatsApp
+
+* [ ] Busca funciona com escrita informal
+* [ ] Busca funciona com erros de digitação
+* [ ] Busca funciona com mensagens curtas
+* [ ] Busca funciona com perguntas vagas
+* [ ] Busca funciona com contexto implícito
+
+---
+
+## Critério de Aprovação Final
+
+O sistema só deve ser considerado pronto quando:
+
+* 95%+ das buscas manuais retornarem resultados úteis
+* Nenhum produto relevante “desaparecer” da busca
+* Tabelas e gráficos críticos forem recuperáveis
+* O agente responder com confiança sem alucinar
+
+---
+
+Se quiser, posso agora gerar:
+
+* Um **roteiro de testes automatizáveis**
+* Um **checklist específico só para embeddings e vetores**
+* Um **plano de observabilidade para detectar queda de qualidade ao longo do tempo**
