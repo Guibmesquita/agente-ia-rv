@@ -1144,8 +1144,20 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
                 "client_id": client_id
             }
             
+            mapped_currency_cols = set()
+            if real_col_valor_saida:
+                mapped_currency_cols.add(real_col_valor_saida)
+            if real_col_valor_compra:
+                mapped_currency_cols.add(real_col_valor_compra)
+            
+            protected_keys = {"ativo_saida", "valor_saida", "ativo_compra", "valor_compra", "client_id"}
             for col_name, col_val in row.items():
-                recommendation[col_name] = col_val
+                if col_name in protected_keys:
+                    continue
+                if col_name in mapped_currency_cols:
+                    recommendation[col_name] = format_currency(col_val)
+                else:
+                    recommendation[col_name] = col_val
             
             grouped[key]["clients"][client_id]["recommendations"].append(recommendation)
             grouped[key]["total_recommendations"] += 1
@@ -1159,13 +1171,33 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
     return grouped
 
 
+def is_currency_value(value) -> bool:
+    """Detecta se um valor parece ser monetário (R$ ou número grande)."""
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value >= 100
+    if isinstance(value, str):
+        s = str(value).strip()
+        if "R$" in s:
+            return True
+        cleaned = s.replace(".", "").replace(",", ".")
+        try:
+            num = float(cleaned)
+            return num >= 100
+        except (ValueError, TypeError):
+            return False
+    return False
+
+
 def format_currency(value) -> str:
     """Formata valor para moeda brasileira."""
     if value is None:
         return "R$ 0,00"
+    if isinstance(value, str) and "R$" in value:
+        return value
     try:
         if isinstance(value, str):
-            # Remove formatação existente
             value = value.replace("R$", "").replace(".", "").replace(",", ".").strip()
             if not value:
                 return "R$ 0,00"
