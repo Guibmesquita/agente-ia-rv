@@ -1004,9 +1004,9 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
         """
         Verifica se o usuário está respondendo a uma pergunta de desambiguação de gestora.
         
-        Se o histórico mostra que oferecemos múltiplos produtos de uma gestora,
-        detectamos qual produto o usuário escolheu e retornamos uma resposta
-        que força a busca por esse ticker específico.
+        Detecta se o usuário quer:
+        - Informações sobre a gestora em si
+        - Informações sobre um ativo específico (por ordinal, ticker ou nome)
         """
         if not conversation_history:
             return None
@@ -1015,11 +1015,42 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
             metadata = hist.get('metadata', {})
             if metadata.get('intent') == 'manager_disambiguation':
                 pending_products = metadata.get('products', [])
-                if not pending_products:
-                    return None
+                manager = metadata.get('manager', '')
                 
                 msg_lower = user_message.lower().strip()
                 msg_upper = user_message.upper().strip()
+                
+                gestora_keywords = ['gestora', 'sobre a gestora', 'a gestora', 'sobre ela', 'sobre a empresa', 'empresa', 'quem é', 'quem são']
+                if any(kw in msg_lower for kw in gestora_keywords):
+                    print(f"[OpenAI] Usuário quer saber sobre a gestora {manager}")
+                    return (
+                        f"__MANAGER_INFO__{manager}",
+                        False,
+                        {"intent": "manager_info_request", "manager": manager}
+                    )
+                
+                ativo_keywords = ['ativo', 'sobre o ativo', 'o ativo', 'fundo', 'sobre o fundo', 'o fundo', 'produto']
+                if any(kw in msg_lower for kw in ativo_keywords):
+                    if len(pending_products) == 1:
+                        ticker = pending_products[0]['ticker']
+                        print(f"[OpenAI] Usuário quer o ativo (único): {ticker}")
+                        return (
+                            f"__TICKER_OVERRIDE__{ticker}",
+                            False,
+                            {"intent": "manager_selection_resolved", "selected_ticker": ticker}
+                        )
+                    else:
+                        product_list = [f"• {p['ticker']} - {p['name']}" for p in pending_products]
+                        response = f"Qual ativo da {manager} você quer saber mais?\n\n" + "\n".join(product_list)
+                        print(f"[OpenAI] Usuário quer ativo, mas há {len(pending_products)} - listando")
+                        return (
+                            response,
+                            False,
+                            {"intent": "manager_product_list", "manager": manager, "products": pending_products}
+                        )
+                
+                if not pending_products:
+                    return None
                 
                 ordinal_map = {
                     'primeiro': 0, 'primeira': 0, '1': 0, 'o primeiro': 0, 'a primeira': 0,
@@ -1082,14 +1113,6 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
         if not disambiguation:
             return None
         
-        if disambiguation['type'] == 'manager_single':
-            inferred_ticker = disambiguation['inferred_ticker']
-            print(f"[OpenAI] Gestora detectada com 1 produto: {inferred_ticker}")
-            return (
-                f"__MANAGER_SINGLE__{inferred_ticker}",
-                False,
-                {"intent": "manager_single_inferred", "inferred_ticker": inferred_ticker}
-            )
         
         if disambiguation['type'] == 'manager_ambiguous':
             products = disambiguation['products']
@@ -1101,9 +1124,29 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
             
             products_text = "\n".join(product_list)
             
-            response = f"Encontrei {len(products)} ativos da {manager} na nossa base:\n\n{products_text}\n\nQual deles você quer saber mais?"
+            response = f"Você quer saber sobre a gestora {manager} ou sobre um ativo específico dela?\n\nTemos {len(products)} ativos da {manager} na base:\n{products_text}"
             
-            print(f"[OpenAI] Gestora {manager} tem {len(products)} produtos - perguntando ao usuário")
+            print(f"[OpenAI] Gestora {manager} tem {len(products)} produtos - perguntando intenção")
+            
+            return (
+                response,
+                False,
+                {
+                    "intent": "manager_disambiguation",
+                    "manager": manager,
+                    "products": products
+                }
+            )
+        
+        if disambiguation['type'] == 'manager_single':
+            products = disambiguation['products']
+            manager = disambiguation['manager']
+            inferred_ticker = disambiguation['inferred_ticker']
+            product_name = products[0]['name'] if products else inferred_ticker
+            
+            response = f"Você quer saber sobre a gestora {manager} ou sobre o ativo {inferred_ticker} ({product_name})?"
+            
+            print(f"[OpenAI] Gestora {manager} tem 1 produto - perguntando intenção")
             
             return (
                 response,
@@ -1326,20 +1369,16 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                     user_message = f"fale sobre o {selected_ticker}"
                     extracted_products = [selected_ticker]
                     print(f"[OpenAI] Query substituída para buscar ticker: {selected_ticker}")
+            elif response_text.startswith("__MANAGER_INFO__"):
+                manager = context_info.get('manager', '')
+                user_message = f"quem é a gestora {manager}? qual a história, filosofia e equipe?"
+                print(f"[OpenAI] Query substituída para buscar info da gestora: {manager}")
             else:
                 return pending_manager_selection
         
         manager_disambiguation = self._check_manager_disambiguation(user_message)
         if manager_disambiguation:
-            response_text, should_ticket, context_info = manager_disambiguation
-            if context_info.get('intent') == 'manager_single_inferred':
-                inferred_ticker = context_info.get('inferred_ticker')
-                if inferred_ticker:
-                    user_message = f"fale sobre o {inferred_ticker}"
-                    extracted_products = [inferred_ticker]
-                    print(f"[OpenAI] Ticker inferido automaticamente: {inferred_ticker}")
-            else:
-                return manager_disambiguation
+            return manager_disambiguation
         
         is_followup = self._is_followup_question(user_message)
         
