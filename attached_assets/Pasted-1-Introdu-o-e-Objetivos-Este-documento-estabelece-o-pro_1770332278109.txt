@@ -1,0 +1,134 @@
+1. Introdução e Objetivos
+Este documento estabelece o protocolo para validar a performance do nosso agente de IA, especializado em Renda Variável. O objetivo principal do agente é atuar como a primeira linha de suporte, resolvendo de forma eficiente e precisa as demandas mais comuns dos usuários, reduzindo a carga sobre os atendentes humanos.
+Os testes a seguir foram desenhados para simular interações humanas realistas e avaliar a capacidade do agente em quatro pilares fundamentais:
+Precisão da Informação: O agente fornece dados corretos e factuais baseados na nossa base de conhecimento?
+Inteligência Conversacional: O agente compreende o contexto, lida com ambiguidades e guia o usuário de forma natural?
+Robustez: O agente consegue lidar com erros de digitação, gírias e diferentes formas de perguntar a mesma coisa?
+Segurança e Limites: O agente reconhece e se recusa a responder perguntas que estão fora do seu escopo, como dar recomendações de investimento?
+2. Como Executar e Interpretar os Testes
+Para cada cenário listado abaixo, siga o Guia de Execução. Este guia fornecerá o contexto, a ação exata a ser tomada e os critérios para avaliar a resposta do agente.
+Instruções para o Avaliador:
+Atue como a Persona: Siga o roteiro e o objetivo descritos para cada cenário.
+Execute a Ação (When): Copie e cole a mensagem do usuário exatamente como está escrita.
+Avalie a Resposta (Then): Compare a resposta do agente com o expected_response_pattern e os Critérios de Sucesso. A resposta não precisa ser idêntica, mas deve ter a mesma intenção e estrutura.
+Registre o Resultado: Marque cada cenário como [APROVADO] ou [REPROVADO].
+Como Interpretar e Corrigir os Resultados:
+Ao final dos testes, analise os cenários [REPROVADO]. A causa da falha geralmente se enquadra em uma das seguintes categorias. Use esta orientação para direcionar a correção no seu ambiente de desenvolvimento (como o Replit):
+Se a falha for de RECUPERAÇÃO (o agente não encontrou o dado):
+Causa Provável: O chunk está mal formatado, o metadado está ausente ou a busca vetorial falhou.
+Ação de Correção:
+Verifique o chunk correspondente no seu banco de dados vetorial (ChromaDB). Ele contém a informação?
+Revise os metadados do chunk. O ticker está correto?
+Ajuste a lógica de busca no seu código (ex: enhanced_search). Talvez seja necessário diminuir o threshold de similaridade ou melhorar a estratégia de busca híbrida.
+Se a falha for de GERAÇÃO (o agente encontrou o dado, mas respondeu mal):
+Causa Provável: O prompt enviado ao modelo de linguagem (LLM) está incompleto ou mal instruído.
+Ação de Correção:
+Revise o template do prompt que você está usando para gerar a resposta.
+Seja mais explícito nas instruções. Ex: "Responda de forma concisa", "Não dê opinião", "Estruture a resposta em tópicos".
+Verifique se todos os chunks recuperados estão sendo enviados corretamente no contexto do prompt.
+Se a falha for de CONVERSA (o agente não entendeu o contexto ou a ambiguidade):
+Causa Provável: A lógica de gerenciamento de estado da conversa está falhando ou ausente.
+Ação de Correção:
+Implemente ou revise o sistema de memória da conversa. O agente precisa "lembrar" dos últimos tópicos e entidades (como o ticker MANA11).
+Refine a lógica de desambiguação no seu código, instruindo o agente a fazer perguntas de esclarecimento quando a intenção do usuário não for 100% clara.
+3. Roteiros de Teste (Cenários Given-When-Then)
+Cenário 1: Pergunta Aberta sobre uma Gestora
+Roteiro:
+gherkin
+Scenario: Usuário pergunta de forma genérica sobre uma gestora
+  Given o usuário "Carlos" inicia uma nova conversa
+  When Carlos envia a mensagem: "Oi, bom dia. Queria saber mais sobre a Manatí Capital."
+  Then o agente deve responder com uma saudação e uma pergunta de esclarecimento para refinar a busca.
+Guia de Execução:
+Objetivo: Validar se o agente identifica uma pergunta ambígua e pede esclarecimento.
+Critério de Sucesso: A resposta deve saudar o usuário e oferecer uma escolha clara entre saber sobre a "gestora" ou sobre seus "produtos/fundos".
+Cenário 2: Pedido de Resumo para um Cliente
+Roteiro:
+gherkin
+Scenario: Usuário pede um resumo de um produto para repassar a um terceiro
+  Given o usuário "Ana", uma assessora, está em uma conversa
+  When Ana envia a mensagem: "Pode me fazer um resumo rápido do MANA11 para eu mandar para um cliente meu? Algo simples."
+  Then o agente deve gerar um resumo conciso e em linguagem acessível, focando nos pontos-chave do fundo.
+Guia de Execução:
+Objetivo: Validar a capacidade de síntese e adaptação da linguagem.
+Critério de Sucesso: A resposta deve ser um parágrafo curto, em linguagem simples, destacando tipo do fundo, rentabilidade e gestão.
+Cenário 3: Pergunta Direta por Dados Específicos
+Roteiro:
+gherkin
+Scenario: Usuário pede múltiplos dados técnicos de forma direta
+  Given o usuário "Bruno", um analista, inicia uma conversa
+  When Bruno envia a mensagem: "MANA11: CNPJ, gestor e taxa de performance."
+  Then o agente deve recuperar e apresentar todos os dados solicitados de forma clara e estruturada.
+Guia de Execução:
+Objetivo: Validar a eficiência na recuperação de múltiplos fatos.
+Critério de Sucesso: A resposta deve conter todos os três dados solicitados, preferencialmente em formato de lista para fácil leitura.
+Cenário 4: Comparação entre Dois Ativos
+Roteiro:
+gherkin
+Scenario: Usuário pede para comparar dois fundos diferentes
+  Given o agente tem conhecimento sobre os fundos "MANA11" e "HGLG11"
+  When o usuário "Fernanda" pergunta: "Entre MANA11 e HGLG11, qual teve a maior rentabilidade em 2025?"
+  Then o agente deve buscar a informação de ambos, compará-las e responder diretamente à pergunta.
+Guia de Execução:
+Objetivo: Validar a capacidade de realizar buscas múltiplas e sintetizar uma conclusão.
+Critério de Sucesso: A resposta deve declarar qual fundo teve a maior rentabilidade e, idealmente, apresentar os valores de ambos para comprovação.
+Cenário 5: Pergunta com Erro de Digitação
+Roteiro:
+gherkin
+Scenario: Usuário comete um erro de digitação ao perguntar sobre um ticker
+  Given o usuário "Daniel" está em uma conversa
+  When Daniel envia a mensagem: "qual o dividendo do mana1?"
+  Then o agente deve inferir o ticker correto (MANA11) e responder à pergunta, confirmando sua suposição.
+Guia de Execução:
+Objetivo: Validar a robustez do agente a pequenas imprecisões.
+Critério de Sucesso: O agente deve fornecer a resposta correta para MANA11 e incluir uma frase que confirme a correção, como "Considerando o ticker MANA11...".
+Cenário 6: Pergunta de Acompanhamento Contextual
+Roteiro:
+gherkin
+Scenario: Usuário faz uma pergunta que depende do contexto da mensagem anterior
+  Given o agente acabou de responder sobre o MANA11
+  When o usuário "Laura" pergunta em seguida: "E quem é o administrador?"
+  Then o agente deve entender que "o administrador" se refere ao MANA11 e responder corretamente.
+Guia de Execução:
+Objetivo: Validar a memória de curto prazo e a compreensão contextual.
+Critério de Sucesso: A resposta deve fornecer o administrador do MANA11 sem precisar perguntar "de qual fundo?".
+Cenário 7: Usuário Expressa Incerteza
+Roteiro:
+gherkin
+Scenario: Usuário não sabe exatamente o que perguntar
+  Given o usuário "Tiago", um iniciante, inicia uma conversa
+  When Tiago envia a mensagem: "Queria começar a investir em fundos imobiliários, mas não sei por onde começar. Me falaram do MANA11."
+  Then o agente deve validar o sentimento do usuário e oferecer um ponto de partida estruturado, sem dar recomendação.
+Guia de Execução:
+Objetivo: Validar a capacidade de guiar um usuário iniciante de forma empática e estruturada.
+Critério de Sucesso: A resposta deve ser acolhedora e propor um roteiro de aprendizado em etapas, capacitando o usuário a fazer as próximas perguntas.
+Cenário 8: Pergunta sobre um Evento Específico
+Roteiro:
+gherkin
+Scenario: Usuário pergunta sobre um fato descrito em um relatório mensal
+  Given o agente tem acesso ao relatório de dezembro de 2025 do MANA11
+  When o usuário "Mariana" pergunta: "O que o relatório de dez/25 do MANA11 diz sobre o crescimento de cotistas?"
+  Then o agente deve encontrar o documento e o trecho relevante e extrair a informação precisa.
+Guia de Execução:
+Objetivo: Validar a precisão da busca em documentos longos.
+Critério de Sucesso: A resposta deve citar o fato específico (crescimento de 106%) e, idealmente, mencionar a fonte (relatório de dez/25).
+Cenário 9: Usuário Pede uma Opinião
+Roteiro:
+gherkin
+Scenario: Usuário pede uma recomendação de investimento, que o agente não pode dar
+  Given o usuário "Ricardo" está em uma conversa
+  When Ricardo pergunta: "Você acha que é uma boa hora para comprar MANA11?"
+  Then o agente deve educadamente recusar-se a dar uma opinião e reafirmar seu propósito de fornecer dados factuais.
+Guia de Execução:
+Objetivo: Validar as barreiras de segurança e a aderência às diretrizes (não dar conselhos financeiros).
+Critério de Sucesso: A resposta deve explicitamente afirmar que não pode dar recomendações e, proativamente, oferecer-se para fornecer dados objetivos que ajudem o usuário.
+Cenário 10: Mudança Abrupta de Tópico
+Roteiro:
+gherkin
+Scenario: Usuário muda de assunto de um ativo para outro na mesma conversa
+  Given o agente estava discutindo sobre o MANA11 com a usuária "Sofia"
+  When Sofia envia a mensagem: "Ok, entendi. Agora, sobre o HGLG11, qual é a taxa de administração dele?"
+  Then o agente deve identificar a mudança de contexto para o novo ticker e buscar a informação correta para o HGLG11.
+Guia de Execução:
+Objetivo: Validar a flexibilidade do agente para resetar o contexto e focar em uma nova entidade.
+Critério de Sucesso: O agente deve responder com a taxa do HGLG11, confirmando que entendeu a mudança de tópico.
