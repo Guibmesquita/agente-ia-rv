@@ -678,11 +678,11 @@ async def get_conversation(
 async def get_conversation_messages(
     conversation_id: int,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Lista mensagens de uma conversa."""
+    """Lista mensagens de uma conversa (mais recentes primeiro, depois revertido para ordem cronológica)."""
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
@@ -692,7 +692,9 @@ async def get_conversation_messages(
     
     messages = db.query(WhatsAppMessage).filter(
         WhatsAppMessage.conversation_id == conversation_id
-    ).order_by(WhatsAppMessage.created_at).offset(skip).limit(limit).all()
+    ).order_by(WhatsAppMessage.created_at.desc()).offset(skip).limit(limit).all()
+    
+    messages = list(reversed(messages))
     
     return [
         MessageResponse(
