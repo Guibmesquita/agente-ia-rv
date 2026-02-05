@@ -186,6 +186,46 @@ class AgentConfig(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
+class TrustedSource(Base):
+    """
+    Fontes confiáveis para busca na web.
+    Define os domínios permitidos para o agente pesquisar.
+    """
+    __tablename__ = "trusted_sources"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String(255), nullable=False, unique=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String(100), default="geral")
+    is_active = Column(Boolean, default=True)
+    priority = Column(Integer, default=5)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class WebSearchLog(Base):
+    """
+    Log de buscas na web realizadas pelo agente.
+    Auditoria completa de pesquisas externas.
+    """
+    __tablename__ = "web_search_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False)
+    sources_searched = Column(Text, nullable=True)
+    results_count = Column(Integer, default=0)
+    facts_extracted = Column(Text, nullable=True)
+    citations = Column(Text, nullable=True)
+    fallback_reason = Column(String(255), nullable=True)
+    response_time_ms = Column(Integer, nullable=True)
+    conversation_id = Column(String(100), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class Assessor(Base):
     """
     Base de Assessores.
