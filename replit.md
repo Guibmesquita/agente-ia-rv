@@ -1,54 +1,62 @@
 # Agente IA - RV - Agente de IA para Assessores Financeiros
 
-## Overview
-This project is a comprehensive FastAPI application named Stevan, an AI agent designed for financial advisors. Its primary goal is to enhance efficiency in financial advisory services by centralizing information, automating routine tasks, and improving client interaction. Key capabilities include WhatsApp integration, semantic search on a Product CMS knowledge base, and an administrative dashboard with analytics, user management, and campaign tools.
+## Visão Geral
+Este projeto é uma aplicação FastAPI abrangente chamada Stevan, um agente de IA projetado para assessores financeiros. Seu objetivo principal é aumentar a eficiência nos serviços de assessoria financeira, centralizando informações, automatizando tarefas rotineiras e melhorando a interação com clientes. As principais capacidades incluem integração com WhatsApp, busca semântica em uma base de conhecimento de produtos (CMS), e um painel administrativo com analytics, gestão de usuários e ferramentas de campanhas.
 
-## User Preferences
-I prefer detailed explanations.
-I want an iterative development process.
-Ask before making major architectural changes.
-Ensure code is well-documented and readable.
-Focus on security best practices.
-I prefer a clean and minimalist UI design.
-Ensure all user-facing texts are in grammatically correct Portuguese with proper accentuation.
-**CRITICAL: NEVER lose existing functionality when making changes.** Always verify that previously implemented features remain intact. Before modifying any component, review what features exist and ensure they are preserved. Call architect to validate UX changes.
+## Preferências do Usuário
+Prefiro explicações detalhadas.
+Quero um processo de desenvolvimento iterativo.
+Pergunte antes de fazer mudanças arquiteturais significativas.
+Garanta que o código seja bem documentado e legível.
+Foque em boas práticas de segurança.
+Prefiro um design de UI limpo e minimalista.
+Garanta que todos os textos voltados ao usuário estejam em português gramaticalmente correto com acentuação adequada.
+**CRÍTICO: NUNCA perca funcionalidades existentes ao fazer mudanças.** Sempre verifique se as funcionalidades implementadas anteriormente permanecem intactas. Antes de modificar qualquer componente, revise quais funcionalidades existem e garanta que sejam preservadas. Chame o architect para validar mudanças de UX.
 
-## System Architecture
-The application is built using FastAPI with a modular architecture.
+## Arquitetura do Sistema
+A aplicação é construída usando FastAPI com arquitetura modular.
 
-**UI/UX Decisions:** The design system features a minimizable vertical sidebar, a light theme, and the Inter font. Global CSS centralizes styling, navigation is dynamic based on user roles, and a custom toast notification system provides consistent feedback. Modern React + Tailwind screens utilize Tailwind Preflight and utilities exclusively for spacing and styling, ensuring a modern SaaS-like user experience.
+**Decisões de UI/UX:** O sistema de design apresenta uma barra lateral vertical minimizável, tema claro e fonte Inter. O CSS global centraliza a estilização, a navegação é dinâmica baseada em roles de usuário, e um sistema de notificações toast personalizado fornece feedback consistente. Telas modernas em React + Tailwind utilizam exclusivamente Tailwind Preflight e utilitários para espaçamento e estilização, garantindo uma experiência de usuário moderna estilo SaaS.
 
-**Technical Implementations:**
-- **AI Agent (Stevan):** Integrates OpenAI for chat and embeddings, configurable for personality, rules, and model parameters. It acts as an internal support broker, explaining strategies and products, and escalating to human specialists.
-- **Semantic Search (V3.0 Enhanced RAG):** Employs ChromaDB and OpenAI text-embedding-3-large with hybrid ranking (vector, recency, exact_match). Chunks include global context.
-- **AI Document Summaries:** Automatic generation of conceptual summaries and themes for each document using GPT-4o-mini, stored in the material model.
-- **Semantic Transformer (3-Layer Architecture):** Processes content through technical extraction (GPT-4 Vision), semantic model (data normalization), and narrative chunk generation for RAG indexing.
-- **FII External Lookup:** Automatically fetches public FII data from FundsExplorer.com.br.
-- **WhatsApp Integration:** Uses Z-API for various message types, logs interactions, and provides a "Central de Mensagens" interface with real-time updates and conversation identification, including full media support (audio transcription, image analysis, document processing).
-- **Authentication & Authorization:** JWT-based with role-based access control.
-- **Database:** PostgreSQL (or SQLite for development) with SQLAlchemy ORM.
-- **Admin Dashboard:** Provides tools for user, integration, advisor, and campaign management, a "Central de Mensagens", and knowledge base management.
-- **Product CMS:** Manages products, materials, and content blocks, featuring PDF upload with GPT-4 Vision extraction, an approval system, semantic indexing, WhatsApp scripts, versioning, and validity control.
-- **Smart Upload with Metadata Extraction:** `DocumentMetadataExtractor` service uses GPT-4 Vision to analyze PDFs, extracting metadata like fund_name, ticker, gestora, and document_type, with automated product matching or creation.
-- **Observability and Auditing:** Includes `RetrievalLog` for RAG search, `IngestionLog` for document ingestion, RAG analytics, intelligent re-ranking, and content block tracking.
-- **AI Agent Response Framework:** Utilizes a `ConversationState` machine, message normalization, contact identification, and AI-driven intent classification for human transfer.
-- **V2.1 Escalation Intelligence:** GPT-powered analysis on every escalation with 11 categories, auto-generating ticket summaries and conversation topics, and tracking key timestamps.
-- **V2.2 Bot Resolution Tracking:** Tracks conversations resolved by the bot, includes `bot_resolved_at` and `awaiting_confirmation` fields, a background scheduler for confirmation messages, and metrics on bot resolution.
-- **V2.3 Separated Ticket Architecture:** `Conversation` and `ConversationTicket` are separate models, allowing continuous chat sessions with distinct historical data for each human intervention, tracking resolution metrics per ticket.
-- **Insights Dashboard:** A management dashboard for Variable Income with `ConversationInsight` model, GPT-based post-conversation analysis, 12 classification categories, dynamic filters, KPI cards, Chart.js graphs, rankings, and campaign summaries.
+**Implementações Técnicas:**
+- **Agente de IA (Stevan):** Integra OpenAI para chat e embeddings, configurável para personalidade, regras e parâmetros do modelo. Atua como um broker de suporte interno, explicando estratégias e produtos, e escalando para especialistas humanos.
+- **Busca Semântica (RAG V3.0 Aprimorado):** Utiliza ChromaDB e OpenAI text-embedding-3-large com ranking híbrido (vetor, recência, correspondência_exata). Chunks incluem contexto global.
+- **Resumos de Documentos por IA:** Geração automática de resumos conceituais e temas para cada documento usando GPT-4o-mini, armazenados no modelo de material.
+- **Transformador Semântico (Arquitetura de 3 Camadas):** Processa conteúdo através de extração técnica (GPT-4 Vision), modelo semântico (normalização de dados) e geração de chunks narrativos para indexação RAG.
+- **Consulta Externa de FIIs:** Busca automaticamente dados públicos de FIIs do FundsExplorer.com.br.
+- **Integração WhatsApp:** Usa Z-API para vários tipos de mensagens, registra interações e fornece uma interface "Central de Mensagens" com atualizações em tempo real e identificação de conversas, incluindo suporte completo a mídia (transcrição de áudio, análise de imagem, processamento de documentos).
+- **Autenticação e Autorização:** Baseada em JWT com controle de acesso por roles.
+- **Banco de Dados:** PostgreSQL (ou SQLite para desenvolvimento) com SQLAlchemy ORM.
+- **Painel Administrativo:** Fornece ferramentas para gestão de usuários, integrações, assessores e campanhas, uma "Central de Mensagens" e gestão da base de conhecimento.
+- **CMS de Produtos:** Gerencia produtos, materiais e blocos de conteúdo, apresentando upload de PDF com extração via GPT-4 Vision, sistema de aprovação, indexação semântica, scripts para WhatsApp, versionamento e controle de validade.
+- **Upload Inteligente com Extração de Metadados:** O serviço `DocumentMetadataExtractor` usa GPT-4 Vision para analisar PDFs, extraindo metadados como nome_do_fundo, ticker, gestora e tipo_de_documento, com correspondência ou criação automatizada de produtos.
+- **Observabilidade e Auditoria:** Inclui `RetrievalLog` para buscas RAG, `IngestionLog` para ingestão de documentos, analytics de RAG, re-ranking inteligente e rastreamento de blocos de conteúdo.
+- **Framework de Resposta do Agente de IA:** Utiliza uma máquina de `ConversationState`, normalização de mensagens, identificação de contato e classificação de intenção por IA para transferência humana.
+- **Inteligência de Escalação V2.1:** Análise por GPT em cada escalação com 11 categorias, gerando automaticamente resumos de tickets e tópicos de conversa, e rastreando timestamps importantes.
+- **Rastreamento de Resolução pelo Bot V2.2:** Rastreia conversas resolvidas pelo bot, inclui campos `bot_resolved_at` e `awaiting_confirmation`, um agendador em background para mensagens de confirmação, e métricas de resolução pelo bot.
+- **Arquitetura de Tickets Separados V2.3:** `Conversation` e `ConversationTicket` são modelos separados, permitindo sessões de chat contínuas com dados históricos distintos para cada intervenção humana, rastreando métricas de resolução por ticket.
+- **Dashboard de Insights:** Um painel de gestão para Renda Variável com modelo `ConversationInsight`, análise pós-conversa por GPT, 12 categorias de classificação, filtros dinâmicos, cards de KPI, gráficos Chart.js, rankings e resumos de campanhas.
+- **Busca Web (Tavily AI):** Fallback para dados de mercado em tempo real quando o conhecimento interno é insuficiente. Inclui whitelist de fontes confiáveis, log de auditoria `WebSearchLog` e UI de administração.
+- **Categorias de Classificação:** SAUDACAO, DOCUMENTAL, ESCOPO, MERCADO (queries de mercado em tempo real), PITCH (geração de argumentos de venda), ATENDIMENTO_HUMANO, FORA_ESCOPO.
 
-**Feature Specifications:** Dynamic control over AI behavior parameters, real-time campaign dispatch with SSE, background document processing, customizable fields, and automated admin user creation.
+**Especificações de Funcionalidades:** Controle dinâmico sobre parâmetros de comportamento da IA, envio de campanhas em tempo real com SSE, processamento de documentos em background, campos customizáveis e criação automática de usuário admin.
 
-## External Dependencies
-- **OpenAI API:** AI agent interactions and text embeddings.
-- **Z-API:** WhatsApp messaging integration.
-- **PostgreSQL:** Primary relational database.
-- **ChromaDB:** Vector database for semantic search.
-- **Jinja2:** Templating engine.
-- **Inter Font (Google Fonts):** Typography.
-- **Tailwind CSS:** Utility-first CSS framework.
-- **React 18 + Vite + React Router DOM:** Modern Knowledge Base UI.
-- **Radix UI:** UI components (Dialog, Tabs, Select, Tooltip).
-- **Framer Motion:** Animations and transitions.
-- **Lucide React:** Icons.
-- **react-dropzone:** File uploads.
+## Dependências Externas
+- **API OpenAI:** Interações do agente de IA e embeddings de texto.
+- **Z-API:** Integração de mensagens WhatsApp.
+- **Tavily AI:** Busca web para dados de mercado em tempo real.
+- **PostgreSQL:** Banco de dados relacional principal.
+- **ChromaDB:** Banco de dados vetorial para busca semântica.
+- **Jinja2:** Motor de templates.
+- **Fonte Inter (Google Fonts):** Tipografia.
+- **Tailwind CSS:** Framework CSS utility-first.
+- **React 18 + Vite + React Router DOM:** UI moderna da Base de Conhecimento.
+- **Radix UI:** Componentes de UI (Dialog, Tabs, Select, Tooltip).
+- **Framer Motion:** Animações e transições.
+- **Lucide React:** Ícones.
+- **react-dropzone:** Upload de arquivos.
+
+## Regras de Negócio Importantes
+- **Resposta do Bot:** O bot responde automaticamente EXCETO quando `ticket_status = 'open'` (atendimento humano ativo).
+- **Escalação:** Quando há transferência para humano, um ticket é criado e o status muda para 'new'.
+- **Tickets:** Status possíveis são `new`, `open`, `solved`, `closed`. Bot só é bloqueado em `open`.
