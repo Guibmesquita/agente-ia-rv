@@ -12,6 +12,7 @@ from core.config import get_settings
 from services.vector_store import get_vector_store
 from services.fii_lookup import get_fii_lookup_service, FIIInfoType
 from services.semantic_search import get_enhanced_search, TokenExtractor
+from services.web_search import get_web_search_service
 
 settings = get_settings()
 
@@ -868,6 +869,109 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
         
         return get_enhanced_system_prompt(base_prompt)
     
+    def _should_web_search(self, context_documents: List[dict], query: str) -> Tuple[bool, str]:
+        """
+        Determina se deve fazer busca na web.
+        
+        Retorna (should_search, reason).
+        """
+        if not context_documents:
+            return True, "Nenhum documento encontrado na base interna"
+        
+        high_score_docs = [d for d in context_documents if d.get('composite_score', 0) > 0.3]
+        if not high_score_docs:
+            return True, "Documentos encontrados têm baixa relevância"
+        
+        market_keywords = ['cotação', 'cotacao', 'preço', 'preco', 'hoje', 'agora', 'atual', 
+                          'últimos dias', 'esta semana', 'notícia', 'noticia', 'fato relevante']
+        query_lower = query.lower()
+        if any(kw in query_lower for kw in market_keywords):
+            return True, "Consulta sobre dados de mercado em tempo real"
+        
+        return False, ""
+    
+    def _web_search_fallback(self, query: str, db=None) -> Optional[Dict]:
+        """
+        Realiza busca na web como fallback.
+        Retorna resultados formatados com citações.
+        """
+        web_service = get_web_search_service()
+        
+        if not web_service.is_configured():
+            print("[OpenAI] Web search não configurada - TAVILY_API_KEY ausente")
+            return None
+        
+        print(f"[OpenAI] Iniciando busca na web para: {query[:50]}...")
+        result = web_service.search_sync(query, db=db)
+        
+        if not result.get('success'):
+            print(f"[OpenAI] Web search falhou: {result.get('error')}")
+            return None
+        
+        if not result.get('results'):
+            print("[OpenAI] Web search não retornou resultados")
+            return None
+        
+        print(f"[OpenAI] Web search retornou {len(result['results'])} resultados")
+        
+        if db:
+            web_service.log_search(
+                db=db,
+                query=query,
+                results=result,
+                fallback_reason="Base interna insuficiente"
+            )
+        
+        return result
+    
+    def _build_web_context(self, web_results: Dict) -> str:
+        """
+        Constrói contexto a partir dos resultados da busca na web.
+        Inclui citações obrigatórias.
+        """
+        if not web_results or not web_results.get('results'):
+            return ""
+        
+        parts = ["INFORMAÇÕES OBTIDAS DA INTERNET (fontes confiáveis):", ""]
+        
+        for i, result in enumerate(web_results['results'][:5], 1):
+            title = result.get('title', 'Sem título')
+            content = result.get('content', '')[:400]
+            url = result.get('url', '')
+            date = result.get('published_date', '')
+            
+            date_str = ""
+            if date:
+                try:
+                    from datetime import datetime
+                    parsed = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                    date_str = f" ({parsed.strftime('%d/%m/%Y')})"
+                except:
+                    pass
+            
+            parts.append(f"[{i}] {title}{date_str}")
+            parts.append(f"{content}")
+            parts.append(f"Fonte: {url}")
+            parts.append("")
+        
+        parts.append("IMPORTANTE: Ao usar estas informações, SEMPRE cite a fonte com o link.")
+        
+        return "\n".join(parts)
+    
+    def _get_fact_extraction_prompt(self) -> str:
+        """
+        Retorna o prompt especializado para extração de fatos.
+        Ignora opiniões e foca em dados concretos.
+        """
+        return """
+REGRAS PARA INFORMAÇÕES DA INTERNET:
+1. FOCO EM FATOS: Apresente apenas dados concretos - números, datas, eventos, descrições de produtos.
+2. IGNORE OPINIÕES: Não mencione previsões, recomendações de compra/venda ou linguagem promocional.
+3. CITE TODAS AS FONTES: Para cada informação da internet, indique de onde veio com o link.
+4. PRIORIZE RECÊNCIA: Dê preferência às informações mais recentes.
+5. SEJA TRANSPARENTE: Deixe claro quando a informação vem da internet e não da base oficial.
+"""
+    
     def _build_context(self, documents: List[dict]) -> str:
         """Constrói o contexto a partir dos documentos encontrados."""
         if not documents:
@@ -1237,6 +1341,24 @@ Agente: "Oi {PrimeiroNome}! O que precisa?"
         
         context = self._build_context(context_documents)
         
+        web_search_results = None
+        web_context = ""
+        should_search_web, web_reason = self._should_web_search(context_documents, user_message)
+        
+        if should_search_web and categoria not in ["SAUDACAO", "FORA_ESCOPO", "ATENDIMENTO_HUMANO"]:
+            print(f"[OpenAI] Ativando busca na web: {web_reason}")
+            try:
+                from database.database import SessionLocal
+                db = SessionLocal()
+                try:
+                    web_search_results = self._web_search_fallback(user_message, db=db)
+                    if web_search_results:
+                        web_context = self._build_web_context(web_search_results)
+                finally:
+                    db.close()
+            except Exception as e:
+                print(f"[OpenAI] Erro na busca web: {e}")
+        
         if database_fallback_product:
             materials_count = database_fallback_product.get('materials_count', 0)
             blocks_count = database_fallback_product.get('blocks_count', 0)
@@ -1274,6 +1396,10 @@ NOTA: {material_note}
         
         user_content = f"""CONTEXTO DA BASE DE CONHECIMENTO:
 {context}"""
+
+        if web_context:
+            user_content += f"\n\n{web_context}"
+            user_content += f"\n\n{self._get_fact_extraction_prompt()}"
 
         if similar_tickers_suggestion:
             suggestions = similar_tickers_suggestion['suggestions']

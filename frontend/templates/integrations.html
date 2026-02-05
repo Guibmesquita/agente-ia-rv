@@ -280,6 +280,47 @@
                 <div id="integrationsContainer">
                     <div class="loading"><div class="spinner"></div></div>
                 </div>
+
+                <div class="integration-card" style="margin-top: 32px;">
+                    <div class="integration-header" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);">
+                        <div class="integration-title">
+                            <div class="integration-icon">🌐</div>
+                            <div>
+                                <h2>Fontes Confiáveis da Web</h2>
+                                <p style="font-size: 0.85rem; opacity: 0.9; margin-top: 4px;">Sites permitidos para pesquisa do agente IA</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="integration-content">
+                        <div style="padding: 20px;">
+                            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                                O agente pode buscar informações em tempo real na internet quando não encontrar na base interna.
+                                Configure aqui os sites confiáveis que ele pode consultar.
+                            </p>
+                            
+                            <div id="trustedSourcesList" style="margin-bottom: 20px;">
+                                <div class="loading"><div class="spinner"></div></div>
+                            </div>
+                            
+                            <div style="border-top: 1px solid var(--border-color); padding-top: 20px; margin-top: 20px;">
+                                <h4 style="margin-bottom: 16px; color: var(--text-primary);">Adicionar Nova Fonte</h4>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;">
+                                    <div>
+                                        <label class="input-label">Domínio</label>
+                                        <input type="text" id="newSourceDomain" class="form-control" placeholder="exemplo.com.br">
+                                    </div>
+                                    <div>
+                                        <label class="input-label">Nome</label>
+                                        <input type="text" id="newSourceName" class="form-control" placeholder="Nome da fonte">
+                                    </div>
+                                    <button onclick="addTrustedSource()" class="btn btn-primary" style="height: 42px;">
+                                        Adicionar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -554,6 +595,146 @@
         }
 
         loadIntegrations();
+        loadTrustedSources();
+
+        async function loadTrustedSources() {
+            try {
+                const response = await fetch('/api/trusted-sources/', { credentials: 'include' });
+                if (!response.ok) throw new Error('Erro ao carregar fontes');
+                
+                const sources = await response.json();
+                renderTrustedSources(sources);
+            } catch (error) {
+                console.error('Erro:', error);
+                document.getElementById('trustedSourcesList').innerHTML = `
+                    <div class="alert alert-danger">Erro ao carregar fontes confiáveis.</div>
+                `;
+            }
+        }
+
+        function renderTrustedSources(sources) {
+            const container = document.getElementById('trustedSourcesList');
+            
+            if (sources.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info">
+                        Nenhuma fonte configurada. Adicione sites confiáveis abaixo.
+                    </div>
+                `;
+                return;
+            }
+
+            const categories = {};
+            sources.forEach(s => {
+                if (!categories[s.category]) categories[s.category] = [];
+                categories[s.category].push(s);
+            });
+
+            let html = '<div style="display: grid; gap: 8px;">';
+            
+            sources.forEach(source => {
+                const statusClass = source.is_active ? 'configured' : 'missing';
+                const statusText = source.is_active ? 'Ativo' : 'Inativo';
+                
+                html += `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span class="status-dot ${statusClass}"></span>
+                            <div>
+                                <strong style="color: var(--text-primary);">${source.name}</strong>
+                                <span style="color: var(--text-secondary); font-size: 0.85rem; margin-left: 8px;">${source.domain}</span>
+                            </div>
+                            <span style="font-size: 0.7rem; background: var(--primary-color); color: white; padding: 2px 8px; border-radius: 4px;">${source.category}</span>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="toggleSourceStatus(${source.id}, ${!source.is_active})" class="btn btn-secondary btn-sm" title="${source.is_active ? 'Desativar' : 'Ativar'}">
+                                ${source.is_active ? '⏸️' : '▶️'}
+                            </button>
+                            <button onclick="deleteSource(${source.id})" class="btn btn-secondary btn-sm" title="Remover" style="color: var(--danger-color);">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function addTrustedSource() {
+            const domain = document.getElementById('newSourceDomain').value.trim();
+            const name = document.getElementById('newSourceName').value.trim();
+            
+            if (!domain || !name) {
+                toast.warning('Preencha o domínio e nome da fonte.');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/trusted-sources/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ domain, name, category: 'personalizado' })
+                });
+
+                if (response.ok) {
+                    toast.success('Fonte adicionada com sucesso!');
+                    document.getElementById('newSourceDomain').value = '';
+                    document.getElementById('newSourceName').value = '';
+                    loadTrustedSources();
+                } else {
+                    const error = await response.json();
+                    toast.error('Erro: ' + (error.detail || 'Não foi possível adicionar'));
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                toast.error('Erro ao adicionar fonte');
+            }
+        }
+
+        async function toggleSourceStatus(id, newStatus) {
+            try {
+                const response = await fetch(`/api/trusted-sources/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ is_active: newStatus })
+                });
+
+                if (response.ok) {
+                    toast.success(newStatus ? 'Fonte ativada' : 'Fonte desativada');
+                    loadTrustedSources();
+                } else {
+                    toast.error('Erro ao atualizar fonte');
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                toast.error('Erro ao atualizar fonte');
+            }
+        }
+
+        async function deleteSource(id) {
+            if (!confirm('Tem certeza que deseja remover esta fonte?')) return;
+
+            try {
+                const response = await fetch(`/api/trusted-sources/${id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    toast.success('Fonte removida com sucesso');
+                    loadTrustedSources();
+                } else {
+                    toast.error('Erro ao remover fonte');
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                toast.error('Erro ao remover fonte');
+            }
+        }
     </script>
 </body>
 </html>
