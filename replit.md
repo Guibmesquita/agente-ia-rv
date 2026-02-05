@@ -60,3 +60,55 @@ A aplicação é construída usando FastAPI com arquitetura modular.
 - **Resposta do Bot:** O bot responde automaticamente EXCETO quando `ticket_status = 'open'` (atendimento humano ativo).
 - **Escalação:** Quando há transferência para humano, um ticket é criado e o status muda para 'new'.
 - **Tickets:** Status possíveis são `new`, `open`, `solved`, `closed`. Bot só é bloqueado em `open`.
+
+## Métricas do Dashboard de Insights
+
+O Dashboard de Insights apresenta métricas de gestão para acompanhar o desempenho do Stevan e da equipe. Todas as métricas podem ser filtradas por período (7d, 30d, 90d, 365d), macro área, unidade, broker e equipe.
+
+### KPIs Principais (Cards)
+
+| Métrica | Descrição | Cálculo |
+|---------|-----------|---------|
+| **Total de Interações** | Número total de conversas/mensagens processadas no período | `COUNT(ConversationInsight)` no período selecionado |
+| **Assessores Ativos** | Quantidade de assessores únicos que interagiram com o Stevan | `COUNT(DISTINCT assessor_id)` onde assessor_id não é nulo |
+| **Taxa de Resolução IA** | Percentual de conversas resolvidas pelo bot sem intervenção humana | `(resolved_by_ai=True AND escalated_to_human=False) / total * 100` |
+| **Escalações** | Número de conversas transferidas para atendimento humano | `COUNT(escalated_to_human=True)` |
+| **Tickets Criados** | Quantidade de tickets de atendimento gerados | `COUNT(ticket_created=True)` |
+| **Campanhas Enviadas** | Total de campanhas de comunicação disparadas | `COUNT(Campaign)` no período |
+| **Assessores Alcançados** | Assessores únicos que receberam campanhas | `COUNT(DISTINCT CampaignDispatch.assessor_id)` com status "sent" |
+
+### Gráficos e Visualizações
+
+| Gráfico | Descrição | Fonte de Dados |
+|---------|-----------|----------------|
+| **Atividade Diária** | Volume de interações por dia (linha temporal) | Agrupamento de `ConversationInsight.created_at` por data |
+| **Categorias de Dúvidas** | Top 10 categorias mais frequentes (pizza/barras) | Agrupamento por `ConversationInsight.category`, excluindo "Saudação" |
+| **Produtos/Tickers** | Top 10 tickers mais mencionados pelos assessores | Parsing do campo JSON `tickers_mentioned` e contagem |
+| **Resolução IA vs Humano** | Proporção entre atendimentos automatizados e escalados | `resolved_by_ai` vs `escalated_to_human` |
+| **Top 5 Unidades** | Ranking das unidades com mais interações | Agrupamento por `unidade` ordenado por volume |
+| **Top 5 Assessores** | Ranking dos assessores mais ativos | Agrupamento por `assessor_id` ordenado por volume |
+
+### Categorias de Classificação
+
+Cada interação é classificada automaticamente pelo GPT em uma das seguintes categorias:
+
+| Categoria | Descrição |
+|-----------|-----------|
+| **SAUDACAO** | Cumprimentos e saudações iniciais |
+| **DOCUMENTAL** | Dúvidas sobre documentos, relatórios e materiais |
+| **ESCOPO** | Perguntas sobre produtos e estratégias dentro do escopo do Stevan |
+| **MERCADO** | Queries sobre dados de mercado em tempo real (ativa busca web) |
+| **PITCH** | Solicitações de argumentos comerciais e textos de venda |
+| **ATENDIMENTO_HUMANO** | Solicitação explícita de falar com humano |
+| **FORA_ESCOPO** | Perguntas fora do conhecimento do Stevan |
+
+### Modelo de Dados (ConversationInsight)
+
+O modelo `ConversationInsight` armazena análises pós-conversa geradas pelo GPT:
+- `category`: Classificação da intenção da mensagem
+- `resolved_by_ai`: Se o bot conseguiu resolver a dúvida
+- `escalated_to_human`: Se houve transferência para humano
+- `ticket_created`: Se um ticket foi gerado
+- `tickers_mentioned`: JSON com tickers/produtos mencionados
+- `assessor_id`: Referência ao assessor da conversa
+- `unidade`, `macro_area`, `equipe`, `broker_responsavel`: Campos de segmentação organizacional
