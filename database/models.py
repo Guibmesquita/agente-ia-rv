@@ -610,12 +610,14 @@ class WhatsAppMessage(Base):
     ai_response = Column(Text, nullable=True)
     ai_intent = Column(String(100), nullable=True)
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
+    conversation_ticket_id = Column(Integer, ForeignKey("conversation_tickets.id"), nullable=True)
     is_from_campaign = Column(Boolean, default=False)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     ticket = relationship("Ticket", foreign_keys=[ticket_id])
+    conversation_ticket = relationship("ConversationTicket", foreign_keys=[conversation_ticket_id])
     campaign = relationship("Campaign", foreign_keys=[campaign_id])
     conversation = relationship("Conversation", back_populates="messages")
 

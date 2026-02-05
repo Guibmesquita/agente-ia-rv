@@ -187,6 +187,7 @@ def save_message_zapi(
     ai_response: str = None,
     ai_intent: str = None,
     ticket_id: int = None,
+    conversation_ticket_id: int = None,
     sender_type: str = None,
     sender_lid: str = None,
     chat_lid: str = None
@@ -235,6 +236,7 @@ def save_message_zapi(
         ai_response=ai_response,
         ai_intent=ai_intent,
         ticket_id=ticket_id,
+        conversation_ticket_id=conversation_ticket_id,
         conversation_id=conversation.id
     )
     
@@ -280,6 +282,8 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     from database.models import ConversationState, TransferReason
     
     print(f"[WEBHOOK] Iniciando process_text_message para {phone}: {message[:50]}...")
+    
+    response_sent_successfully = False
     
     try:
         normalized_message = normalize_message(message)
@@ -328,6 +332,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 
                 result = await zapi_client.send_text(phone, response, delay_typing=1)
                 if result.get("success"):
+                    response_sent_successfully = True
                     save_message_zapi(
                         db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
                         phone=phone, direction=MessageDirection.OUTBOUND.value,
@@ -358,6 +363,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 
                 result = await zapi_client.send_text(phone, response, delay_typing=1)
                 if result.get("success"):
+                    response_sent_successfully = True
                     save_message_zapi(
                         db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
                         phone=phone, direction=MessageDirection.OUTBOUND.value,
@@ -424,6 +430,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             
             result = await zapi_client.send_text(phone, response, delay_typing=1)
             if result.get("success"):
+                response_sent_successfully = True
                 save_message_zapi(
                     db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
                     phone=phone, direction=MessageDirection.OUTBOUND.value,
@@ -588,7 +595,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 message_record.ai_response = response
             message_record.ai_intent = context.get("intent") if context else None
             if created_ticket_id:
-                message_record.ticket_id = created_ticket_id
+                message_record.conversation_ticket_id = created_ticket_id
             db.commit()
         
         try:
@@ -616,6 +623,8 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             print(f"[WEBHOOK] Enviando resposta via Z-API para {phone}...")
             send_result = await zapi_client.send_text(phone, response, delay_typing=2)
             print(f"[WEBHOOK] Resultado envio Z-API: {send_result}")
+            if send_result.get("success"):
+                response_sent_successfully = True
         else:
             print(f"[WEBHOOK] Resposta vazia - não enviando mensagem ao WhatsApp")
             send_result = {"success": False, "reason": "empty_response"}
@@ -630,7 +639,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 message_type=MessageType.TEXT.value,
                 from_me=True,
                 body=response,
-                ticket_id=created_ticket_id,
+                conversation_ticket_id=created_ticket_id,
                 sender_type=SenderType.BOT.value
             )
             
@@ -661,11 +670,15 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         print(f"[WEBHOOK] Erro ao processar mensagem: {e}")
         import traceback
         traceback.print_exc()
-        error_msg = (
-            "Desculpe, ocorreu um erro ao processar sua mensagem. "
-            "Por favor, tente novamente mais tarde ou entre em contato com seu assessor."
-        )
-        await zapi_client.send_text(phone, error_msg)
+        
+        if not response_sent_successfully:
+            error_msg = (
+                "Desculpe, ocorreu um erro ao processar sua mensagem. "
+                "Por favor, tente novamente mais tarde ou entre em contato com seu assessor."
+            )
+            await zapi_client.send_text(phone, error_msg)
+        else:
+            print(f"[WEBHOOK] Resposta já enviada com sucesso, não enviando mensagem de erro ao usuário")
 
 
 async def process_audio_message(phone: str, media_url: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
@@ -941,6 +954,17 @@ async def zapi_webhook(
     if not is_phone_allowed(phone, db):
         print(f"[WEBHOOK] Número não autorizado: {phone}")
         return {"status": "ignored", "reason": "phone not allowed"}
+    
+    # IDEMPOTÊNCIA: Verificar se a mensagem já foi processada ANTES de qualquer processamento
+    if message_id:
+        existing_inbound = db.query(WhatsAppMessage).filter(
+            WhatsAppMessage.message_id == message_id,
+            WhatsAppMessage.direction == MessageDirection.INBOUND.value
+        ).first()
+        
+        if existing_inbound:
+            print(f"[WEBHOOK] Mensagem inbound já processada (id={message_id}), ignorando duplicata")
+            return {"status": "ignored", "reason": "duplicate message - already processed"}
     
     conversation = None
     if sender_lid:
