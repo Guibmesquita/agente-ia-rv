@@ -1670,18 +1670,24 @@ async def dispatch_campaign_stream(
     if source_type in ["base", "base_assessores"]:
         return await dispatch_campaign_from_base(campaign, db)
     
+    header_template = campaign.message_header or ""
+    content_template = campaign.message_content_template or ""
+    footer_template = campaign.message_footer or ""
+    use_blocks = bool(header_template.strip() or footer_template.strip())
+    
     template_content = DEFAULT_TEMPLATE_CONTENT
     
-    if campaign.custom_template_content:
-        candidate = str(campaign.custom_template_content)
-        if template_has_required_variables(candidate):
-            template_content = candidate
-    elif campaign.template_id:
-        template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
-        if template:
-            candidate = str(template.content)
+    if not use_blocks:
+        if campaign.custom_template_content:
+            candidate = str(campaign.custom_template_content)
             if template_has_required_variables(candidate):
                 template_content = candidate
+        elif campaign.template_id:
+            template = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+            if template:
+                candidate = str(template.content)
+                if template_has_required_variables(candidate):
+                    template_content = candidate
     
     try:
         column_mapping = json.loads(str(campaign.column_mapping)) if campaign.column_mapping else {}
@@ -1737,7 +1743,53 @@ async def dispatch_campaign_stream(
             
             for assessor_id, assessor_data in grouped.items():
                 current_index += 1
-                message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
+                
+                if use_blocks:
+                    nome = assessor_data.get("nome", "") or assessor_data.get("nome_assessor", "")
+                    primeiro_nome = str(nome).split()[0] if nome else ""
+                    block_vars = {
+                        "primeiro_nome": primeiro_nome,
+                        "nome": str(nome),
+                        "nome_assessor": str(nome),
+                        "codigo_ai": str(assessor_data.get("codigo_ai", "") or ""),
+                        "email": str(assessor_data.get("email", "") or ""),
+                        "telefone_whatsapp": str(assessor_data.get("telefone_whatsapp", "") or ""),
+                        "telefone": str(assessor_data.get("telefone", "") or ""),
+                        "unidade": str(assessor_data.get("unidade", "") or ""),
+                        "equipe": str(assessor_data.get("equipe", "") or ""),
+                        "broker_responsavel": str(assessor_data.get("broker_responsavel", "") or ""),
+                        "data_atual": datetime.now().strftime("%d/%m/%Y"),
+                    }
+                    for key, value in assessor_data.items():
+                        if key not in block_vars:
+                            block_vars[key] = str(value) if value is not None else ""
+                    
+                    clients = assessor_data.get("clients", {})
+                    if clients:
+                        clients_block = build_clients_block(clients, content_line_template)
+                        block_vars["lista_clientes"] = clients_block
+                    
+                    message_parts = []
+                    header_rendered = replace_variables_generic(header_template, block_vars)
+                    if header_rendered.strip():
+                        message_parts.append(header_rendered.strip())
+                    
+                    content_main = content_template
+                    if "{{lista_clientes}}" in content_main and clients:
+                        content_main = content_main.replace("{{lista_clientes}}", block_vars.get("lista_clientes", ""))
+                    content_rendered = replace_variables_generic(content_main, block_vars)
+                    if content_rendered.strip():
+                        message_parts.append(content_rendered.strip())
+                    
+                    footer_rendered = replace_variables_generic(footer_template, block_vars)
+                    if footer_rendered.strip():
+                        message_parts.append(footer_rendered.strip())
+                    
+                    message = "\n\n".join(message_parts)
+                    message = re.sub(r'\{\{[^}]+\}\}', '', message)
+                else:
+                    message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
+                
                 phone = assessor_data.get("telefone", "")
                 assessor_name = assessor_data.get("nome_assessor", "")
                 
