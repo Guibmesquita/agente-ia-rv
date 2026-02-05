@@ -5,25 +5,18 @@ import InfoTooltip from './InfoTooltip';
 const statusLabels = {
   new: 'Novos',
   open: 'Abertos',
-  in_progress: 'Em Andamento',
-  solved: 'Resolvidos',
-  pending: 'Pendentes',
-  closed: 'Fechados'
+  solved: 'Concluídos'
 };
 
 const statusColors = {
   new: '#dc7f37',
   open: '#8b4513',
-  in_progress: '#b8860b',
-  solved: '#6b8e23',
-  pending: '#cd853f',
-  closed: '#556b2f'
+  solved: '#6b8e23'
 };
 
 const statusIcons = {
   new: 'M12 6v6m0 0v6m0-6h6m-6 0H6',
   open: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z',
-  in_progress: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
   solved: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
 };
 
@@ -175,11 +168,10 @@ export default function TicketStatusDonut({ data }) {
           </div>
         </div>
         
-        <div className="w-full grid grid-cols-2 gap-3">
+        <div className="w-full flex flex-col gap-3">
           <StatusCard status="new" count={data.summary?.new || 0} delay={0.1} />
           <StatusCard status="open" count={data.summary?.open || 0} delay={0.15} />
-          <StatusCard status="in_progress" count={data.summary?.in_progress || 0} delay={0.2} />
-          <StatusCard status="solved" count={data.summary?.solved || 0} delay={0.25} />
+          <StatusCard status="solved" count={data.summary?.solved || 0} delay={0.2} />
         </div>
       </div>
     </motion.div>

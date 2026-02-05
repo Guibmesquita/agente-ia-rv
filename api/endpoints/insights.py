@@ -731,14 +731,13 @@ async def get_ticket_metrics(
         today = datetime.now(timezone.utc).date()
         result = {
             "summary": {
-                "total_tickets": 47,
+                "total_tickets": 35,
                 "new": 8,
                 "open": 12,
-                "in_progress": 15,
-                "solved": 12,
-                "resolution_rate": 25.5,
-                "avg_response_time_minutes": 8.3,
-                "avg_resolution_time_minutes": 42.7
+                "solved": 15,
+                "resolution_rate": 42.9,
+                "avg_response_time_minutes": 4.7,
+                "avg_resolution_time_minutes": 28.3
             },
             "bot_metrics": {
                 "bot_resolved_count": 156,
@@ -747,9 +746,8 @@ async def get_ticket_metrics(
                 "total_conversations": 203
             },
             "by_status": [
-                {"status": "in_progress", "count": 15},
+                {"status": "solved", "count": 15},
                 {"status": "open", "count": 12},
-                {"status": "solved", "count": 12},
                 {"status": "new", "count": 8}
             ],
             "by_unidade": [
