@@ -727,7 +727,9 @@ async def get_ticket_metrics(
         "daily_volume": [{"date": str(d[0]), "count": d[1]} for d in daily_volume]
     }
     
-    if total_tickets == 0 and bot_resolved_count == 0:
+    has_real_data = (total_tickets > 0 or bot_resolved_count > 0) and (avg_response_time > 0 or avg_resolution_time > 0 or len(by_category) > 0)
+    
+    if not has_real_data:
         today = datetime.now(timezone.utc).date()
         result = {
             "summary": {
