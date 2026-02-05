@@ -2008,14 +2008,25 @@ async def resume_upload(
         DocumentProcessingJob.material_id == material_id
     ).order_by(DocumentProcessingJob.created_at.desc()).first()
     
-    if not job:
-        raise HTTPException(status_code=404, detail="Nenhum job de processamento encontrado para este material")
+    file_path_to_use = None
+    start_from_zero = False
     
-    if job.status not in [ProcessingJobStatus.PAUSED.value, ProcessingJobStatus.FAILED.value]:
-        raise HTTPException(status_code=400, detail=f"Job não pode ser retomado (status: {job.status})")
+    if job:
+        if job.status not in [ProcessingJobStatus.PAUSED.value, ProcessingJobStatus.FAILED.value]:
+            raise HTTPException(status_code=400, detail=f"Job não pode ser retomado (status: {job.status})")
+        
+        if os.path.exists(job.file_path):
+            file_path_to_use = job.file_path
+        elif material.file_path and os.path.exists(material.file_path):
+            file_path_to_use = material.file_path
+            start_from_zero = True
+    else:
+        if material.file_path and os.path.exists(material.file_path):
+            file_path_to_use = material.file_path
+            start_from_zero = True
     
-    if not os.path.exists(job.file_path):
-        raise HTTPException(status_code=404, detail="Arquivo PDF original não encontrado")
+    if not file_path_to_use:
+        raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado. Faça um novo upload do documento.")
     
     user_id = current_user.id
     
@@ -2028,32 +2039,62 @@ async def resume_upload(
         from services.product_ingestor import get_product_ingestor
         from datetime import datetime
         import json as json_module
+        import fitz
         
         db_local = SessionLocal()
         processing_success = False
+        job_local = None
         
         try:
-            job_local = db_local.query(DocumentProcessingJob).filter(
-                DocumentProcessingJob.id == job.id
-            ).first()
-            
-            job_local.status = ProcessingJobStatus.PROCESSING.value
-            job_local.retry_count += 1
-            db_local.commit()
-            
             mat = db_local.query(Material).filter(Material.id == material_id).first()
             if mat:
                 mat.processing_status = ProcessingStatus.PROCESSING.value
                 db_local.commit()
             
-            start_page = job_local.last_processed_page
-            
-            progress_queue.put({
-                "type": "start",
-                "message": f"Retomando processamento da página {start_page + 1}/{job_local.total_pages}...",
-                "material_id": material_id,
-                "resuming_from": start_page
-            })
+            if start_from_zero or not job:
+                try:
+                    pdf_doc = fitz.open(file_path_to_use)
+                    total_pages = len(pdf_doc)
+                    pdf_doc.close()
+                except Exception as e:
+                    total_pages = 1
+                
+                job_local = DocumentProcessingJob(
+                    material_id=material_id,
+                    file_path=file_path_to_use,
+                    total_pages=total_pages,
+                    processed_pages=0,
+                    last_processed_page=0,
+                    status=ProcessingJobStatus.PROCESSING.value,
+                    retry_count=1
+                )
+                db_local.add(job_local)
+                db_local.commit()
+                
+                start_page = 0
+                progress_queue.put({
+                    "type": "start",
+                    "message": f"Iniciando processamento do zero (0/{total_pages} páginas)...",
+                    "material_id": material_id,
+                    "resuming_from": 0
+                })
+            else:
+                job_local = db_local.query(DocumentProcessingJob).filter(
+                    DocumentProcessingJob.id == job.id
+                ).first()
+                
+                job_local.status = ProcessingJobStatus.PROCESSING.value
+                job_local.retry_count += 1
+                db_local.commit()
+                
+                start_page = job_local.last_processed_page
+                
+                progress_queue.put({
+                    "type": "start",
+                    "message": f"Retomando processamento da página {start_page + 1}/{job_local.total_pages}...",
+                    "material_id": material_id,
+                    "resuming_from": start_page
+                })
             
             ingestor = get_product_ingestor()
             
@@ -2112,13 +2153,18 @@ async def resume_upload(
             })
             
         except Exception as e:
-            job_local = db_local.query(DocumentProcessingJob).filter(
-                DocumentProcessingJob.id == job.id
-            ).first()
             if job_local:
                 job_local.status = ProcessingJobStatus.PAUSED.value
                 job_local.error_message = str(e)[:500]
                 db_local.commit()
+            elif job:
+                job_from_db = db_local.query(DocumentProcessingJob).filter(
+                    DocumentProcessingJob.id == job.id
+                ).first()
+                if job_from_db:
+                    job_from_db.status = ProcessingJobStatus.PAUSED.value
+                    job_from_db.error_message = str(e)[:500]
+                    db_local.commit()
             
             mat = db_local.query(Material).filter(Material.id == material_id).first()
             if mat:
@@ -2126,11 +2172,12 @@ async def resume_upload(
                 mat.processing_error = str(e)[:500]
                 db_local.commit()
             
+            job_id_for_error = job_local.id if job_local else (job.id if job else None)
             progress_queue.put({
                 "type": "error",
-                "message": f"Erro ao retomar processamento: {str(e)}",
+                "message": f"Erro ao processar: {str(e)}",
                 "resumable": True,
-                "job_id": job.id
+                "job_id": job_id_for_error
             })
         finally:
             db_local.close()
