@@ -296,6 +296,8 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             print(f"[WEBHOOK] Conversa não encontrada para {phone}")
             return
         
+        conv_state = conversation.conversation_state or ConversationState.IDENTIFICATION_PENDING.value
+        
         # Bot NÃO responde apenas quando ticket_status = 'open' (atendimento humano ativo)
         is_human_active = conversation.ticket_status == TicketStatusV2.OPEN.value
         
