@@ -317,7 +317,90 @@ class VectorStore:
         
         documents.sort(key=lambda x: x.get("composite_score", 0), reverse=True)
         
-        return documents[:n_results]
+        deduplicated = self._deduplicate_results(documents)
+        
+        final_results = deduplicated[:n_results]
+        
+        self._log_retrieval(
+            query=query,
+            query_type=query_type,
+            results=final_results,
+            total_candidates=len(documents),
+            threshold=similarity_threshold
+        )
+        
+        return final_results
+    
+    def _deduplicate_results(self, documents: List[dict], similarity_threshold: float = 0.85) -> List[dict]:
+        """
+        Remove chunks semanticamente duplicados.
+        Mantém apenas o chunk com maior score quando dois são muito similares.
+        
+        Critérios de duplicata:
+        - Mesmo produto E mesmo tipo de bloco E conteúdo muito similar
+        - Ou conteúdo quase idêntico independente do produto
+        """
+        if not documents:
+            return documents
+        
+        deduplicated = []
+        seen_content_hashes = set()
+        
+        for doc in documents:
+            content = doc.get("content", "")[:500]
+            metadata = doc.get("metadata", {})
+            
+            content_key = f"{metadata.get('product_id', '')}_{metadata.get('block_type', '')}_{hash(content)}"
+            
+            short_content = content[:200].lower().strip()
+            
+            is_duplicate = False
+            for seen_doc in deduplicated:
+                seen_content = seen_doc.get("content", "")[:200].lower().strip()
+                
+                if short_content == seen_content:
+                    is_duplicate = True
+                    break
+                
+                if len(short_content) > 50 and len(seen_content) > 50:
+                    overlap = len(set(short_content.split()) & set(seen_content.split()))
+                    total = len(set(short_content.split()) | set(seen_content.split()))
+                    if total > 0 and overlap / total > similarity_threshold:
+                        seen_product = seen_doc.get("metadata", {}).get("product_id")
+                        current_product = metadata.get("product_id")
+                        if seen_product == current_product:
+                            is_duplicate = True
+                            break
+            
+            if not is_duplicate and content_key not in seen_content_hashes:
+                deduplicated.append(doc)
+                seen_content_hashes.add(content_key)
+        
+        return deduplicated
+    
+    def _log_retrieval(
+        self,
+        query: str,
+        query_type: str,
+        results: List[dict],
+        total_candidates: int,
+        threshold: float
+    ) -> None:
+        """
+        Loga a busca para observabilidade.
+        Registra query, resultados, scores e metadados.
+        """
+        import json
+        
+        if not results:
+            print(f"[RETRIEVAL] Query: '{query[:50]}...' | Type: {query_type} | Results: 0/{total_candidates}")
+            return
+        
+        chunk_ids = [r.get("metadata", {}).get("material_id", "?") for r in results]
+        scores = [f"{r.get('composite_score', 0):.3f}" for r in results]
+        products = list(set(r.get("metadata", {}).get("product_name", "?") for r in results))
+        
+        print(f"[RETRIEVAL] Query: '{query[:50]}' | Type: {query_type} | Results: {len(results)}/{total_candidates} | Products: {products[:3]} | Scores: {scores[:3]}")
     
     def _calculate_recency_score(self, created_at_str: str, now: 'datetime') -> float:
         """
