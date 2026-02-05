@@ -2333,14 +2333,22 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
         
         async function saveMessageConfigurationForBase() {
             try {
+                const payload = {
+                    message_header: messageBlocks.header || '',
+                    message_content_template: messageBlocks.content || '',
+                    message_footer: messageBlocks.footer || ''
+                };
+                
+                if (currentAttachment) {
+                    payload.attachment_url = currentAttachment.url;
+                    payload.attachment_type = currentAttachment.type;
+                    payload.attachment_filename = currentAttachment.filename;
+                }
+                
                 const response = await fetch(`${API_BASE}/${campaignId}/mapping`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message_header: messageBlocks.header || '',
-                        message_content_template: messageBlocks.content || '',
-                        message_footer: messageBlocks.footer || ''
-                    }),
+                    body: JSON.stringify(payload),
                     credentials: 'include'
                 });
                 
@@ -2371,18 +2379,26 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             try {
                 const assessorCodeColumn = document.getElementById('assessorCodeColumn')?.value;
                 
+                const payload = {
+                    column_mapping: columnMapping,
+                    custom_fields_mapping: customFieldsMapping,
+                    message_template: fullTemplate,
+                    message_blocks: messageBlocks,
+                    group_by_client: groupByClient,
+                    content_line_template: messageBlocks.content,
+                    assessor_code_column: assessorCodeColumn
+                };
+                
+                if (currentAttachment) {
+                    payload.attachment_url = currentAttachment.url;
+                    payload.attachment_type = currentAttachment.type;
+                    payload.attachment_filename = currentAttachment.filename;
+                }
+                
                 const response = await fetch(`${API_BASE}/${campaignId}/mapping`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        column_mapping: columnMapping,
-                        custom_fields_mapping: customFieldsMapping,
-                        message_template: fullTemplate,
-                        message_blocks: messageBlocks,
-                        group_by_client: groupByClient,
-                        content_line_template: messageBlocks.content,
-                        assessor_code_column: assessorCodeColumn
-                    }),
+                    body: JSON.stringify(payload),
                     credentials: 'include'
                 });
                 

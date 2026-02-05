@@ -563,6 +563,9 @@ class CampaignMappingRequest(BaseModel):
     group_by_client: Optional[bool] = False
     content_line_template: Optional[str] = None
     assessor_code_column: Optional[str] = None
+    attachment_url: Optional[str] = None
+    attachment_type: Optional[str] = None
+    attachment_filename: Optional[str] = None
 
 
 @router.put("/{campaign_id}/mapping")
@@ -607,6 +610,13 @@ async def update_campaign_mapping(
         mapping = json.loads(campaign.column_mapping or "{}")
         mapping["codigo_ai"] = request.assessor_code_column
         campaign.column_mapping = json.dumps(mapping)
+    
+    if request.attachment_url is not None:
+        campaign.attachment_url = request.attachment_url
+    if request.attachment_type is not None:
+        campaign.attachment_type = request.attachment_type
+    if request.attachment_filename is not None:
+        campaign.attachment_filename = request.attachment_filename
     
     db.commit()
     
