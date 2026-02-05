@@ -337,44 +337,66 @@ class VectorStore:
         Mantém apenas o chunk com maior score quando dois são muito similares.
         
         Critérios de duplicata:
-        - Mesmo produto E mesmo tipo de bloco E conteúdo muito similar
-        - Ou conteúdo quase idêntico independente do produto
+        - Conteúdo quase idêntico (overlap > 90%) independente do produto
+        - Mesmo produto E conteúdo similar (overlap > 85%)
+        
+        Lista já vem ordenada por score, então o primeiro sempre tem maior score.
         """
         if not documents:
             return documents
         
         deduplicated = []
-        seen_content_hashes = set()
         
         for doc in documents:
-            content = doc.get("content", "")[:500]
+            content = doc.get("content", "")
             metadata = doc.get("metadata", {})
+            current_score = doc.get("composite_score", 0)
             
-            content_key = f"{metadata.get('product_id', '')}_{metadata.get('block_type', '')}_{hash(content)}"
-            
-            short_content = content[:200].lower().strip()
+            if "---" in content:
+                content = content.split("---", 1)[1]
+            short_content = content[:300].lower().strip()
+            current_words = set(short_content.split())
             
             is_duplicate = False
-            for seen_doc in deduplicated:
-                seen_content = seen_doc.get("content", "")[:200].lower().strip()
+            duplicate_idx = -1
+            
+            for idx, seen_doc in enumerate(deduplicated):
+                seen_content = seen_doc.get("content", "")
+                if "---" in seen_content:
+                    seen_content = seen_content.split("---", 1)[1]
+                seen_short = seen_content[:300].lower().strip()
                 
-                if short_content == seen_content:
+                if short_content == seen_short:
                     is_duplicate = True
+                    duplicate_idx = idx
                     break
                 
-                if len(short_content) > 50 and len(seen_content) > 50:
-                    overlap = len(set(short_content.split()) & set(seen_content.split()))
-                    total = len(set(short_content.split()) | set(seen_content.split()))
-                    if total > 0 and overlap / total > similarity_threshold:
-                        seen_product = seen_doc.get("metadata", {}).get("product_id")
-                        current_product = metadata.get("product_id")
-                        if seen_product == current_product:
+                if len(current_words) > 10:
+                    seen_words = set(seen_short.split())
+                    intersection = len(current_words & seen_words)
+                    union = len(current_words | seen_words)
+                    
+                    if union > 0:
+                        overlap = intersection / union
+                        
+                        if overlap > 0.90:
                             is_duplicate = True
+                            duplicate_idx = idx
                             break
+                        
+                        if overlap > similarity_threshold:
+                            seen_product = seen_doc.get("metadata", {}).get("product_id")
+                            current_product = metadata.get("product_id")
+                            if seen_product == current_product:
+                                is_duplicate = True
+                                duplicate_idx = idx
+                                break
             
-            if not is_duplicate and content_key not in seen_content_hashes:
+            if is_duplicate:
+                if duplicate_idx >= 0 and current_score > deduplicated[duplicate_idx].get("composite_score", 0):
+                    deduplicated[duplicate_idx] = doc
+            else:
                 deduplicated.append(doc)
-                seen_content_hashes.add(content_key)
         
         return deduplicated
     
@@ -384,23 +406,49 @@ class VectorStore:
         query_type: str,
         results: List[dict],
         total_candidates: int,
-        threshold: float
+        threshold: float,
+        conversation_id: str = None,
+        user_id: int = None
     ) -> None:
         """
         Loga a busca para observabilidade.
         Registra query, resultados, scores e metadados.
+        Persiste no RetrievalLog para auditoria.
         """
         import json
         
-        if not results:
-            print(f"[RETRIEVAL] Query: '{query[:50]}...' | Type: {query_type} | Results: 0/{total_candidates}")
-            return
-        
-        chunk_ids = [r.get("metadata", {}).get("material_id", "?") for r in results]
+        chunk_ids = [str(r.get("metadata", {}).get("block_id", "?")) for r in results]
         scores = [f"{r.get('composite_score', 0):.3f}" for r in results]
         products = list(set(r.get("metadata", {}).get("product_name", "?") for r in results))
         
+        min_dist = min([r.get("original_distance", 0) for r in results]) if results else None
+        max_dist = max([r.get("original_distance", 0) for r in results]) if results else None
+        
         print(f"[RETRIEVAL] Query: '{query[:50]}' | Type: {query_type} | Results: {len(results)}/{total_candidates} | Products: {products[:3]} | Scores: {scores[:3]}")
+        
+        try:
+            from database.database import SessionLocal
+            from database.models import RetrievalLog
+            
+            db = SessionLocal()
+            try:
+                log_entry = RetrievalLog(
+                    query=query[:1000],
+                    query_type=query_type,
+                    chunks_retrieved=json.dumps(chunk_ids[:20]),
+                    result_count=len(results),
+                    min_distance=f"{min_dist:.4f}" if min_dist else None,
+                    max_distance=f"{max_dist:.4f}" if max_dist else None,
+                    threshold_applied=f"{threshold:.2f}",
+                    conversation_id=conversation_id,
+                    user_id=user_id
+                )
+                db.add(log_entry)
+                db.commit()
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[RETRIEVAL] Warning: Failed to persist log: {e}")
     
     def _calculate_recency_score(self, created_at_str: str, now: 'datetime') -> float:
         """
