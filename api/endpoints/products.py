@@ -1760,7 +1760,7 @@ async def smart_upload_stream(
                             "message": f"Produto identificado automaticamente: {matched_product.name} ({matched_product.ticker})",
                             "log_type": "success"
                         })
-                    elif metadata.ticker and metadata.fund_name:
+                    elif metadata.fund_name and metadata.confidence >= 0.8:
                         new_product = Product(
                             name=metadata.fund_name,
                             ticker=metadata.ticker,
@@ -1776,9 +1776,10 @@ async def smart_upload_stream(
                             mat.product_id = new_product.id
                             db_local.commit()
                         
+                        ticker_info = f"({metadata.ticker})" if metadata.ticker else "(ticker a definir)"
                         progress_queue.put({
                             "type": "log",
-                            "message": f"Novo produto criado: {new_product.name} ({new_product.ticker})",
+                            "message": f"Novo produto criado: {new_product.name} {ticker_info}",
                             "log_type": "success"
                         })
                 

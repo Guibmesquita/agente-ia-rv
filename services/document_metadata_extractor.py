@@ -5,11 +5,14 @@ Usa GPT-4 Vision para analisar múltiplas páginas e extrair:
 - Ticker (ex: MANA11, XPML11)
 - Gestora (ex: TG Core, Manatí, XP)
 - Tipo de documento
+
+Quando o ticker não é encontrado no documento, faz busca na web para tentar identificá-lo.
 """
 import os
 import re
 import json
 import base64
+import requests
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 import unicodedata
@@ -228,6 +231,14 @@ class DocumentMetadataExtractor:
                         result.ticker = matched["ticker"]
                     result.confidence = min(result.confidence + 0.1, 1.0)
             
+            if not result.ticker and result.fund_name and result.confidence >= 0.5:
+                print(f"[MetadataExtractor] Ticker não encontrado no documento. Tentando busca web...")
+                web_ticker = self._search_ticker_on_web(result.fund_name, result.gestora)
+                if web_ticker:
+                    result.ticker = web_ticker
+                    result.raw_extraction["ticker_source"] = "web_inference"
+                    print(f"[MetadataExtractor] Ticker encontrado via busca web: {web_ticker}")
+            
             return result
             
         except Exception as e:
@@ -358,6 +369,146 @@ Responda APENAS em JSON válido com este formato:
                 return best_match
         
         return None
+    
+    def _search_ticker_on_web(self, fund_name: str, gestora: str = None) -> Optional[str]:
+        """
+        Busca o ticker do fundo usando múltiplas estratégias:
+        1. Primeiro tenta FundsExplorer para FIIs
+        2. Depois tenta busca web via DuckDuckGo
+        3. Por último usa inferência IA como fallback
+        
+        Args:
+            fund_name: Nome do fundo identificado no documento
+            gestora: Nome da gestora (opcional, para melhor precisão)
+        
+        Returns:
+            Ticker encontrado (ex: XPLG11) ou None
+        """
+        if not fund_name:
+            return None
+        
+        print(f"[MetadataExtractor] Buscando ticker para: {fund_name} (gestora: {gestora})")
+        
+        ticker = self._search_ticker_via_web_scraping(fund_name, gestora)
+        if ticker:
+            return ticker
+        
+        ticker = self._infer_ticker_via_ai(fund_name, gestora)
+        if ticker:
+            return ticker
+        
+        return None
+    
+    def _search_ticker_via_web_scraping(self, fund_name: str, gestora: str = None) -> Optional[str]:
+        """Tenta buscar ticker via DuckDuckGo HTML search com validação de domínio financeiro."""
+        import time
+        
+        FINANCE_DOMAINS = [
+            "fundsexplorer", "statusinvest", "b3.com.br", "infomoney", 
+            "investing.com", "meusdividendos", "fiis.com.br", "clubefii",
+            "xpi.com.br", "btgpactual", "rico.com.vc", "fundamentus"
+        ]
+        
+        try:
+            time.sleep(1.5)
+            
+            search_query = f'"{fund_name}" ticker FII site:fundsexplorer.com.br OR site:statusinvest.com.br OR site:b3.com.br'
+            if gestora:
+                search_query = f'"{fund_name}" {gestora} ticker FII'
+            
+            url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(search_query)}"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                html_text = response.text.lower()
+                fund_name_lower = normalize_text(fund_name)
+                
+                has_finance_domain = any(domain in html_text for domain in FINANCE_DOMAINS)
+                has_fund_name = fund_name_lower[:20] in normalize_text(html_text)
+                
+                if not (has_finance_domain and has_fund_name):
+                    print(f"[MetadataExtractor] Busca web não encontrou contexto financeiro relevante")
+                    return None
+                
+                tickers = TICKER_PATTERN.findall(response.text)
+                if tickers:
+                    fund_words = set(fund_name_lower.split())
+                    ticker_counts = {}
+                    for t in tickers:
+                        ticker = f"{t[0]}{t[1]}"
+                        ticker_base = t[0].lower()
+                        relevance_bonus = 0
+                        for word in fund_words:
+                            if len(word) >= 3 and (word[:3] in ticker_base or ticker_base[:2] in word):
+                                relevance_bonus += 2
+                        ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1 + relevance_bonus
+                    
+                    if ticker_counts:
+                        best_ticker = max(ticker_counts.items(), key=lambda x: x[1])[0]
+                        if ticker_counts[best_ticker] >= 3:
+                            print(f"[MetadataExtractor] Ticker encontrado via busca web: {best_ticker} (score: {ticker_counts[best_ticker]})")
+                            return best_ticker
+            
+            print(f"[MetadataExtractor] Nenhum ticker confiável encontrado na busca web")
+            return None
+            
+        except requests.exceptions.Timeout:
+            print(f"[MetadataExtractor] Timeout na busca web")
+            return None
+        except Exception as e:
+            print(f"[MetadataExtractor] Erro na busca web: {e}")
+            return None
+    
+    def _infer_ticker_via_ai(self, fund_name: str, gestora: str = None) -> Optional[str]:
+        """Usa IA para inferir ticker baseado no nome do fundo."""
+        try:
+            prompt = f"""Você é um especialista em fundos de investimento brasileiros.
+
+Preciso encontrar o código de negociação (ticker) na B3 para:
+- Nome do Fundo: {fund_name}
+- Gestora: {gestora or 'Não identificada'}
+
+Regras de tickers de FIIs:
+1. Padrão: 4 letras + 11 (ex: XPLG11, MANA11, HGLG11)
+2. Fundos XP: começam com XP (XPLG, XPML, XPPR)
+3. "Logístico"/"Log": usam LG (XPLG, HGLG, BTLG)
+4. "Prime Yield": pode usar PY
+
+Se conseguir identificar com confiança, responda APENAS o ticker.
+Se não tiver certeza, responda "UNKNOWN".
+
+Resposta:"""
+
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Responda apenas com o ticker ou UNKNOWN."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=20,
+                temperature=0.1
+            )
+            
+            ticker_response = response.choices[0].message.content.strip().upper()
+            
+            if ticker_response and ticker_response != "UNKNOWN":
+                ticker_match = re.match(r'^([A-Z]{4})(11|12|13)$', ticker_response)
+                if ticker_match:
+                    print(f"[MetadataExtractor] Ticker inferido via IA: {ticker_response}")
+                    return ticker_response
+            
+            print(f"[MetadataExtractor] Não foi possível inferir ticker via IA")
+            return None
+            
+        except Exception as e:
+            print(f"[MetadataExtractor] Erro na inferência IA: {e}")
+            return None
 
 
 _extractor_instance = None
