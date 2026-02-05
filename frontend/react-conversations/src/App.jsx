@@ -429,7 +429,6 @@ function App() {
       else if (ticketFilter === 'my_tickets') url += `&assigned_to_me=true`;
       else if (ticketFilter === 'open') url += `&ticket_status=open`;
       else if (ticketFilter === 'new') url += `&ticket_status=new`;
-      else if (ticketFilter === 'in_progress') url += `&ticket_status=in_progress`;
       else if (ticketFilter === 'solved') url += `&ticket_status=solved`;
       if (advancedFilters.conversationType) url += `&status=${advancedFilters.conversationType}`;
       if (advancedFilters.unit) url += `&unidade=${encodeURIComponent(advancedFilters.unit)}`;
@@ -880,7 +879,7 @@ function App() {
               <div className="flex flex-wrap gap-1.5">
                 {[
                   { value: 'new', label: 'Novos', count: filterCounts.new, color: 'blue', icon: AlertCircle },
-                  { value: 'in_progress', label: 'Aberto', count: filterCounts.in_progress || filterCounts.open, color: 'amber', icon: Clock },
+                  { value: 'open', label: 'Aberto', count: filterCounts.open || filterCounts.in_progress, color: 'amber', icon: Clock },
                   { value: 'solved', label: 'Concluídos', count: filterCounts.solved_today, color: 'green', icon: CheckCircle2 },
                   { value: 'my_tickets', label: 'Meus', count: filterCounts.my_tickets, color: 'purple', icon: User },
                 ].map(f => {
