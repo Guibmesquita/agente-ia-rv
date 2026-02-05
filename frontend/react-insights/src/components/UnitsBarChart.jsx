@@ -205,7 +205,7 @@ export default function UnitsBarChart({ data }) {
   useEffect(() => {
     if (!seriesRef.current || !yAxisRef.current || !data) return;
 
-    const chartData = data.slice(0, 10).map((item) => ({
+    const chartData = data.map((item) => ({
       name: getUnitName(item.unidade) || item.unidade,
       count: item.count,
     }));
@@ -217,7 +217,7 @@ export default function UnitsBarChart({ data }) {
   return (
     <div className="bg-white rounded-xl border border-border p-5 shadow-card h-full">
       <div className="flex items-center mb-4">
-        <h3 className="text-base font-semibold text-foreground">Top 10 Unidades por Engajamento</h3>
+        <h3 className="text-base font-semibold text-foreground">Unidades por Engajamento</h3>
         <InfoTooltip text="Ranking de unidades com maior volume de interações com o agente IA no período selecionado." />
       </div>
       <div ref={chartRef} style={{ width: '100%', height: '520px' }} />
