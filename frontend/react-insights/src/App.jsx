@@ -28,6 +28,10 @@ import CampaignsSummary from './components/CampaignsSummary';
 import CategoryRadialChart from './components/CategoryRadialChart';
 import AnimatedGauge from './components/AnimatedGauge';
 import FeedbacksList from './components/FeedbacksList';
+import TicketStatusDonut from './components/TicketStatusDonut';
+import TimeGauges from './components/TimeGauges';
+import EscalationCategories from './components/EscalationCategories';
+import TimeSavedCard from './components/TimeSavedCard';
 
 ChartJS.register(
   CategoryScale,
@@ -56,6 +60,7 @@ function App() {
   const [topUnits, setTopUnits] = useState([]);
   const [topAssessors, setTopAssessors] = useState([]);
   const [ticketsByUnit, setTicketsByUnit] = useState([]);
+  const [ticketData, setTicketData] = useState(null);
   const [feedbacks, setFeedbacks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -96,7 +101,7 @@ function App() {
     const qs = buildQueryString();
 
     try {
-      const [metricsRes, activityRes, categoriesRes, productsRes, resolutionRes, unitsRes, assessorsRes, ticketsRes, feedbacksRes] = await Promise.all([
+      const [metricsRes, activityRes, categoriesRes, productsRes, resolutionRes, unitsRes, assessorsRes, ticketsByUnitRes, ticketsRes, feedbacksRes] = await Promise.all([
         fetch(`${API_BASE}/api/insights/metrics?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/activity?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/categories?${qs}`, { credentials: 'include' }),
@@ -105,12 +110,13 @@ function App() {
         fetch(`${API_BASE}/api/insights/top-units?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/top-assessors?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/tickets-by-unit?${qs}`, { credentials: 'include' }),
+        fetch(`${API_BASE}/api/insights/tickets?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/feedbacks?${qs}`, { credentials: 'include' }),
       ]);
 
       if (!metricsRes.ok) throw new Error('Falha ao carregar metricas');
 
-      const [metricsData, activity, categories, products, resolution, units, assessors, tickets, feedbacksData] = await Promise.all([
+      const [metricsData, activity, categories, products, resolution, units, assessors, ticketsByUnitData, ticketsData, feedbacksData] = await Promise.all([
         metricsRes.json(),
         activityRes.json(),
         categoriesRes.json(),
@@ -118,7 +124,8 @@ function App() {
         resolutionRes.json(),
         unitsRes.json(),
         assessorsRes.ok ? assessorsRes.json() : [],
-        ticketsRes.ok ? ticketsRes.json() : [],
+        ticketsByUnitRes.ok ? ticketsByUnitRes.json() : [],
+        ticketsRes.ok ? ticketsRes.json() : null,
         feedbacksRes.ok ? feedbacksRes.json() : [],
       ]);
 
@@ -129,7 +136,8 @@ function App() {
       setResolutionData(resolution);
       setTopUnits(units);
       setTopAssessors(assessors);
-      setTicketsByUnit(tickets);
+      setTicketsByUnit(ticketsByUnitData);
+      setTicketData(ticketsData);
       setFeedbacks(feedbacksData);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -292,15 +300,12 @@ function App() {
                 <ComplexityChart data={ticketsByUnit} />
               </div>
 
-              <div className="mt-6">
-                <CategoryRadialChart
-                  title="Categorias de Dúvidas"
-                  data={categoriesChartFormatted}
-                  tooltip="Distribuição das conversas por tipo de assunto. Volumes absolutos de cada categoria."
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                <ProductsImageChart
+                  data={productsChartFormatted}
+                  title="Produtos em Alta"
+                  tooltip="Ranking dos produtos/tickers mais mencionados nas conversas. Indica demanda e interesse dos assessores."
                 />
-              </div>
-
-              <div className="mt-6">
                 <AnimatedGauge
                   title="Taxa de Resolução IA"
                   percentage={metrics?.ai_resolution_rate || 0}
@@ -310,11 +315,35 @@ function App() {
               </div>
 
               <div className="mt-6">
-                <ProductsImageChart
-                  data={productsChartFormatted}
-                  title="Produtos em Alta"
-                  tooltip="Ranking dos produtos/tickers mais mencionados nas conversas. Indica demanda e interesse dos assessores."
+                <CategoryRadialChart
+                  title="Categorias de Dúvidas"
+                  data={categoriesChartFormatted}
+                  tooltip="Distribuição das conversas por tipo de assunto. Volumes absolutos de cada categoria."
                 />
+              </div>
+
+              {/* Seção de Gestão de Chamados */}
+              <div className="mt-10">
+                <h2 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2">
+                  <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  Gestão de Chamados
+                </h2>
+                
+                <div className="space-y-6">
+                  <TicketStatusDonut data={ticketData} />
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <TimeGauges
+                      avgResponseTime={ticketData?.summary?.avg_response_time_minutes}
+                      avgResolutionTime={ticketData?.summary?.avg_resolution_time_minutes}
+                    />
+                    <TimeSavedCard botMetrics={ticketData?.bot_metrics} />
+                  </div>
+                  
+                  <EscalationCategories data={ticketData?.by_category} />
+                </div>
               </div>
 
               <div className="mt-6">
