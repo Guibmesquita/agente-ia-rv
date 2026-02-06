@@ -2,6 +2,12 @@
 """
 Script para extrair termos do glossário B3 (Bora Investir) e adicionar
 ao arquivo services/financial_concepts.py como novos conceitos.
+
+Inclui sanitização automática:
+- Remove abreviações malformadas (parênteses quebrados)
+- Remove abreviações de 1-2 caracteres (muito ambíguas)
+- Extrai siglas standalone de padrões "Nome (SIGLA)"
+- Evita duplicatas semânticas com conceitos existentes
 """
 
 import asyncio
@@ -90,7 +96,10 @@ def get_existing_terms() -> set[str]:
 
     existing = set()
     for concept in FINANCIAL_CONCEPTS:
+        existing.add(concept['id'].lower().strip())
         for term in concept.get("termos_usuario", []):
+            existing.add(term.lower().strip())
+        for term in concept.get("termos_busca", []):
             existing.add(term.lower().strip())
     return existing
 
@@ -128,27 +137,60 @@ def generate_search_terms(name: str, description: str) -> list[str]:
     return significant[:8]
 
 
+def sanitize_term(term: str) -> bool:
+    """Retorna True se o termo é válido, False se deve ser removido."""
+    if not term or len(term.strip()) <= 1:
+        return False
+    if len(term) <= 2 and term.isupper():
+        return False
+    if re.search(r'[A-Za-zÀ-ú&;]\(', term) and not re.search(r'\s\(', term):
+        return False
+    if term.count('(') != term.count(')'):
+        return False
+    if re.search(r'&#\d+;', term):
+        return False
+    return True
+
+
 def generate_user_terms(name: str) -> list[str]:
-    terms = [name]
+    """Gera termos de busca do usuário com sanitização e extração de siglas."""
+    raw_terms = [name]
 
     lower = name.lower()
     if lower != name:
-        terms.append(lower)
+        raw_terms.append(lower)
 
     nfkd = unicodedata.normalize('NFKD', name)
     ascii_name = nfkd.encode('ascii', 'ignore').decode('ascii')
     if ascii_name != name and ascii_name:
-        terms.append(ascii_name)
+        raw_terms.append(ascii_name)
 
-    words = name.split()
-    if len(words) > 1:
-        initials = ''.join(w[0].upper() for w in words if len(w) > 2)
-        if len(initials) >= 2:
-            terms.append(initials)
+    abbrev_match = re.match(r'^(.+?)\s+\(([A-Za-zÀ-ú\-\s,]+)\)$', name)
+    if abbrev_match:
+        full_name = abbrev_match.group(1).strip()
+        abbreviation = abbrev_match.group(2).strip()
+        if len(abbreviation) >= 3:
+            raw_terms.append(abbreviation)
+        if len(full_name) >= 3:
+            raw_terms.append(full_name)
+            full_lower = full_name.lower()
+            if full_lower != full_name:
+                raw_terms.append(full_lower)
+            full_ascii = unicodedata.normalize('NFKD', full_name).encode('ascii', 'ignore').decode('ascii')
+            if full_ascii != full_name and full_ascii:
+                raw_terms.append(full_ascii)
+    else:
+        words = name.split()
+        if len(words) > 1:
+            initials = ''.join(w[0].upper() for w in words if len(w) > 2)
+            if len(initials) >= 3:
+                raw_terms.append(initials)
 
     seen = set()
     unique = []
-    for t in terms:
+    for t in raw_terms:
+        if not sanitize_term(t):
+            continue
         tl = t.lower()
         if tl not in seen:
             seen.add(tl)
@@ -157,11 +199,7 @@ def generate_user_terms(name: str) -> list[str]:
     return unique
 
 
-def generate_concept_entry(name: str, description: str) -> str:
-    concept_id = to_snake_case(name)
-    if not concept_id:
-        concept_id = "termo_" + re.sub(r'\W+', '_', name.lower())[:30]
-
+def generate_concept_entry(name: str, description: str, concept_id: str) -> str:
     user_terms = generate_user_terms(name)
     search_terms = generate_search_terms(name, description)
 
@@ -279,20 +317,22 @@ async def main():
     concept_entries = []
     for name, description in new_terms:
         concept_id = to_snake_case(name)
+        if not concept_id:
+            concept_id = "termo_" + re.sub(r'\W+', '_', name.lower())[:30]
         if concept_id in seen_ids:
             concept_id = concept_id + "_b3"
         seen_ids.add(concept_id)
-        entry = generate_concept_entry(name, description)
+        entry = generate_concept_entry(name, description, concept_id)
         concept_entries.append(entry)
 
     print(f"\nEscrevendo {len(concept_entries)} novos conceitos em {FINANCIAL_CONCEPTS_PATH}...")
 
     success = write_concepts_to_file(concept_entries)
     if success:
-        print(f"✓ {len(concept_entries)} conceitos adicionados com sucesso!")
-        print("✓ Flag _INITIALIZED resetada para rebuild do índice")
+        print(f"\n{len(concept_entries)} conceitos adicionados com sucesso!")
+        print("Flag _INITIALIZED resetada para rebuild do índice")
     else:
-        print("✗ Falha ao escrever conceitos no arquivo")
+        print("\nFalha ao escrever conceitos no arquivo")
 
     print("\n" + "=" * 60)
     print("RESUMO")

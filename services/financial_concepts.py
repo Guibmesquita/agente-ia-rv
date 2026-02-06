@@ -2877,7 +2877,7 @@ FINANCIAL_CONCEPTS = [
     {
         "id": "bacen_8211_banco_central_do_brasil_bc",
         "categoria": "GLOSSARIO_B3",
-        "termos_usuario": ["BACEN &#8211; Banco Central do Brasil (BC)", "BACEN &#8211; Banco Central do Brasil"],
+        "termos_usuario": ["BACEN", "Banco Central do Brasil", "BCB"],
         "termos_busca": ["brasil", "central", "banco", "bacen", "instituição", "regula", "sistema", "financeiro"],
         "descricao": "Instituição regula o sistema financeiro, emite moeda e é responsável pela estabilidade econômica",
         "temas_relacionados": []
@@ -2952,14 +2952,6 @@ FINANCIAL_CONCEPTS = [
         "termos_usuario": ["BC, BCB, BACEN", "BBB"],
         "termos_busca": ["bacen", "bcb", "siglas", "correspondentes", "banco", "central", "brasil", "respectivamente"],
         "descricao": "Siglas correspondentes a Banco Central e a Banco Central do Brasil, respectivamente.",
-        "temas_relacionados": []
-    },
-    {
-        "id": "bdr_brazilian_depositary_receipts",
-        "categoria": "GLOSSARIO_B3",
-        "termos_usuario": ["BDR (Brazilian Depositary Receipts)", "Brazilian Depositary Receipts", "BDR"],
-        "termos_busca": ["receipts", "depositary", "brazilian", "bdr", "bdrs", "democratizam", "investimento", "internacional"],
-        "descricao": "Os BDRs democratizam o investimento internacional e tornam possível para investidores locais diversificar suas carteiras com ações de grandes empresas globais, como Apple, Amazon, Google, entre outras.",
         "temas_relacionados": []
     },
     {
@@ -3075,14 +3067,6 @@ FINANCIAL_CONCEPTS = [
         "temas_relacionados": []
     },
     {
-        "id": "brazilian_depositary_receipts_bdr",
-        "categoria": "GLOSSARIO_B3",
-        "termos_usuario": ["Brazilian Depositary Receipts (BDR)", "Brazilian Depositary Receipts", "BDR"],
-        "termos_busca": ["bdr", "receipts", "depositary", "brazilian", "títulos", "representativos", "valores", "mobiliários"],
-        "descricao": "Títulos representativos de valores mobiliários emitidos por instituição depositária no País, cujo lastro são valores mobiliários de empresas estrangeiras e depositados na instituição custodiante de programa de BDR no exterior.",
-        "temas_relacionados": []
-    },
-    {
         "id": "breakeven",
         "categoria": "GLOSSARIO_B3",
         "termos_usuario": ["Break-Even"],
@@ -3091,7 +3075,7 @@ FINANCIAL_CONCEPTS = [
         "temas_relacionados": []
     },
     {
-        "id": "breakeven",
+        "id": "breakeven_b3",
         "categoria": "GLOSSARIO_B3",
         "termos_usuario": ["Breakeven"],
         "termos_busca": ["entenda", "breakeven", "ajuda", "avaliar", "viabilidade", "negócios"],
@@ -3125,7 +3109,7 @@ FINANCIAL_CONCEPTS = [
     {
         "id": "buy_038_hold",
         "categoria": "GLOSSARIO_B3",
-        "termos_usuario": ["Buy &#038; Hold", "B&H"],
+        "termos_usuario": ["Buy & Hold", "buy and hold", "B&H"],
         "termos_busca": ["buy", "hold", "estratégia", "comprar", "manter", "ativos", "qualidade"],
         "descricao": "Buy & Hold é estratégia de comprar e manter ativos de qualidade no longo prazo, com foco em crescimento patrimonial e geração de renda com dividendos",
         "temas_relacionados": []
@@ -3989,7 +3973,7 @@ FINANCIAL_CONCEPTS = [
     {
         "id": "di",
         "categoria": "GLOSSARIO_B3",
-        "termos_usuario": [],
+        "termos_usuario": ["DI", "Depósito Interfinanceiro", "deposito interfinanceiro"],
         "termos_busca": ["depósito", "interfinanceiro", "empréstimo", "instituições", "financeiras"],
         "descricao": "Depósito Interfinanceiro. Empréstimo entre instituições financeiras",
         "temas_relacionados": []
@@ -4101,7 +4085,7 @@ FINANCIAL_CONCEPTS = [
     {
         "id": "du",
         "categoria": "GLOSSARIO_B3",
-        "termos_usuario": [],
+        "termos_usuario": ["DU", "dias úteis", "dias uteis"],
         "termos_busca": ["dias", "úteis"],
         "descricao": "Dias úteis",
         "temas_relacionados": []
@@ -5341,7 +5325,7 @@ FINANCIAL_CONCEPTS = [
     {
         "id": "long_038_short",
         "categoria": "GLOSSARIO_B3",
-        "termos_usuario": ["Long &#038; Short", "L&S"],
+        "termos_usuario": ["Long & Short", "long short", "L&S"],
         "termos_busca": ["short", "long", "termo", "utilizado", "sucessiva", "compra", "venda", "ativos"],
         "descricao": "Termo utilizado para a sucessiva compra e venda de ativos com o objetivo de se apurar lucros com a diferença entre as cotações.",
         "temas_relacionados": []
@@ -7317,7 +7301,7 @@ FINANCIAL_CONCEPTS = [
     {
         "id": "tubaraoshark",
         "categoria": "GLOSSARIO_B3",
-        "termos_usuario": [],
+        "termos_usuario": ["tubarão", "tubarao", "shark"],
         "termos_busca": ["shark", "tubarão", "termo", "empregado", "grandes", "investidores"],
         "descricao": "Termo empregado a grandes investidores.",
         "temas_relacionados": []
