@@ -267,6 +267,111 @@ def save_message_zapi(
     return message
 
 
+DIAGRAM_EXPLICIT_KEYWORDS = [
+    "diagrama de payoff", "gráfico de payoff", "grafico de payoff",
+    "me envia o diagrama", "manda o diagrama", "quero ver o diagrama",
+    "envia o diagrama", "mostra o diagrama", "quero o diagrama",
+    "envia o gráfico de payoff", "envia o grafico de payoff",
+    "manda o gráfico de payoff", "manda o grafico de payoff",
+    "mostra o gráfico de payoff", "mostra o grafico de payoff"
+]
+
+DIAGRAM_CONFIRMATION_KEYWORDS = [
+    "sim, o diagrama", "sim o diagrama", "sim, quero", "sim quero",
+    "sim, por favor", "sim por favor", "pode mandar", "manda sim",
+    "manda aí", "manda ai", "pode enviar", "sim, envia", "sim envia",
+    "quero sim", "manda", "sim"
+]
+
+
+def _bot_offered_diagram_recently(phone: str) -> bool:
+    history = conversation_history.get(phone, [])
+    for entry in reversed(history[-4:]):
+        if entry.get("role") == "assistant":
+            content = entry.get("content", "").lower()
+            if "diagrama" in content and ("quer que" in content or "deseja" in content or "envio" in content or "enviar" in content):
+                return True
+    return False
+
+
+async def _send_derivatives_diagram_if_requested(
+    phone: str, user_message: str, context: dict, db: Session
+):
+    msg_lower = user_message.lower().strip()
+    
+    is_explicit = any(kw in msg_lower for kw in DIAGRAM_EXPLICIT_KEYWORDS)
+    is_confirmation = (
+        not is_explicit
+        and any(kw in msg_lower for kw in DIAGRAM_CONFIRMATION_KEYWORDS)
+        and _bot_offered_diagram_recently(phone)
+    )
+    
+    if not is_explicit and not is_confirmation:
+        return
+    
+    derivatives_structures = []
+    if context:
+        derivatives_structures = context.get("derivatives_structures", [])
+    
+    if not derivatives_structures:
+        history = conversation_history.get(phone, [])
+        for entry in reversed(history):
+            if entry.get("role") == "assistant" and entry.get("metadata"):
+                prev_structures = entry["metadata"].get("derivatives_structures", [])
+                if prev_structures:
+                    derivatives_structures = prev_structures
+                    print(f"[WEBHOOK] Usando derivatives_structures do histórico anterior")
+                    break
+    
+    if not derivatives_structures:
+        print(f"[WEBHOOK] Pedido de diagrama detectado mas sem estruturas no contexto")
+        return
+    
+    import os
+    domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
+    if "," in domain:
+        domain = domain.split(",")[0]
+    
+    for structure in derivatives_structures:
+        if not structure.get("has_diagram"):
+            continue
+        
+        slug = structure.get("slug", "")
+        name = structure.get("name", slug)
+        
+        diagram_url = f"https://{domain}/derivatives-diagrams/{slug}.png"
+        
+        print(f"[WEBHOOK] Enviando diagrama de payoff: {name} ({slug}) para {phone}")
+        print(f"[WEBHOOK] URL do diagrama: {diagram_url}")
+        
+        caption = f"📊 Diagrama de Payoff - {name}"
+        
+        try:
+            result = await zapi_client.send_image(
+                to=phone,
+                image_url=diagram_url,
+                caption=caption
+            )
+            
+            if result.get("success"):
+                print(f"[WEBHOOK] Diagrama enviado com sucesso: {name}")
+                save_message_zapi(
+                    db,
+                    message_id=result.get("message_id"),
+                    zaap_id=result.get("zaap_id"),
+                    phone=phone,
+                    direction=MessageDirection.OUTBOUND.value,
+                    message_type=MessageType.IMAGE.value,
+                    from_me=True,
+                    body=caption,
+                    sender_type=SenderType.BOT.value
+                )
+            else:
+                print(f"[WEBHOOK] Erro ao enviar diagrama {name}: {result}")
+        except Exception as e:
+            print(f"[WEBHOOK] Exceção ao enviar diagrama {name}: {e}")
+
+
 async def process_text_message(phone: str, message: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
     """
     Processa uma mensagem de texto seguindo o framework de fluxo:
@@ -650,6 +755,13 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     fresh_conversation.last_bot_response_at = datetime.utcnow()
                     db.commit()
                     print(f"[WEBHOOK] last_bot_response_at atualizado: {fresh_conversation.last_bot_response_at}")
+            
+            try:
+                await _send_derivatives_diagram_if_requested(
+                    phone, normalized_message, context, db
+                )
+            except Exception as diag_err:
+                print(f"[WEBHOOK] Erro ao enviar diagrama: {diag_err}")
             
             try:
                 await save_conversation_insight(
