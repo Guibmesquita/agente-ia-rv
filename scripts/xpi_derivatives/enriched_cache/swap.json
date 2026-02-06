@@ -1,0 +1,36 @@
+{
+  "nome_completo": "Swap - Troca de Indexadores",
+  "descricao_detalhada": "O Swap é uma operação financeira que permite ao investidor trocar a rentabilidade de um indexador por outro, assumindo duas posições: comprada em um indexador e vendida em outro. Essa estrutura é utilizada para capturar movimentos de mercado sem a necessidade de desembolso inicial, permitindo ao investidor receber a variação de um ativo enquanto paga a variação de outro. O Swap é frequentemente utilizado para fins de hedge ou investimento, oferecendo um ganho máximo ilimitado, que é a diferença entre as performances das pontas ativa e passiva. Da mesma forma, a perda máxima também é ilimitada, sendo igual à diferença de performances entre as pontas passiva e ativa. Não há ajuste diário, mas há chamada de margem, que pode variar substancialmente durante a operação. Os contratos de Swap são registrados na BM&F, que atua como clearing da operação, e o risco de contraparte é da BM&F. A tributação está sujeita a IR e IOF, conforme a tabela regressiva de renda fixa. A chamada de margem é um valor calculado pela BM&F Bovespa, debitado diariamente da conta do cliente junto à XP Investimentos. Caso o cliente não possua saldo suficiente, sua conta poderá ficar negativa, autorizando a liquidação compulsória da posição. A Carta Fiança pode ser utilizada para cobrir a chamada de margem, sendo alocada automaticamente pela XP Investimentos.",
+  "objetivo": "Capturar movimentos de mercado sem desembolso inicial e realizar hedge ou investimento.",
+  "perfil_investidor": "Moderado-agressivo e agressivo.",
+  "cenario_ideal": "Quando há necessidade de capturar movimentos de mercado sem utilização de caixa.",
+  "componentes": [
+    {
+      "instrumento": "Compra de indexador",
+      "descricao": "Recebe a variação da ponta ativa."
+    },
+    {
+      "instrumento": "Venda de indexador",
+      "descricao": "Paga a variação da posição passiva."
+    }
+  ],
+  "como_funciona": "No vencimento, o investidor recebe a taxa acordada da ponta ativa e paga a variação acumulada da ponta passiva. Por exemplo, se um investidor troca 120% do CDI por uma taxa pré-fixada de 16,5% ao ano, ele receberá a taxa pré-fixada e pagará 120% do CDI acumulado. Se o CDI acumulado for inferior à taxa pré-fixada, há um ajuste positivo para o investidor. Caso contrário, o ajuste é negativo. A operação é registrada na BM&F, e o investidor deve atender às chamadas de margem, que podem variar conforme a oscilação do mercado.",
+  "custo": "Sem desembolso financeiro inicial, apenas custos operacionais da BM&F Bovespa.",
+  "riscos": "Risco de variação dos indexadores, risco de contraparte e necessidade de atender chamadas de margem.",
+  "ganho_maximo": "Ilimitado, igual à diferença de performances entre as pontas ativa e passiva.",
+  "perda_maxima": "Ilimitada, igual à diferença de performances entre as pontas passiva e ativa.",
+  "breakeven": "Quando a variação da ponta ativa é igual à variação da ponta passiva.",
+  "exemplo_numerico": "Valor investido: R$ 500.000,00 em CDB a 120% CDI. Swap: troca de 120% do CDI por taxa pré de 16,5% ao ano. Cenários: CDI acumulado de 29% resulta em rentabilidade do Swap de R$ 32.500,00; CDI de 31% resulta em R$ 20.500,00; CDI de 35% resulta em -R$ 3.500,00; CDI de 38% resulta em -R$ 21.500,00.",
+  "payoff_descricao": "O gráfico de payoff mostra a rentabilidade do Swap em função do CDI acumulado. O eixo x representa o CDI acumulado, enquanto o eixo y mostra a rentabilidade do Swap. Zonas de lucro são indicadas quando a rentabilidade do Swap é positiva, e zonas de perda quando é negativa. A curva é linear, refletindo a diferença entre a taxa pré-fixada e o CDI acumulado.",
+  "observacoes": "Produto destinado a clientes com perfil de investimento moderado-agressivo e agressivo. Recomenda-se análise detalhada das características e riscos antes da decisão de investimento.",
+  "palavras_chave": [
+    "Swap",
+    "Indexadores",
+    "Hedge",
+    "Investimento",
+    "Chamada de Margem",
+    "BM&F",
+    "Rentabilidade",
+    "Risco"
+  ]
+}

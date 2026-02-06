@@ -1,0 +1,40 @@
+{
+  "nome_completo": "Step-up",
+  "descricao_detalhada": "A estrutura Step-up é uma estratégia de derivativos utilizada para oferecer proteção parcial ao investidor que já possui um ativo ou deseja comprá-lo, garantindo um ganho mínimo caso o ativo não se valorize conforme o esperado. Essa estrutura é semelhante a uma 'fence', onde o investidor assegura uma defesa parcial da posição, mas com a limitação do ganho máximo a um determinado nível de preço. O Step-up é indicado para cenários de valorização moderada de um ativo, oferecendo um ganho mínimo mesmo se a ação não performar, e proteção parcial em caso de queda. Em caso de alta, há limitação do ganho, com a entrega da ação a partir de um ponto predeterminado. A estratégia envolve a compra de uma opção de venda (Put) dentro do dinheiro e a venda de uma opção de compra (Call) fora do dinheiro, estabelecendo um intervalo de proteção e um limite de lucro máximo. O custo da estrutura geralmente é zero, desconsiderando custos de corretagem e emolumentos.",
+  "objetivo": "Proteger parcialmente o investimento e garantir um ganho mínimo em cenários de valorização moderada.",
+  "perfil_investidor": "Moderado-Agressivo e Agressivo",
+  "cenario_ideal": "Cenários com possibilidade moderada de valorização de um ativo.",
+  "componentes": [
+    {
+      "instrumento": "Compra de Put Strike B",
+      "descricao": "Opção de venda dentro do dinheiro para proteção."
+    },
+    {
+      "instrumento": "Venda de Put Strike A",
+      "descricao": "Opção de venda com preço de exercício próximo ao preço inicial."
+    },
+    {
+      "instrumento": "Venda de Call Strike C",
+      "descricao": "Opção de compra fora do dinheiro para limitar o lucro máximo."
+    }
+  ],
+  "como_funciona": "O investidor que possui ou deseja adquirir um ativo compra uma opção de venda (Put) dentro do dinheiro e vende uma opção de venda com preço de exercício próximo ao preço inicial da ação, estabelecendo um intervalo de proteção entre os strikes A e B. Em seguida, o investidor vende uma opção de compra (Call) fora do dinheiro, onde o strike C será o limitador de lucro máximo. Caso o preço da ação esteja acima do strike C no vencimento, a ação é vendida pelo preço de exercício. Se o preço do ativo estiver entre A e B, o investidor tem um ganho mínimo de B sobre o preço inicial do ativo.",
+  "custo": "Normalmente a soma do valor das opções é zero, desconsiderando custos de corretagem e emolumentos.",
+  "riscos": "Participação na desvalorização do ativo abaixo de um determinado ponto e limitação do ganho máximo.",
+  "ganho_maximo": "C - Preço inicial do Ativo",
+  "perda_maxima": "A perda começa em D, onde D = Preço inicial - (B - A).",
+  "breakeven": "Entre os strikes A e B, onde o investidor tem performance mínima.",
+  "exemplo_numerico": "Ação: XYZ. Operação: compra XYZ por R$ 10, com proteção contra quedas de até 10% (R$ 9). No vencimento, se a ação estiver abaixo de R$ 9, participa da desvalorização. Se a ação estiver entre R$ 10 e R$ 11, ganho de 10%. Se a ação estiver acima de R$ 11, venda pelo preço de exercício.",
+  "payoff_descricao": "O gráfico de payoff mostra a variação do ativo no eixo horizontal e o lucro/prejuízo no eixo vertical. A curva começa em um ponto negativo, sobe linearmente até o ponto B, onde se estabiliza, e depois sobe novamente até o ponto C, onde se estabiliza novamente, indicando o limite de lucro máximo.",
+  "observacoes": "Este produto é destinado a clientes com perfil de investimento moderado agressivo e agressivo. Recomenda-se análise cuidadosa das condições antes de qualquer negociação.",
+  "palavras_chave": [
+    "Step-up",
+    "proteção",
+    "ganho mínimo",
+    "opções",
+    "derivativos",
+    "fence",
+    "limitação de ganho",
+    "perfil agressivo"
+  ]
+}

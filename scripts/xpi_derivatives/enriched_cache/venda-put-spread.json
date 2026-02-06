@@ -1,0 +1,34 @@
+{
+  "nome_completo": "Venda de Put Spread",
+  "descricao_detalhada": "A Venda de Put Spread, também conhecida como 'Trava de Alta', é uma estratégia de derivativos utilizada para capitalizar em um cenário de alta de um ativo ou quando há baixa probabilidade de queda. Nesta estrutura, o investidor vende uma opção de venda (Put) com um preço de exercício mais alto e compra uma Put com um preço de exercício mais baixo, ambas com o mesmo vencimento. O objetivo é receber um prêmio inicial, esperando que o ativo subjacente se valorize. Se o ativo permanecer acima do preço de exercício da Put vendida, o investidor retém o prêmio como lucro. No entanto, se o ativo cair abaixo do preço de exercício da Put comprada, as perdas são limitadas à diferença entre os preços de exercício, menos o prêmio recebido. Esta estratégia é ideal para investidores com uma perspectiva de alta moderada, pois oferece um ganho limitado, mas também limita as perdas potenciais. A estrutura é particularmente útil em mercados onde a volatilidade é baixa e a expectativa é de que o ativo subjacente não sofra grandes desvalorizações.",
+  "objetivo": "Capitalizar em um cenário de alta ou estabilidade do ativo subjacente, recebendo um prêmio inicial.",
+  "perfil_investidor": "Moderado-agressivo e Agressivo",
+  "cenario_ideal": "Mercado com expectativa de alta ou estabilidade do ativo subjacente.",
+  "componentes": [
+    {
+      "instrumento": "Venda de Put",
+      "descricao": "Venda de uma opção de venda com preço de exercício mais alto."
+    },
+    {
+      "instrumento": "Compra de Put",
+      "descricao": "Compra de uma opção de venda com preço de exercício mais baixo."
+    }
+  ],
+  "como_funciona": "O investidor vende uma Put com um preço de exercício mais alto (B) e compra uma Put com um preço de exercício mais baixo (A), ambas com o mesmo vencimento. O prêmio recebido pela venda da Put é maior do que o prêmio pago pela compra da Put, resultando em um crédito líquido inicial. Se o preço do ativo subjacente estiver acima do preço de exercício da Put vendida no vencimento, o investidor retém o prêmio como lucro. Se o preço do ativo cair abaixo do preço de exercício da Put comprada, a perda é limitada à diferença entre os preços de exercício, menos o prêmio recebido.",
+  "custo": "Prêmio recebido",
+  "riscos": "Perda limitada à diferença entre os preços de exercício das Puts, menos o prêmio recebido. Há risco de chamada de margem.",
+  "ganho_maximo": "Prêmio recebido",
+  "perda_maxima": "Diferença entre os preços de exercício das Puts, menos o prêmio recebido",
+  "breakeven": "Preço de exercício da Put vendida menos o prêmio recebido",
+  "exemplo_numerico": "Ação: XYZ. Vende Put com strike R$ 12,00 por R$ 2,10 e compra Put com strike R$ 10,00 por R$ 1,20. Prêmio recebido: R$ 0,90. Se o preço da ação for superior a R$ 12,00 no vencimento, ganho máximo de R$ 0,90. Se o preço for inferior a R$ 10,00, perda máxima de R$ 1,10.",
+  "payoff_descricao": "O gráfico de payoff mostra o lucro ou perda em função da variação do ativo. O eixo horizontal representa a variação do ativo, enquanto o eixo vertical representa o lucro ou perda. A curva é horizontal acima do preço de exercício da Put vendida, indicando ganho máximo. Abaixo do preço de exercício da Put comprada, a curva desce, indicando perda máxima.",
+  "observacoes": "O valor de mercado da estratégia antes do vencimento não é linear e pode variar devido a fatores como volatilidade e liquidez. A chamada de margem pode ser exigida e é variável.",
+  "palavras_chave": [
+    "Put Spread",
+    "Trava de Alta",
+    "Opções",
+    "Derivativos",
+    "Prêmio",
+    "Chamada de Margem"
+  ]
+}

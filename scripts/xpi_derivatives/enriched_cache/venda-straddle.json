@@ -1,0 +1,34 @@
+{
+  "nome_completo": "Venda de Straddle",
+  "descricao_detalhada": "A Venda de um Straddle é uma estratégia alavancada, de ganho limitado e prejuízo ilimitado, na qual um investidor vende opções de compra e de venda de um ativo, com o mesmo strike e vencimento. Geralmente é utilizada por investidores com expectativa de mercado lateralizado, ao qual se atribua pouca probabilidade de movimentos intensos, de alta ou de baixa, em relação a um determinado ponto. O investidor busca lucrar com a estabilidade do preço do ativo subjacente, esperando que ele permaneça próximo ao preço de exercício das opções vendidas. A estratégia envolve a venda de uma opção de compra (Call) e uma opção de venda (Put) com o mesmo strike e vencimento, recebendo um prêmio inicial. O ganho máximo é limitado ao prêmio recebido, enquanto a perda máxima é ilimitada, ocorrendo se o preço do ativo se mover significativamente para cima ou para baixo. A estratégia é mais adequada para cenários de baixa volatilidade, onde o mercado não apresenta grandes oscilações. No entanto, é importante destacar que a operação pode exigir chamadas de margem, pois a margem não é estática e pode variar substancialmente durante a operação. Além disso, o valor de mercado da estratégia antes do vencimento não é linear, pois a precificação das opções depende de fatores como volatilidade, liquidez e proximidade da data de vencimento.",
+  "objetivo": "Lucrar com a estabilidade do preço do ativo subjacente em um mercado lateralizado.",
+  "perfil_investidor": "Agressivo",
+  "cenario_ideal": "Mercado lateralizado com baixa probabilidade de movimentos intensos de alta ou de baixa.",
+  "componentes": [
+    {
+      "instrumento": "Venda de Call",
+      "descricao": "Venda de uma opção de compra com strike B."
+    },
+    {
+      "instrumento": "Venda de Put",
+      "descricao": "Venda de uma opção de venda com strike A."
+    }
+  ],
+  "como_funciona": "O investidor vende uma opção de compra (Call) e uma opção de venda (Put) com o mesmo strike e vencimento, recebendo um prêmio inicial. O ganho máximo da estratégia é o prêmio recebido. A perda máxima é ilimitada, ocorrendo se o preço do ativo se mover significativamente para cima ou para baixo. O ponto de equilíbrio é alcançado quando o preço do ativo no vencimento é igual ao strike mais o prêmio recebido (para a Call) ou igual ao strike menos o prêmio pago (para a Put).",
+  "custo": "Prêmio recebido pela venda das opções.",
+  "riscos": "Perda máxima ilimitada se o preço do ativo se mover significativamente. Exige chamadas de margem.",
+  "ganho_maximo": "Prêmio recebido à vista pela venda das opções.",
+  "perda_maxima": "Ilimitada, dependendo do movimento do preço do ativo.",
+  "breakeven": "Strike B + prêmio pago (para Call) e Strike A - prêmio pago (para Put).",
+  "exemplo_numerico": "Ação: XYZ. Operação: venda de Put e Call com strike R$10,00. Prêmio: R$1,50. Ganho máximo: R$1,50 por quantidade. Perda máxima: ilimitada se o preço estiver acima de R$11,50 ou abaixo de R$8,00.",
+  "payoff_descricao": "O gráfico de payoff mostra a variação do ativo no eixo horizontal e o lucro/prejuízo no eixo vertical. A curva forma um 'V' invertido, com o ponto mais alto no centro (ganho máximo) e declinando para ambos os lados, indicando perda ilimitada conforme o preço do ativo se afasta do strike.",
+  "observacoes": "A operação pode exigir chamadas de margem. O valor de mercado da estratégia antes do vencimento não é linear.",
+  "palavras_chave": [
+    "Straddle",
+    "Venda de opções",
+    "Mercado lateralizado",
+    "Ganho limitado",
+    "Perda ilimitada",
+    "Chamada de margem"
+  ]
+}

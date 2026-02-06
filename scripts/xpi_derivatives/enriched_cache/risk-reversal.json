@@ -1,0 +1,36 @@
+{
+  "nome_completo": "Risk Reversal",
+  "descricao_detalhada": "O Risk Reversal é uma estratégia de derivativos utilizada para capturar a apreciação de um ativo sem a necessidade de comprá-lo diretamente. Essa estrutura é composta por duas operações principais: a compra de uma opção de compra (Call) e a venda de uma opção de venda (Put). O investidor adquire uma Call com strike acima do preço atual do ativo, esperando que o ativo se valorize acima desse ponto. Simultaneamente, ele vende uma Put com strike abaixo do preço atual, assumindo o risco de ter que comprar o ativo caso ele caia abaixo desse nível. Essa combinação permite que o investidor participe da alta do ativo sem desembolsar o valor total para comprá-lo, mas expõe-se ao risco de perdas caso o ativo desvalorize. A estratégia é geralmente utilizada quando há uma expectativa de alta no ativo subjacente. O ganho máximo é ilimitado, dependendo de quão alto o preço do ativo pode subir, enquanto a perda máxima é ilimitada abaixo do strike da Put vendida. A operação pode ser feita a custo zero, pois o prêmio recebido pela venda da Put pode financiar a compra da Call. No entanto, é importante considerar os custos de corretagem e emolumentos. A chamada de margem é um fator a ser considerado, pois a margem exigida pode variar ao longo do tempo, dependendo da volatilidade e das condições de mercado.",
+  "objetivo": "Capturar a valorização de um ativo sem comprá-lo diretamente.",
+  "perfil_investidor": "Agressivo",
+  "cenario_ideal": "Expectativa de valorização do ativo objeto.",
+  "componentes": [
+    {
+      "instrumento": "Compra de Call",
+      "descricao": "Compra de uma opção de compra com strike acima do preço atual do ativo."
+    },
+    {
+      "instrumento": "Venda de Put",
+      "descricao": "Venda de uma opção de venda com strike abaixo do preço atual do ativo."
+    }
+  ],
+  "como_funciona": "O investidor compra uma opção de compra (Call) com strike acima do preço atual do ativo, esperando que o ativo se valorize acima desse ponto. Simultaneamente, ele vende uma opção de venda (Put) com strike abaixo do preço atual, assumindo o risco de ter que comprar o ativo caso ele caia abaixo desse nível. Essa combinação permite que o investidor participe da alta do ativo sem desembolsar o valor total para comprá-lo, mas expõe-se ao risco de perdas caso o ativo desvalorize. A operação pode ser feita a custo zero, pois o prêmio recebido pela venda da Put pode financiar a compra da Call.",
+  "custo": "Zero, desconsiderando custos de corretagem e emolumentos.",
+  "riscos": "Perdas ilimitadas abaixo do strike da Put vendida. Chamada de margem pode variar.",
+  "ganho_maximo": "Ilimitado (Preço final do Ativo - B)",
+  "perda_maxima": "Ilimitado abaixo de A (A - preço final do ativo)",
+  "breakeven": "Entre os strikes das opções comprada e vendida.",
+  "exemplo_numerico": "Ação: XYZ. Operação: Adquire uma Call strike 11,00, financiada pela venda de uma Put strike 9,50. Preço Inicial: R$ 10 em Abr/2016. Vencimento: Ago/16. Queda: Perdas ilimitadas abaixo de 9,50. Alta: Ganho ilimitado a partir de 11,00.",
+  "payoff_descricao": "O gráfico de payoff mostra a variação do ativo no eixo horizontal e o lucro/prejuízo no eixo vertical. A curva começa a subir a partir do ponto B, indicando ganho ilimitado. Abaixo do ponto A, a curva desce, indicando perdas ilimitadas.",
+  "observacoes": "O valor de mercado da estratégia antes do vencimento não é linear. A chamada de margem é variável e pode aumentar ou diminuir. A XP Investimentos pode alocar Carta Fiança para cobertura de chamada de margem.",
+  "palavras_chave": [
+    "Risk Reversal",
+    "opções",
+    "derivativos",
+    "Call",
+    "Put",
+    "estratégia",
+    "investimento",
+    "chamada de margem"
+  ]
+}

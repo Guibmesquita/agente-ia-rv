@@ -1,0 +1,35 @@
+{
+  "nome_completo": "Venda de Call Spread",
+  "descricao_detalhada": "A Venda de Call Spread, também conhecida como Trava de Baixa, é uma estratégia de derivativos utilizada para se beneficiar de um cenário de queda ou para proteger uma posição comprada no ativo objeto. Nesta estrutura, o investidor vende uma opção de compra (Call) com um determinado preço de exercício (strike) e, simultaneamente, compra outra Call com um strike superior, mas com o mesmo vencimento. A diferença entre os prêmios das opções representa o prêmio recebido na entrada da operação. O objetivo principal é obter um ganho se o ativo não subir acima do strike da Call vendida. Caso o ativo suba acima do strike da Call comprada, o investidor pode incorrer em perdas. A estratégia é ideal para investidores com uma expectativa de baixa ou estabilidade no preço do ativo subjacente. A operação envolve riscos, como a possibilidade de perda máxima caso o ativo esteja acima do strike da Call comprada no vencimento. A margem de garantia é necessária e pode variar durante a operação, sendo importante para o investidor estar ciente das chamadas de margem que podem ocorrer. A estrutura é mais adequada para investidores com perfil moderado-agressivo a agressivo, que buscam proteger posições ou obter ganhos em cenários de baixa.",
+  "objetivo": "Obter ganho em cenários de queda ou proteger uma posição comprada no ativo objeto.",
+  "perfil_investidor": "Moderado-agressivo a agressivo.",
+  "cenario_ideal": "Cenário de baixa ou estabilidade no preço do ativo subjacente.",
+  "componentes": [
+    {
+      "instrumento": "Venda de Call",
+      "descricao": "Venda de uma opção de compra com um determinado strike."
+    },
+    {
+      "instrumento": "Compra de Call",
+      "descricao": "Compra de uma opção de compra com um strike superior e mesmo vencimento."
+    }
+  ],
+  "como_funciona": "O investidor inicia a operação vendendo uma Call com strike A e, para limitar sua perda em caso de alta do ativo, compra uma Call com strike B, onde B > A. Ambas as opções têm o mesmo vencimento. O prêmio recebido é a diferença entre os prêmios das opções. Se o preço do ativo no vencimento estiver abaixo de A, o investidor retém o prêmio recebido como lucro. Se o preço estiver entre A e B, o lucro é reduzido gradualmente. Acima de B, o investidor incorrerá em perda, que será a diferença entre os strikes A e B menos o prêmio recebido.",
+  "custo": "Prêmio recebido na entrada da operação.",
+  "riscos": "Perda máxima ocorre se o ativo estiver acima do strike B no vencimento. A operação requer margem de garantia, que pode variar.",
+  "ganho_maximo": "Prêmio recebido.",
+  "perda_maxima": "Diferença entre B e A menos o prêmio recebido.",
+  "breakeven": "Preço do ativo igual ao strike A mais o prêmio recebido.",
+  "exemplo_numerico": "Ação: XYZ. Preço inicial: R$ 10. Prêmio recebido: R$ 0,84. Vencimento: Dez/16. Alta: Perda máxima de R$ 0,66. Queda: Ganho máximo de R$ 0,84 se o preço estiver abaixo de R$ 8,50.",
+  "payoff_descricao": "O gráfico de payoff mostra o lucro ou perda em função da variação do ativo. O eixo horizontal representa a variação do ativo, enquanto o eixo vertical representa o lucro ou perda. A curva é horizontal e positiva até o strike A, depois desce linearmente até o strike B, onde se estabiliza em uma perda constante.",
+  "observacoes": "A operação pode implicar em chamadas de margem. O encerramento antecipado pode resultar em resultados diferentes do esperado.",
+  "palavras_chave": [
+    "Venda de Call Spread",
+    "Trava de Baixa",
+    "Opções",
+    "Derivativos",
+    "Prêmio",
+    "Margem",
+    "Risco"
+  ]
+}

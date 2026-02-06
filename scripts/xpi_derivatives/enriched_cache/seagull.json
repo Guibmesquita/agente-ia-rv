@@ -1,0 +1,40 @@
+{
+  "nome_completo": "Seagull",
+  "descricao_detalhada": "A estrutura Seagull é uma estratégia de derivativos que permite ao investidor participar da valorização de um ativo sem a necessidade de comprá-lo diretamente, oferecendo um certo nível de proteção em comparação à compra direta do ativo. O investidor participa da valorização do ativo até um determinado nível de preço, assumindo perdas abaixo de um ponto estabelecido. A Seagull é composta por três operações principais: a compra de uma opção de compra (Call) com preço de exercício próximo ao preço do ativo, a venda de uma opção de compra (Call) mais fora do dinheiro, que limita o lucro máximo, e a venda de uma opção de venda (Put), que expõe o investidor a perdas ilimitadas abaixo de um determinado preço. Esta estrutura é utilizada quando há expectativa de valorização do ativo, permitindo ao investidor participar da alta limitada sem a necessidade de desembolsar o caixa necessário para a compra do ativo. A Seagull é indicada para investidores que aceitam o risco de queda abaixo de um determinado ponto, sendo adequada para perfis moderados agressivos e agressivos.",
+  "objetivo": "Participar da alta de um ativo sem a necessidade de comprá-lo diretamente, com proteção limitada.",
+  "perfil_investidor": "Moderado agressivo e agressivo.",
+  "cenario_ideal": "Expectativa de valorização do ativo objeto.",
+  "componentes": [
+    {
+      "instrumento": "Compra de Call ATM",
+      "descricao": "Compra de uma opção de compra com preço de exercício próximo ao preço do ativo."
+    },
+    {
+      "instrumento": "Venda de Call OTM",
+      "descricao": "Venda de uma opção de compra mais fora do dinheiro, limitando o lucro máximo."
+    },
+    {
+      "instrumento": "Venda de Put",
+      "descricao": "Venda de uma opção de venda, expondo o investidor a perdas ilimitadas abaixo de um determinado preço."
+    }
+  ],
+  "como_funciona": "O investidor compra uma opção de compra (Call) com preço de exercício próximo ao preço do ativo (Strike B) e vende uma opção de compra mais fora do dinheiro (Call Strike C), onde C será o limitador de lucro máximo. Além disso, o investidor vende uma opção de venda (Put Strike A), não participando das quedas entre B e A. Abaixo de A, a perda é ilimitada. Esta combinação permite que o investidor participe da alta do ativo entre os strikes B e C, enquanto assume o risco de quedas abaixo do strike A.",
+  "custo": "Zero cost, desconsiderando custos de corretagem e emolumentos.",
+  "riscos": "Perdas ilimitadas caso o ativo se encontre abaixo do preço de exercício da Put no vencimento. Há chamada de margem, que pode variar substancialmente durante a operação.",
+  "ganho_maximo": "C - B",
+  "perda_maxima": "Ilimitado abaixo de A (A - Preço final do ativo)",
+  "breakeven": "Entre os strikes B e C.",
+  "exemplo_numerico": "Ação: XYZ. Operação: venda de Put 21,38 (A), compra de Call 23,75 (B) e venda de Call 26,13 (C). Preço inicial: R$ 23,75. Data inicial: Abr/16. Vencimento: 1 Jul/16. Cenários: 1) XYZ a 19,38, perda de -2,00; 2) XYZ a 20,50, perda de -0,88; 3) XYZ a 22,60, resultado 0,00; 4) XYZ a 23,99, ganho de 0,24; 5) XYZ a 25,14, ganho de 1,39; 6) XYZ a 26,33, ganho de 2,38; 7) XYZ a 28,00, ganho de 2,38.",
+  "payoff_descricao": "O gráfico de payoff mostra a variação do ativo no eixo horizontal e o lucro/prejuízo no eixo vertical. A curva começa negativa abaixo do strike A, indicando perdas ilimitadas. Entre os strikes B e C, a curva sobe, indicando lucro crescente até o ponto C, onde o lucro é limitado. Acima de C, o lucro permanece constante.",
+  "observacoes": "O valor de mercado da estratégia antes do vencimento não é linear e pode variar devido a fatores como volatilidade e liquidez. O encerramento antecipado pode resultar em um resultado diferente do esperado. A chamada de margem é variável e pode aumentar ou diminuir conforme a oscilação do mercado.",
+  "palavras_chave": [
+    "Seagull",
+    "opção de compra",
+    "opção de venda",
+    "derivativos",
+    "proteção",
+    "lucro máximo",
+    "perda ilimitada",
+    "chamada de margem"
+  ]
+}
