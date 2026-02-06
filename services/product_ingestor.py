@@ -896,6 +896,21 @@ class ProductIngestor:
             }
             
             try:
+                from services.chunk_enrichment import enrich_metadata
+                metadata = enrich_metadata(
+                    metadata=metadata,
+                    content=content_for_indexing,
+                    product_name=product_name,
+                    product_ticker=product_ticker or "",
+                    block_type=block.block_type,
+                    material_type=material.material_type
+                )
+            except Exception as e:
+                print(f"[INGESTOR] Aviso: enriquecimento semântico falhou para bloco {block.id}: {e}")
+                metadata['topic'] = 'geral'
+                metadata['concepts'] = '[]'
+            
+            try:
                 self.vector_store.add_document(
                     doc_id=chunk_id,
                     text=content_with_context,

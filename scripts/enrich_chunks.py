@@ -18,41 +18,7 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openai import OpenAI
-
-
-TOPIC_CLASSIFICATION_PROMPT = """Analise o conteúdo abaixo de um documento financeiro e classifique-o.
-
-CONTEÚDO:
-{content}
-
-METADADOS EXISTENTES:
-- Produto: {product_name} ({product_ticker})
-- Tipo de bloco: {block_type}
-- Tipo de material: {material_type}
-
-Retorne um JSON com:
-1. "topic": O tema principal do trecho (escolha UM dos temas abaixo):
-   - "estrategia": Tese de investimento, filosofia, posicionamento, como o fundo investe
-   - "composicao": Carteira, alocação, ativos, exposição, setores, CRIs
-   - "performance": Rentabilidade, retorno, valorização, comparativo com benchmark
-   - "dividendos": Distribuição, proventos, dividend yield, guidance
-   - "risco": Garantias, LTV, inadimplência, vacância, diversificação
-   - "mercado": Cotação, liquidez, volume, P/VP, cotistas
-   - "operacional": Taxas, regulamento, administrador, dados cadastrais
-   - "perspectivas": Outlook, projeções, cenário futuro, comentário do gestor
-   - "derivativos": Opções, gregas, estruturas, hedge
-   - "geral": Outros temas não listados acima
-
-2. "concepts": Lista de até 5 conceitos financeiros presentes (ex: ["dividend_yield", "cota", "rentabilidade"])
-   Use os IDs do glossário: estrategia_investimento, composicao_carteira, dividendo, dividend_yield,
-   cota, patrimonio, rentabilidade, cap_rate, vacancia, ltv, garantias, cri, benchmark, guidance,
-   perspectivas, resultado_operacional, incorporacao, recebimento_preferencial, diversificacao,
-   indexador, duration_conceito, subscricao, liquidez, pvp, taxa_administracao, hedge, etc.
-
-3. "summary": Resumo de 1 frase do conteúdo (max 100 caracteres)
-
-Responda APENAS com o JSON, sem markdown."""
+from services.chunk_enrichment import classify_chunk_content
 
 
 def enrich_chunks(dry_run=False, batch_size=20, limit=None):
@@ -61,11 +27,6 @@ def enrich_chunks(dry_run=False, batch_size=20, limit=None):
     vs = get_vector_store()
     if not vs or not vs.collection:
         print("Erro: VectorStore não inicializado")
-        return
-    
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    if not client:
-        print("Erro: OPENAI_API_KEY não configurada")
         return
     
     all_docs = vs.collection.get(include=['documents', 'metadatas'])
@@ -113,7 +74,13 @@ def enrich_chunks(dry_run=False, batch_size=20, limit=None):
         print(f"Produto: {chunk['metadata'].get('product_name', 'N/A')} ({chunk['metadata'].get('product_ticker', 'N/A')})")
         print(f"Conteúdo: {content_preview}...")
         
-        result = classify_chunk(client, chunk)
+        result = classify_chunk_content(
+            content=chunk['document'],
+            product_name=chunk['metadata'].get('product_name', 'N/A'),
+            product_ticker=chunk['metadata'].get('product_ticker', 'N/A'),
+            block_type=chunk['metadata'].get('block_type', 'N/A'),
+            material_type=chunk['metadata'].get('material_type', 'N/A')
+        )
         if result:
             print(f"\nResultado GPT:")
             print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -128,10 +95,17 @@ def enrich_chunks(dry_run=False, batch_size=20, limit=None):
         
         for chunk in batch:
             try:
-                result = classify_chunk(client, chunk)
+                metadata = chunk['metadata']
+                result = classify_chunk_content(
+                    content=chunk['document'],
+                    product_name=metadata.get('product_name', 'N/A'),
+                    product_ticker=metadata.get('product_ticker', 'N/A'),
+                    block_type=metadata.get('block_type', 'N/A'),
+                    material_type=metadata.get('material_type', 'N/A')
+                )
                 
                 if result:
-                    updated_metadata = dict(chunk['metadata'])
+                    updated_metadata = dict(metadata)
                     updated_metadata['topic'] = result.get('topic', 'geral')
                     updated_metadata['concepts'] = json.dumps(result.get('concepts', []))
                     if result.get('summary'):
@@ -143,7 +117,7 @@ def enrich_chunks(dry_run=False, batch_size=20, limit=None):
                     )
                     
                     enriched_count += 1
-                    ticker = chunk['metadata'].get('product_ticker', '?')
+                    ticker = metadata.get('product_ticker', '?')
                     topic = result.get('topic', '?')
                     print(f"  ✓ {chunk['id'][:30]}... [{ticker}] → topic={topic}")
                 else:
@@ -161,66 +135,6 @@ def enrich_chunks(dry_run=False, batch_size=20, limit=None):
     print(f"Enriquecidos: {enriched_count}")
     print(f"Erros: {errors}")
     print(f"Total processado: {enriched_count + errors}")
-
-
-def classify_chunk(client, chunk):
-    content = chunk['document']
-    if not content:
-        return None
-    
-    if "---" in content:
-        parts = content.split("---", 1)
-        if len(parts) > 1:
-            content = parts[1]
-    
-    content = content[:2000]
-    
-    metadata = chunk['metadata']
-    prompt = TOPIC_CLASSIFICATION_PROMPT.format(
-        content=content,
-        product_name=metadata.get('product_name', 'N/A'),
-        product_ticker=metadata.get('product_ticker', 'N/A'),
-        block_type=metadata.get('block_type', 'N/A'),
-        material_type=metadata.get('material_type', 'N/A')
-    )
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Você é um analista financeiro especializado em classificação de documentos de Renda Variável. Responda APENAS com JSON válido."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1,
-            max_tokens=300
-        )
-        
-        result_text = response.choices[0].message.content.strip()
-        
-        if result_text.startswith("```"):
-            result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text
-            if result_text.endswith("```"):
-                result_text = result_text[:-3]
-            result_text = result_text.strip()
-        
-        result = json.loads(result_text)
-        
-        valid_topics = ["estrategia", "composicao", "performance", "dividendos", "risco", "mercado", "operacional", "perspectivas", "derivativos", "geral"]
-        if result.get('topic') not in valid_topics:
-            result['topic'] = 'geral'
-        
-        if not isinstance(result.get('concepts'), list):
-            result['concepts'] = []
-        result['concepts'] = result['concepts'][:5]
-        
-        return result
-        
-    except json.JSONDecodeError as e:
-        print(f"    JSON inválido do GPT: {e}")
-        return None
-    except Exception as e:
-        print(f"    Erro GPT: {e}")
-        return None
 
 
 if __name__ == "__main__":
