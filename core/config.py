@@ -15,8 +15,6 @@ class Settings(BaseSettings):
     
     # API Keys - serão carregadas das Secrets do Replit
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    NOTION_API_KEY: str = os.getenv("NOTION_API_KEY", "")
-    NOTION_DATABASE_ID: str = os.getenv("NOTION_DATABASE_ID", "")
     
     # Configuração do Z-API (WhatsApp API)
     ZAPI_INSTANCE_ID: str = os.getenv("ZAPI_INSTANCE_ID", "")

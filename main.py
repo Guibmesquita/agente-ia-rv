@@ -8,10 +8,11 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from contextlib import asynccontextmanager
 import asyncio
+import os
 
 from database.database import engine, Base, SessionLocal
 from database import crud
-from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, analytics, agent_config, assessores, campaigns, knowledge, agent_test, conversations, central_mensagens, products, insights, search, trusted_sources
+from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, agent_config, assessores, campaigns, knowledge, agent_test, conversations, products, insights, search, trusted_sources
 from core.security import decode_token
 
 
@@ -124,7 +125,6 @@ app.include_router(users.router)
 app.include_router(tickets.router)
 app.include_router(whatsapp_webhook.router)
 app.include_router(integrations.router)
-app.include_router(analytics.router)
 app.include_router(agent_config.router)
 app.include_router(assessores.router)
 app.include_router(assessores.custom_fields_router)
@@ -133,7 +133,6 @@ app.include_router(campaigns.router)
 app.include_router(knowledge.router)
 app.include_router(agent_test.router)
 app.include_router(conversations.router)
-app.include_router(central_mensagens.router)
 app.include_router(products.router)
 app.include_router(insights.router)
 app.include_router(search.router)
@@ -152,28 +151,6 @@ async def root():
 async def login_page(request: Request):
     """Página de login."""
     return templates.TemplateResponse("login.html", {"request": request})
-
-
-@app.get("/kanban", response_class=HTMLResponse)
-async def kanban_page(request: Request):
-    """
-    Página do quadro Kanban.
-    Requer autenticação como admin, broker ou gestao_rv.
-    """
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    user_role = payload.get("role")
-    if user_role not in ["admin", "broker", "gestao_rv"]:
-        return RedirectResponse(url="/login?error=permission")
-    
-    return templates.TemplateResponse("kanban.html", {"request": request, "user_role": user_role})
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -218,28 +195,6 @@ async def integrations_page(request: Request):
     return templates.TemplateResponse("integrations.html", {"request": request, "user_role": "admin"})
 
 
-@app.get("/analytics", response_class=HTMLResponse)
-async def analytics_page(request: Request):
-    """
-    Dashboard de analytics com indicadores de controle.
-    Requer autenticação como admin, broker ou gestao_rv.
-    """
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    user_role = payload.get("role")
-    if user_role not in ["admin", "broker", "gestao_rv"]:
-        return RedirectResponse(url="/login?error=permission")
-    
-    return templates.TemplateResponse("analytics.html", {"request": request, "user_role": user_role})
-
-
 @app.get("/insights", response_class=HTMLResponse)
 async def insights_page(request: Request):
     """
@@ -267,77 +222,6 @@ async def insights_page(request: Request):
         return HTMLResponse(content=content)
     else:
         return templates.TemplateResponse("insights.html", {"request": request, "user_role": user_role})
-
-
-@app.get("/tailwind-test", response_class=HTMLResponse)
-async def tailwind_test_page(request: Request):
-    """
-    Página de teste do Design System Tailwind.
-    Acesso restrito a admins.
-    """
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    user_role = payload.get("role")
-    if user_role != "admin":
-        return RedirectResponse(url="/login?error=permission")
-    
-    return templates.TemplateResponse("tailwind_test.html", {"request": request, "user_role": user_role})
-
-
-@app.get("/tailwind-test-knowledge", response_class=HTMLResponse)
-async def tailwind_test_knowledge_page(request: Request):
-    """
-    POC de UX da Base de Conhecimento usando React + Tailwind.
-    Acesso restrito a admins.
-    """
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    user_role = payload.get("role")
-    if user_role != "admin":
-        return RedirectResponse(url="/login?error=permission")
-    
-    # Serve o build React
-    import os
-    react_build_path = os.path.join(os.path.dirname(__file__), "frontend", "react-poc", "dist", "index.html")
-    if os.path.exists(react_build_path):
-        with open(react_build_path, 'r') as f:
-            content = f.read()
-        return HTMLResponse(content=content)
-    else:
-        return HTMLResponse(content="<h1>POC não encontrada. Execute npm run build em frontend/react-poc/</h1>", status_code=404)
-
-
-# Monta arquivos estáticos do React POC
-import os
-react_assets_path = os.path.join(os.path.dirname(__file__), "frontend", "react-poc", "dist", "assets")
-if os.path.exists(react_assets_path):
-    app.mount("/tailwind-test-knowledge/assets", StaticFiles(directory=react_assets_path), name="react-poc-assets")
-
-# Serve vite.svg e outros arquivos na raiz do dist
-react_dist_path = os.path.join(os.path.dirname(__file__), "frontend", "react-poc", "dist")
-if os.path.exists(react_dist_path):
-    @app.get("/tailwind-test-knowledge/{filename:path}")
-    async def serve_react_static(filename: str):
-        import os
-        file_path = os.path.join(react_dist_path, filename)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            from fastapi.responses import FileResponse
-            return FileResponse(file_path)
-        return HTMLResponse(content="Not Found", status_code=404)
 
 
 # Monta arquivos estáticos do React Insights
