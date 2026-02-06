@@ -13,6 +13,9 @@ Prefiro um design de UI limpo e minimalista.
 Garanta que todos os textos voltados ao usuário estejam em português gramaticalmente correto com acentuação adequada.
 **CRÍTICO: NUNCA perca funcionalidades existentes ao fazer mudanças.** Sempre verifique se as funcionalidades implementadas anteriormente permanecem intactas. Antes de modificar qualquer componente, revise quais funcionalidades existem e garanta que sejam preservadas. Chame o architect para validar mudanças de UX.
 
+**PRINCÍPIO DE DESIGN FUNDAMENTAL (Compreensão Natural):**
+Toda interação com o assessor na ponta final deve ser processada pelo OpenAI com contexto da conversa para compreensão natural da intenção. O OpenAI é o "cérebro" do Stevan — ele analisa, entende e decide. O sistema fornece "ferramentas" (enviar diagrama, buscar na web, buscar no RAG, escalar para humano) que o OpenAI pode acionar. Regras fixas pré-OpenAI existem apenas como otimização de custo/velocidade para casos triviais, nunca como substituto da compreensão natural. Quando o OpenAI identifica uma ação (ex: enviar diagrama), ele retorna uma marcação especial (ex: `[ENVIAR_DIAGRAMA:slug]`) e o sistema executa a ação real.
+
 ## Arquitetura do Sistema
 A aplicação é construída usando FastAPI com arquitetura modular.
 
