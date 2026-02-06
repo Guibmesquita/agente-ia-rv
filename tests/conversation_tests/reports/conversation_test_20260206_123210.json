@@ -1,0 +1,138 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-06T12:32:10.437105",
+    "total_scenarios": 2,
+    "agent_version": "Stevan v1.0"
+  },
+  "summary": {
+    "passed": 2,
+    "failed": 0,
+    "pass_rate": 100.0,
+    "average_quality_score": 1.0,
+    "average_response_time": 22.1
+  },
+  "failure_analysis": {
+    "by_type": {},
+    "recommendations": [
+      "Todos os cenários passaram! Continue monitorando com novos cenários."
+    ]
+  },
+  "by_category": {
+    "CONVERSA": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "RECUPERAÇÃO": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": 6,
+      "scenario_name": "Pergunta de Acompanhamento Contextual",
+      "category": "CONVERSA",
+      "description": "Validar a memória de curto prazo e compreensão contextual",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 36.3,
+      "steps": [
+        {
+          "step": 1,
+          "message": "E quem é o administrador?",
+          "response": "O administrador do Manatí Hedge Fund FII (MANA11) não está especificado no contexto disponível. Se precisar dessa informação, posso sugerir que você consulte o relatório completo do fundo ou entre em contato com a gestora para detalhes mais precisos.",
+          "response_length": 250,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "administrador"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "MANA11"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "Manatí"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve entender que 'o administrador' se refere ao MANA11"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 8,
+      "scenario_name": "Pergunta sobre um Evento Específico",
+      "category": "RECUPERAÇÃO",
+      "description": "Validar precisão da busca em documentos longos",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 7.9,
+      "steps": [
+        {
+          "step": 1,
+          "message": "O que o relatório de dez/25 do MANA11 diz sobre o crescimento de cotistas?",
+          "response": "Grande! Sobre o relatório de dezembro de 2025 do MANA11, ele destaca que a base de cotistas dobrou em 2025, com um crescimento de 106%, passando de 16.714 para 34.315 cotistas. Esse foi o maior crescimento absoluto entre os FIIs Hedge Fund no ano.",
+          "response_length": 247,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "cotista"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "106%",
+                  "17.678",
+                  "34.315",
+                  "crescimento"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "dezembro",
+                  "dez"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve citar dados específicos sobre crescimento de cotistas (106%, 17.678 novos)"
+        }
+      ],
+      "note": null
+    }
+  ]
+}

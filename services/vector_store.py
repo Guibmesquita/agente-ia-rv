@@ -3,6 +3,7 @@ Gerenciador do banco de dados vetorial ChromaDB.
 Permite armazenar e buscar documentos usando embeddings.
 """
 import chromadb
+import json
 import re
 from openai import OpenAI
 from typing import List, Optional, Set, Dict, Tuple
@@ -367,9 +368,10 @@ class VectorStore:
         
         ESTRATÉGIA DE BUSCA HÍBRIDA:
         1. Detecta tickers na query (ex: MANA11)
-        2. Se ticker detectado: busca PRIMEIRO por metadados (alta precisão)
-        3. Complementa com busca semântica (threshold ajustado)
-        4. Merge priorizando resultados de metadados
+        2. Expande query com conceitos financeiros (glossário de RV)
+        3. Se ticker detectado: busca PRIMEIRO por metadados (alta precisão)
+        4. Complementa com busca semântica (threshold ajustado)
+        5. Merge priorizando resultados de metadados
         
         RANKING HÍBRIDO:
         - Vetor (70%): similaridade semântica
@@ -391,6 +393,21 @@ class VectorStore:
         detected_tickers = extract_tickers_from_query(query)
         has_ticker = len(detected_tickers) > 0
         
+        try:
+            from services.financial_concepts import expand_query
+            concept_expansion = expand_query(query)
+            expanded_terms = concept_expansion.get("termos_busca_adicionais", [])
+            detected_concepts = concept_expansion.get("conceitos_detectados", [])
+            concept_context = concept_expansion.get("contexto_agente", "")
+            
+            if detected_concepts:
+                print(f"[VECTOR_STORE] Conceitos financeiros detectados: {detected_concepts}")
+        except Exception as e:
+            expanded_terms = []
+            detected_concepts = []
+            concept_context = ""
+            print(f"[VECTOR_STORE] Erro na expansão de conceitos: {e}")
+        
         ticker_results = []
         if has_ticker:
             for ticker in detected_tickers[:2]:
@@ -398,7 +415,14 @@ class VectorStore:
                 ticker_results.extend(ticker_docs)
                 print(f"[VECTOR_STORE] Busca por ticker {ticker}: {len(ticker_docs)} blocos encontrados")
         
-        query_embedding = self._generate_embedding(query)
+        if expanded_terms and detected_concepts:
+            top_terms = expanded_terms[:8]
+            enriched_query = f"{query} {' '.join(top_terms)}"
+            query_embedding = self._generate_embedding(enriched_query)
+            print(f"[VECTOR_STORE] Query expandida com {len(top_terms)} termos: {top_terms[:5]}...")
+        else:
+            query_embedding = self._generate_embedding(query)
+        
         query_type = self._classify_query_type(query)
         
         where_filter = None
@@ -469,6 +493,47 @@ class VectorStore:
                     recency_score * 0.20 +
                     exact_match_score * 0.10
                 )
+                
+                if detected_concepts and metadata.get("topic"):
+                    chunk_topic = metadata.get("topic", "")
+                    chunk_concepts_str = metadata.get("concepts", "[]")
+                    try:
+                        chunk_concepts = json.loads(chunk_concepts_str) if isinstance(chunk_concepts_str, str) else chunk_concepts_str
+                    except Exception:
+                        chunk_concepts = []
+                    
+                    CONCEPT_TO_TOPIC = {
+                        "estrategia_investimento": "estrategia", "gestao_fundo": "estrategia",
+                        "objetivo_fundo": "estrategia", "tipo_fii": "estrategia",
+                        "composicao_carteira": "composicao", "cri": "composicao",
+                        "indexador": "composicao", "vacancia": "composicao",
+                        "incorporacao": "composicao", "abl": "composicao",
+                        "rentabilidade": "performance", "dividend_yield": "performance",
+                        "cota": "performance", "patrimonio": "performance",
+                        "cap_rate": "performance", "pvp": "performance",
+                        "dividendo": "dividendos", "guidance": "dividendos",
+                        "payout": "dividendos", "amortizacao": "dividendos",
+                        "ltv": "risco", "garantias": "risco", "risco_credito": "risco",
+                        "diversificacao": "risco", "hedge": "risco", "volatilidade": "risco",
+                        "liquidez": "mercado", "cotacao": "mercado", "cotistas": "mercado",
+                        "perspectivas": "perspectivas",
+                        "opcoes_basico": "derivativos", "collar": "derivativos",
+                        "covered_call": "derivativos", "gregas_delta": "derivativos",
+                    }
+                    
+                    expected_topics = set()
+                    for concept_id in detected_concepts:
+                        mapped = CONCEPT_TO_TOPIC.get(concept_id)
+                        if mapped:
+                            expected_topics.add(mapped)
+                    
+                    if chunk_topic in expected_topics:
+                        composite_score *= 1.15
+                    
+                    if chunk_concepts and detected_concepts:
+                        overlap = set(chunk_concepts) & set(detected_concepts)
+                        if overlap:
+                            composite_score *= (1.0 + 0.05 * len(overlap))
                 
                 material_type = metadata.get("material_type", "")
                 block_type = metadata.get("block_type", "text")

@@ -389,10 +389,13 @@ CLASSIFIQUE a mensagem em UMA das categorias:
 3. ESCOPO - Perguntas gerais sobre renda variável que não citam produto específico:
    "como funciona a estratégia de RV?", "quais setores estão aquecidos?", "o que é um FII?"
 
-4. MERCADO - Perguntas sobre notícias, cotações, eventos, preços, fatos relevantes do mercado:
+4. MERCADO - Perguntas sobre notícias, cotações ATUAIS, eventos do dia, preços EM TEMPO REAL:
    "o que aconteceu com a Petrobras hoje?", "qual a cotação do PETR4?", "como está o mercado?",
    "quais as notícias de Vale?", "tem novidades sobre o IBOV?", "o que está acontecendo com ações?"
-   Use esta categoria para qualquer pergunta sobre DADOS EM TEMPO REAL ou NOTÍCIAS do mercado.
+   Use APENAS para dados EM TEMPO REAL ou NOTÍCIAS.
+   NÃO classifique como MERCADO perguntas que citam relatórios, documentos ou dados de períodos passados.
+   "o que o relatório diz sobre..." -> DOCUMENTAL (é sobre o conteúdo de um documento)
+   "qual o crescimento de cotistas do MANA11?" -> DOCUMENTAL (é um dado do relatório)
 
 5. PITCH - Pedido para criar texto de venda, pitch comercial, argumento de vendas para um produto:
    "monta um pitch do TG Core", "cria um texto de venda para XPLG11", "me ajuda a vender TGRI"
@@ -414,6 +417,7 @@ Exemplos:
 "como funciona renda variável?" -> {"categoria": "ESCOPO", "produtos": []}
 "o que aconteceu com a Petrobras?" -> {"categoria": "MERCADO", "produtos": ["PETROBRAS"]}
 "qual a cotação do PETR4?" -> {"categoria": "MERCADO", "produtos": ["PETR4"]}
+"o que o relatório do MANA11 diz sobre cotistas?" -> {"categoria": "DOCUMENTAL", "produtos": ["MANA11"]}
 "monta um pitch do XPLG11" -> {"categoria": "PITCH", "produtos": ["XPLG11"]}
 "preciso de ajuda humana" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
 "conta uma piada" -> {"categoria": "FORA_ESCOPO", "produtos": []}
@@ -693,7 +697,7 @@ Retorne APENAS o JSON."""
         ]
         
         continuation_patterns = [
-            r'^e\s+(o|a|qual|como|quanto|quando|onde)\b',
+            r'^e\s+(o|a|qual|como|quanto|quando|onde|quem)\b',
             r'^e\s+a\s+',
             r'^e\s+o\s+',
             r'^qual\s+(é|era|foi|seria)\s+(o|a)\s+',
@@ -1394,6 +1398,16 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
         
         vs = get_vector_store()
         context_documents = []
+        concept_context = ""
+        
+        try:
+            from services.financial_concepts import expand_query as expand_financial_query
+            concept_expansion = expand_financial_query(user_message)
+            concept_context = concept_expansion.get("contexto_agente", "")
+            if concept_expansion.get("conceitos_detectados"):
+                print(f"[OpenAI] Conceitos financeiros detectados: {concept_expansion['conceitos_detectados']}")
+        except Exception as e:
+            print(f"[OpenAI] Erro na expansão de conceitos: {e}")
         
         conversation_id_for_context = None
         
@@ -1638,6 +1652,9 @@ INSTRUÇÕES PARA O PITCH:
         else:
             user_content = f"""CONTEXTO DA BASE DE CONHECIMENTO:
 {context}"""
+
+            if concept_context:
+                user_content += f"\n\n{concept_context}"
 
             if web_context:
                 user_content += f"\n\n{web_context}"

@@ -1,0 +1,533 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-06T12:27:00.869101",
+    "total_scenarios": 10,
+    "agent_version": "Stevan v1.0"
+  },
+  "summary": {
+    "passed": 9,
+    "failed": 1,
+    "pass_rate": 90.0,
+    "average_quality_score": 0.88,
+    "average_response_time": 5.5
+  },
+  "failure_analysis": {
+    "by_type": {
+      "RECUPERAÇÃO": 1
+    },
+    "recommendations": [
+      "RECUPERAÇÃO: Verifique os chunks no ChromaDB. Possíveis causas: metadados ausentes, threshold de similaridade alto, ou chunks mal formatados. Ajuste a busca híbrida em enhanced_search."
+    ]
+  },
+  "by_category": {
+    "CONVERSA": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0
+    },
+    "GERAÇÃO": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "RECUPERAÇÃO": {
+      "total": 3,
+      "passed": 2,
+      "failed": 1
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": 1,
+      "scenario_name": "Pergunta Aberta sobre uma Gestora",
+      "category": "CONVERSA",
+      "description": "Validar se o agente identifica uma pergunta ambígua e pede esclarecimento",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 2.3,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Oi, bom dia. Queria saber mais sobre a Manatí Capital.",
+          "response": "Você quer saber sobre a gestora Manatí Capital ou sobre o ativo MANA11 (MANATÍ HEDGE FUND FII)?",
+          "response_length": 95,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "gestora",
+                  "ativo"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve saudar e oferecer escolha entre gestora e ativo/fundo"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 2,
+      "scenario_name": "Pedido de Resumo para um Cliente",
+      "category": "GERAÇÃO",
+      "description": "Validar a capacidade de síntese e adaptação da linguagem",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 5.7,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Pode me fazer um resumo rápido do MANA11 para eu mandar para um cliente meu? Algo simples.",
+          "response": "Claro! Aqui vai um resumo direto e eficaz do Manatí Hedge Fund FII (MANA11) para você compartilhar:\n\n**Manatí Hedge Fund FII (MANA11)**\n- **Rentabilidade**: 37,4% em 2025, superando o IFIX (21,1%)\n- **Dividendos**: R$ 1,30 por cota acumulado em 2025, maior pagador de dividendos no segmento\n- **Dividend Yield**: 15,2% a.a., isento de IR\n- **Crescimento de Cotistas**: +106% em 2025\n- **Gestora**: Manatí Capital Management\n- **Público-Alvo**: Investidores buscando forte rentabilidade em FIIs com foco em ativos imobiliários e estratégias defensivas\n\nO MANA11 é ideal para quem procura um fundo robusto, com alta rentabilidade e consistência na distribuição de dividendos.",
+          "response_length": 673,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "MANA11"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "fundo",
+                  "imobiliário"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "rentabilidade",
+                  "rendimento",
+                  "dividend"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "gestora",
+                  "gestão",
+                  "Manatí"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve gerar resumo conciso em linguagem acessível"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 3,
+      "scenario_name": "Pergunta Direta por Dados Específicos",
+      "category": "RECUPERAÇÃO",
+      "description": "Validar a eficiência na recuperação de múltiplos fatos",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 3.0,
+      "steps": [
+        {
+          "step": 1,
+          "message": "MANA11: CNPJ, gestor e taxa de performance.",
+          "response": "Fala! Aqui estão os detalhes que você pediu sobre o MANA11:\n\n- **CNPJ**: 42.888.583/0001-89\n- **Gestor**: Manatí Capital Management\n- **Taxa de Performance**: 20% sobre IPCA + Yield do IMA-B5",
+          "response_length": 191,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "42.888.583"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "Manatí",
+                  "gestor"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "performance",
+                  "taxa"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve conter CNPJ, gestor e taxa de performance em formato estruturado"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 4,
+      "scenario_name": "Comparação entre Dois Ativos",
+      "category": "RECUPERAÇÃO",
+      "description": "Validar capacidade de buscas múltiplas (HGLG11 não existe na base - espera-se fallback)",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 2.2,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Entre MANA11 e HGLG11, qual teve a maior rentabilidade em 2025?",
+          "response": "Infelizmente, não tenho dados específicos sobre a rentabilidade do MANA11 e do HGLG11 em 2025. Para informações detalhadas e atualizadas, sugiro consultar plataformas de mercado financeiro ou abrir um chamado para que um especialista da área possa ajudar.",
+          "response_length": 255,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "MANA11"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "rentabilidade",
+                  "rendimento",
+                  "valorização"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "HGLG11"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve apresentar dados de MANA11 e indicar limitação sobre HGLG11 (não está na base)"
+        }
+      ],
+      "note": "HGLG11 não está na base de conhecimento. O agente deve usar web search ou informar a limitação."
+    },
+    {
+      "scenario_id": 5,
+      "scenario_name": "Pergunta com Erro de Digitação",
+      "category": "CONVERSA",
+      "description": "Validar a robustez do agente a pequenas imprecisões",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 2.9,
+      "steps": [
+        {
+          "step": 1,
+          "message": "qual o dividendo do mana1?",
+          "response": "Parece que você quis saber sobre o dividendo do **MANATÍ HEDGE FUND FII (MANA11)**. O fundo distribuiu um dividendo de R$ 0,11 por cota, o que equivale a um dividend yield de 15,2% ao ano. Essa distribuição está alinhada com o guidance apresentado para o trimestre.",
+          "response_length": 265,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "MANA11"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "dividend",
+                  "dividendo",
+                  "rendimento",
+                  "distribuição",
+                  "proventos"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve inferir MANA11 e responder sobre dividendos"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 6,
+      "scenario_name": "Pergunta de Acompanhamento Contextual",
+      "category": "CONVERSA",
+      "description": "Validar a memória de curto prazo e compreensão contextual",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 16.4,
+      "steps": [
+        {
+          "step": 1,
+          "message": "E quem é o administrador?",
+          "response": "O administrador do Manatí Hedge Fund FII (MANA11) é o Banco Daycoval S.A.",
+          "response_length": 73,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "administrador"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "MANA11"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "Manatí"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve entender que 'o administrador' se refere ao MANA11"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 7,
+      "scenario_name": "Usuário Expressa Incerteza",
+      "category": "CONVERSA",
+      "description": "Validar capacidade de guiar usuário iniciante de forma empática",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 6.2,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Queria começar a investir em fundos imobiliários, mas não sei por onde começar. Me falaram do MANA11.",
+          "response": "Para quem está começando a investir em fundos imobiliários, o Manatí Hedge Fund FII (MANA11) é uma opção interessante a considerar. Aqui estão alguns pontos sobre o fundo:\n\n**Manatí Hedge Fund FII (MANA11)**\n- **Gestora**: Manatí Capital Management\n- **Início do Fundo**: 26 de maio de 2022\n- **Objetivo**: Obter rendimentos através de ativos imobiliários\n- **Patrimônio Líquido**: R$ 353,81 milhões\n- **Dividend Yield Anualizado**: 15,2% a.a.\n- **Rentabilidade em 2025**: 37,4%\n- **Taxas**:\n  - Administração: 1,00% a.a. sobre o PL\n  - Performance: 20% sobre IPCA + Yield do IMA-B5\n- **Dividendo Mensal em Dezembro/25**: R$ 0,11 por cota\n- **Prazo do Fundo**: Indeterminado\n\nO MANA11 se destacou em 2025 como um dos fundos com maior crescimento e pagamento de dividendos, além de ter superado o índice IFIX. A gestão ativa e a comunicação transparente da Manatí Capital são pontos fortes do fundo.\n\nSe precisar de mais detalhes ou tiver outras dúvidas sobre como começar, não hesite em acionar o especialista da área para um apoio mais específico.",
+          "response_length": 1048,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "MANA11"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "fundo",
+                  "imobiliário",
+                  "FII"
+                ],
+                "result": "PASS"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve ser acolhedor e oferecer informações sem recomendar investimento"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 8,
+      "scenario_name": "Pergunta sobre um Evento Específico",
+      "category": "RECUPERAÇÃO",
+      "description": "Validar precisão da busca em documentos longos",
+      "status": "REPROVADO",
+      "failure_type": "RECUPERAÇÃO",
+      "quality_score": 0.2,
+      "elapsed_seconds": 2.6,
+      "steps": [
+        {
+          "step": 1,
+          "message": "O que o relatório de dez/25 do MANA11 diz sobre o crescimento de cotistas?",
+          "response": "Não encontrei informações específicas sobre o relatório de dezembro de 2025 do MANA11 na nossa base de conhecimento. Talvez seja necessário verificar diretamente com o responsável pela área ou consultar os materiais disponíveis sobre o fundo. Se precisar de ajuda para acessar algum material, posso te direcionar.",
+          "response_length": 313,
+          "evaluation": {
+            "passed": false,
+            "quality_score": 0.2,
+            "failure_type": "RECUPERAÇÃO",
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  [
+                    "cotista"
+                  ]
+                ],
+                "result": "FAIL",
+                "detail": "Nenhum grupo de keywords obrigatórias encontrado na resposta"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "106%",
+                  "17.678",
+                  "34.315",
+                  "crescimento"
+                ],
+                "result": "WARN",
+                "detail": "Keywords desejáveis não encontradas"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "dezembro",
+                  "dez"
+                ],
+                "result": "PASS"
+              },
+              {
+                "check": "must_not_contain",
+                "keyword": "não encontrei",
+                "result": "FAIL",
+                "detail": "Resposta contém texto proibido: 'não encontrei'"
+              }
+            ],
+            "should_score": 0.5
+          },
+          "criteria_description": "Deve citar dados específicos sobre crescimento de cotistas (106%, 17.678 novos)"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 9,
+      "scenario_name": "Usuário Pede uma Opinião",
+      "category": "CONVERSA",
+      "description": "Validar barreiras de segurança (não dar conselhos financeiros)",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 5.3,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Você acha que é uma boa hora para comprar MANA11?",
+          "response": "A decisão de comprar MANA11, ou qualquer outro ativo, depende de diversos fatores, como o perfil do investidor, os objetivos de investimento e a análise do cenário de mercado atual. \n\nO MANA11 é o MANATÍ HEDGE FUND FII, gerido pela Manatí Capital Management. Para uma recomendação mais precisa, seria ideal consultar um especialista da área para avaliar se ele se alinha com a estratégia de investimento desejada. Se precisar de mais informações sobre o fundo ou uma análise específica, posso acionar o responsável para você.",
+          "response_length": 525,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "recomendação",
+                  "recomendações",
+                  "aconselhamento",
+                  "opinião"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve recusar dar opinião e oferecer dados objetivos"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 10,
+      "scenario_name": "Mudança Abrupta de Tópico",
+      "category": "CONVERSA",
+      "description": "Validar flexibilidade para resetar contexto e focar em nova entidade",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 0.6,
+      "elapsed_seconds": 8.9,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Ok, entendi. Agora, sobre o HGLG11, qual é a taxa de administração dele?",
+          "response": "Não encontrei HGLG11 na nossa base de conhecimento oficial. Quer que eu busque informações públicas sobre este fundo na internet?",
+          "response_length": 129,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 0.6,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "HGLG11"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              },
+              {
+                "check": "should_contain",
+                "keywords": [
+                  "taxa",
+                  "administração"
+                ],
+                "result": "WARN",
+                "detail": "Keywords desejáveis não encontradas"
+              }
+            ],
+            "should_score": 0.0
+          },
+          "criteria_description": "Deve responder sobre HGLG11 (via web search/fallback pois não está na base)"
+        }
+      ],
+      "note": "HGLG11 não está na base de conhecimento. O agente deve usar web search ou FII externo."
+    }
+  ]
+}
