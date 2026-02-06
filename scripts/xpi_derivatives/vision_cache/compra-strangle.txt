@@ -1,0 +1,110 @@
+# Estrutura de Derivativos: Compra de Strangle
+
+## 1. DEFINIÇÃO E CONCEITO
+
+### O que é esta estrutura
+A Compra de Strangle é uma estratégia de opções que envolve a compra simultânea de uma opção de compra (call) e uma opção de venda (put) com diferentes preços de exercício (strikes) e a mesma data de vencimento. Ambas as opções são geralmente fora do dinheiro (OTM), o que significa que o preço de exercício da call está acima do preço atual do ativo subjacente, enquanto o preço de exercício da put está abaixo.
+
+### Objetivo principal
+O principal objetivo da Compra de Strangle é lucrar com movimentos significativos no preço do ativo subjacente, independentemente da direção. O investidor se beneficia tanto de grandes altas quanto de grandes quedas no preço do ativo, desde que o movimento seja suficiente para cobrir o custo inicial da estrutura.
+
+### Em que contexto de mercado é utilizada
+Esta estratégia é utilizada em mercados onde se espera alta volatilidade. É ideal para situações em que eventos significativos, como anúncios de resultados, mudanças regulatórias ou eventos macroeconômicos, podem causar grandes oscilações nos preços dos ativos.
+
+## 2. COMPONENTES DA ESTRUTURA
+
+### Quais instrumentos são combinados
+A estrutura combina uma opção de compra (call) e uma opção de venda (put).
+
+### Strikes típicos
+Os strikes utilizados são fora do dinheiro (OTM). Isso significa que o strike da call é superior ao preço atual do ativo, enquanto o strike da put é inferior.
+
+### Relação entre os componentes
+Os componentes são independentes em termos de payoff, mas ambos contribuem para o custo total da estrutura. O investidor paga um prêmio por cada opção, e o lucro potencial é ilimitado em ambas as direções, desde que o movimento do preço do ativo seja suficiente.
+
+### Custo da montagem
+A montagem da Compra de Strangle é feita a débito, pois envolve o pagamento dos prêmios das duas opções. O custo total é a soma dos prêmios pagos pelas opções de call e put.
+
+## 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+### Descrição do formato do gráfico de resultado no vencimento
+O gráfico de payoff de uma Compra de Strangle tem um formato em "V" aberto, com o vértice abaixo do eixo X, representando o custo inicial da estrutura.
+
+### Eixo X: preço do ativo-objeto
+O eixo X representa o preço do ativo subjacente no vencimento das opções.
+
+### Eixo Y: resultado (lucro/prejuízo)
+O eixo Y representa o lucro ou prejuízo da estratégia.
+
+### Pontos-chave
+- **Breakeven**: Existem dois pontos de breakeven, um para cada direção do movimento do preço do ativo. O breakeven superior é o strike da call mais o custo total da estrutura. O breakeven inferior é o strike da put menos o custo total da estrutura.
+- **Ganho máximo**: O ganho máximo é teoricamente ilimitado, tanto para cima quanto para baixo, dependendo do movimento do preço do ativo.
+- **Perda máxima**: A perda máxima é limitada ao prêmio total pago pela estrutura.
+
+### Zonas de lucro e prejuízo
+- **Zona de prejuízo**: Entre os dois pontos de breakeven.
+- **Zona de lucro**: Fora dos pontos de breakeven, tanto acima do breakeven superior quanto abaixo do breakeven inferior.
+
+### Formato da curva em cada região
+- **Entre os breakevens**: A curva está abaixo do eixo X, indicando prejuízo.
+- **Fora dos breakevens**: A curva sobe, indicando lucro crescente conforme o preço do ativo se afasta dos breakevens.
+
+## 4. EXEMPLO NUMÉRICO
+
+### Ativo fictício com preço de R$ 100
+- **Call OTM**: Strike de R$ 110, prêmio de R$ 3
+- **Put OTM**: Strike de R$ 90, prêmio de R$ 2
+- **Custo total**: R$ 5
+
+### Cenários
+1. **Ativo a R$ 80**
+   - Valor da put: R$ 10
+   - Valor da call: R$ 0
+   - Resultado: R$ 10 - R$ 5 = R$ 5 (lucro)
+
+2. **Ativo a R$ 100**
+   - Valor da put: R$ 0
+   - Valor da call: R$ 0
+   - Resultado: R$ 0 - R$ 5 = -R$ 5 (prejuízo)
+
+3. **Ativo a R$ 120**
+   - Valor da put: R$ 0
+   - Valor da call: R$ 10
+   - Resultado: R$ 10 - R$ 5 = R$ 5 (lucro)
+
+### Prêmio pago
+O prêmio total pago pela estrutura é de R$ 5.
+
+## 5. QUANDO USAR
+
+### Cenários de mercado ideais
+A Compra de Strangle é ideal em mercados com expectativa de alta volatilidade, onde eventos significativos podem impactar o preço do ativo.
+
+### Perfil do investidor adequado
+Investidores que buscam lucrar com movimentos expressivos no preço do ativo, mas que desejam limitar o risco ao prêmio pago.
+
+### Horizonte de tempo recomendado
+A estratégia é mais eficaz em horizontes de curto a médio prazo, especialmente quando há eventos previstos que possam gerar volatilidade.
+
+## 6. QUANDO NÃO USAR
+
+### Cenários desfavoráveis
+Mercados com baixa volatilidade ou em tendência lateral, onde o preço do ativo não se move significativamente.
+
+### Riscos principais
+O principal risco é que o preço do ativo não se mova o suficiente para cobrir o custo da estrutura, resultando em perda do prêmio pago.
+
+### Armadilhas comuns
+Subestimar o custo da estrutura e superestimar a volatilidade esperada, levando a prejuízos.
+
+## 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+### Diferenças em relação a estruturas parecidas
+- **Straddle**: Utiliza strikes iguais, geralmente ATM, e é mais caro, mas requer menor movimento do ativo para ser lucrativo.
+- **Strangle**: Utiliza strikes diferentes, geralmente OTM, é mais barato, mas requer maior movimento do ativo.
+
+### Vantagens e desvantagens comparativas
+- **Vantagens**: Menor custo inicial em comparação com o Straddle.
+- **Desvantagens**: Requer movimentos mais significativos no preço do ativo para alcançar o breakeven e gerar lucro.
+
+A Compra de Strangle é uma estratégia poderosa para investidores que antecipam grandes movimentos de preço e estão dispostos a aceitar o risco limitado ao prêmio pago. É essencial avaliar cuidadosamente o contexto de mercado e a volatilidade esperada antes de implementar essa estratégia.

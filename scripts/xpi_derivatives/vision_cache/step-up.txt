@@ -1,0 +1,114 @@
+### 1. DEFINIÇÃO E CONCEITO
+
+**O que é esta estrutura:**
+A estrutura Step-up é um derivativo financeiro que combina elementos de proteção e potencial de ganho. Ela garante ao investidor um retorno mínimo predeterminado, independentemente das condições de mercado, ao mesmo tempo que permite participação na valorização de um ativo até um certo limite (cap). 
+
+**Objetivo principal:**
+O principal objetivo do Step-up é proporcionar segurança ao investidor, garantindo um retorno mínimo, enquanto ainda oferece a possibilidade de ganhos adicionais caso o ativo subjacente se valorize, até um limite estabelecido.
+
+**Em que contexto de mercado é utilizada:**
+Esta estrutura é ideal em mercados voláteis ou incertos, onde o investidor deseja proteger seu capital contra perdas significativas, mas ainda quer se beneficiar de possíveis altas no mercado de ações.
+
+### 2. COMPONENTES DA ESTRUTURA
+
+**Quais instrumentos são combinados:**
+A estrutura Step-up geralmente envolve a combinação de opções de compra (calls) e opções de venda (puts). Pode também incluir contratos futuros ou swaps, dependendo da complexidade e dos objetivos específicos da estrutura.
+
+**Strikes típicos:**
+- **ATM (At-the-Money):** Opções com preço de exercício próximo ao preço atual do ativo.
+- **OTM (Out-of-the-Money):** Opções com preço de exercício acima (calls) ou abaixo (puts) do preço atual do ativo.
+- **ITM (In-the-Money):** Opções com preço de exercício abaixo (calls) ou acima (puts) do preço atual do ativo.
+
+**Relação entre os componentes:**
+A estrutura é montada de forma a garantir um retorno mínimo através de uma combinação de opções, onde o prêmio recebido e pago é balanceado para atingir o objetivo de proteção com ganho mínimo.
+
+**Custo da montagem:**
+O custo pode variar, mas frequentemente é montado como uma estrutura de custo zero (zero-cost), onde os prêmios pagos e recebidos se anulam. Em alguns casos, pode haver um pequeno débito ou crédito, dependendo dos strikes escolhidos e das condições de mercado.
+
+### 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+**Formato do gráfico de resultado no vencimento:**
+O gráfico de payoff de uma estrutura Step-up tem um formato característico:
+
+- **Eixo X:** Representa o preço do ativo-objeto no vencimento.
+- **Eixo Y:** Representa o resultado financeiro (lucro ou prejuízo).
+
+**Pontos-chave:**
+- **Breakeven:** O ponto onde o investidor não tem lucro nem prejuízo.
+- **Ganho máximo:** O limite superior de ganho, determinado pelo cap.
+- **Perda máxima:** Geralmente limitada ao prêmio pago, se houver.
+
+**Zonas de lucro e prejuízo:**
+- **Zona de lucro:** Entre o breakeven e o cap.
+- **Zona de prejuízo:** Abaixo do breakeven, mas limitada pelo retorno mínimo garantido.
+
+**Formato da curva em cada região:**
+- **Abaixo do breakeven:** A curva é horizontal, indicando o ganho mínimo garantido.
+- **Entre o breakeven e o cap:** A curva é ascendente, refletindo a participação nos ganhos do ativo.
+- **Acima do cap:** A curva se estabiliza, indicando que o ganho adicional não é mais possível.
+
+### 4. EXEMPLO NUMÉRICO
+
+**Ativo fictício com preço de R$ 100:**
+- **Ganho mínimo garantido:** 5%
+- **Cap:** 15%
+
+**Estrutura com strikes realistas:**
+- **Compra de call ATM:** Strike a R$ 100
+- **Venda de call OTM:** Strike a R$ 115
+- **Compra de put OTM:** Strike a R$ 95
+
+**Cálculo do resultado em 3 cenários:**
+1. **Ativo a R$ 80:**
+   - Ganho mínimo garantido: 5% de R$ 100 = R$ 5
+   - Resultado: R$ 105
+
+2. **Ativo a R$ 100:**
+   - Ganho mínimo garantido: 5% de R$ 100 = R$ 5
+   - Resultado: R$ 105
+
+3. **Ativo a R$ 120:**
+   - Participação até o cap de 15%: R$ 115
+   - Resultado: R$ 115
+
+**Prêmio pago/recebido:**
+- Estrutura montada a custo zero, com prêmios de opções balanceados.
+
+### 5. QUANDO USAR
+
+**Cenários de mercado ideais:**
+- Mercados voláteis ou incertos, onde a proteção é valorizada.
+- Expectativa de leve alta no ativo subjacente.
+
+**Perfil do investidor adequado:**
+- Investidores conservadores que desejam proteção com potencial de ganho limitado.
+- Investidores que buscam segurança em seu portfólio de ações.
+
+**Horizonte de tempo recomendado:**
+- Médio a longo prazo, dependendo do vencimento das opções utilizadas.
+
+### 6. QUANDO NÃO USAR
+
+**Cenários desfavoráveis:**
+- Mercados em forte tendência de alta, onde o cap pode limitar ganhos significativos.
+- Mercados extremamente estáveis, onde a proteção pode ser desnecessária.
+
+**Riscos principais:**
+- Limitação de ganhos devido ao cap.
+- Complexidade na montagem e no entendimento da estrutura.
+
+**Armadilhas comuns:**
+- Subestimar o impacto dos custos de transação.
+- Escolha inadequada de strikes que não refletem a expectativa de mercado.
+
+### 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+**Diferenças em relação a estruturas parecidas:**
+- **Step-up vs. Collar:** O Step-up oferece um ganho mínimo garantido, enquanto o collar limita perdas e ganhos sem garantir um retorno mínimo.
+- **Step-up vs. Protective Put:** O Step-up combina proteção com potencial de ganho, enquanto a protective put foca apenas na proteção contra quedas.
+
+**Vantagens e desvantagens comparativas:**
+- **Vantagens:** Garantia de retorno mínimo, participação em ganhos até um limite.
+- **Desvantagens:** Limitação de ganhos devido ao cap, complexidade na estruturação.
+
+Este conteúdo detalhado deve ajudar assessores de investimentos a compreenderem a estrutura Step-up e suas aplicações no mercado brasileiro de derivativos de renda variável.

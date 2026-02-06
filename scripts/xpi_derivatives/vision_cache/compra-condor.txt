@@ -1,0 +1,62 @@
+**1. DEFINIÇÃO E CONCEITO**
+
+A estrutura de derivativos conhecida como "Compra de Condor" é uma estratégia de opções que visa capturar ganhos dentro de um intervalo de preços predefinido de um ativo subjacente. Essa estratégia é construída através da combinação de quatro opções de compra (calls) ou de venda (puts) com diferentes preços de exercício (strikes). O objetivo principal é obter lucro se o ativo subjacente permanecer dentro de uma faixa de preços específica até o vencimento das opções. O Condor é utilizado em contextos de mercado onde se espera baixa volatilidade e estabilidade no preço do ativo, sendo ideal para investidores que buscam um perfil de risco e retorno limitados.
+
+**2. COMPONENTES DA ESTRUTURA**
+
+A estrutura de um Condor é composta por quatro opções, que podem ser todas calls ou todas puts. No caso de um Condor de calls, por exemplo, a estrutura é formada por:
+
+- Compra de uma call com strike mais baixo (ITM ou ATM)
+- Venda de duas calls com strikes intermediários (OTM)
+- Compra de uma call com strike mais alto (OTM)
+
+Os strikes são escolhidos de forma a criar um intervalo de preços onde o investidor espera que o ativo subjacente permaneça. A relação entre os componentes é tal que as calls vendidas financiam parcialmente as calls compradas, resultando em um custo de montagem que geralmente é um débito, mas pode ser ajustado para ser próximo de zero (zero-cost) dependendo dos strikes e da volatilidade implícita.
+
+**3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)**
+
+O gráfico de payoff de um Condor no vencimento tem a seguinte forma:
+
+- **Eixo X:** Representa o preço do ativo subjacente.
+- **Eixo Y:** Representa o resultado financeiro (lucro ou prejuízo).
+
+O gráfico apresenta uma região central de lucro, delimitada pelos strikes das opções vendidas, e duas regiões de prejuízo fora dessa faixa. Os pontos-chave são:
+
+- **Breakeven:** Os preços do ativo onde o resultado é zero, situados ligeiramente fora dos strikes das opções vendidas.
+- **Ganho Máximo:** Ocorre quando o preço do ativo no vencimento está entre os strikes das opções vendidas.
+- **Perda Máxima:** Limitada ao custo inicial da estrutura, ocorre quando o preço do ativo está fora dos strikes das opções compradas.
+
+A curva de payoff é plana na zona de lucro e desce nas zonas de prejuízo, formando uma espécie de "planalto" entre dois "vales".
+
+**4. EXEMPLO NUMÉRICO**
+
+Considere um ativo fictício com preço atual de R$ 100. Montamos um Condor de calls com os seguintes strikes:
+
+- Compra de call com strike de R$ 90
+- Venda de duas calls com strikes de R$ 100 e R$ 110
+- Compra de call com strike de R$ 120
+
+Suponha que o custo total da estrutura seja um débito de R$ 2 por contrato.
+
+- **Cenário 1:** Ativo a R$ 80 no vencimento
+  - Todas as opções expiram sem valor.
+  - Perda total de R$ 2 por contrato.
+
+- **Cenário 2:** Ativo a R$ 100 no vencimento
+  - As calls vendidas são exercidas, mas as compradas cobrem o exercício.
+  - Ganho máximo de R$ 8 por contrato (R$ 10 de ganho menos R$ 2 de custo).
+
+- **Cenário 3:** Ativo a R$ 120 no vencimento
+  - As calls compradas e vendidas são exercidas.
+  - Ganho máximo de R$ 8 por contrato.
+
+**5. QUANDO USAR**
+
+A estratégia de Condor é ideal em cenários de mercado onde se espera que o ativo subjacente permaneça dentro de uma faixa de preços estreita até o vencimento. É adequada para investidores com perfil conservador a moderado, que buscam limitar riscos e retornos. O horizonte de tempo recomendado é de curto a médio prazo, geralmente até o vencimento das opções.
+
+**6. QUANDO NÃO USAR**
+
+Não é recomendável usar um Condor em mercados altamente voláteis ou quando se espera que o ativo subjacente tenha movimentos significativos de preço. Os principais riscos incluem a possibilidade de o ativo sair da faixa de lucro, resultando em perda do prêmio pago. Armadilhas comuns incluem subestimar a volatilidade do mercado ou escolher strikes inadequados.
+
+**7. COMPARAÇÃO COM ESTRUTURAS SIMILARES**
+
+Comparado a outras estruturas, como a "Venda de Volatilidade Pura" ou "Iron Condor", o Condor é menos agressivo, com risco e retorno limitados. Diferente de uma venda de volatilidade pura, que pode ter perdas ilimitadas, o Condor limita a perda ao custo da estrutura. Em relação ao Iron Condor, que combina calls e puts, o Condor simples utiliza apenas um tipo de opção, simplificando a montagem. As vantagens incluem menor risco e maior previsibilidade de resultados, enquanto as desvantagens podem ser ganhos limitados e a necessidade de precisão na escolha dos strikes.

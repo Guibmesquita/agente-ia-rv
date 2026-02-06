@@ -1,0 +1,105 @@
+### 1. DEFINIÇÃO E CONCEITO
+
+**O que é esta estrutura:**
+O Risk Reversal é uma estratégia de derivativos que combina a compra de uma opção de compra (Call) e a venda de uma opção de venda (Put) sobre o mesmo ativo subjacente. Ambas as opções têm a mesma data de vencimento, mas geralmente possuem strikes diferentes. Esta estrutura é frequentemente montada a custo zero, onde o prêmio recebido pela venda da Put compensa o prêmio pago pela compra da Call.
+
+**Objetivo principal:**
+O principal objetivo do Risk Reversal é permitir que o investidor participe da alta do ativo subjacente acima do strike da Call, enquanto aceita o risco de queda abaixo do strike da Put. É uma estratégia direcional que busca capturar ganhos em um cenário de alta, ao mesmo tempo em que se expõe a perdas em um cenário de baixa.
+
+**Em que contexto de mercado é utilizada:**
+O Risk Reversal é utilizado em contextos de mercado onde o investidor possui uma forte convicção de que o ativo subjacente irá se valorizar. É ideal em cenários de mercado bullish, onde se espera que o preço do ativo suba significativamente. A estratégia é também uma alternativa para investidores que desejam participar da alta sem desembolsar um prêmio significativo.
+
+### 2. COMPONENTES DA ESTRUTURA
+
+**Quais instrumentos são combinados:**
+- **Compra de uma Call:** Proporciona o direito de comprar o ativo subjacente a um preço específico (strike) até a data de vencimento.
+- **Venda de uma Put:** Obriga o vendedor a comprar o ativo subjacente a um preço específico (strike) se o comprador da Put decidir exercer a opção.
+
+**Strikes típicos:**
+- **Call:** Geralmente fora do dinheiro (OTM), ou seja, com strike acima do preço atual do ativo.
+- **Put:** Geralmente fora do dinheiro (OTM), ou seja, com strike abaixo do preço atual do ativo.
+
+**Relação entre os componentes:**
+A relação entre a Call e a Put é tal que o prêmio recebido pela venda da Put compensa o prêmio pago pela compra da Call, resultando em uma estrutura de custo zero ou próximo disso.
+
+**Custo da montagem:**
+Geralmente, o Risk Reversal é montado a custo zero, onde o prêmio recebido pela Put vendida cobre o prêmio pago pela Call comprada. No entanto, dependendo dos strikes escolhidos e das condições de mercado, a estrutura pode ser montada com um pequeno débito ou crédito.
+
+### 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+**Formato do gráfico de resultado no vencimento:**
+O gráfico de payoff do Risk Reversal apresenta uma linha horizontal até o strike da Put, onde o investidor começa a incorrer em perdas. Acima do strike da Call, o gráfico sobe, indicando ganhos.
+
+- **Eixo X:** Preço do ativo-objeto.
+- **Eixo Y:** Resultado (lucro/prejuízo).
+
+**Pontos-chave:**
+- **Breakeven:** O ponto de equilíbrio ocorre no preço do ativo onde o ganho da Call comprada compensa exatamente a perda da Put vendida.
+- **Ganho máximo:** Teoricamente ilimitado, pois o preço do ativo pode subir indefinidamente.
+- **Perda máxima:** Limitada ao strike da Put menos o preço do ativo no vencimento, caso o ativo caia significativamente.
+
+**Zonas de lucro e prejuízo:**
+- **Zona de lucro:** Acima do strike da Call.
+- **Zona de prejuízo:** Abaixo do strike da Put.
+
+**Formato da curva em cada região:**
+- **Abaixo do strike da Put:** Linha descendente indicando perdas crescentes.
+- **Entre os strikes da Put e da Call:** Linha horizontal indicando nenhum ganho ou perda.
+- **Acima do strike da Call:** Linha ascendente indicando ganhos crescentes.
+
+### 4. EXEMPLO NUMÉRICO
+
+**Ativo fictício com preço de R$ 100:**
+- **Compra de Call com strike de R$ 110.**
+- **Venda de Put com strike de R$ 90.**
+
+**Cenário 1: Ativo a R$ 80**
+- **Resultado:** Perda de R$ 10 por ação (R$ 90 - R$ 80).
+
+**Cenário 2: Ativo a R$ 100**
+- **Resultado:** Nenhum ganho ou perda, pois o preço está entre os strikes.
+
+**Cenário 3: Ativo a R$ 120**
+- **Resultado:** Ganho de R$ 10 por ação (R$ 120 - R$ 110).
+
+**Prêmio pago/recebido:**
+- Estrutura montada a custo zero.
+
+### 5. QUANDO USAR
+
+**Cenários de mercado ideais:**
+- Expectativa de alta significativa no preço do ativo subjacente.
+- Volatilidade implícita baixa, tornando a compra de Calls mais barata.
+
+**Perfil do investidor adequado:**
+- Investidores com forte convicção de alta.
+- Investidores dispostos a aceitar riscos de queda.
+
+**Horizonte de tempo recomendado:**
+- Curto a médio prazo, alinhado com a data de vencimento das opções.
+
+### 6. QUANDO NÃO USAR
+
+**Cenários desfavoráveis:**
+- Expectativa de mercado lateral ou de queda.
+- Alta volatilidade implícita, que encarece a compra de Calls.
+
+**Riscos principais:**
+- Risco de perda significativa se o ativo cair abaixo do strike da Put.
+- Exposição a movimentos adversos do mercado.
+
+**Armadilhas comuns:**
+- Subestimar o risco de queda.
+- Escolher strikes inadequados que não refletem a expectativa de mercado.
+
+### 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+**Diferenças em relação a estruturas parecidas:**
+- **Compra de Call simples:** Apenas participação na alta, sem risco de queda.
+- **Venda de Put simples:** Risco de queda, mas sem participação na alta.
+
+**Vantagens e desvantagens comparativas:**
+- **Vantagens:** Custo zero, participação na alta.
+- **Desvantagens:** Risco de queda significativo, complexidade na montagem.
+
+Este conteúdo visa fornecer uma compreensão detalhada do Risk Reversal, suas aplicações e riscos, para que assessores de investimentos possam orientar adequadamente seus clientes.

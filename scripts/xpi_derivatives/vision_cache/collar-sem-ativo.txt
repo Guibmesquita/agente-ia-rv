@@ -1,0 +1,108 @@
+### 1. DEFINIÇÃO E CONCEITO
+
+**O que é esta estrutura:**
+O Collar sem ativo é uma estratégia de derivativos que visa se beneficiar da queda no preço de um ativo subjacente sem a necessidade de possuir o ativo em si. Esta estratégia envolve a compra de uma opção de venda (Put) e a venda de uma opção de compra (Call) sobre o mesmo ativo subjacente, com a particularidade de que o investidor não detém o ativo subjacente. 
+
+**Objetivo principal:**
+O objetivo principal do Collar sem ativo é permitir que o investidor capitalize sobre a expectativa de queda no preço do ativo subjacente, ao mesmo tempo em que limita o custo da operação através da venda de uma Call. Assim, o investidor pode potencialmente lucrar com a desvalorização do ativo, enquanto o risco de alta é mitigado pela estrutura da estratégia.
+
+**Em que contexto de mercado é utilizada:**
+Esta estratégia é utilizada em mercados onde o investidor tem uma expectativa de queda no preço do ativo subjacente. É particularmente útil em cenários de alta volatilidade ou incerteza, onde há uma expectativa de que o ativo possa sofrer desvalorização significativa.
+
+### 2. COMPONENTES DA ESTRUTURA
+
+**Quais instrumentos são combinados:**
+- **Compra de uma Put:** Esta opção confere ao investidor o direito de vender o ativo subjacente a um preço predeterminado (strike) até a data de vencimento.
+- **Venda de uma Call:** Esta opção obriga o investidor a vender o ativo subjacente a um preço predeterminado (strike) se o comprador da Call exercer seu direito.
+
+**Strikes típicos (ATM, OTM, ITM):**
+- **Put:** Geralmente, a Put é comprada fora do dinheiro (OTM) para reduzir o custo, mas pode ser no dinheiro (ATM) se o investidor desejar uma proteção mais próxima do preço atual do ativo.
+- **Call:** A Call é vendida fora do dinheiro (OTM) para limitar o risco de alta e financiar a compra da Put.
+
+**Relação entre os componentes:**
+A venda da Call gera um prêmio que é utilizado para financiar, parcial ou totalmente, a compra da Put. Isso cria uma estrutura de custo reduzido ou até mesmo de custo zero (zero-cost).
+
+**Custo da montagem (zero-cost, débito, crédito):**
+O objetivo é montar a estrutura a custo zero, mas dependendo dos strikes escolhidos e da volatilidade implícita, pode haver um pequeno débito ou crédito.
+
+### 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+**Formato do gráfico de resultado no vencimento:**
+- **Eixo X:** Representa o preço do ativo-objeto no vencimento.
+- **Eixo Y:** Representa o resultado financeiro da estratégia (lucro ou prejuízo).
+
+**Pontos-chave:**
+- **Breakeven:** O ponto em que o resultado da estratégia é zero. Calculado considerando o prêmio líquido pago ou recebido.
+- **Ganho máximo:** Ocorre quando o preço do ativo está abaixo do strike da Put no vencimento.
+- **Perda máxima:** Ocorre quando o preço do ativo está acima do strike da Call no vencimento.
+
+**Zonas de lucro e prejuízo:**
+- **Zona de lucro:** Quando o preço do ativo está abaixo do strike da Put.
+- **Zona de prejuízo:** Quando o preço do ativo está acima do strike da Call.
+
+**Formato da curva em cada região:**
+- **Abaixo do strike da Put:** A curva é ascendente, indicando lucro crescente à medida que o preço do ativo cai.
+- **Entre o strike da Put e o strike da Call:** A curva é plana, indicando um resultado próximo ao breakeven.
+- **Acima do strike da Call:** A curva é descendente, indicando prejuízo crescente à medida que o preço do ativo sobe.
+
+### 4. EXEMPLO NUMÉRICO
+
+**Ativo fictício com preço de R$ 100:**
+- **Compra de Put:** Strike de R$ 95, prêmio de R$ 3.
+- **Venda de Call:** Strike de R$ 105, prêmio de R$ 3.
+
+**Cenários:**
+1. **Ativo a R$ 80:**
+   - Lucro na Put: R$ 15 (R$ 95 - R$ 80)
+   - Prejuízo na Call: R$ 0 (não exercida)
+   - Resultado: R$ 15
+
+2. **Ativo a R$ 100:**
+   - Lucro na Put: R$ 0 (não exercida)
+   - Prejuízo na Call: R$ 0 (não exercida)
+   - Resultado: R$ 0 (breakeven)
+
+3. **Ativo a R$ 120:**
+   - Lucro na Put: R$ 0 (não exercida)
+   - Prejuízo na Call: R$ 15 (R$ 120 - R$ 105)
+   - Resultado: -R$ 15
+
+**Prêmio pago/recebido:**
+- Prêmio líquido: R$ 0 (estrutura de custo zero)
+
+### 5. QUANDO USAR
+
+**Cenários de mercado ideais:**
+- Expectativa de queda no preço do ativo subjacente.
+- Alta volatilidade, proporcionando prêmios mais altos para a Call vendida.
+
+**Perfil do investidor adequado:**
+- Investidores com visão de mercado negativa e que desejam limitar o custo de entrada na estratégia.
+- Investidores que não possuem o ativo subjacente, mas desejam especular sobre sua queda.
+
+**Horizonte de tempo recomendado:**
+- Curto a médio prazo, alinhado com a data de vencimento das opções utilizadas.
+
+### 6. QUANDO NÃO USAR
+
+**Cenários desfavoráveis:**
+- Expectativa de alta no preço do ativo subjacente.
+- Baixa volatilidade, resultando em prêmios insuficientes para financiar a Put.
+
+**Riscos principais:**
+- Limitação de ganhos em caso de queda acentuada do ativo.
+- Potencial de prejuízo se o ativo subir significativamente acima do strike da Call.
+
+**Armadilhas comuns:**
+- Escolha inadequada dos strikes, resultando em custo elevado ou exposição indesejada.
+- Subestimação do impacto da volatilidade implícita nos prêmios das opções.
+
+### 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+**Diferenças em relação a estruturas parecidas:**
+- **Collar com ativo:** Envolve a posse do ativo subjacente, oferecendo proteção adicional em caso de alta.
+- **Compra de Put isolada:** Oferece proteção contra queda, mas sem o financiamento da Call vendida, resultando em custo maior.
+
+**Vantagens e desvantagens comparativas:**
+- **Vantagens:** Custo potencialmente zero, proteção contra quedas, risco limitado de alta.
+- **Desvantagens:** Limitação de ganhos em caso de queda acentuada, potencial de prejuízo se o ativo subir acima do strike da Call.

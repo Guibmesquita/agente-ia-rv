@@ -1,0 +1,112 @@
+# Estrutura de Derivativos: Compra de Straddle
+
+## 1. DEFINIÇÃO E CONCEITO
+
+### O que é esta estrutura
+A compra de Straddle é uma estratégia de opções que envolve a aquisição simultânea de uma opção de compra (Call) e uma opção de venda (Put) com o mesmo preço de exercício (strike) e data de vencimento. Normalmente, essas opções são adquiridas "at-the-money" (ATM), ou seja, com um strike próximo ao preço atual do ativo subjacente.
+
+### Objetivo principal
+O principal objetivo da compra de Straddle é lucrar com movimentos significativos no preço do ativo subjacente, independentemente da direção. Esta estratégia é particularmente útil quando se espera alta volatilidade, mas não se tem uma previsão clara sobre a direção do movimento do preço.
+
+### Em que contexto de mercado é utilizada
+A compra de Straddle é frequentemente utilizada em contextos de mercado onde se antecipa um aumento na volatilidade, como antes de anúncios de resultados corporativos, decisões de política monetária, eventos macroeconômicos significativos ou qualquer outra situação que possa causar um impacto substancial no preço do ativo.
+
+## 2. COMPONENTES DA ESTRUTURA
+
+### Quais instrumentos são combinados
+A estrutura é composta por duas opções: uma Call e uma Put. Ambas as opções são adquiridas com o mesmo strike e vencimento.
+
+### Strikes típicos
+Geralmente, as opções são adquiridas ATM, pois isso maximiza a sensibilidade da estratégia a movimentos de preço em qualquer direção.
+
+### Relação entre os componentes
+As duas opções (Call e Put) trabalham em conjunto para capturar ganhos de movimentos de preço significativos. Se o preço do ativo subir, a Call tende a se valorizar; se o preço cair, a Put tende a se valorizar.
+
+### Custo da montagem
+A montagem de um Straddle é feita a débito, pois o investidor paga o prêmio das duas opções. O custo total é a soma dos prêmios da Call e da Put.
+
+## 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+### Descrição do formato do gráfico de resultado no vencimento
+O gráfico de payoff de um Straddle apresenta uma forma de "V" invertido. 
+
+- **Eixo X**: Representa o preço do ativo subjacente no vencimento.
+- **Eixo Y**: Representa o resultado financeiro (lucro ou prejuízo).
+
+### Pontos-chave
+- **Breakeven**: Existem dois pontos de breakeven. O primeiro é o strike menos o custo total da estrutura, e o segundo é o strike mais o custo total.
+- **Ganho máximo**: Teoricamente ilimitado, tanto para cima quanto para baixo, dependendo do movimento do preço do ativo.
+- **Perda máxima**: Limitada ao custo total pago pelos prêmios das opções.
+
+### Zonas de lucro e prejuízo
+- **Zona de lucro**: Ocorre quando o preço do ativo no vencimento está fora dos pontos de breakeven.
+- **Zona de prejuízo**: Ocorre quando o preço do ativo no vencimento está entre os pontos de breakeven.
+
+### Formato da curva em cada região
+- **Região central**: Entre os pontos de breakeven, a curva é negativa, indicando prejuízo.
+- **Regiões externas**: Fora dos pontos de breakeven, a curva se inclina para cima, indicando lucro.
+
+## 4. EXEMPLO NUMÉRICO
+
+### Ativo fictício com preço de R$ 100
+- **Strike da Call e Put**: R$ 100
+- **Prêmio da Call**: R$ 5
+- **Prêmio da Put**: R$ 5
+- **Custo total**: R$ 10
+
+### Cenários
+1. **Ativo a R$ 80**
+   - Valor da Put: R$ 20 (R$ 100 - R$ 80)
+   - Valor da Call: R$ 0
+   - Resultado: R$ 20 - R$ 10 = R$ 10 (lucro)
+
+2. **Ativo a R$ 100**
+   - Valor da Put: R$ 0
+   - Valor da Call: R$ 0
+   - Resultado: R$ 0 - R$ 10 = -R$ 10 (prejuízo)
+
+3. **Ativo a R$ 120**
+   - Valor da Put: R$ 0
+   - Valor da Call: R$ 20 (R$ 120 - R$ 100)
+   - Resultado: R$ 20 - R$ 10 = R$ 10 (lucro)
+
+### Prêmio pago/recebido
+O prêmio total pago é de R$ 10.
+
+## 5. QUANDO USAR
+
+### Cenários de mercado ideais
+- Antes de eventos que possam causar alta volatilidade.
+- Quando há incerteza sobre a direção do movimento do preço, mas expectativa de grande variação.
+
+### Perfil do investidor adequado
+- Investidores que buscam se beneficiar de movimentos de preço significativos.
+- Aqueles que estão confortáveis com o risco de perder o prêmio pago.
+
+### Horizonte de tempo recomendado
+- Curto prazo, geralmente alinhado com o vencimento das opções e a expectativa de eventos que possam causar volatilidade.
+
+## 6. QUANDO NÃO USAR
+
+### Cenários desfavoráveis
+- Mercados com baixa volatilidade esperada.
+- Quando o custo dos prêmios é muito elevado em relação ao potencial de movimento do ativo.
+
+### Riscos principais
+- Perda total do prêmio pago se o ativo não se mover significativamente.
+- Impacto negativo de uma volatilidade implícita decrescente após a montagem da estrutura.
+
+### Armadilhas comuns
+- Subestimar o custo dos prêmios.
+- Não considerar o impacto do tempo (theta) e da volatilidade implícita.
+
+## 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+### Diferenças em relação a estruturas parecidas
+- **Strangle**: Similar ao Straddle, mas utiliza strikes diferentes para a Call e a Put, geralmente OTM, resultando em um custo menor, mas exigindo movimentos de preço mais significativos para ser lucrativo.
+
+### Vantagens e desvantagens comparativas
+- **Vantagens do Straddle**: Maior sensibilidade a movimentos de preço próximos ao strike.
+- **Desvantagens do Straddle**: Custo inicial mais elevado comparado a um Strangle.
+
+Este conteúdo técnico visa fornecer uma compreensão detalhada da estratégia de compra de Straddle, suas aplicações, riscos e comparações com outras estruturas de derivativos.

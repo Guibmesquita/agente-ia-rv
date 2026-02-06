@@ -1,0 +1,57 @@
+### 1. DEFINIÇÃO E CONCEITO
+
+A **Compra de Borboleta (FLY)** é uma estratégia de opções que combina três diferentes preços de exercício (strikes) para criar uma posição que tem como objetivo principal lucrar quando o preço do ativo subjacente termina próximo ao strike central no vencimento. Esta estrutura é utilizada em contextos de mercado onde se espera baixa volatilidade e uma movimentação limitada do ativo subjacente, ou seja, quando o investidor tem uma visão precisa de que o preço do ativo permanecerá dentro de um intervalo estreito até o vencimento.
+
+### 2. COMPONENTES DA ESTRUTURA
+
+A estrutura de uma Borboleta é composta por:
+- **Opções Call ou Put**: Normalmente, a Borboleta é montada com opções do mesmo tipo, ou seja, todas calls ou todas puts.
+- **Strikes**: A estrutura envolve a compra de uma opção com strike mais baixo (ITM ou OTM), a venda de duas opções com strike central (ATM ou próximo ao ATM) e a compra de uma opção com strike mais alto (OTM).
+- **Relação entre os componentes**: A quantidade de opções vendidas no strike central é o dobro das opções compradas nos strikes extremos.
+- **Custo da montagem**: A Borboleta pode ser montada a um custo de débito, crédito ou até mesmo a custo zero, dependendo da volatilidade implícita e dos preços das opções no momento da montagem.
+
+### 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+O gráfico de payoff de uma Borboleta no vencimento tem o formato de um "V" invertido:
+- **Eixo X**: Representa o preço do ativo-objeto no vencimento.
+- **Eixo Y**: Representa o resultado financeiro da posição (lucro ou prejuízo).
+- **Pontos-chave**:
+  - **Breakeven**: Os pontos de equilíbrio são os preços do ativo onde o lucro é zero. São calculados considerando o prêmio pago ou recebido.
+  - **Ganho Máximo**: Ocorre quando o preço do ativo termina exatamente no strike central.
+  - **Perda Máxima**: Limitada ao custo da estrutura, se montada a débito.
+- **Zonas de lucro e prejuízo**: A zona de lucro é estreita, centrada no strike médio, enquanto as zonas de prejuízo estão nos extremos, além dos pontos de breakeven.
+- **Formato da curva**: A curva é simétrica em relação ao strike central, com um pico no centro e declínios suaves em direção aos extremos.
+
+### 4. EXEMPLO NUMÉRICO
+
+Considere um ativo fictício com preço atual de R$ 100. A estrutura de Borboleta é montada com os seguintes strikes:
+- Compra de 1 Call com strike R$ 90
+- Venda de 2 Calls com strike R$ 100
+- Compra de 1 Call com strike R$ 110
+
+Suponha que o custo para montar essa estrutura seja um débito de R$ 2 por contrato. Vamos calcular o resultado em três cenários:
+
+- **Ativo a R$ 80**: Todas as opções expiram sem valor. Perda máxima de R$ 2.
+- **Ativo a R$ 100**: As Calls vendidas expiram sem valor, enquanto a Call comprada a R$ 90 vale R$ 10. Lucro de R$ 8 (R$ 10 - R$ 2).
+- **Ativo a R$ 120**: Todas as opções são exercidas, mas o ganho das Calls compradas é compensado pela perda nas Calls vendidas. Perda máxima de R$ 2.
+
+### 5. QUANDO USAR
+
+- **Cenários de mercado ideais**: Mercados com baixa volatilidade esperada, onde o ativo subjacente é projetado para permanecer dentro de um intervalo estreito.
+- **Perfil do investidor adequado**: Investidores com uma visão precisa sobre o preço-alvo do ativo no vencimento e que buscam uma estratégia com risco limitado.
+- **Horizonte de tempo recomendado**: Próximo ao vencimento das opções, quando a previsão de preço é mais confiável.
+
+### 6. QUANDO NÃO USAR
+
+- **Cenários desfavoráveis**: Mercados com alta volatilidade ou quando se espera que o ativo subjacente faça movimentos significativos.
+- **Riscos principais**: O principal risco é que o ativo não se mova conforme o esperado, resultando em uma perda limitada ao custo da estrutura.
+- **Armadilhas comuns**: Subestimar a volatilidade do mercado ou superestimar a precisão da previsão de preço.
+
+### 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+- **Diferenças em relação a estruturas parecidas**: Ao contrário de um Straddle ou Strangle, que lucram com movimentos significativos do ativo, a Borboleta é uma estratégia de neutralidade de mercado.
+- **Vantagens e desvantagens comparativas**:
+  - **Vantagens**: Risco limitado e potencial de lucro significativo se o ativo terminar próximo ao strike central.
+  - **Desvantagens**: Lucro limitado a um intervalo estreito de preços, e a estrutura pode resultar em perda se o ativo se mover significativamente para qualquer direção.
+
+Este conteúdo técnico visa fornecer uma compreensão detalhada da estrutura de Compra de Borboleta, permitindo que assessores de investimentos possam explicar e discutir essa estratégia com seus clientes de forma informada e precisa.

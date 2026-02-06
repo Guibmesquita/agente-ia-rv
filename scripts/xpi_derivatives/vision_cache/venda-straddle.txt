@@ -1,0 +1,66 @@
+**1. DEFINIÇÃO E CONCEITO**
+
+A Venda de Straddle é uma estratégia de derivativos que envolve a venda simultânea de uma opção de compra (Call) e uma opção de venda (Put) com o mesmo preço de exercício (strike) e a mesma data de vencimento. Geralmente, essas opções são "at-the-money" (ATM), ou seja, o preço de exercício é próximo ao preço atual do ativo subjacente. O objetivo principal dessa estratégia é capturar o prêmio das duas opções vendidas, lucrando quando o ativo subjacente permanece próximo ao preço de exercício até o vencimento. Essa estratégia é utilizada em contextos de mercado onde se espera baixa volatilidade, ou seja, quando o investidor acredita que o ativo não terá grandes movimentos de preço.
+
+**2. COMPONENTES DA ESTRUTURA**
+
+A estrutura é composta por:
+- Uma opção de compra (Call) vendida.
+- Uma opção de venda (Put) vendida.
+
+Ambas as opções têm o mesmo strike e a mesma data de vencimento. Os strikes típicos são "at-the-money" (ATM), pois é onde o prêmio das opções tende a ser mais alto, maximizando o crédito recebido. A relação entre os componentes é que ambos são vendidos, o que significa que o investidor recebe um crédito inicial. O custo da montagem é, portanto, um crédito, pois o investidor recebe o prêmio das duas opções vendidas.
+
+**3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)**
+
+O gráfico de payoff de uma Venda de Straddle no vencimento tem o seguinte formato:
+
+- **Eixo X:** Representa o preço do ativo subjacente.
+- **Eixo Y:** Representa o resultado financeiro (lucro ou prejuízo).
+
+**Pontos-chave:**
+- **Breakeven:** Existem dois pontos de breakeven. Eles são calculados como o strike mais o prêmio total recebido (para o lado da alta) e o strike menos o prêmio total recebido (para o lado da baixa).
+- **Ganho Máximo:** O ganho máximo é limitado ao prêmio total recebido e ocorre quando o preço do ativo subjacente é exatamente igual ao strike no vencimento.
+- **Perda Máxima:** A perda máxima é teoricamente ilimitada, pois o preço do ativo pode subir indefinidamente ou cair a zero.
+
+**Zonas de lucro e prejuízo:**
+- **Zona de Lucro:** Entre os dois pontos de breakeven.
+- **Zona de Prejuízo:** Fora dos pontos de breakeven.
+
+**Formato da Curva:**
+- A curva é plana no ganho máximo entre os pontos de breakeven e desce linearmente fora desses pontos, indicando perdas crescentes.
+
+**4. EXEMPLO NUMÉRICO**
+
+Considere um ativo fictício com preço de R$ 100. O investidor monta uma Venda de Straddle com as seguintes opções:
+- Call ATM com strike de R$ 100, prêmio de R$ 5.
+- Put ATM com strike de R$ 100, prêmio de R$ 5.
+
+**Prêmio total recebido:** R$ 10.
+
+**Cenários:**
+1. **Ativo a R$ 80:**
+   - Perda na Call: R$ 0 (não exercida).
+   - Perda na Put: R$ 20 (R$ 100 - R$ 80).
+   - Resultado: R$ 10 (prêmio) - R$ 20 = -R$ 10.
+
+2. **Ativo a R$ 100:**
+   - Perda na Call: R$ 0.
+   - Perda na Put: R$ 0.
+   - Resultado: R$ 10 (prêmio) = R$ 10 (ganho máximo).
+
+3. **Ativo a R$ 120:**
+   - Perda na Call: R$ 20 (R$ 120 - R$ 100).
+   - Perda na Put: R$ 0.
+   - Resultado: R$ 10 (prêmio) - R$ 20 = -R$ 10.
+
+**5. QUANDO USAR**
+
+A Venda de Straddle é ideal em cenários de mercado onde se espera estabilidade no preço do ativo subjacente, ou seja, baixa volatilidade. É adequada para investidores com perfil agressivo, que têm uma forte convicção de que o ativo não terá grandes movimentos. O horizonte de tempo recomendado é curto, geralmente até o vencimento das opções, para minimizar a exposição ao risco de movimentos inesperados.
+
+**6. QUANDO NÃO USAR**
+
+Não é recomendável utilizar essa estratégia em mercados com alta volatilidade esperada, como durante eventos econômicos significativos ou anúncios de resultados corporativos. Os principais riscos incluem movimentos bruscos no preço do ativo, que podem gerar perdas significativas. Armadilhas comuns incluem subestimar a volatilidade implícita ou não considerar o impacto de eventos inesperados.
+
+**7. COMPARAÇÃO COM ESTRUTURAS SIMILARES**
+
+Comparada a uma Venda de Strangle, que envolve a venda de opções fora do dinheiro (OTM), a Venda de Straddle oferece um prêmio maior, mas também um risco maior, pois os pontos de breakeven estão mais próximos do preço atual do ativo. Em relação a uma Venda de Iron Condor, que limita as perdas através da compra de opções adicionais, a Venda de Straddle não oferece proteção contra perdas, mas é mais simples e tem custos iniciais menores. As vantagens incluem simplicidade e potencial de ganho máximo mais alto, enquanto as desvantagens são o risco ilimitado e a necessidade de uma previsão precisa da volatilidade.

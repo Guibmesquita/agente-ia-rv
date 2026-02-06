@@ -1,0 +1,103 @@
+### 1. DEFINIÇÃO E CONCEITO
+
+**O que é esta estrutura:**
+O Booster é uma estrutura de derivativos que permite ao investidor obter uma participação ampliada nos ganhos de um ativo subjacente, geralmente o dobro, até um certo limite de valorização, conhecido como "cap". Esta estrutura é projetada para ser de custo zero, o que significa que o investidor não paga um prêmio inicial para montá-la.
+
+**Objetivo principal:**
+O objetivo principal do Booster é maximizar os ganhos em cenários de alta moderada do ativo subjacente, proporcionando ao investidor uma alavancagem nos retornos positivos até um limite predefinido. Isso é feito sem incorrer em custos iniciais, tornando a estratégia atraente para aqueles que buscam potencializar seus retornos sem desembolsar capital adicional.
+
+**Em que contexto de mercado é utilizada:**
+Esta estrutura é ideal em mercados onde se espera uma valorização moderada do ativo subjacente. É utilizada por investidores que têm uma visão otimista, mas não extremamente bullish, sobre o desempenho futuro do ativo e desejam amplificar seus ganhos até um ponto específico.
+
+### 2. COMPONENTES DA ESTRUTURA
+
+**Quais instrumentos são combinados:**
+O Booster é geralmente composto por uma combinação de opções de compra (calls) e, possivelmente, opções de venda (puts) para estruturar o cap e garantir o custo zero. A estrutura básica envolve a compra de uma call ATM (at-the-money) e a venda de duas calls OTM (out-of-the-money) para financiar a operação.
+
+**Strikes típicos:**
+- **ATM (At-The-Money):** Strike igual ao preço atual do ativo.
+- **OTM (Out-Of-The-Money):** Strikes acima do preço atual do ativo, utilizados para estabelecer o cap.
+
+**Relação entre os componentes:**
+A call ATM é comprada para garantir a participação na alta do ativo, enquanto as calls OTM são vendidas para financiar a compra da call ATM e estabelecer o cap. A venda de calls OTM gera um crédito que cobre o custo da call ATM, resultando em uma operação de custo zero.
+
+**Custo da montagem:**
+A estrutura é montada de forma a ser zero-cost, ou seja, o prêmio pago pela call ATM é compensado pelo prêmio recebido pela venda das calls OTM.
+
+### 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+**Formato do gráfico de resultado no vencimento:**
+O gráfico de payoff do Booster tem um formato característico, com uma região de alavancagem nos ganhos até o cap e uma linha reta após o cap, indicando que os ganhos não aumentam além desse ponto.
+
+- **Eixo X:** Representa o preço do ativo-objeto no vencimento.
+- **Eixo Y:** Representa o resultado financeiro (lucro/prejuízo) da estratégia.
+
+**Pontos-chave:**
+- **Breakeven:** O ponto de equilíbrio é geralmente próximo ao preço inicial do ativo, dado que a estrutura é de custo zero.
+- **Ganho máximo:** O ganho máximo é atingido no ponto do cap, onde a participação dobrada na alta é limitada.
+- **Perda máxima:** A perda máxima ocorre se o ativo cair significativamente, sendo equivalente à queda do ativo subjacente.
+
+**Zonas de lucro e prejuízo:**
+- **Zona de lucro:** Entre o preço inicial e o cap, onde o investidor ganha o dobro da valorização do ativo.
+- **Zona de prejuízo:** Abaixo do preço inicial, onde o investidor sofre perdas proporcionais à desvalorização do ativo.
+
+**Formato da curva em cada região:**
+- **Curva ascendente:** Até o cap, com inclinação dobrada.
+- **Curva horizontal:** Após o cap, indicando ganho máximo fixo.
+- **Curva descendente:** Abaixo do preço inicial, refletindo perdas proporcionais.
+
+### 4. EXEMPLO NUMÉRICO
+
+**Ativo fictício com preço de R$ 100:**
+- **Compra de call ATM:** Strike R$ 100
+- **Venda de duas calls OTM:** Strike R$ 110 (cap)
+
+**Cenários:**
+1. **Ativo a R$ 80:**
+   - Perda de R$ 20 por ação (equivalente à queda do ativo).
+2. **Ativo a R$ 100:**
+   - Sem ganho ou perda (breakeven).
+3. **Ativo a R$ 120:**
+   - Ganho máximo de R$ 20 por ação (dobro da alta até o cap de R$ 110).
+
+**Prêmio pago/recebido:**
+- Prêmio pago pela call ATM é compensado pelo prêmio recebido das calls OTM, resultando em custo zero.
+
+### 5. QUANDO USAR
+
+**Cenários de mercado ideais:**
+- Expectativa de alta moderada do ativo subjacente.
+- Volatilidade moderada, onde o custo das opções permite a montagem de uma estrutura de custo zero.
+
+**Perfil do investidor adequado:**
+- Investidores com visão otimista, mas conservadora, sobre o ativo.
+- Aqueles que desejam alavancar ganhos sem incorrer em custos iniciais.
+
+**Horizonte de tempo recomendado:**
+- Curto a médio prazo, alinhado ao vencimento das opções utilizadas na estrutura.
+
+### 6. QUANDO NÃO USAR
+
+**Cenários desfavoráveis:**
+- Expectativa de alta acentuada, onde o cap limitaria ganhos significativos.
+- Mercados de alta volatilidade, onde o custo das opções pode inviabilizar a estrutura de custo zero.
+
+**Riscos principais:**
+- Limitação de ganhos além do cap.
+- Perdas proporcionais em caso de queda do ativo.
+
+**Armadilhas comuns:**
+- Subestimar o impacto do cap em cenários de alta acentuada.
+- Não considerar a liquidez das opções ao montar a estrutura.
+
+### 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+**Diferenças em relação a estruturas parecidas:**
+- **Call Spread:** O Booster oferece alavancagem na alta, enquanto um call spread tradicional não.
+- **Participação Limitada:** Ao contrário de estruturas sem cap, o Booster limita os ganhos máximos.
+
+**Vantagens e desvantagens comparativas:**
+- **Vantagens:** Custo zero, alavancagem nos ganhos até o cap.
+- **Desvantagens:** Limitação de ganhos além do cap, exposição a perdas na queda do ativo.
+
+Este conteúdo detalhado fornece uma visão abrangente sobre a estrutura de derivativos Booster, permitindo que assessores de investimentos compreendam seu funcionamento e aplicação no mercado brasileiro.

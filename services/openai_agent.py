@@ -1751,12 +1751,15 @@ INSTRUÇÕES IMPORTANTES:
                 "quer abrir"
             ])
             
+            derivatives_structures = self._detect_derivatives_structures(context_documents)
+            
             return ai_response, False, {
                 "intent": "question", 
                 "documents": context_documents,
                 "identified_assessor": assessor_data,
                 "fii_external_lookup": fii_lookup_result.get('ticker') if fii_lookup_result else None,
-                "ticker_suggestions": similar_tickers_suggestion
+                "ticker_suggestions": similar_tickers_suggestion,
+                "derivatives_structures": derivatives_structures
             }
             
         except Exception as e:
@@ -1767,6 +1770,36 @@ INSTRUÇÕES IMPORTANTES:
                 {"intent": "error", "error": str(e), "identified_assessor": assessor_data}
             )
     
+    def _detect_derivatives_structures(self, context_documents: list) -> list:
+        """
+        Detecta se os documentos de contexto contêm informações sobre estruturas de derivativos.
+        Retorna lista de slugs de estruturas encontradas para possível envio de diagramas.
+        """
+        structures_found = []
+        seen_slugs = set()
+        
+        for doc in context_documents:
+            metadata = doc.get('metadata', {}) if isinstance(doc, dict) else {}
+            doc_type = metadata.get('type', '')
+            
+            if doc_type in ('derivatives_structure', 'derivatives_structure_technical'):
+                slug = metadata.get('structure_slug', '')
+                if slug and slug not in seen_slugs:
+                    seen_slugs.add(slug)
+                    structures_found.append({
+                        'slug': slug,
+                        'name': metadata.get('product_name', ''),
+                        'tab': metadata.get('tab', ''),
+                        'strategy': metadata.get('strategy', ''),
+                        'has_diagram': metadata.get('has_diagram', 'false') == 'true',
+                        'diagram_path': metadata.get('diagram_image_path', '')
+                    })
+        
+        if structures_found:
+            print(f"[OpenAI] Estruturas de derivativos detectadas: {[s['name'] for s in structures_found]}")
+        
+        return structures_found
+
     def is_available(self) -> bool:
         """Verifica se o agente está configurado e disponível."""
         return self.client is not None

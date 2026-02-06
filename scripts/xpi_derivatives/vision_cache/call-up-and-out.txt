@@ -1,0 +1,108 @@
+# Estrutura de Derivativos: Compra de Call Up and Out
+
+## 1. DEFINIÇÃO E CONCEITO
+
+### O que é esta estrutura
+A "Call Up and Out" é uma opção de compra exótica que incorpora uma barreira de desativação (knock-out). Essa estrutura permite ao investidor participar da valorização de um ativo subjacente até um determinado ponto, chamado de preço de knock-out. Se o preço do ativo atingir ou ultrapassar esse nível durante a vida da opção, a opção é desativada e perde seu valor, impedindo qualquer ganho adicional.
+
+### Objetivo principal
+O principal objetivo da Call Up and Out é oferecer ao investidor uma maneira de lucrar com uma alta moderada no preço do ativo subjacente, ao mesmo tempo em que reduz o custo do prêmio em comparação a uma call tradicional. Isso é alcançado pela introdução da barreira de knock-out, que limita o potencial de ganho.
+
+### Em que contexto de mercado é utilizada
+Essa estrutura é ideal em cenários onde o investidor espera uma valorização moderada do ativo subjacente, mas não uma alta substancial que ultrapasse o nível de knock-out. É frequentemente utilizada em mercados com volatilidade moderada, onde o investidor busca uma exposição controlada ao risco de alta.
+
+## 2. COMPONENTES DA ESTRUTURA
+
+### Quais instrumentos são combinados
+A estrutura é composta por uma única opção de compra (call) com uma barreira de knock-out. Não há combinação com puts ou futuros, mas a característica exótica da barreira a diferencia de uma call tradicional.
+
+### Strikes típicos
+- **ATM (At The Money):** O strike é próximo ao preço atual do ativo subjacente.
+- **OTM (Out of The Money):** O strike está acima do preço atual do ativo.
+- **ITM (In The Money):** Menos comum, mas pode ser usado se o investidor desejar uma proteção adicional.
+
+### Relação entre os componentes
+A relação principal é entre o preço de exercício (strike) da call e o nível de knock-out. O strike determina o ponto a partir do qual o investidor começa a lucrar, enquanto o knock-out define o limite superior da valorização.
+
+### Custo da montagem
+A Call Up and Out é geralmente montada com um custo de débito, já que o investidor paga um prêmio para adquirir a opção. No entanto, esse prêmio é menor do que o de uma call tradicional devido à presença da barreira de knock-out.
+
+## 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+### Descrição do formato do gráfico de resultado no vencimento
+O gráfico de payoff de uma Call Up and Out tem um formato característico:
+
+- **Eixo X:** Representa o preço do ativo-objeto no vencimento.
+- **Eixo Y:** Representa o resultado financeiro (lucro ou prejuízo).
+
+### Pontos-chave
+- **Breakeven:** O ponto em que o preço do ativo subjacente iguala o strike mais o prêmio pago.
+- **Ganho máximo:** Ocorre quando o preço do ativo está abaixo do nível de knock-out, mas acima do breakeven.
+- **Perda máxima:** Limitada ao prêmio pago, ocorre se o preço do ativo estiver abaixo do strike no vencimento ou se a barreira de knock-out for atingida.
+
+### Zonas de lucro e prejuízo
+- **Zona de lucro:** Entre o breakeven e o nível de knock-out, sem que a barreira seja atingida.
+- **Zona de prejuízo:** Abaixo do breakeven ou se a barreira de knock-out for atingida.
+
+### Formato da curva em cada região
+- **Abaixo do breakeven:** A curva é negativa, indicando prejuízo.
+- **Entre o breakeven e o knock-out:** A curva é positiva e linear, indicando lucro crescente.
+- **Acima do knock-out:** A curva retorna a zero, indicando que a opção foi desativada.
+
+## 4. EXEMPLO NUMÉRICO
+
+### Ativo fictício com preço de R$ 100
+- **Strike da Call:** R$ 105
+- **Nível de Knock-out:** R$ 115
+- **Prêmio pago:** R$ 2
+
+### Cálculo do resultado em 3 cenários
+1. **Ativo a R$ 80:**
+   - Resultado: -R$ 2 (perda do prêmio pago)
+2. **Ativo a R$ 100:**
+   - Resultado: -R$ 2 (perda do prêmio pago)
+3. **Ativo a R$ 120:**
+   - A opção é desativada ao atingir R$ 115.
+   - Resultado: -R$ 2 (perda do prêmio pago)
+
+### Prêmio pago/recebido
+O investidor paga um prêmio de R$ 2 para montar a estrutura.
+
+## 5. QUANDO USAR
+
+### Cenários de mercado ideais
+- Expectativa de alta moderada no ativo subjacente.
+- Volatilidade controlada, sem grandes oscilações esperadas.
+
+### Perfil do investidor adequado
+- Investidores que buscam exposição a uma alta limitada.
+- Aqueles que desejam reduzir o custo do prêmio em relação a uma call tradicional.
+
+### Horizonte de tempo recomendado
+- Curto a médio prazo, alinhado com a expectativa de alta moderada.
+
+## 6. QUANDO NÃO USAR
+
+### Cenários desfavoráveis
+- Expectativa de alta significativa além do nível de knock-out.
+- Mercados altamente voláteis, onde a barreira pode ser facilmente atingida.
+
+### Riscos principais
+- Perda total do prêmio se a barreira de knock-out for atingida.
+- Limitação de ganhos em caso de alta significativa.
+
+### Armadilhas comuns
+- Subestimar a volatilidade do mercado.
+- Escolher níveis de knock-out inadequados.
+
+## 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+### Diferenças em relação a estruturas parecidas
+- **Call tradicional:** Não possui barreira de knock-out, permitindo ganhos ilimitados.
+- **Call Up and In:** Ativada ao atingir um nível de preço, ao contrário da desativação da Up and Out.
+
+### Vantagens e desvantagens comparativas
+- **Vantagens:** Menor custo do prêmio, adequado para altas moderadas.
+- **Desvantagens:** Limitação de ganhos e risco de desativação.
+
+Este conteúdo técnico detalhado sobre a estrutura de derivativos "Compra de Call Up and Out" visa fornecer uma compreensão abrangente para assessores de investimentos, permitindo-lhes avaliar adequadamente o uso desta estratégia em diferentes cenários de mercado.

@@ -624,6 +624,23 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             print(f"[WEBHOOK] Resultado envio Z-API: {send_result}")
             if send_result.get("success"):
                 response_sent_successfully = True
+                
+                derivatives_structures = context.get("derivatives_structures", []) if context else []
+                if derivatives_structures:
+                    for struct in derivatives_structures[:1]:
+                        if struct.get("has_diagram") and struct.get("diagram_path"):
+                            import os
+                            diagram_path = struct["diagram_path"]
+                            if os.path.exists(diagram_path):
+                                try:
+                                    domain = os.environ.get("REPLIT_DEV_DOMAIN", os.environ.get("REPL_SLUG", ""))
+                                    slug = struct["slug"]
+                                    image_url = f"https://{domain}/static/derivatives_diagrams/{slug}.png"
+                                    caption = f"📊 Diagrama: {struct['name']}"
+                                    await zapi_client.send_image(phone, image_url, caption=caption)
+                                    print(f"[WEBHOOK] Diagrama de derivativos enviado: {struct['name']}")
+                                except Exception as img_err:
+                                    print(f"[WEBHOOK] Erro ao enviar diagrama: {img_err}")
         else:
             print(f"[WEBHOOK] Resposta vazia - não enviando mensagem ao WhatsApp")
             send_result = {"success": False, "reason": "empty_response"}

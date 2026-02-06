@@ -1,0 +1,105 @@
+# Estrutura de Derivativos: Compra de Call Up and In
+
+## 1. DEFINIÇÃO E CONCEITO
+
+### O que é esta estrutura
+A "Compra de Call Up and In" é uma estratégia de opções exóticas que envolve a aquisição de uma opção de compra (call) que só se torna ativa se o preço do ativo-objeto atingir ou ultrapassar um determinado nível de barreira, conhecido como preço de Knock-in. Até que essa condição seja satisfeita, a opção permanece inativa e, portanto, sem valor.
+
+### Objetivo principal
+O objetivo principal dessa estrutura é permitir que o investidor participe de uma alta significativa no preço do ativo-objeto, pagando um prêmio menor em comparação com uma opção de compra tradicional. Isso ocorre porque a opção só se torna exercível após a barreira ser atingida, reduzindo o custo inicial.
+
+### Em que contexto de mercado é utilizada
+Essa estrutura é geralmente utilizada em mercados onde o investidor espera uma alta expressiva no preço do ativo-objeto, mas deseja minimizar o custo inicial da posição. É particularmente útil em cenários de alta volatilidade, onde o preço do ativo pode atingir a barreira de Knock-in.
+
+## 2. COMPONENTES DA ESTRUTURA
+
+### Quais instrumentos são combinados
+A estrutura é composta por uma única opção de compra (call) com uma característica exótica de barreira (Knock-in).
+
+### Strikes típicos
+Os strikes podem ser configurados como At-the-Money (ATM), Out-of-the-Money (OTM) ou In-the-Money (ITM), dependendo da expectativa do investidor em relação ao movimento do preço do ativo-objeto. No entanto, é comum que o strike seja OTM para reduzir ainda mais o custo.
+
+### Relação entre os componentes
+A relação principal é entre o preço do ativo-objeto e o nível de barreira de Knock-in. A opção só se torna ativa se o preço do ativo atingir ou ultrapassar essa barreira durante a vida da opção.
+
+### Custo da montagem
+A montagem dessa estrutura geralmente envolve um débito, pois o investidor paga um prêmio pela opção de compra. No entanto, esse prêmio é menor do que o de uma call tradicional devido à condição de Knock-in.
+
+## 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+### Descrição do formato do gráfico de resultado no vencimento
+O gráfico de payoff de uma Call Up and In tem um formato peculiar. Antes do preço do ativo atingir a barreira, o payoff é zero, pois a opção não está ativa. Após a barreira ser atingida, o gráfico se assemelha ao de uma call tradicional.
+
+### Eixo X: preço do ativo-objeto
+O eixo X representa o preço do ativo-objeto no vencimento.
+
+### Eixo Y: resultado (lucro/prejuízo)
+O eixo Y representa o resultado financeiro da posição, indicando lucro ou prejuízo.
+
+### Pontos-chave
+- **Breakeven**: O preço do ativo-objeto no qual o lucro da opção iguala o prêmio pago.
+- **Ganho máximo**: Teoricamente ilimitado, pois o preço do ativo pode subir indefinidamente.
+- **Perda máxima**: Limitada ao prêmio pago pela opção.
+
+### Zonas de lucro e prejuízo
+- **Zona de prejuízo**: Quando o preço do ativo-objeto está abaixo do breakeven.
+- **Zona de lucro**: Quando o preço do ativo-objeto está acima do breakeven.
+
+### Formato da curva em cada região
+- **Antes da barreira**: Linha horizontal no eixo X (payoff zero).
+- **Após a barreira**: Inclinação positiva, semelhante a uma call tradicional.
+
+## 4. EXEMPLO NUMÉRICO
+
+### Ativo fictício com preço de R$ 100
+- **Preço do ativo-objeto**: R$ 100
+- **Strike da call**: R$ 105
+- **Barreira de Knock-in**: R$ 110
+- **Prêmio pago**: R$ 2
+
+### Cenário 1: Ativo a R$ 80
+- **Resultado**: A barreira não foi atingida, a opção não é ativada. Perda de R$ 2 (prêmio pago).
+
+### Cenário 2: Ativo a R$ 100
+- **Resultado**: A barreira não foi atingida, a opção não é ativada. Perda de R$ 2 (prêmio pago).
+
+### Cenário 3: Ativo a R$ 120
+- **Resultado**: A barreira foi atingida, a opção é ativada. Lucro de R$ 13 (R$ 120 - R$ 105 - R$ 2).
+
+## 5. QUANDO USAR
+
+### Cenários de mercado ideais
+- Expectativa de alta expressiva no preço do ativo.
+- Alta volatilidade que pode levar o preço a atingir a barreira.
+
+### Perfil do investidor adequado
+- Investidores que buscam alavancagem com custo inicial reduzido.
+- Aqueles que têm uma visão otimista sobre o ativo-objeto.
+
+### Horizonte de tempo recomendado
+- Curto a médio prazo, dependendo do vencimento da opção.
+
+## 6. QUANDO NÃO USAR
+
+### Cenários desfavoráveis
+- Mercados laterais ou de baixa volatilidade.
+- Expectativa de que o preço do ativo não atingirá a barreira.
+
+### Riscos principais
+- O risco de a barreira não ser atingida, resultando na perda total do prêmio pago.
+
+### Armadilhas comuns
+- Subestimar a dificuldade de atingir a barreira.
+- Não considerar o impacto da volatilidade no preço da opção.
+
+## 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+### Diferenças em relação a estruturas parecidas
+- **Call tradicional**: A Call Up and In é mais barata, mas requer que a barreira seja atingida.
+- **Call Up and Out**: A Call Up and In se torna ativa ao atingir a barreira, enquanto a Up and Out se torna inativa.
+
+### Vantagens e desvantagens comparativas
+- **Vantagens**: Menor custo inicial, potencial de ganhos significativos.
+- **Desvantagens**: Risco de a opção não ser ativada, perda total do prêmio se a barreira não for atingida.
+
+Este conteúdo técnico visa fornecer uma compreensão detalhada da estrutura de Compra de Call Up and In, destacando suas características, funcionamento e contextos de uso.

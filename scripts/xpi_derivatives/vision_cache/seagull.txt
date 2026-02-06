@@ -1,0 +1,63 @@
+1. **DEFINIÇÃO E CONCEITO**
+
+   A estrutura conhecida como Seagull, ou Gaivota, é uma estratégia de derivativos que combina um Call Spread com a venda de uma Put. O objetivo principal dessa estrutura é permitir que o investidor participe da alta do ativo subjacente entre dois níveis de preço (strikes) enquanto financia essa posição através da venda de uma Put. A Seagull é geralmente utilizada em contextos de mercado onde o investidor tem uma expectativa de alta moderada para o ativo, mas está disposto a assumir algum risco de queda em troca de um custo de entrada reduzido ou até mesmo nulo.
+
+2. **COMPONENTES DA ESTRUTURA**
+
+   A Seagull é composta por três opções:
+   - **Compra de uma Call**: Geralmente uma Call ATM (At-The-Money) ou ligeiramente OTM (Out-Of-The-Money), que dá ao investidor o direito de comprar o ativo a um preço específico.
+   - **Venda de uma Call com strike mais alto**: Esta é uma Call OTM, que limita o ganho máximo da estrutura.
+   - **Venda de uma Put**: Normalmente uma Put OTM, que gera o crédito necessário para financiar o Call Spread.
+
+   A relação entre os componentes é tal que o prêmio recebido pela venda da Call e da Put deve, idealmente, cobrir o custo da compra da Call, resultando em uma estrutura de custo zero ou muito baixo.
+
+3. **GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)**
+
+   O gráfico de payoff da Seagull no vencimento tem um formato característico:
+   - **Eixo X**: Representa o preço do ativo-objeto no vencimento.
+   - **Eixo Y**: Representa o resultado financeiro (lucro ou prejuízo).
+   - **Pontos-chave**:
+     - **Breakeven**: O ponto onde o investidor não tem lucro nem prejuízo.
+     - **Ganho Máximo**: Ocorre quando o preço do ativo está entre o strike da Call comprada e o strike da Call vendida.
+     - **Perda Máxima**: Ocorre quando o preço do ativo cai abaixo do strike da Put vendida.
+   - **Zonas de lucro e prejuízo**:
+     - Lucro ocorre entre o strike da Call comprada e o strike da Call vendida.
+     - Prejuízo ocorre abaixo do strike da Put vendida.
+   - **Formato da curva**:
+     - A curva é plana e negativa abaixo do strike da Put vendida.
+     - Sobe linearmente entre o strike da Put e o strike da Call comprada.
+     - É plana e positiva entre os strikes das Calls.
+     - Volta a ser plana após o strike da Call vendida.
+
+4. **EXEMPLO NUMÉRICO**
+
+   Considere um ativo fictício com preço atual de R$ 100. A estrutura Seagull é montada com os seguintes strikes:
+   - **Compra de Call**: Strike de R$ 100
+   - **Venda de Call**: Strike de R$ 110
+   - **Venda de Put**: Strike de R$ 90
+
+   - **Cenário 1: Ativo a R$ 80**
+     - A Put vendida é exercida, resultando em uma perda de R$ 10 por ação.
+     - Resultado: Prejuízo de R$ 10 por ação.
+
+   - **Cenário 2: Ativo a R$ 100**
+     - Nenhuma opção é exercida.
+     - Resultado: Lucro/Prejuízo de R$ 0 por ação.
+
+   - **Cenário 3: Ativo a R$ 120**
+     - A Call comprada é exercida, e a Call vendida também é exercida.
+     - Resultado: Ganho máximo de R$ 10 por ação.
+
+   O prêmio total pago/recebido é zero, assumindo que o crédito da Put vendida cobre o débito do Call Spread.
+
+5. **QUANDO USAR**
+
+   A Seagull é ideal em cenários de mercado onde se espera uma alta moderada no preço do ativo subjacente. É adequada para investidores que têm uma visão direcional de alta, mas que estão dispostos a aceitar o risco de queda em troca de um custo de entrada reduzido. O horizonte de tempo recomendado é de curto a médio prazo, alinhado com o vencimento das opções.
+
+6. **QUANDO NÃO USAR**
+
+   A Seagull não é apropriada em mercados altamente voláteis ou quando se espera uma queda acentuada no preço do ativo. Os principais riscos incluem a possibilidade de perda significativa se o preço do ativo cair abaixo do strike da Put vendida. Armadilhas comuns incluem subestimar o risco de queda e não considerar adequadamente a volatilidade implícita das opções.
+
+7. **COMPARAÇÃO COM ESTRUTURAS SIMILARES**
+
+   Comparada a outras estruturas, como o simples Call Spread ou a venda de Put isolada, a Seagull oferece um equilíbrio entre custo e risco. Diferente do Call Spread, que requer um débito inicial, a Seagull pode ser montada a custo zero. Em relação à venda de Put, a Seagull limita o ganho máximo, mas oferece uma participação na alta. As vantagens incluem custo reduzido e participação na alta, enquanto as desvantagens são o risco de perda na queda e o ganho limitado.

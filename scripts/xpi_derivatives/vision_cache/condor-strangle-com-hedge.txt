@@ -1,0 +1,117 @@
+# Estrutura de Derivativos: Compra de Condor e Venda de Strangle com Hedge
+
+## 1. DEFINIÇÃO E CONCEITO
+
+### O que é esta estrutura
+A estrutura de derivativos que combina a compra de uma Condor com a venda de um Strangle hedgeado é uma estratégia complexa que visa capturar ganhos em um cenário de baixa volatilidade, onde o ativo subjacente se mantém dentro de um intervalo de preços predefinido. A Condor é uma estratégia que envolve a compra e venda de opções com diferentes preços de exercício (strikes), enquanto o Strangle consiste na venda de uma call e uma put fora do dinheiro (OTM). O hedge é implementado para limitar o risco potencial do Strangle vendido.
+
+### Objetivo principal
+O objetivo principal desta estrutura é lucrar com a lateralização do ativo subjacente, ou seja, quando o preço do ativo permanece dentro de um intervalo estreito. A estrutura é desenhada para ter um risco limitado, graças ao hedge do Strangle, e para maximizar o ganho quando o ativo termina dentro do intervalo central no vencimento.
+
+### Em que contexto de mercado é utilizada
+Esta estratégia é ideal em cenários de baixa volatilidade, onde o investidor acredita que o ativo subjacente não apresentará grandes movimentos de preço até o vencimento das opções. É particularmente útil em mercados estáveis ou em períodos de incerteza onde grandes oscilações não são esperadas.
+
+## 2. COMPONENTES DA ESTRUTURA
+
+### Quais instrumentos são combinados
+- **Condor**: Envolve a compra de uma call ITM, a venda de duas calls OTM e a compra de uma call ainda mais OTM. Alternativamente, pode ser montada com puts.
+- **Strangle**: Venda de uma call OTM e uma put OTM.
+- **Hedge**: Compra de opções adicionais para limitar o risco do Strangle vendido.
+
+### Strikes típicos
+- **Condor**: Geralmente, os strikes são escolhidos de forma que a call comprada ITM e a call vendida OTM estejam próximas do preço atual do ativo, enquanto a call comprada mais OTM oferece proteção adicional.
+- **Strangle**: As opções vendidas são OTM, com strikes significativamente distantes do preço atual do ativo para capturar prêmio sem expor a grandes riscos.
+
+### Relação entre os componentes
+Os componentes são combinados de forma que a Condor aproveite a lateralização do ativo, enquanto o Strangle vendido, protegido pelo hedge, oferece um prêmio adicional que pode reduzir o custo total da estrutura.
+
+### Custo da montagem
+A estrutura pode ser montada a um custo de débito ou crédito, dependendo dos strikes escolhidos e das condições de mercado. O hedge do Strangle pode aumentar o custo, mas é essencial para limitar o risco.
+
+## 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+### Descrição do formato do gráfico de resultado no vencimento
+O gráfico de payoff desta estrutura apresenta um formato em "M", com zonas de lucro e prejuízo bem definidas.
+
+### Eixo X: preço do ativo-objeto
+O eixo X representa o preço do ativo subjacente no vencimento das opções.
+
+### Eixo Y: resultado (lucro/prejuízo)
+O eixo Y mostra o lucro ou prejuízo da estratégia.
+
+### Pontos-chave
+- **Breakeven**: Os pontos de breakeven são onde o lucro é zero. Existem dois pontos de breakeven, um em cada extremidade do intervalo de lucro.
+- **Ganho máximo**: O ganho máximo ocorre quando o preço do ativo termina dentro do intervalo central da Condor.
+- **Perda máxima**: A perda máxima é limitada e ocorre quando o preço do ativo se move significativamente além dos strikes do Strangle, mas é mitigada pelo hedge.
+
+### Zonas de lucro e prejuízo
+- **Zona de lucro**: Entre os strikes centrais da Condor.
+- **Zona de prejuízo**: Fora dos pontos de breakeven.
+
+### Formato da curva em cada região
+- **Centro**: A curva é plana e representa o ganho máximo.
+- **Extremidades**: A curva desce em direção à perda máxima, mas é limitada pelo hedge.
+
+## 4. EXEMPLO NUMÉRICO
+
+### Ativo fictício com preço de R$ 100
+- **Condor**: 
+  - Compra de call ITM com strike R$ 95
+  - Venda de duas calls OTM com strikes R$ 100 e R$ 105
+  - Compra de call OTM com strike R$ 110
+- **Strangle**:
+  - Venda de call OTM com strike R$ 115
+  - Venda de put OTM com strike R$ 85
+- **Hedge**:
+  - Compra de call com strike R$ 120
+  - Compra de put com strike R$ 80
+
+### Cálculo do resultado em 3 cenários
+- **Ativo a R$ 80**: 
+  - Perda limitada pelo hedge.
+- **Ativo a R$ 100**: 
+  - Ganho máximo, pois o preço está dentro do intervalo central da Condor.
+- **Ativo a R$ 120**: 
+  - Perda limitada pelo hedge.
+
+### Prêmio pago/recebido
+O prêmio total depende dos preços das opções no momento da montagem, mas o Strangle vendido ajuda a compensar o custo da Condor e do hedge.
+
+## 5. QUANDO USAR
+
+### Cenários de mercado ideais
+- Baixa volatilidade
+- Expectativa de lateralização do ativo
+
+### Perfil do investidor adequado
+- Investidores com tolerância a risco moderado
+- Aqueles que buscam estratégias de retorno limitado com risco controlado
+
+### Horizonte de tempo recomendado
+- Curto a médio prazo, alinhado com o vencimento das opções
+
+## 6. QUANDO NÃO USAR
+
+### Cenários desfavoráveis
+- Alta volatilidade
+- Expectativa de grandes movimentos no preço do ativo
+
+### Riscos principais
+- Movimentos inesperados no preço do ativo
+- Mudanças abruptas na volatilidade
+
+### Armadilhas comuns
+- Subestimar o custo do hedge
+- Escolher strikes inadequados que não refletem a expectativa de mercado
+
+## 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+### Diferenças em relação a estruturas parecidas
+- **Condor Simples**: Não inclui o Strangle, portanto, tem um perfil de risco diferente.
+- **Strangle Simples**: Não possui o hedge, expondo a maiores riscos.
+
+### Vantagens e desvantagens comparativas
+- **Vantagens**: Risco limitado, potencial de ganho em mercados lateralizados.
+- **Desvantagens**: Custo potencialmente mais alto devido ao hedge, ganho limitado.
+
+Esta estrutura é uma ferramenta sofisticada que requer um entendimento detalhado dos componentes e das condições de mercado. É essencial que os investidores e assessores compreendam plenamente os riscos e recompensas antes de implementar tal estratégia.

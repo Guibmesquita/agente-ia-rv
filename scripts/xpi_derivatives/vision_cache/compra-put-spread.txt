@@ -1,0 +1,107 @@
+### 1. DEFINIÇÃO E CONCEITO
+
+**O que é esta estrutura:**
+A Compra de Put Spread, também conhecida como Trava de Baixa com Puts, é uma estratégia de derivativos que envolve a compra de uma opção de venda (put) com um preço de exercício (strike) mais alto e a venda de uma opção de venda com um strike mais baixo, ambas com o mesmo vencimento. Essa estrutura é utilizada para capitalizar sobre uma expectativa de queda moderada no preço do ativo subjacente.
+
+**Objetivo principal:**
+O objetivo principal da Compra de Put Spread é obter lucro com a queda do ativo subjacente, limitando ao mesmo tempo o custo da operação em comparação com a compra de uma única put. A estratégia também limita o potencial de lucro, pois a diferença entre os strikes define o ganho máximo possível.
+
+**Em que contexto de mercado é utilizada:**
+Esta estrutura é ideal em um cenário de mercado onde o investidor espera uma queda moderada no preço do ativo subjacente, mas não uma queda acentuada. É frequentemente utilizada quando o investidor deseja proteger parcialmente uma carteira de ações contra uma queda de preço ou quando busca uma exposição direcional negativa com um custo inicial reduzido.
+
+### 2. COMPONENTES DA ESTRUTURA
+
+**Quais instrumentos são combinados:**
+A estrutura combina duas opções de venda (puts):
+- Compra de uma put com strike mais alto.
+- Venda de uma put com strike mais baixo.
+
+**Strikes típicos (ATM, OTM, ITM):**
+- A put comprada geralmente está "At-the-Money" (ATM) ou "In-the-Money" (ITM).
+- A put vendida está "Out-of-the-Money" (OTM).
+
+**Relação entre os componentes:**
+A put comprada oferece proteção contra quedas no preço do ativo subjacente, enquanto a put vendida ajuda a financiar parte do custo da put comprada. A diferença entre os strikes define o intervalo de preço no qual a estratégia é lucrativa.
+
+**Custo da montagem (zero-cost, débito, crédito):**
+A montagem geralmente resulta em um débito líquido, pois o prêmio pago pela put comprada é maior do que o prêmio recebido pela put vendida. No entanto, o custo total é menor do que a compra de uma única put.
+
+### 3. GRÁFICO DE PAYOFF (DESCRIÇÃO DETALHADA)
+
+**Formato do gráfico de resultado no vencimento:**
+O gráfico de payoff de uma Compra de Put Spread tem um formato de "S" invertido.
+
+**Eixo X: preço do ativo-objeto**
+- Representa o preço do ativo subjacente no vencimento das opções.
+
+**Eixo Y: resultado (lucro/prejuízo)**
+- Representa o lucro ou prejuízo da estratégia no vencimento.
+
+**Pontos-chave:**
+- **Breakeven:** O preço do ativo subjacente no qual o investidor não tem lucro nem prejuízo. Calculado como o strike da put comprada menos o custo líquido da montagem.
+- **Ganho máximo:** Ocorre quando o preço do ativo subjacente está abaixo do strike da put vendida no vencimento. É a diferença entre os strikes menos o custo líquido da montagem.
+- **Perda máxima:** Ocorre quando o preço do ativo subjacente está acima do strike da put comprada no vencimento. É igual ao custo líquido da montagem.
+
+**Zonas de lucro e prejuízo:**
+- **Lucro:** Quando o preço do ativo subjacente está entre o breakeven e o strike da put vendida.
+- **Prejuízo:** Quando o preço do ativo subjacente está acima do breakeven ou abaixo do strike da put vendida.
+
+**Formato da curva em cada região:**
+- **Acima do strike da put comprada:** Perda máxima.
+- **Entre os strikes:** Lucro crescente até o ganho máximo.
+- **Abaixo do strike da put vendida:** Ganho máximo.
+
+### 4. EXEMPLO NUMÉRICO
+
+**Ativo fictício com preço de R$ 100:**
+- **Compra de put com strike de R$ 105:** Prêmio pago de R$ 7.
+- **Venda de put com strike de R$ 95:** Prêmio recebido de R$ 3.
+
+**Custo líquido da montagem:** R$ 4 (R$ 7 - R$ 3).
+
+**Cenários:**
+- **Ativo a R$ 80:**
+  - Ganho máximo: (R$ 105 - R$ 95) - R$ 4 = R$ 6.
+- **Ativo a R$ 100:**
+  - Lucro: (R$ 105 - R$ 100) - R$ 4 = R$ 1.
+- **Ativo a R$ 120:**
+  - Perda máxima: -R$ 4.
+
+### 5. QUANDO USAR
+
+**Cenários de mercado ideais:**
+- Expectativa de queda moderada no preço do ativo subjacente.
+- Volatilidade implícita das opções relativamente baixa.
+
+**Perfil do investidor adequado:**
+- Investidores que buscam proteção parcial para uma carteira de ações.
+- Investidores com uma perspectiva direcional negativa moderada.
+
+**Horizonte de tempo recomendado:**
+- Curto a médio prazo, geralmente alinhado com o vencimento das opções.
+
+### 6. QUANDO NÃO USAR
+
+**Cenários desfavoráveis:**
+- Expectativa de queda acentuada no preço do ativo subjacente.
+- Volatilidade implícita alta, tornando as opções mais caras.
+
+**Riscos principais:**
+- Limitação do ganho máximo.
+- Perda máxima igual ao custo da montagem.
+
+**Armadilhas comuns:**
+- Subestimar o impacto da volatilidade implícita.
+- Escolher strikes inadequados que não refletem a expectativa de mercado.
+
+### 7. COMPARAÇÃO COM ESTRUTURAS SIMILARES
+
+**Diferenças em relação a estruturas parecidas:**
+- **Compra de Put Simples:** Maior custo inicial, mas potencial de ganho ilimitado.
+- **Venda de Call Coberta:** Gera receita de prêmio, mas não oferece proteção contra quedas.
+
+**Vantagens e desvantagens comparativas:**
+- **Vantagens:** Custo inicial reduzido em comparação com a compra de put simples.
+- **Desvantagens:** Ganho limitado em comparação com a compra de put simples.
+
+Este material serve como um guia técnico para assessores de investimentos que desejam entender a estratégia de Compra de Put Spread no mercado brasileiro, proporcionando uma base sólida para a análise e implementação dessa estrutura em portfólios de clientes.
