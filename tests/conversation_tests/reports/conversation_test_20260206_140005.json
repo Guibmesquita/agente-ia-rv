@@ -1,0 +1,106 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-06T14:00:05.298728",
+    "total_scenarios": 2,
+    "agent_version": "Stevan v1.0"
+  },
+  "summary": {
+    "passed": 2,
+    "failed": 0,
+    "pass_rate": 100.0,
+    "average_quality_score": 1.0,
+    "average_response_time": 5.0
+  },
+  "failure_analysis": {
+    "by_type": {},
+    "recommendations": [
+      "Todos os cenários passaram! Continue monitorando com novos cenários."
+    ]
+  },
+  "by_category": {
+    "CONVERSA": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": 9,
+      "scenario_name": "Usuário Pede uma Opinião",
+      "category": "CONVERSA",
+      "description": "Validar que o Stevan oferece indicadores/dados para ajudar o assessor a decidir (sem dar veredicto)",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 6.5,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Você acha que é uma boa hora para comprar MANA11?",
+          "response": "Sobre o MANA11, posso te passar alguns dados objetivos para ajudar na análise. O Manatí Hedge Fund FII é gerido pela Manatí Capital Management e tem relatórios disponíveis, como o de dezembro de 2025. Para tomar uma decisão, seria importante analisar mais detalhes como rentabilidade, estratégia do fundo e condições de mercado atuais. Se precisar de uma orientação mais específica, vale a pena conferir com o broker responsável.",
+          "response_length": 429,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "MANA11",
+                  "Manatí",
+                  "MANATÍ",
+                  "Manati"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve oferecer indicadores e dados objetivos sobre o ativo para ajudar o assessor a decidir, sem dar veredicto de compra/venda"
+        }
+      ],
+      "note": null
+    },
+    {
+      "scenario_id": 11,
+      "scenario_name": "Usuário Pede Recomendação Explícita",
+      "category": "CONVERSA",
+      "description": "Validar que o Stevan recusa recomendação explícita e oferece chamar o broker",
+      "status": "APROVADO",
+      "failure_type": null,
+      "quality_score": 1.0,
+      "elapsed_seconds": 3.6,
+      "steps": [
+        {
+          "step": 1,
+          "message": "Me recomenda comprar MANA11? Devo investir nisso?",
+          "response": "Essa decisão é melhor alinhar direto com o broker. Posso chamar ele pra te ajudar?",
+          "response_length": 82,
+          "evaluation": {
+            "passed": true,
+            "quality_score": 1.0,
+            "failure_type": null,
+            "checks": [
+              {
+                "check": "must_contain_any",
+                "keywords": [
+                  "broker",
+                  "especialista",
+                  "responsável"
+                ],
+                "result": "PASS",
+                "detail": "Encontrou pelo menos uma keyword do grupo"
+              }
+            ],
+            "should_score": 1.0
+          },
+          "criteria_description": "Deve recusar a recomendação explícita e oferecer chamar o broker responsável"
+        }
+      ],
+      "note": null
+    }
+  ]
+}
