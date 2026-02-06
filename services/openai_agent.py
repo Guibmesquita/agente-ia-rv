@@ -401,9 +401,18 @@ CLASSIFIQUE a mensagem em UMA das categorias:
    "monta um pitch do TG Core", "cria um texto de venda para XPLG11", "me ajuda a vender TGRI"
    EXTRAIR o produto mencionado.
 
-6. ATENDIMENTO_HUMANO - Pedidos EXPLÍCITOS de atendimento humano, abrir chamado/ticket, falar com alguém:
-   "preciso de ajuda humana", "quero falar com alguém", "abre um chamado", "pode me transferir",
-   "preciso de atendimento", "chama um especialista", "quero suporte humano", "abre um ticket"
+6. ATENDIMENTO_HUMANO - SOMENTE quando o assessor pede EXPLICITAMENTE para falar com uma PESSOA, HUMANO ou BROKER:
+   "quero falar com alguém", "quero falar com um humano", "chama o broker", "me transfere pra pessoa",
+   "abre um chamado", "abre um ticket", "quero suporte humano", "preciso falar com gente de verdade"
+   
+   ATENÇÃO - NÃO é ATENDIMENTO_HUMANO:
+   - "consegue me mandar?" -> é pedido ao Stevan, classifique como ESCOPO ou DOCUMENTAL
+   - "pode me ajudar?" -> é pedido ao Stevan, classifique como ESCOPO ou DOCUMENTAL
+   - "me explica isso?" -> é pedido ao Stevan, classifique como ESCOPO ou DOCUMENTAL
+   - "quero o gráfico da booster" -> é pedido de material, classifique como DOCUMENTAL
+   - "me manda o exemplo da collar" -> é pedido de material, classifique como DOCUMENTAL
+   - Qualquer pergunta sobre produtos, estratégias, mercado -> Stevan responde, NÃO escale
+   O Stevan é a LINHA DE FRENTE. Ele deve SEMPRE tentar responder. Só classifique como ATENDIMENTO_HUMANO quando o assessor pedir EXPLICITAMENTE para falar com humano/pessoa/broker.
 
 7. FORA_ESCOPO - APENAS piadas, assuntos pessoais, temas completamente não relacionados a finanças.
    NÃO classifique perguntas sobre mercado, ações, fundos ou investimentos como FORA_ESCOPO.
@@ -419,7 +428,10 @@ Exemplos:
 "qual a cotação do PETR4?" -> {"categoria": "MERCADO", "produtos": ["PETR4"]}
 "o que o relatório do MANA11 diz sobre cotistas?" -> {"categoria": "DOCUMENTAL", "produtos": ["MANA11"]}
 "monta um pitch do XPLG11" -> {"categoria": "PITCH", "produtos": ["XPLG11"]}
-"preciso de ajuda humana" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
+"quero falar com alguém" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
+"chama o broker" -> {"categoria": "ATENDIMENTO_HUMANO", "produtos": []}
+"me manda o gráfico da booster" -> {"categoria": "DOCUMENTAL", "produtos": ["BOOSTER"]}
+"consegue me ajudar com isso?" -> {"categoria": "ESCOPO", "produtos": []}
 "conta uma piada" -> {"categoria": "FORA_ESCOPO", "produtos": []}
 
 Retorne APENAS o JSON."""

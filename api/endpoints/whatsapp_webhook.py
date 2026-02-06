@@ -267,13 +267,17 @@ def save_message_zapi(
     return message
 
 
-DIAGRAM_EXPLICIT_KEYWORDS = [
-    "diagrama de payoff", "gráfico de payoff", "grafico de payoff",
-    "me envia o diagrama", "manda o diagrama", "quero ver o diagrama",
-    "envia o diagrama", "mostra o diagrama", "quero o diagrama",
-    "envia o gráfico de payoff", "envia o grafico de payoff",
-    "manda o gráfico de payoff", "manda o grafico de payoff",
-    "mostra o gráfico de payoff", "mostra o grafico de payoff"
+DIAGRAM_VISUAL_KEYWORDS = [
+    "gráfico", "grafico", "diagrama", "imagem", "figura", "visual",
+    "exemplo", "funcionamento", "payoff", "pay off", "pay-off",
+    "ilustração", "ilustracao", "desenho", "esquema"
+]
+
+DIAGRAM_ACTION_KEYWORDS = [
+    "manda", "mandar", "envia", "enviar", "mostra", "mostrar",
+    "quero ver", "quero o", "me envia", "me manda", "me mostra",
+    "consegue mandar", "consegue enviar", "pode mandar", "pode enviar",
+    "tem como mandar", "tem como enviar"
 ]
 
 DIAGRAM_CONFIRMATION_KEYWORDS = [
@@ -282,6 +286,66 @@ DIAGRAM_CONFIRMATION_KEYWORDS = [
     "manda aí", "manda ai", "pode enviar", "sim, envia", "sim envia",
     "quero sim", "manda", "sim"
 ]
+
+DERIVATIVE_STRUCTURE_NAMES = None
+
+def _get_derivative_structure_names():
+    global DERIVATIVE_STRUCTURE_NAMES
+    if DERIVATIVE_STRUCTURE_NAMES is not None:
+        return DERIVATIVE_STRUCTURE_NAMES
+    try:
+        from scripts.xpi_derivatives.derivatives_dataset import get_all_structures
+        structures = get_all_structures()
+        names_map = {}
+        base_names_seen = {}
+        for s in structures:
+            slug = s["slug"]
+            name_lower = s["name"].lower()
+            names_map[name_lower] = slug
+            simple = name_lower.replace("compra de ", "").replace("venda de ", "").replace("compra e venda de ", "")
+            if simple != name_lower:
+                names_map[simple] = slug
+            slug_clean = slug.replace("-", " ")
+            names_map[slug_clean] = slug
+            for alias in s.get("keywords", []):
+                names_map[alias.lower()] = slug
+            base_parts = name_lower.split()
+            for word in ["collar", "fence", "straddle", "strangle", "condor", "borboleta", "fly",
+                         "booster", "seagull", "swap", "ndf", "financiamento", "spread"]:
+                if word in base_parts or word in slug_clean:
+                    if word not in base_names_seen:
+                        base_names_seen[word] = slug
+                        names_map[word] = slug
+        DERIVATIVE_STRUCTURE_NAMES = names_map
+    except Exception as e:
+        print(f"[WEBHOOK] Erro ao carregar nomes de estruturas: {e}")
+        DERIVATIVE_STRUCTURE_NAMES = {}
+    return DERIVATIVE_STRUCTURE_NAMES
+
+
+def _detect_diagram_request(msg_lower: str) -> tuple:
+    has_visual_kw = any(kw in msg_lower for kw in DIAGRAM_VISUAL_KEYWORDS)
+    has_action_kw = any(kw in msg_lower for kw in DIAGRAM_ACTION_KEYWORDS)
+
+    if not has_visual_kw:
+        return False, None
+
+    names_map = _get_derivative_structure_names()
+    matched_slug = None
+    matched_name = None
+
+    sorted_names = sorted(names_map.keys(), key=len, reverse=True)
+    for name in sorted_names:
+        if name in msg_lower:
+            matched_slug = names_map[name]
+            matched_name = name
+            break
+
+    if matched_slug:
+        print(f"[DIAGRAM] Pedido de diagrama detectado: visual_kw={has_visual_kw}, action_kw={has_action_kw}, structure='{matched_name}' -> {matched_slug}")
+        return True, matched_slug
+
+    return False, None
 
 
 def _bot_offered_diagram_recently(phone: str) -> bool:
@@ -294,25 +358,89 @@ def _bot_offered_diagram_recently(phone: str) -> bool:
     return False
 
 
+async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
+    import os
+    from scripts.xpi_derivatives.derivatives_dataset import get_all_structures
+
+    structures = get_all_structures()
+    structure = None
+    for s in structures:
+        if s["slug"] == slug:
+            structure = s
+            break
+
+    if not structure:
+        print(f"[DIAGRAM] Estrutura não encontrada para slug: {slug}")
+        return False
+
+    diagram_path = os.path.join("static", "derivatives_diagrams", f"{slug}.png")
+    if not os.path.exists(diagram_path):
+        print(f"[DIAGRAM] Arquivo de diagrama não encontrado: {diagram_path}")
+        return False
+
+    domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
+    if "," in domain:
+        domain = domain.split(",")[0]
+
+    diagram_url = f"https://{domain}/derivatives-diagrams/{slug}.png"
+    name = structure.get("name", slug)
+    caption = f"📊 Diagrama de Payoff - {name}"
+
+    print(f"[DIAGRAM] Enviando diagrama: {name} ({slug}) para {phone}")
+    print(f"[DIAGRAM] URL: {diagram_url}")
+
+    try:
+        result = await zapi_client.send_image(
+            to=phone,
+            image_url=diagram_url,
+            caption=caption
+        )
+
+        if result.get("success"):
+            print(f"[DIAGRAM] Diagrama enviado com sucesso: {name}")
+            save_message_zapi(
+                db,
+                message_id=result.get("message_id"),
+                zaap_id=result.get("zaap_id"),
+                phone=phone,
+                direction=MessageDirection.OUTBOUND.value,
+                message_type=MessageType.IMAGE.value,
+                from_me=True,
+                body=caption,
+                sender_type=SenderType.BOT.value
+            )
+            return True
+        else:
+            print(f"[DIAGRAM] Erro ao enviar diagrama {name}: {result}")
+            return False
+    except Exception as e:
+        print(f"[DIAGRAM] Exceção ao enviar diagrama {name}: {e}")
+        return False
+
+
 async def _send_derivatives_diagram_if_requested(
     phone: str, user_message: str, context: dict, db: Session
 ):
     msg_lower = user_message.lower().strip()
-    
-    is_explicit = any(kw in msg_lower for kw in DIAGRAM_EXPLICIT_KEYWORDS)
+
+    is_diagram_request, detected_slug = _detect_diagram_request(msg_lower)
+
+    if is_diagram_request and detected_slug:
+        await _send_diagram_for_slug(phone, detected_slug, db)
+        return
+
     is_confirmation = (
-        not is_explicit
-        and any(kw in msg_lower for kw in DIAGRAM_CONFIRMATION_KEYWORDS)
+        any(kw in msg_lower for kw in DIAGRAM_CONFIRMATION_KEYWORDS)
         and _bot_offered_diagram_recently(phone)
     )
-    
-    if not is_explicit and not is_confirmation:
+
+    if not is_confirmation:
         return
-    
+
     derivatives_structures = []
     if context:
         derivatives_structures = context.get("derivatives_structures", [])
-    
+
     if not derivatives_structures:
         history = conversation_history.get(phone, [])
         for entry in reversed(history):
@@ -320,41 +448,41 @@ async def _send_derivatives_diagram_if_requested(
                 prev_structures = entry["metadata"].get("derivatives_structures", [])
                 if prev_structures:
                     derivatives_structures = prev_structures
-                    print(f"[WEBHOOK] Usando derivatives_structures do histórico anterior")
+                    print(f"[DIAGRAM] Usando derivatives_structures do histórico anterior")
                     break
-    
+
     if not derivatives_structures:
-        print(f"[WEBHOOK] Pedido de diagrama detectado mas sem estruturas no contexto")
+        print(f"[DIAGRAM] Confirmação de diagrama detectada mas sem estruturas no contexto")
         return
-    
+
     import os
     domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
     if "," in domain:
         domain = domain.split(",")[0]
-    
+
     for structure in derivatives_structures:
         if not structure.get("has_diagram"):
             continue
-        
+
         slug = structure.get("slug", "")
         name = structure.get("name", slug)
-        
+
         diagram_url = f"https://{domain}/derivatives-diagrams/{slug}.png"
-        
-        print(f"[WEBHOOK] Enviando diagrama de payoff: {name} ({slug}) para {phone}")
-        print(f"[WEBHOOK] URL do diagrama: {diagram_url}")
-        
+
+        print(f"[DIAGRAM] Enviando diagrama de payoff: {name} ({slug}) para {phone}")
+        print(f"[DIAGRAM] URL do diagrama: {diagram_url}")
+
         caption = f"📊 Diagrama de Payoff - {name}"
-        
+
         try:
             result = await zapi_client.send_image(
                 to=phone,
                 image_url=diagram_url,
                 caption=caption
             )
-            
+
             if result.get("success"):
-                print(f"[WEBHOOK] Diagrama enviado com sucesso: {name}")
+                print(f"[DIAGRAM] Diagrama enviado com sucesso: {name}")
                 save_message_zapi(
                     db,
                     message_id=result.get("message_id"),
@@ -367,9 +495,9 @@ async def _send_derivatives_diagram_if_requested(
                     sender_type=SenderType.BOT.value
                 )
             else:
-                print(f"[WEBHOOK] Erro ao enviar diagrama {name}: {result}")
+                print(f"[DIAGRAM] Erro ao enviar diagrama {name}: {result}")
         except Exception as e:
-            print(f"[WEBHOOK] Exceção ao enviar diagrama {name}: {e}")
+            print(f"[DIAGRAM] Exceção ao enviar diagrama {name}: {e}")
 
 
 async def process_text_message(phone: str, message: str, db: Session, message_record: WhatsAppMessage = None, conversation: Conversation = None):
@@ -484,6 +612,70 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 conversation.assessor_id = assessor.id
                 conversation.contact_name = assessor.nome
                 db.commit()
+        
+        is_diagram_req, diagram_slug = _detect_diagram_request(normalized_message.lower().strip())
+        if is_diagram_req and diagram_slug:
+            print(f"[WEBHOOK] Interceptando pedido de diagrama ANTES do OpenAI: {diagram_slug}")
+            diagram_sent = await _send_diagram_for_slug(phone, diagram_slug, db)
+            if diagram_sent:
+                from scripts.xpi_derivatives.derivatives_dataset import get_all_structures
+                struct_name = diagram_slug
+                for s in get_all_structures():
+                    if s["slug"] == diagram_slug:
+                        struct_name = s["name"]
+                        break
+                
+                assessor_name = ""
+                if assessor and hasattr(assessor, 'nome') and assessor.nome:
+                    assessor_name = assessor.nome.split()[0]
+                
+                import random
+                diagram_responses = [
+                    f"Aqui o diagrama de payoff da {struct_name}! Se precisar de mais detalhes sobre a estrutura, é só pedir.",
+                    f"Pronto, enviei o diagrama da {struct_name}! Quer que eu explique como funciona?",
+                    f"Aí está o payoff da {struct_name}! Qualquer dúvida sobre a estrutura, me avisa.",
+                ]
+                greeting = f"{assessor_name}, " if assessor_name else ""
+                response = greeting + random.choice(diagram_responses)
+                
+                result = await zapi_client.send_text(phone, response, delay_typing=1)
+                if result.get("success"):
+                    save_message_zapi(
+                        db, message_id=result.get("message_id"), zaap_id=result.get("zaap_id"),
+                        phone=phone, direction=MessageDirection.OUTBOUND.value,
+                        message_type=MessageType.TEXT.value, from_me=True, body=response,
+                        sender_type=SenderType.BOT.value
+                    )
+                
+                if message_record:
+                    message_record.ai_response = response
+                    message_record.ai_intent = "diagram_request"
+                    db.commit()
+                
+                if conversation:
+                    conversation.last_bot_response_at = datetime.utcnow()
+                    db.commit()
+                
+                if phone not in conversation_history:
+                    conversation_history[phone] = []
+                conversation_history[phone].append({"role": "user", "content": normalized_message})
+                conversation_history[phone].append({"role": "assistant", "content": response})
+                
+                try:
+                    await save_conversation_insight(
+                        db=db,
+                        conversation_id=str(conversation.id) if conversation else None,
+                        user_message=normalized_message,
+                        agent_response=response,
+                        resolved_by_ai=True,
+                        escalated_to_human=False,
+                        ticket_id=None,
+                        assessor_phone=phone
+                    )
+                except Exception as insight_err:
+                    print(f"[WEBHOOK] Erro ao salvar insight de diagrama: {insight_err}")
+                
+                return
         
         should_transfer, transfer_reason = should_transfer_to_human(normalized_message, conversation)
         
