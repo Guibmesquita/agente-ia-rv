@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 import json
+import os
 import re
 
 from database.database import get_db, SessionLocal
@@ -420,12 +421,93 @@ async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
 
 
 DIAGRAM_MARKER_PATTERN = re.compile(r'\[ENVIAR_DIAGRAMA:([a-z0-9\-]+)\]')
+MATERIAL_MARKER_PATTERN = re.compile(r'\[ENVIAR_MATERIAL:(\d+)\]')
 
 def _extract_diagram_markers(response: str) -> Tuple[str, List[str]]:
     markers = DIAGRAM_MARKER_PATTERN.findall(response)
     clean_response = DIAGRAM_MARKER_PATTERN.sub('', response).strip()
     clean_response = re.sub(r'\n{3,}', '\n\n', clean_response)
     return clean_response, markers
+
+
+def _extract_material_markers(response: str) -> Tuple[str, List[str]]:
+    markers = MATERIAL_MARKER_PATTERN.findall(response)
+    clean_response = MATERIAL_MARKER_PATTERN.sub('', response).strip()
+    clean_response = re.sub(r'\n{3,}', '\n\n', clean_response)
+    return clean_response, markers
+
+
+async def _send_material_pdf(phone: str, material_id: str, db: Session) -> bool:
+    try:
+        from database.models import Material
+        material = db.query(Material).filter(Material.id == int(material_id)).first()
+        if not material:
+            print(f"[MATERIAL] Material não encontrado: {material_id}")
+            return False
+        
+        if not material.source_file_path:
+            print(f"[MATERIAL] Material {material_id} não possui arquivo PDF")
+            return False
+        
+        file_path = material.source_file_path
+        if not os.path.exists(file_path):
+            print(f"[MATERIAL] Arquivo não encontrado: {file_path}")
+            return False
+        
+        domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
+        if "," in domain:
+            domain = domain.split(",")[0]
+        
+        if not domain:
+            print(f"[MATERIAL] Erro: domínio público não configurado (REPLIT_DOMAINS/REPLIT_DEV_DOMAIN)")
+            return False
+        
+        file_url = f"https://{domain}/{file_path}"
+        
+        product = material.product
+        product_name = product.name if product else material.name
+        filename = f"{product_name} - {material.material_type}.pdf"
+        filename = re.sub(r'[^\w\s\-\.]', '', filename).strip()
+        
+        caption = f"📄 {product_name}"
+        if material.material_type:
+            type_labels = {
+                'one_page': 'One Pager',
+                'apresentacao': 'Apresentação',
+                'comite': 'Material do Comitê',
+                'relatorio': 'Relatório',
+                'lamina': 'Lâmina',
+            }
+            label = type_labels.get(material.material_type, material.material_type.replace('_', ' ').title())
+            caption += f" | {label}"
+        
+        print(f"[MATERIAL] Enviando PDF: {filename} para {phone}")
+        print(f"[MATERIAL] URL: {file_url}")
+        
+        from services.whatsapp_client import WhatsAppClient
+        whatsapp = WhatsAppClient()
+        result = await whatsapp.send_document(phone, file_url, filename, caption)
+        
+        if result.get("success"):
+            print(f"[MATERIAL] PDF enviado com sucesso: {filename}")
+            return True
+        else:
+            print(f"[MATERIAL] Erro ao enviar PDF {filename}: {result}")
+            return False
+    except Exception as e:
+        print(f"[MATERIAL] Exceção ao enviar material {material_id}: {e}")
+        return False
+
+
+async def _send_materials_from_markers(phone: str, material_ids: List[str], db: Session) -> List[str]:
+    sent_ids = []
+    for mid in material_ids:
+        success = await _send_material_pdf(phone, mid, db)
+        if success:
+            sent_ids.append(mid)
+        else:
+            print(f"[MATERIAL-MARKER] Falha ao enviar material ID: {mid}")
+    return sent_ids
 
 
 async def _send_diagrams_from_markers(phone: str, slugs: List[str], db: Session) -> List[str]:
@@ -826,11 +908,17 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         print(f"[WEBHOOK] Resposta gerada: {response[:100] if response else 'VAZIA'}...")
         
         diagram_slugs_from_ai = []
+        material_ids_from_ai = []
         if response:
             clean_response, diagram_slugs_from_ai = _extract_diagram_markers(response)
             if diagram_slugs_from_ai:
                 print(f"[WEBHOOK] Marcações de diagrama detectadas na resposta do OpenAI: {diagram_slugs_from_ai}")
                 response = clean_response
+            
+            clean_response2, material_ids_from_ai = _extract_material_markers(response)
+            if material_ids_from_ai:
+                print(f"[WEBHOOK] Marcações de material detectadas na resposta do OpenAI: {material_ids_from_ai}")
+                response = clean_response2
         
         history.append({"role": "user", "content": normalized_message})
         if response:
@@ -990,6 +1078,14 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     )
                 except Exception as diag_err:
                     print(f"[WEBHOOK] Erro ao enviar diagrama: {diag_err}")
+            
+            if material_ids_from_ai:
+                try:
+                    sent_materials = await _send_materials_from_markers(phone, material_ids_from_ai, db)
+                    if sent_materials:
+                        print(f"[WEBHOOK] Materiais enviados via marcação OpenAI: {sent_materials}")
+                except Exception as mat_err:
+                    print(f"[WEBHOOK] Erro ao enviar materiais via marcação: {mat_err}")
             
             try:
                 await save_conversation_insight(

@@ -914,6 +914,19 @@ CATEGORIAS DE DERIVATIVOS DISPONÍVEIS:
 
 IMPORTANTE: Este fluxo de desambiguação é OBRIGATÓRIO. Não pule etapas. O assessor deve ter controle sobre o nível de detalhe que recebe.
 
+5. ENVIO DE MATERIAL/PDF (FERRAMENTA DE AÇÃO):
+   → Quando o assessor PEDIR para ver/enviar/mandar o material, PDF, one-pager, lâmina ou documento de um produto, inclua a marcação [ENVIAR_MATERIAL:material_id] na sua resposta
+   → O material_id será fornecido nos metadados dos documentos de contexto (campo "material_id")
+   → NUNCA envie material sem o assessor pedir explicitamente
+   → Se houver mais de um material disponível para o produto, pergunte qual o assessor quer
+   → EXEMPLOS DE USO:
+     Assessor: "me manda o PDF do XP Log Prime" → Responda: "Aqui vai o material do XP Log Prime II! [ENVIAR_MATERIAL:22]"
+     Assessor: "tem o one-pager pra eu mandar pro cliente?" → Responda: "Claro! Segue o one-pager. [ENVIAR_MATERIAL:22]"
+     Assessor: "manda o material" (após conversar sobre um produto) → Responda: "Pronto, aí vai! [ENVIAR_MATERIAL:22]"
+     Assessor: "como funciona o XP Log?" → Responda normalmente SEM marcação (não pediu o material, pediu explicação)
+   → ATENÇÃO: Use o CONTEXTO da conversa. Se acabou de falar sobre um produto e o assessor pede "manda o material", envie o material daquele produto.
+   → Se o material_id não estiver disponível nos metadados, NÃO use a marcação. Apenas responda com as informações textuais.
+
 === PERSONALIDADE E TOM (ADITIVO) ===
 
 O agente deve falar de forma natural, próxima e humana, como um broker experiente falando com outro broker.
@@ -1500,7 +1513,19 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
             metadata = doc.get('metadata', {})
             title = metadata.get('title', f'Documento {i}')
             content = doc.get('content', '')
-            context_parts.append(f"[{title}]\n{content}")
+            material_id = metadata.get('material_id', '')
+            product_name = metadata.get('product_name', '')
+            material_type = metadata.get('material_type', '')
+            
+            header = f"[{title}]"
+            if material_id:
+                header += f" (material_id: {material_id})"
+            if product_name:
+                header += f" | Produto: {product_name}"
+            if material_type:
+                header += f" | Tipo: {material_type}"
+            
+            context_parts.append(f"{header}\n{content}")
             
             doc_type = metadata.get('type', '')
             if doc_type in ('derivatives_structure', 'derivatives_structure_technical', 'derivatives_tab'):
