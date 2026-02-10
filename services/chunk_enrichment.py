@@ -137,7 +137,8 @@ def classify_chunk_content(
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
-                    operation='chunk_enrichment'
+                    operation='chunk_enrichment',
+                    context=f'upload:enrich:{product_name}:{product_ticker}' if product_name != 'N/A' else None
                 )
         except Exception:
             pass

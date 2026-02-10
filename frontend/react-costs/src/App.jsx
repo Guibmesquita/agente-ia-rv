@@ -42,6 +42,14 @@ const OPERATION_LABELS = {
   web_search: 'Busca Web (Tavily)',
 }
 
+const UPLOAD_OPERATIONS = new Set([
+  'document_vision_extraction',
+  'document_summary',
+  'metadata_vision_extraction',
+  'ticker_inference',
+  'chunk_enrichment',
+])
+
 const CATEGORY_LABELS = {
   infrastructure: 'Infraestrutura',
   api: 'API / Serviço',
@@ -375,18 +383,32 @@ export default function App() {
     }],
   } : null
 
-  const operationChartData = summary?.by_operation ? {
-    labels: summary.by_operation.slice(0, 8).map(o => OPERATION_LABELS[o.operation] || o.operation),
-    datasets: [{
-      label: 'Custo (R$)',
-      data: summary.by_operation.slice(0, 8).map(o => o.cost_brl),
-      backgroundColor: [
-        '#772B21', '#2563eb', '#7c3aed', '#059669',
-        '#dc2626', '#0891b2', '#c026d3', '#8b4513'
-      ],
-      borderRadius: 6,
-    }],
-  } : null
+  const operationChartData = summary?.by_operation ? (() => {
+    const uploadOps = summary.by_operation.filter(o => UPLOAD_OPERATIONS.has(o.operation))
+    const otherOps = summary.by_operation.filter(o => !UPLOAD_OPERATIONS.has(o.operation))
+    const grouped = [...otherOps]
+    if (uploadOps.length > 0) {
+      grouped.push({
+        operation: '__uploads__',
+        cost_brl: uploadOps.reduce((s, o) => s + o.cost_brl, 0),
+        cost_usd: uploadOps.reduce((s, o) => s + (o.cost_usd || 0), 0),
+      })
+    }
+    grouped.sort((a, b) => b.cost_brl - a.cost_brl)
+    const top8 = grouped.slice(0, 8)
+    return {
+      labels: top8.map(o => o.operation === '__uploads__' ? 'Processamento de Uploads' : (OPERATION_LABELS[o.operation] || o.operation)),
+      datasets: [{
+        label: 'Custo (R$)',
+        data: top8.map(o => o.cost_brl),
+        backgroundColor: [
+          '#772B21', '#2563eb', '#7c3aed', '#059669',
+          '#dc2626', '#0891b2', '#c026d3', '#8b4513'
+        ],
+        borderRadius: 6,
+      }],
+    }
+  })() : null
 
   const operationChartOptions = {
     responsive: true,
@@ -610,7 +632,18 @@ export default function App() {
           </>
         )}
 
-        {activeTab === 'details' && (
+        {activeTab === 'details' && (() => {
+          const uploadRows = breakdown.filter(b => UPLOAD_OPERATIONS.has(b.operation))
+          const otherRows = breakdown.filter(b => !UPLOAD_OPERATIONS.has(b.operation))
+          const uploadSummary = uploadRows.length > 0 ? {
+            count: uploadRows.reduce((s, b) => s + b.count, 0),
+            total_prompt_tokens: uploadRows.reduce((s, b) => s + b.total_prompt_tokens, 0),
+            total_completion_tokens: uploadRows.reduce((s, b) => s + b.total_completion_tokens, 0),
+            total_tokens: uploadRows.reduce((s, b) => s + b.total_tokens, 0),
+            cost_brl: uploadRows.reduce((s, b) => s + b.cost_brl, 0),
+            cost_usd: uploadRows.reduce((s, b) => s + b.cost_usd, 0),
+          } : null
+          return (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Detalhamento por Operação</h3>
             {breakdown.length > 0 ? (
@@ -629,8 +662,46 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {breakdown.map((b, i) => (
-                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                    {uploadSummary && (
+                      <tr className="border-b border-primary/10 bg-primary/5 font-medium">
+                        <td className="py-3 px-4" colSpan={1}>
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-primary" />
+                            <span className="text-primary">Processamento de Uploads</span>
+                            <span className="text-xs text-gray-400 font-normal">({uploadRows.length} sub-operações)</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 bg-primary/10 rounded text-xs font-mono text-primary">vários</span>
+                        </td>
+                        <td className="text-right py-3 px-4">{formatNumber(uploadSummary.count)}</td>
+                        <td className="text-right py-3 px-4">{formatNumber(uploadSummary.total_prompt_tokens)}</td>
+                        <td className="text-right py-3 px-4">{formatNumber(uploadSummary.total_completion_tokens)}</td>
+                        <td className="text-right py-3 px-4">{formatNumber(uploadSummary.total_tokens)}</td>
+                        <td className="text-right py-3 px-4 text-primary">{formatBRL(uploadSummary.cost_brl)}</td>
+                        <td className="text-right py-3 px-4 text-primary/70">{formatUSD(uploadSummary.cost_usd)}</td>
+                      </tr>
+                    )}
+                    {uploadRows.map((b, i) => (
+                      <tr key={`upload-${i}`} className="border-b border-gray-50 hover:bg-gray-50 bg-gray-50/50">
+                        <td className="py-2.5 px-4 pl-10">
+                          <span className="text-gray-600 text-xs">{OPERATION_LABELS[b.operation] || b.operation}</span>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-mono">
+                            {b.model || '-'}
+                          </span>
+                        </td>
+                        <td className="text-right py-2.5 px-4 text-gray-500 text-xs">{formatNumber(b.count)}</td>
+                        <td className="text-right py-2.5 px-4 text-gray-500 text-xs">{formatNumber(b.total_prompt_tokens)}</td>
+                        <td className="text-right py-2.5 px-4 text-gray-500 text-xs">{formatNumber(b.total_completion_tokens)}</td>
+                        <td className="text-right py-2.5 px-4 text-gray-500 text-xs">{formatNumber(b.total_tokens)}</td>
+                        <td className="text-right py-2.5 px-4 text-gray-500 text-xs">{formatBRL(b.cost_brl)}</td>
+                        <td className="text-right py-2.5 px-4 text-gray-400 text-xs">{formatUSD(b.cost_usd)}</td>
+                      </tr>
+                    ))}
+                    {otherRows.map((b, i) => (
+                      <tr key={`other-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="py-3 px-4">
                           <span className="font-medium">{OPERATION_LABELS[b.operation] || b.operation}</span>
                         </td>
@@ -669,7 +740,8 @@ export default function App() {
               </div>
             )}
           </div>
-        )}
+          )
+        })()}
 
         {activeTab === 'fixed' && (
           <div className="space-y-6">

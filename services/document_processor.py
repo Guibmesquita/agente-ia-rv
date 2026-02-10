@@ -50,7 +50,7 @@ class DocumentProcessor:
             return convert_from_bytes(pdf_bytes, dpi=150)
         return []
     
-    def analyze_page(self, image: Image.Image, document_title: str = "") -> Dict[str, Any]:
+    def analyze_page(self, image: Image.Image, document_title: str = "", page_number: int = 0) -> Dict[str, Any]:
         """
         Analisa uma página usando GPT-4 Vision.
         Identifica tipo de conteúdo e extrai dados estruturados.
@@ -170,7 +170,8 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                         prompt_tokens=response.usage.prompt_tokens,
                         completion_tokens=response.usage.completion_tokens,
                         total_tokens=response.usage.total_tokens,
-                        operation='document_vision_extraction'
+                        operation='document_vision_extraction',
+                        context=f'doc:{document_title}|pg:{page_number}' if document_title else None
                     )
             except Exception:
                 pass
@@ -243,7 +244,7 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         for i, image in enumerate(images):
             print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages}...")
             
-            page_result = self.analyze_page(image, document_title)
+            page_result = self.analyze_page(image, document_title, page_number=i + 1)
             page_result["page_number"] = i + 1
             pages_data.append(page_result)
             
@@ -314,7 +315,7 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 import time
                 start_time = time.time()
                 
-                page_result = self.analyze_page(image, document_title)
+                page_result = self.analyze_page(image, document_title, page_number=i + 1)
                 page_result["page_number"] = i + 1
                 
                 processing_time_ms = int((time.time() - start_time) * 1000)
@@ -529,7 +530,8 @@ Responda APENAS em JSON no formato:
                         prompt_tokens=response.usage.prompt_tokens,
                         completion_tokens=response.usage.completion_tokens,
                         total_tokens=response.usage.total_tokens,
-                        operation='document_summary'
+                        operation='document_summary',
+                        context=f'doc:{document_title}' if document_title else None
                     )
             except Exception:
                 pass

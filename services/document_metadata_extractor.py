@@ -282,7 +282,7 @@ class DocumentMetadataExtractor:
             return ExtractionResult(confidence=0.0)
         
         try:
-            extraction = self._analyze_with_vision(page_images)
+            extraction = self._analyze_with_vision(page_images, pdf_path=pdf_path)
             
             result = ExtractionResult(
                 fund_name=extraction.get("fund_name"),
@@ -337,7 +337,7 @@ class DocumentMetadataExtractor:
             print(f"[MetadataExtractor] Erro na extração: {e}")
             return ExtractionResult(confidence=0.0, raw_extraction={"error": str(e)})
     
-    def _analyze_with_vision(self, page_images: List[Tuple[int, str]]) -> Dict[str, Any]:
+    def _analyze_with_vision(self, page_images: List[Tuple[int, str]], pdf_path: str = "") -> Dict[str, Any]:
         """Analisa imagens das páginas com GPT-4 Vision."""
         
         content = [
@@ -408,12 +408,16 @@ Responda APENAS em JSON válido com este formato:
             )
             try:
                 if response.usage:
+                    import os as _os
+                    _filename = _os.path.basename(pdf_path) if pdf_path else ''
+                    _pages = ','.join(str(p[0]) for p in page_images) if page_images else ''
                     cost_tracker.track_openai_chat(
                         model=self.model,
                         prompt_tokens=response.usage.prompt_tokens,
                         completion_tokens=response.usage.completion_tokens,
                         total_tokens=response.usage.total_tokens,
-                        operation='metadata_vision_extraction'
+                        operation='metadata_vision_extraction',
+                        context=f'upload:{_filename}|pgs:{_pages}' if _filename else None
                     )
             except Exception:
                 pass
@@ -676,7 +680,8 @@ Resposta:"""
                         prompt_tokens=response.usage.prompt_tokens,
                         completion_tokens=response.usage.completion_tokens,
                         total_tokens=response.usage.total_tokens,
-                        operation='ticker_inference'
+                        operation='ticker_inference',
+                        context=f'upload:inferencia_ticker:{fund_name[:50]}' if fund_name else None
                     )
             except Exception:
                 pass
