@@ -2086,6 +2086,78 @@ async def get_processing_status(
     }
 
 
+@router.post("/materials/{material_id}/queue-resume")
+async def queue_resume_upload(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Adiciona um material pendente na fila de processamento em background.
+    Retoma de onde parou usando o DocumentProcessingJob existente.
+    """
+    from database.models import DocumentProcessingJob, ProcessingJobStatus
+    from services.upload_queue import UploadQueue, UploadQueueItem
+
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    job = db.query(DocumentProcessingJob).filter(
+        DocumentProcessingJob.material_id == material_id
+    ).order_by(DocumentProcessingJob.created_at.desc()).first()
+
+    file_path = None
+    if job and job.file_path and os.path.exists(job.file_path):
+        file_path = job.file_path
+    elif material.source_file_path and os.path.exists(material.source_file_path):
+        file_path = material.source_file_path
+    elif material.file_path and os.path.exists(material.file_path):
+        file_path = material.file_path
+
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado. Faça um novo upload.")
+
+    if job and job.status == ProcessingJobStatus.COMPLETED.value:
+        if job.last_processed_page and job.total_pages and job.last_processed_page >= job.total_pages:
+            raise HTTPException(
+                status_code=400,
+                detail="Este material já foi processado completamente. Não é necessário retomar."
+            )
+
+    existing_job_id = job.id if job else None
+    resume_from = job.last_processed_page if job and job.last_processed_page else 0
+
+    upload_id = str(uuid.uuid4())
+    queue_item = UploadQueueItem(
+        upload_id=upload_id,
+        file_path=file_path,
+        filename=material.source_filename or material.name,
+        material_id=material.id,
+        name=material.name,
+        user_id=current_user.id,
+        material_type=material.material_type or "outro",
+        is_resume=True,
+        resume_from_page=resume_from,
+        existing_job_id=existing_job_id,
+    )
+
+    upload_queue = UploadQueue.get_instance()
+    upload_queue.add(queue_item)
+
+    return {
+        "status": "queued",
+        "upload_id": upload_id,
+        "material_id": material.id,
+        "resuming_from_page": resume_from,
+        "total_pages": job.total_pages if job else None,
+        "message": f"Retomando processamento da página {resume_from + 1}" if resume_from > 0 else "Processamento adicionado à fila"
+    }
+
+
 @router.post("/materials/{material_id}/resume-upload")
 async def resume_upload(
     request: Request,

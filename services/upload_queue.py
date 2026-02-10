@@ -21,7 +21,8 @@ class UploadStatus(str, Enum):
 class UploadQueueItem:
     def __init__(self, upload_id, file_path, filename, material_id, name, user_id,
                  material_type="outro", categories=None, tags=None,
-                 valid_from=None, valid_until=None, selected_product_id=None):
+                 valid_from=None, valid_until=None, selected_product_id=None,
+                 is_resume=False, resume_from_page=0, existing_job_id=None):
         self.upload_id = upload_id
         self.file_path = file_path
         self.filename = filename
@@ -34,6 +35,9 @@ class UploadQueueItem:
         self.valid_from = valid_from
         self.valid_until = valid_until
         self.selected_product_id = selected_product_id
+        self.is_resume = is_resume
+        self.resume_from_page = resume_from_page
+        self.existing_job_id = existing_job_id
         self.status = UploadStatus.QUEUED
         self.progress = 0
         self.current_page = 0
@@ -201,95 +205,125 @@ class UploadQueue:
             mat.processing_status = ProcessingStatus.PROCESSING.value
             db.commit()
 
-            with open(item.file_path, 'rb') as f:
-                file_hash = hashlib.sha256(f.read()).hexdigest()
+            start_page = 0
+            processing_job = None
 
-            doc_processor = get_document_processor()
-            total_pages = doc_processor.get_pdf_page_count(item.file_path)
-            item.total_pages = total_pages
+            if item.is_resume and item.existing_job_id:
+                processing_job = db.query(DocumentProcessingJob).filter(
+                    DocumentProcessingJob.id == item.existing_job_id
+                ).first()
 
-            processing_job = DocumentProcessingJob(
-                material_id=item.material_id,
-                file_path=item.file_path,
-                file_hash=file_hash,
-                total_pages=total_pages,
-                status=ProcessingJobStatus.PROCESSING.value,
-                started_at=datetime.utcnow()
-            )
-            db.add(processing_job)
-            db.commit()
-            db.refresh(processing_job)
-
-            for page_num in range(1, total_pages + 1):
-                page_result = DocumentPageResult(
-                    job_id=processing_job.id,
-                    page_number=page_num,
-                    status=PageProcessingStatus.PENDING.value
-                )
-                db.add(page_result)
-            db.commit()
-
-            item.add_log("Extraindo metadados do documento...", "info")
-            self._broadcast_event({
-                "type": "progress", "upload_id": item.upload_id,
-                "message": "Extraindo metadados...", "progress": 5
-            })
-
-            try:
-                extractor = get_metadata_extractor()
-                existing_products = db.query(Product).filter(
-                    (Product.ticker != "__SYSTEM_UNASSIGNED__") | (Product.ticker == None)
-                ).all()
-                existing_products_list = [{"id": p.id, "name": p.name, "ticker": p.ticker} for p in existing_products]
-
-                metadata = extractor.extract_metadata(
-                    pdf_path=item.file_path,
-                    pages_to_analyze=[0, 1, 2],
-                    existing_products=existing_products_list
-                )
-
-                if mat:
-                    mat.extracted_metadata = json.dumps(metadata.to_dict(), ensure_ascii=False)
+                if processing_job:
+                    start_page = processing_job.last_processed_page or 0
+                    processing_job.status = ProcessingJobStatus.PROCESSING.value
+                    processing_job.retry_count = (processing_job.retry_count or 0) + 1
                     db.commit()
 
-                item.add_log(f"Metadados: {metadata.fund_name or 'N/A'} | Ticker: {metadata.ticker or 'N/A'}", "info")
+                    item.total_pages = processing_job.total_pages
+                    item.current_page = start_page
+                    item.progress = int((start_page / processing_job.total_pages) * 100) if processing_job.total_pages > 0 else 0
+                    item.add_log(f"Retomando da página {start_page + 1}/{processing_job.total_pages}...", "info")
+                    self._broadcast_event({
+                        "type": "progress", "upload_id": item.upload_id,
+                        "message": f"Retomando da página {start_page + 1}...",
+                        "current": start_page, "total": processing_job.total_pages,
+                        "progress": item.progress
+                    })
 
-                if metadata.confidence >= 0.5 and (metadata.ticker or metadata.fund_name):
-                    matched_product = None
-                    if metadata.ticker:
-                        matched_product = db.query(Product).filter(Product.ticker == metadata.ticker).first()
-                    if not matched_product and metadata.fund_name:
-                        from services.document_metadata_extractor import normalize_text
-                        fund_normalized = normalize_text(metadata.fund_name)
-                        for prod in existing_products:
-                            if normalize_text(prod.name) in fund_normalized or fund_normalized in normalize_text(prod.name):
-                                matched_product = prod
-                                break
+            if not processing_job:
+                with open(item.file_path, 'rb') as f:
+                    file_hash = hashlib.sha256(f.read()).hexdigest()
 
-                    if matched_product and matched_product.ticker != "__SYSTEM_UNASSIGNED__":
-                        mat.product_id = matched_product.id
+                doc_processor = get_document_processor()
+                total_pages = doc_processor.get_pdf_page_count(item.file_path)
+                item.total_pages = total_pages
+
+                processing_job = DocumentProcessingJob(
+                    material_id=item.material_id,
+                    file_path=item.file_path,
+                    file_hash=file_hash,
+                    total_pages=total_pages,
+                    status=ProcessingJobStatus.PROCESSING.value,
+                    started_at=datetime.utcnow()
+                )
+                db.add(processing_job)
+                db.commit()
+                db.refresh(processing_job)
+
+                for page_num in range(1, total_pages + 1):
+                    page_result = DocumentPageResult(
+                        job_id=processing_job.id,
+                        page_number=page_num,
+                        status=PageProcessingStatus.PENDING.value
+                    )
+                    db.add(page_result)
+                db.commit()
+
+                item.add_log("Extraindo metadados do documento...", "info")
+                self._broadcast_event({
+                    "type": "progress", "upload_id": item.upload_id,
+                    "message": "Extraindo metadados...", "progress": 5
+                })
+
+                try:
+                    extractor = get_metadata_extractor()
+                    existing_products = db.query(Product).filter(
+                        (Product.ticker != "__SYSTEM_UNASSIGNED__") | (Product.ticker == None)
+                    ).all()
+                    existing_products_list = [{"id": p.id, "name": p.name, "ticker": p.ticker} for p in existing_products]
+
+                    metadata = extractor.extract_metadata(
+                        pdf_path=item.file_path,
+                        pages_to_analyze=[0, 1, 2],
+                        existing_products=existing_products_list
+                    )
+
+                    if mat:
+                        mat.extracted_metadata = json.dumps(metadata.to_dict(), ensure_ascii=False)
                         db.commit()
-                        item.product_name = matched_product.name
-                        item.product_ticker = matched_product.ticker
-                        item.add_log(f"Produto: {matched_product.name} ({matched_product.ticker})", "success")
-                    elif metadata.fund_name and metadata.confidence >= 0.8:
-                        new_product = Product(
-                            name=metadata.fund_name,
-                            ticker=metadata.ticker,
-                            category=metadata.gestora or "FII",
-                            manager=metadata.gestora,
-                            status="ativo"
-                        )
-                        db.add(new_product)
-                        db.commit()
-                        db.refresh(new_product)
-                        mat.product_id = new_product.id
-                        db.commit()
-                        item.product_name = new_product.name
-                        item.product_ticker = new_product.ticker
-                        item.add_log(f"Novo produto criado: {new_product.name}", "success")
-            except Exception as meta_err:
-                item.add_log(f"Aviso: Metadados falhou ({str(meta_err)[:100]})", "warning")
+
+                    item.add_log(f"Metadados: {metadata.fund_name or 'N/A'} | Ticker: {metadata.ticker or 'N/A'}", "info")
+
+                    if metadata.confidence >= 0.5 and (metadata.ticker or metadata.fund_name):
+                        matched_product = None
+                        if metadata.ticker:
+                            matched_product = db.query(Product).filter(Product.ticker == metadata.ticker).first()
+                        if not matched_product and metadata.fund_name:
+                            from services.document_metadata_extractor import normalize_text
+                            fund_normalized = normalize_text(metadata.fund_name)
+                            for prod in existing_products:
+                                if normalize_text(prod.name) in fund_normalized or fund_normalized in normalize_text(prod.name):
+                                    matched_product = prod
+                                    break
+
+                        if matched_product and matched_product.ticker != "__SYSTEM_UNASSIGNED__":
+                            mat.product_id = matched_product.id
+                            db.commit()
+                            item.product_name = matched_product.name
+                            item.product_ticker = matched_product.ticker
+                            item.add_log(f"Produto: {matched_product.name} ({matched_product.ticker})", "success")
+                        elif metadata.fund_name and metadata.confidence >= 0.8:
+                            new_product = Product(
+                                name=metadata.fund_name,
+                                ticker=metadata.ticker,
+                                category=metadata.gestora or "FII",
+                                manager=metadata.gestora,
+                                status="ativo"
+                            )
+                            db.add(new_product)
+                            db.commit()
+                            db.refresh(new_product)
+                            mat.product_id = new_product.id
+                            db.commit()
+                            item.product_name = new_product.name
+                            item.product_ticker = new_product.ticker
+                            item.add_log(f"Novo produto criado: {new_product.name}", "success")
+                except Exception as meta_err:
+                    item.add_log(f"Aviso: Metadados falhou ({str(meta_err)[:100]})", "warning")
+
+            if mat.product:
+                item.product_name = mat.product.name
+                item.product_ticker = mat.product.ticker
 
             ingestor = get_product_ingestor()
 
@@ -303,6 +337,18 @@ class UploadQueue:
                     "progress": item.progress,
                     "message": f"Página {current}/{total}"
                 })
+                processing_job.processed_pages = current
+                try:
+                    db.commit()
+                except Exception:
+                    pass
+
+            def page_completed_callback(page_num, total):
+                processing_job.last_processed_page = page_num + 1
+                try:
+                    db.commit()
+                except Exception:
+                    pass
 
             result = ingestor.process_pdf_with_product_detection_streaming(
                 pdf_path=item.file_path,
@@ -311,7 +357,9 @@ class UploadQueue:
                 db=db,
                 user_id=item.user_id,
                 progress_callback=progress_callback,
-                log_callback=lambda msg, t: item.add_log(msg, t)
+                log_callback=lambda msg, t: item.add_log(msg, t),
+                start_page=start_page,
+                page_completed_callback=page_completed_callback
             )
 
             mat = db.query(Material).filter(Material.id == item.material_id).first()

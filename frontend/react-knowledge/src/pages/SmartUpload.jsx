@@ -112,17 +112,19 @@ export function SmartUpload() {
 
   const handleResumeFromList = async (materialId) => {
     try {
-      const response = await fetch(`/api/products/materials/${materialId}/resume-upload`, {
+      const response = await fetch(`/api/products/materials/${materialId}/queue-resume`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (response.ok) {
-        addToast('Processamento retomado em segundo plano', 'success');
+        const data = await response.json();
+        addToast(data.message || 'Processamento retomado em segundo plano', 'success');
         setShowQueue(true);
         loadQueueStatus();
         loadPendingMaterials();
       } else {
-        addToast('Erro ao retomar processamento', 'error');
+        const err = await response.json().catch(() => ({}));
+        addToast(err.detail || 'Erro ao retomar processamento', 'error');
       }
     } catch (err) {
       addToast(`Erro: ${err.message}`, 'error');
@@ -284,53 +286,66 @@ export function SmartUpload() {
           Estes arquivos tiveram o processamento interrompido. Você pode retomar de onde parou.
         </p>
         <div className="space-y-2">
-          {pendingMaterials.map((material) => (
-            <div 
-              key={material.id}
-              className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-100"
-            >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-medium text-slate-800 truncate">{material.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {material.product_name && (
-                      <span className="text-primary font-medium">{material.product_ticker || material.product_name}</span>
+          {pendingMaterials.map((material) => {
+            const processed = material.job_info?.processed_pages || 0;
+            const total = material.job_info?.total_pages || 0;
+            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+            return (
+              <div 
+                key={material.id}
+                className="p-3 bg-white rounded-lg border border-amber-100"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-800 truncate">{material.name}</p>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                        {material.product_name && (
+                          <span className="text-primary font-medium">{material.product_ticker || material.product_name}</span>
+                        )}
+                        {total > 0 && (
+                          <span>{processed}/{total} páginas ({pct}%)</span>
+                        )}
+                        {material.blocks_count > 0 && (
+                          <span className="text-green-600">{material.blocks_count} blocos</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {material.can_resume ? (
+                      <Button 
+                        size="sm"
+                        onClick={() => handleResumeFromList(material.id)}
+                        className="bg-amber-600 hover:bg-amber-700"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Retomar
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-slate-400 mr-2">Requer re-upload</span>
                     )}
-                    {material.job_info && material.job_info.processed_pages != null && (
-                      <span className="ml-2">
-                        {material.job_info.processed_pages}/{material.job_info.total_pages || '?'} páginas
-                      </span>
-                    )}
-                    {material.blocks_count > 0 && (
-                      <span className="ml-2 text-green-600">{material.blocks_count} blocos</span>
-                    )}
-                  </p>
+                    <button
+                      onClick={() => handleDiscardPending(material.id, material.product_id)}
+                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
+                      title="Descartar"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {material.can_resume ? (
-                  <Button 
-                    size="sm"
-                    onClick={() => handleResumeFromList(material.id)}
-                    className="bg-amber-600 hover:bg-amber-700"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Retomar
-                  </Button>
-                ) : (
-                  <span className="text-xs text-slate-400 mr-2">Requer re-upload</span>
+                {total > 0 && pct > 0 && pct < 100 && (
+                  <div className="mt-2 h-1.5 bg-amber-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-500 rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
                 )}
-                <button
-                  onClick={() => handleDiscardPending(material.id, material.product_id)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
-                  title="Descartar"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </motion.div>
     );

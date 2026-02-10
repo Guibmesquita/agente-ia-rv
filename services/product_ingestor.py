@@ -451,11 +451,13 @@ class ProductIngestor:
         user_id: Optional[int] = None,
         progress_callback: Optional[callable] = None,
         log_callback: Optional[callable] = None,
-        start_page: int = 0
+        start_page: int = 0,
+        page_completed_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Processa PDF com detecção automática de produtos, enviando logs em tempo real.
         start_page: Página inicial para processamento (para retomada).
+        page_completed_callback: Chamado após blocos de cada página serem criados, recebe (page_num, total_pages).
         """
         from database.models import Product, Material
         
@@ -647,6 +649,9 @@ class ProductIngestor:
             
             if blocks_created_page > 0:
                 log(f"Página {page_num}: {blocks_created_page} bloco(s) criado(s)")
+            
+            if page_completed_callback:
+                page_completed_callback(page_num, total_pages)
         
         original_material = db.query(Material).filter(Material.id == material_id).first()
         if original_material:
