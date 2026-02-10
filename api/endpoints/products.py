@@ -1509,7 +1509,10 @@ async def list_pending_materials(
                 "processed_pages": job.processed_pages if job else None,
                 "status": job.status if job else None
             } if job else None,
-            "can_resume": m.processing_status in ['processing', 'failed'] and m.source_file_path is not None
+            "can_resume": m.processing_status in ['processing', 'failed'] and (
+                (m.source_file_path and os.path.exists(m.source_file_path)) or
+                (job and job.file_path and os.path.exists(job.file_path))
+            )
         })
     
     return {"pending_materials": result, "total": len(result)}

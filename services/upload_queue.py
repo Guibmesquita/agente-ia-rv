@@ -250,6 +250,10 @@ class UploadQueue:
                 db.commit()
                 db.refresh(processing_job)
 
+                mat.source_file_path = item.file_path
+                mat.source_filename = mat.source_filename or item.filename
+                db.commit()
+
                 for page_num in range(1, total_pages + 1):
                     page_result = DocumentPageResult(
                         job_id=processing_job.id,
