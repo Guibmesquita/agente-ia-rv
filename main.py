@@ -250,9 +250,6 @@ if os.path.exists(react_insights_dist_path):
 react_costs_dist_path = os.path.join(os.path.dirname(__file__), "frontend", "react-costs", "dist")
 react_costs_assets_path = os.path.join(os.path.dirname(__file__), "frontend", "react-costs", "dist", "assets")
 
-if os.path.exists(react_costs_assets_path):
-    app.mount("/custos/assets", StaticFiles(directory=react_costs_assets_path), name="react-costs-assets")
-
 @app.get("/custos", response_class=HTMLResponse)
 async def custos_page(request: Request):
     """
@@ -297,7 +294,10 @@ if os.path.exists(react_costs_dist_path):
         file_path = os.path.join(react_costs_dist_path, filename)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             from fastapi.responses import FileResponse
-            return FileResponse(file_path)
+            return FileResponse(
+                file_path,
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+            )
         return HTMLResponse(content="Not Found", status_code=404)
 
 
