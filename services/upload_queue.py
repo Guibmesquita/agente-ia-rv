@@ -252,6 +252,8 @@ class UploadQueue:
                         item.current_page = job.last_processed_page or 0
                         if item.total_pages > 0:
                             item.progress = int((item.current_page / item.total_pages) * 100)
+                        item._last_page_timestamp = datetime.utcnow()
+                        item.started_at = datetime.utcnow()
 
                 try:
                     logs = json.loads(db_item.logs or "[]")
