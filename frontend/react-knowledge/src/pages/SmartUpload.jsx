@@ -369,6 +369,19 @@ export function SmartUpload() {
     );
   };
 
+  const formatEta = (seconds) => {
+    if (!seconds || seconds <= 0) return null;
+    if (seconds < 60) return `~${Math.ceil(seconds)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remainMins = mins % 60;
+      return `~${hrs}h${remainMins > 0 ? ` ${remainMins}min` : ''}`;
+    }
+    return secs > 0 ? `~${mins}min ${secs}s` : `~${mins}min`;
+  };
+
   const renderQueueMonitor = () => {
     const activeItems = queueItems
       .filter(i => i.status === 'processing' || i.status === 'queued')
@@ -433,7 +446,12 @@ export function SmartUpload() {
                     </div>
                     <div className="flex justify-between text-xs opacity-75">
                       <span>Página {item.current_page}/{item.total_pages}</span>
-                      <span>{item.progress}%</span>
+                      <span className="flex items-center gap-2">
+                        {item.eta_seconds > 0 && (
+                          <span className="text-primary font-medium">{formatEta(item.eta_seconds)}</span>
+                        )}
+                        <span>{item.progress}%</span>
+                      </span>
                     </div>
                     {item.product_name && (
                       <p className="text-xs mt-1">

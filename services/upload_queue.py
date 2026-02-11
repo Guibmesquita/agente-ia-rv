@@ -53,6 +53,26 @@ class UploadQueueItem:
         self.product_ticker = None
         self.priority = priority
         self._db_id = None
+        self._page_times = []
+        self._last_page_timestamp = None
+        self.eta_seconds = None
+        self.avg_page_time = None
+
+    def record_page_completed(self, completed_page_num, total_pages):
+        now = datetime.utcnow()
+        if self._last_page_timestamp is not None:
+            elapsed = (now - self._last_page_timestamp).total_seconds()
+            self._page_times.append(elapsed)
+        elif self.started_at:
+            elapsed = (now - self.started_at).total_seconds()
+            self._page_times.append(elapsed)
+        self._last_page_timestamp = now
+        pages_done = completed_page_num + 1
+        total = total_pages if total_pages > 0 else self.total_pages
+        if self._page_times and total > 0:
+            self.avg_page_time = round(sum(self._page_times) / len(self._page_times), 1)
+            pages_remaining = max(0, total - pages_done)
+            self.eta_seconds = round(self.avg_page_time * pages_remaining) if pages_remaining > 0 else 0
 
     def add_log(self, message, log_type="info"):
         self.logs.append({
@@ -80,6 +100,8 @@ class UploadQueueItem:
             "product_name": self.product_name,
             "product_ticker": self.product_ticker,
             "priority": self.priority,
+            "eta_seconds": self.eta_seconds,
+            "avg_page_time": self.avg_page_time,
         }
 
 
@@ -545,11 +567,17 @@ class UploadQueue:
 
             def page_completed_callback(page_num, total):
                 processing_job.last_processed_page = page_num + 1
+                item.record_page_completed(page_num, total)
                 try:
                     db.commit()
                 except Exception:
                     pass
                 self._update_db_status(item)
+                self._broadcast_event({
+                    "type": "eta_update", "upload_id": item.upload_id,
+                    "eta_seconds": item.eta_seconds,
+                    "avg_page_time": item.avg_page_time,
+                })
 
             result = ingestor.process_pdf_with_product_detection_streaming(
                 pdf_path=item.file_path,
