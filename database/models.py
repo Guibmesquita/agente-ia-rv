@@ -709,6 +709,7 @@ class ProcessingStatus(str, enum.Enum):
     PROCESSING = "processing"
     SUCCESS = "success"
     FAILED = "failed"
+    PENDING_PRODUCT_MATCH = "pending_product_match"
 
 
 class MaterialType(str, enum.Enum):
@@ -765,8 +766,9 @@ class Product(Base):
     category = Column(String(100), nullable=True, index=True)
     status = Column(String(20), default=ProductStatus.ACTIVE.value)
     description = Column(Text, nullable=True)
-    valid_from = Column(DateTime(timezone=True), nullable=True)  # Data de início da vigência
-    valid_until = Column(DateTime(timezone=True), nullable=True)  # Data de expiração
+    name_aliases = Column(Text, default="[]")
+    valid_from = Column(DateTime(timezone=True), nullable=True)
+    valid_until = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -774,6 +776,23 @@ class Product(Base):
     creator = relationship("User", foreign_keys=[created_by])
     materials = relationship("Material", back_populates="product", cascade="all, delete-orphan")
     scripts = relationship("WhatsAppScript", back_populates="product", cascade="all, delete-orphan")
+
+    def get_aliases(self):
+        import json
+        try:
+            return json.loads(self.name_aliases or "[]")
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def add_alias(self, alias_name):
+        import json
+        aliases = self.get_aliases()
+        normalized = alias_name.strip()
+        if normalized and normalized not in aliases:
+            aliases.append(normalized)
+            self.name_aliases = json.dumps(aliases, ensure_ascii=False)
+            return True
+        return False
 
 
 class Material(Base):
