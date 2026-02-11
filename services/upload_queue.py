@@ -313,11 +313,6 @@ class UploadQueue:
             return False
         if item.status != UploadStatus.QUEUED:
             return False
-        item.status = UploadStatus.FAILED
-        item.error = "Removido da fila pelo usuário"
-        item.completed_at = datetime.utcnow()
-        self._update_db_status(item)
-
         new_queue = queue.Queue()
         while not self._queue.empty():
             try:
@@ -329,19 +324,33 @@ class UploadQueue:
         self._queue = new_queue
 
         from database.database import SessionLocal
-        from database.models import Material
+        from database.models import Material, PersistentQueueItem, ContentBlock
         db = SessionLocal()
         try:
+            db.query(PersistentQueueItem).filter(
+                PersistentQueueItem.upload_id == upload_id
+            ).delete()
+
             mat = db.query(Material).filter(Material.id == item.material_id).first()
-            if mat and mat.processing_status in ('pending', 'processing'):
-                mat.processing_status = 'failed'
-                mat.processing_error = 'Removido da fila pelo usuário'
-                db.commit()
+            if mat:
+                blocks_count = db.query(ContentBlock).filter(ContentBlock.material_id == mat.id).count()
+                if blocks_count == 0:
+                    db.delete(mat)
+                else:
+                    mat.processing_status = 'failed'
+                    mat.processing_error = 'Removido da fila pelo usuário'
+            db.commit()
         except Exception as e:
-            logger.error(f"Erro ao atualizar material ao remover da fila: {e}")
+            logger.error(f"Erro ao limpar dados ao remover da fila: {e}")
             db.rollback()
         finally:
             db.close()
+
+        if item.file_path and os.path.exists(item.file_path):
+            try:
+                os.remove(item.file_path)
+            except Exception:
+                pass
 
         del self._items[upload_id]
         self._broadcast_event({"type": "removed", "upload_id": upload_id})
