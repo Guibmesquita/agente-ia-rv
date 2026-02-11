@@ -168,6 +168,24 @@ export function SmartUpload() {
     }
   };
 
+  const handleRemoveFromQueue = async (uploadId) => {
+    try {
+      const response = await fetch(`/api/products/upload-queue/${uploadId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (response.ok) {
+        addToast('Item removido da fila', 'success');
+        loadQueueStatus();
+      } else {
+        addToast('Não foi possível remover o item', 'error');
+      }
+    } catch (err) {
+      console.error('Erro ao remover da fila:', err);
+      addToast('Erro ao remover da fila', 'error');
+    }
+  };
+
   const addLog = (message, type = 'info') => {
     const time = new Date().toLocaleTimeString('pt-BR');
     setLogs(prev => [...prev, { time, message, type }]);
@@ -431,6 +449,15 @@ export function SmartUpload() {
                           <ChevronDown className="w-4 h-4" />
                         </button>
                       </div>
+                    )}
+                    {isQueued && (
+                      <button
+                        onClick={() => handleRemoveFromQueue(item.upload_id)}
+                        className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remover da fila"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
                     <span className="text-xs font-medium">{getStatusLabel(item.status)}</span>
                   </div>

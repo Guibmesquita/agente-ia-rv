@@ -2692,6 +2692,22 @@ async def reorder_upload_queue(
     return {"status": "ok", "message": "Ordem atualizada"}
 
 
+@router.delete("/upload-queue/{upload_id}")
+async def remove_from_upload_queue(
+    upload_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    from services.upload_queue import upload_queue
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    success = upload_queue.remove_from_queue(upload_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Item não encontrado na fila ou já está sendo processado.")
+
+    return {"status": "ok", "message": "Item removido da fila"}
+
+
 @router.get("/upload-queue/stream")
 async def stream_upload_queue(
     request: Request,

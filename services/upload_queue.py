@@ -307,6 +307,46 @@ class UploadQueue:
             "is_processing": self._processing,
         }
 
+    def remove_from_queue(self, upload_id: str):
+        item = self._items.get(upload_id)
+        if not item:
+            return False
+        if item.status != UploadStatus.QUEUED:
+            return False
+        item.status = UploadStatus.FAILED
+        item.error = "Removido da fila pelo usuário"
+        item.completed_at = datetime.utcnow()
+        self._update_db_status(item)
+
+        new_queue = queue.Queue()
+        while not self._queue.empty():
+            try:
+                uid = self._queue.get_nowait()
+                if uid != upload_id:
+                    new_queue.put(uid)
+            except queue.Empty:
+                break
+        self._queue = new_queue
+
+        from database.database import SessionLocal
+        from database.models import Material
+        db = SessionLocal()
+        try:
+            mat = db.query(Material).filter(Material.id == item.material_id).first()
+            if mat and mat.processing_status in ('pending', 'processing'):
+                mat.processing_status = 'failed'
+                mat.processing_error = 'Removido da fila pelo usuário'
+                db.commit()
+        except Exception as e:
+            logger.error(f"Erro ao atualizar material ao remover da fila: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+        del self._items[upload_id]
+        self._broadcast_event({"type": "removed", "upload_id": upload_id})
+        return True
+
     def reorder(self, upload_id: str, direction: str):
         active_items = [
             item for item in self._items.values()
