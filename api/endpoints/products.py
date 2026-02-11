@@ -23,7 +23,7 @@ from database.models import (
     User, Product, Material, ContentBlock, BlockVersion, 
     WhatsAppScript, PendingReviewItem, DocumentProcessingJob,
     ProductStatus, MaterialType, ContentBlockType, 
-    ContentBlockStatus, ContentSourceType
+    ContentBlockStatus, ContentSourceType, PersistentQueueItem
 )
 from api.endpoints.auth import get_current_user
 from services.vector_store import VectorStore
@@ -1479,8 +1479,13 @@ async def list_pending_materials(
     if current_user.role not in ["admin", "gestao_rv", "broker"]:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
+    active_queue_material_ids = db.query(PersistentQueueItem.material_id).filter(
+        PersistentQueueItem.status.in_(['queued', 'processing'])
+    ).subquery()
+    
     pending_materials = db.query(Material).filter(
-        Material.processing_status.in_(['processing', 'pending', 'failed'])
+        Material.processing_status.in_(['processing', 'pending', 'failed']),
+        ~Material.id.in_(active_queue_material_ids)
     ).options(
         joinedload(Material.product)
     ).order_by(Material.created_at.desc()).all()
