@@ -147,8 +147,10 @@ async def login_form(
         key="access_token",
         value=access_token,
         httponly=True,
-        max_age=86400,  # 24 horas
-        samesite="lax"
+        max_age=86400,
+        samesite="lax",
+        path="/",
+        secure=request.url.scheme == "https"
     )
     return redirect
 
@@ -157,7 +159,7 @@ async def login_form(
 async def logout(response: Response):
     """Remove o cookie de autenticação."""
     redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
-    redirect.delete_cookie(key="access_token")
+    redirect.delete_cookie(key="access_token", path="/")
     return redirect
 
 
@@ -464,7 +466,9 @@ async def microsoft_callback(
             value=access_token,
             httponly=True,
             max_age=86400,
-            samesite="lax"
+            samesite="lax",
+            path="/",
+            secure=request.url.scheme == "https"
         )
         return redirect
         
