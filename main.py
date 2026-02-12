@@ -65,6 +65,12 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     
+    try:
+        from scripts.seed_production import run_seed
+        run_seed()
+    except Exception as e:
+        print(f"[SEED] Aviso: {e}")
+    
     from services.upload_queue import UploadQueue
     upload_queue_instance = UploadQueue.get_instance()
     upload_queue_instance.initialize()
