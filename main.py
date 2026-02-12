@@ -91,8 +91,12 @@ async def check_and_reindex_embeddings():
     """
     Verifica blocos aprovados sem embedding no pgvector e indexa automaticamente.
     Roda uma vez na inicialização como tarefa em background.
+    Inclui retry com backoff exponencial e para após falhas consecutivas.
     """
     await asyncio.sleep(5)
+    
+    MAX_CONSECUTIVE_ERRORS = 3
+    BASE_DELAY = 0.5
     
     try:
         from database.models import ContentBlock, Material, Product
@@ -127,6 +131,7 @@ async def check_and_reindex_embeddings():
             
             indexed = 0
             errors = 0
+            consecutive_errors = 0
             
             for block in missing_blocks:
                 try:
@@ -179,19 +184,40 @@ async def check_and_reindex_embeddings():
                     doc_id = f"product_block_{block.id}"
                     vs.add_document(doc_id, enriched_content, metadata)
                     indexed += 1
+                    consecutive_errors = 0
                     
                     if indexed % 10 == 0:
                         print(f"[REINDEX] Progresso: {indexed}/{len(missing_blocks)}...")
                     
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(BASE_DELAY)
                     
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     errors += 1
-                    print(f"[REINDEX] Erro ao indexar bloco {block.id}: {e}")
-            
-            print(f"[REINDEX] Concluído: {indexed} indexados, {errors} erros")
+                    consecutive_errors += 1
+                    
+                    error_str = str(e)
+                    is_quota_error = '429' in error_str or 'insufficient_quota' in error_str or 'rate_limit' in error_str.lower()
+                    
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                        if is_quota_error:
+                            print(f"[REINDEX] API sem cota/rate limit após {consecutive_errors} tentativas consecutivas. "
+                                  f"Parando re-indexação. {indexed} indexados até agora. "
+                                  f"Restam {len(missing_blocks) - indexed - errors} blocos pendentes (serão indexados no próximo reinício).")
+                        else:
+                            print(f"[REINDEX] {consecutive_errors} erros consecutivos. Parando. {indexed} indexados, {errors} erros.")
+                        break
+                    
+                    if is_quota_error:
+                        wait_time = BASE_DELAY * (2 ** consecutive_errors)
+                        print(f"[REINDEX] Rate limit/cota - aguardando {wait_time:.0f}s antes de tentar novamente... ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS})")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        print(f"[REINDEX] Erro ao indexar bloco {block.id}: {e}")
+                        await asyncio.sleep(BASE_DELAY)
+            else:
+                print(f"[REINDEX] Concluído: {indexed} indexados, {errors} erros")
             
         finally:
             db.close()
@@ -207,7 +233,7 @@ async def confirmation_timeout_scheduler():
     Envia mensagem de confirmação após 5 minutos sem resposta do assessor.
     """
     from services.conversation_flow import check_pending_confirmations
-    from integrations.zapi_client import get_zapi_client
+    from services.whatsapp_client import get_zapi_client
     
     while True:
         try:
