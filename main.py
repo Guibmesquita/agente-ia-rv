@@ -266,6 +266,12 @@ app = FastAPI(
 templates = Jinja2Templates(directory="frontend/templates")
 templates.env.auto_reload = True
 
+from fastapi.responses import FileResponse
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("frontend/static/favicon.ico")
+
 # Monta arquivos estáticos
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
