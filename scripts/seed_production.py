@@ -97,12 +97,17 @@ def run_seed(seed_file=None):
     with open(seed_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
+    seed_tickers = [p.get('ticker', '') for p in data.get('products', []) if p.get('ticker') and p.get('ticker') != '__SYSTEM_UNASSIGNED__']
+    
     db = SessionLocal()
     try:
-        prod_products = db.query(Product).filter(Product.ticker != '__SYSTEM_UNASSIGNED__').count()
-        if prod_products > 0:
-            print(f"Banco já possui {prod_products} produtos. Pulando seed.")
-            return True
+        if seed_tickers:
+            existing_seed_products = db.query(Product).filter(Product.ticker.in_(seed_tickers)).count()
+            if existing_seed_products >= len(seed_tickers):
+                print(f"Banco já possui {existing_seed_products}/{len(seed_tickers)} produtos do seed. Pulando seed.")
+                return True
+            elif existing_seed_products > 0:
+                print(f"Banco possui {existing_seed_products}/{len(seed_tickers)} produtos do seed. Completando importação...")
         
         print("\n--- Iniciando seed de produção ---")
         
