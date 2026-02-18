@@ -36,7 +36,7 @@ def seed_table(db, model, records, id_field='id', skip_existing_ids=None):
             existing = db.query(getattr(model, id_field)).all()
             existing_ids = {getattr(r, id_field) for r in existing}
         except Exception:
-            pass
+            db.rollback()
     else:
         existing_ids = skip_existing_ids
     
@@ -56,14 +56,26 @@ def seed_table(db, model, records, id_field='id', skip_existing_ids=None):
                     val = parse_datetime(val)
                 setattr(obj, col.name, val)
         
+        nested = None
         try:
             nested = db.begin_nested()
             db.add(obj)
             nested.commit()
             count += 1
         except IntegrityError:
+            if nested:
+                nested.rollback()
             skipped += 1
         except Exception as e:
+            if nested:
+                try:
+                    nested.rollback()
+                except Exception:
+                    pass
+            try:
+                db.rollback()
+            except Exception:
+                pass
             print(f"  Erro inesperado ao inserir {model.__tablename__}: {e}")
             skipped += 1
     
@@ -111,29 +123,31 @@ def run_seed(seed_file=None):
         
         print("\n--- Iniciando seed de produção ---")
         
-        n = seed_table(db, User, data.get('users', []))
-        print(f"Usuários inseridos: {n}")
-        update_sequence(db, 'users')
+        seed_ids = {r.get('id') for r in data.get('products', []) if r.get('id')}
+        all_valid_tickers = set(seed_tickers) | {'__SYSTEM_UNASSIGNED__'}
+        orphan_query = db.query(Product).filter(Product.ticker.notin_(all_valid_tickers))
+        if seed_ids:
+            orphan_query = orphan_query.filter(Product.id.notin_(seed_ids))
+        orphan_products = orphan_query.all()
+        if orphan_products:
+            for op in orphan_products:
+                print(f"  Removendo produto órfão: '{op.name}' (ticker: {op.ticker})")
+                db.delete(op)
+            db.flush()
         
-        n = seed_table(db, Assessor, data.get('assessores', []))
-        print(f"Assessores inseridos: {n}")
-        update_sequence(db, 'assessores')
+        tables = [
+            (User, 'users', data.get('users', [])),
+            (Assessor, 'assessores', data.get('assessores', [])),
+            (Product, 'products', data.get('products', [])),
+            (Material, 'materials', data.get('materials', [])),
+            (ContentBlock, 'content_blocks', data.get('content_blocks', [])),
+            (WhatsAppScript, 'whatsapp_scripts', data.get('whatsapp_scripts', [])),
+        ]
         
-        n = seed_table(db, Product, data.get('products', []))
-        print(f"Produtos inseridos: {n}")
-        update_sequence(db, 'products')
-        
-        n = seed_table(db, Material, data.get('materials', []))
-        print(f"Materiais inseridos: {n}")
-        update_sequence(db, 'materials')
-        
-        n = seed_table(db, ContentBlock, data.get('content_blocks', []))
-        print(f"Blocos de conteúdo inseridos: {n}")
-        update_sequence(db, 'content_blocks')
-        
-        n = seed_table(db, WhatsAppScript, data.get('whatsapp_scripts', []))
-        print(f"Scripts WhatsApp inseridos: {n}")
-        update_sequence(db, 'whatsapp_scripts')
+        for model, table_name, records in tables:
+            n = seed_table(db, model, records)
+            print(f"{table_name}: {n} inseridos")
+            update_sequence(db, table_name)
         
         db.commit()
         print("\n--- Seed concluído com sucesso! ---")
