@@ -1,0 +1,122 @@
+A auto-auditoria identificou 4 lacunas reais que precisam ser corrigidas antes do deploy.
+Implemente cada uma na ordem abaixo, pois a primeira é pré-requisito das demais.
+
+CORREÇÃO 1 — Adicionar jti (JWT ID) ao token [pré-requisito para a #2]
+
+No código de geração do JWT (core/security.py), adicione o campo jti usando uuid4:
+
+    import uuid
+    to_encode.update({
+        "exp": expire,
+        "iat": now,
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        "type": "access",
+        "jti": str(uuid.uuid4())   # ← adicionar esta linha
+    })
+
+---
+
+CORREÇÃO 2 — Implementar blacklist de tokens no logout
+
+Crie uma tabela no banco de dados para tokens revogados:
+
+    CREATE TABLE revoked_tokens (
+        jti VARCHAR(36) PRIMARY KEY,
+        revoked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMP NOT NULL
+    );
+
+    # Model SQLAlchemy correspondente:
+    class RevokedToken(Base):
+        __tablename__ = "revoked_tokens"
+        jti = Column(String(36), primary_key=True)
+        revoked_at = Column(DateTime, default=datetime.utcnow)
+        expires_at = Column(DateTime, nullable=False)
+
+No endpoint de logout (api/endpoints/auth.py), antes de deletar os cookies,
+insira o jti do token atual na tabela:
+
+    @router.post("/logout")
+    async def logout(request: Request, response: Response,
+                     current_user = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+        # Extrai o token do cookie
+        token = request.cookies.get("access_token")
+        if token:
+            try:
+                payload = jwt.decode(token, settings.SECRET_KEY,
+                                     algorithms=[settings.ALGORITHM],
+                                     audience=settings.JWT_AUDIENCE,
+                                     issuer=settings.JWT_ISSUER)
+                jti = payload.get("jti")
+                exp = datetime.utcfromtimestamp(payload.get("exp"))
+                if jti:
+                    db.add(RevokedToken(jti=jti, expires_at=exp))
+                    db.commit()
+            except Exception:
+                pass  # token inválido já não representa risco
+        record_security_event("logout", ip=get_remote_address(request))
+        redirect = RedirectResponse(url="/login", status_code=302)
+        redirect.delete_cookie(key="access_token", path="/")
+        redirect.delete_cookie(key="refresh_token", path="/api/auth")
+        return redirect
+
+No middleware de autenticação, após validar o JWT, verifique se o jti
+está na blacklist antes de autorizar:
+
+    jti = payload.get("jti")
+    if jti:
+        revoked = db.query(RevokedToken).filter(RevokedToken.jti == jti).first()
+        if revoked:
+            raise HTTPException(status_code=401, detail="Token revogado")
+
+Adicione também um job de limpeza periódica que deleta tokens expirados
+da tabela (podem ser removidos com segurança após expires_at):
+
+    def cleanup_revoked_tokens(db: Session):
+        db.query(RevokedToken).filter(
+            RevokedToken.expires_at < datetime.utcnow()
+        ).delete()
+        db.commit()
+
+---
+
+CORREÇÃO 3 — Rate limiting nos endpoints SSO
+
+Adicione o decorator de rate limiting nos dois endpoints do fluxo OAuth:
+
+    @router.get("/microsoft/login")
+    @limiter.limit("10/minute")   # limite generoso — usuário legítimo raramente
+    async def microsoft_login(request: Request):  # precisa de mais que isso
+        ...
+
+    @router.get("/microsoft/callback")
+    @limiter.limit("10/minute")
+    async def microsoft_callback(request: Request, ...):
+        ...
+
+---
+
+CORREÇÃO 4 — Flag `secure` no cookie access_token (bônus identificado)
+
+No SSO callback (auth.py, onde o access_token é definido como cookie),
+adicione o flag secure=IS_PRODUCTION para ser consistente com o refresh_token:
+
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=IS_PRODUCTION,    # ← esta linha está faltando
+        samesite="lax",
+        max_age=3600
+    )
+
+---
+
+Após implementar as 4 correções:
+1. Confirme que a tabela revoked_tokens foi criada no banco.
+2. Teste o fluxo completo: login → copie o token → logout → tente usar o
+   token copiado em uma requisição autenticada → deve retornar 401.
+3. Mostre o payload de um JWT gerado após as mudanças para confirmar
+   que o campo jti está presente.
