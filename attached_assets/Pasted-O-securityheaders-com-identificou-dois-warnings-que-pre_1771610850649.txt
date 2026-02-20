@@ -1,0 +1,59 @@
+O securityheaders.com identificou dois warnings que precisam ser corrigidos:
+
+PROBLEMA 1 — unsafe-inline e unsafe-eval no CSP:
+
+Não remova essas diretivas simplesmente — isso vai quebrar o frontend.
+Em vez disso, quero entender o que está causando a necessidade delas:
+
+a) Liste todos os arquivos HTML e templates Jinja2 que contêm tags <script>
+   com código inline (não src externo) ou atributos de evento como onclick,
+   onload, onsubmit diretamente no HTML.
+
+b) Liste todas as bibliotecas JavaScript que usam eval() internamente
+   (geralmente bundlers antigos ou bibliotecas de template client-side).
+
+c) Com base no que encontrar, implemente uma das duas soluções:
+
+   SOLUÇÃO PREFERIDA — Nonces (se houver scripts inline legítimos):
+   No middleware de segurança, gere um nonce único por requisição:
+   
+       import secrets
+       nonce = secrets.token_urlsafe(16)
+       request.state.csp_nonce = nonce  # disponível para os templates
+   
+   Atualize o header CSP para usar o nonce em vez de unsafe-inline:
+       "script-src 'self' 'nonce-{nonce}'"
+   
+   Nos templates Jinja2, adicione o nonce em cada script legítimo:
+       <script nonce="{{ request.state.csp_nonce }}">
+           // código legítimo aqui
+       </script>
+   
+   SOLUÇÃO ALTERNATIVA — Mover scripts para arquivos externos (se viável):
+   Se os scripts inline são pequenos e simples, mova-os para arquivos .js
+   estáticos referenciados com src. Arquivos externos são permitidos pelo
+   'self' sem precisar de unsafe-inline.
+
+d) Se alguma biblioteca externa genuinamente precisar de unsafe-eval
+   (ex: algumas versões de Vue, Angular, ou bundlers antigos), documente
+   isso explicitamente no SECURITY.md como uma exceção conhecida com a
+   justificativa técnica.
+
+---
+
+PROBLEMA 2 — Header HSTS duplicado:
+
+a) Encontre todos os lugares no código onde o header Strict-Transport-Security
+   é adicionado (faça uma busca por "Strict-Transport-Security" em todos os
+   arquivos).
+
+b) Verifique se o Replit ou algum proxy/servidor na frente da aplicação já
+   adiciona esse header automaticamente (isso é comum em plataformas de deploy).
+
+c) Se o header estiver sendo adicionado em dois lugares, remova de um deles —
+   de preferência mantenha apenas no middleware de segurança que já criamos,
+   porque assim temos controle explícito sobre o valor.
+
+d) Após a correção, confirme que o header aparece exatamente uma vez na resposta
+   rodando: curl -I https://sua-url-producao.replit.app | grep -i strict
+   O resultado deve mostrar apenas uma linha com Strict-Transport-Security.
