@@ -88,7 +88,7 @@ async def admin_action(current_user: User = Depends(require_role("admin"))):
 
 ### Rate limiting e account lockout
 
-O login tem rate limiting de **5 requisições por minuto** por IP (via slowapi). Após **10 tentativas falhas**, a conta é bloqueada por **15 minutos**. Esses parâmetros estão definidos em `core/security_middleware.py` nas constantes `LOGIN_MAX_ATTEMPTS` e `LOGIN_LOCKOUT_SECONDS`.
+Os endpoints SSO Microsoft (`/api/auth/microsoft/login` e `/api/auth/microsoft/callback`) têm rate limiting de **10 requisições por minuto** por IP (via slowapi). O login interno está permanentemente desabilitado (410 Gone). Após **10 tentativas falhas** de autenticação, a conta é bloqueada por **15 minutos**. Esses parâmetros estão definidos em `core/security_middleware.py` nas constantes `LOGIN_MAX_ATTEMPTS` e `LOGIN_LOCKOUT_SECONDS`.
 
 ---
 
@@ -101,11 +101,26 @@ Os tokens JWT emitidos por esta aplicação têm as seguintes propriedades obrig
 - **Issuer (`iss`):** `"stevan-api"`. Validado na decodificação.
 - **Audience (`aud`):** `"stevan-frontend"`. Validado na decodificação.
 - **Type claim (`type`):** `"access"` ou `"refresh"`. Validado para impedir uso cruzado.
+- **JWT ID (`jti`):** UUID v4 único por token. Usado para blacklist de tokens revogados.
 - **Algoritmo:** `HS256` com a `SECRET_KEY` definida via variável de ambiente.
 
 O `SECRET_KEY` **nunca pode ter um valor padrão no código.** A aplicação falha explicitamente na inicialização se essa variável não estiver definida ou contiver o valor padrão de desenvolvimento. Nunca adicione um fallback como `os.environ.get("SECRET_KEY", "qualquer_valor_aqui")`.
 
-A implementação dos tokens está em `core/security.py` com as funções `create_access_token`, `create_refresh_token`, `decode_token` e `decode_refresh_token`.
+### Token Blacklist (Revogação)
+
+Quando o usuário faz logout, o `jti` do access token e do refresh token são inseridos na tabela `revoked_tokens` no banco de dados. A partir desse momento, qualquer tentativa de usar um token revogado é rejeitada com HTTP 401, mesmo que o token ainda não tenha expirado. A verificação de blacklist é feita dentro da função `decode_token()`, garantindo que tanto o `GlobalAuthMiddleware` quanto os endpoints que usam `get_current_user` estejam protegidos.
+
+Um scheduler em background (`revoked_tokens_cleanup_scheduler`) remove tokens expirados da blacklist a cada hora, mantendo a tabela limpa sem risco de segurança (tokens expirados já são rejeitados naturalmente pelo JWT).
+
+A implementação dos tokens está em `core/security.py` com as funções `create_access_token`, `create_refresh_token`, `decode_token`, `decode_refresh_token`, `revoke_token`, `is_token_revoked` e `cleanup_revoked_tokens`. O model `RevokedToken` está em `database/models.py`.
+
+### Cookies de sessão
+
+Ambos os cookies (`access_token` e `refresh_token`) são configurados com:
+- `httponly=True` — impede acesso via JavaScript (proteção contra XSS)
+- `secure=IS_PRODUCTION` — transmissão apenas via HTTPS em produção
+- `samesite="lax"` — proteção contra CSRF
+- Paths restritos: `access_token` em `/`, `refresh_token` em `/api/auth`
 
 ---
 
@@ -306,9 +321,10 @@ Este documento foi produzido com base no **OWASP Top 10:2025** e em auditoria de
 | Arquivo | Responsabilidade |
 |---|---|
 | `core/security_middleware.py` | SecurityHeadersMiddleware, GlobalAuthMiddleware, rate limiting (slowapi), CORS, error handlers, `record_security_event()` |
-| `core/security.py` | JWT creation/validation (access + refresh), SECRET_KEY validation, password hashing |
+| `core/security.py` | JWT creation/validation (access + refresh), jti generation, token blacklist (revoke/check), SECRET_KEY validation, password hashing |
 | `core/upload_validator.py` | Upload validation (python-magic MIME, size limits, SHA-256 hash) |
-| `api/endpoints/auth.py` | Login/logout/SSO endpoints, rate limiting, account lockout, refresh token rotation |
+| `api/endpoints/auth.py` | Login/logout/SSO endpoints, rate limiting (10/min SSO), token revocation on logout, refresh token rotation |
+| `database/models.py` (`RevokedToken`) | Tabela de tokens revogados (blacklist) com jti, revoked_at, expires_at |
 
 ---
 

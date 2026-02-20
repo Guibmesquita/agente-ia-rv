@@ -14,8 +14,8 @@ from typing import Optional
 
 from database.database import get_db
 from database import crud
-from core.security import create_access_token, decode_token, create_refresh_token, decode_refresh_token
-from core.security_middleware import record_successful_login, record_security_event, get_remote_address
+from core.security import create_access_token, decode_token, create_refresh_token, decode_refresh_token, revoke_token
+from core.security_middleware import limiter, record_successful_login, record_security_event, get_remote_address
 
 IS_PRODUCTION = bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT"))
 
@@ -94,8 +94,42 @@ async def login_form(request: Request):
 
 @router.post("/logout")
 async def logout(request: Request, response: Response):
-    """Remove o cookie de autenticação."""
-    record_security_event("logout", ip=get_remote_address(request))
+    """Remove o cookie de autenticação e revoga o token na blacklist."""
+    import logging
+    security_logger = logging.getLogger("security")
+    ip = get_remote_address(request)
+
+    token = request.cookies.get("access_token")
+    if token:
+        try:
+            payload = decode_token(token, expected_type="access")
+            if payload:
+                jti = payload.get("jti")
+                exp = payload.get("exp")
+                if jti and exp:
+                    from datetime import datetime
+                    expires_at = datetime.utcfromtimestamp(exp)
+                    revoke_token(jti, expires_at)
+                    record_security_event("token_revoked", ip=ip, jti=jti, token_type="access")
+        except Exception as e:
+            security_logger.warning(f"Erro ao revogar access token no logout: {e}")
+
+    refresh = request.cookies.get("refresh_token")
+    if refresh:
+        try:
+            payload = decode_refresh_token(refresh)
+            if payload:
+                jti = payload.get("jti")
+                exp = payload.get("exp")
+                if jti and exp:
+                    from datetime import datetime
+                    expires_at = datetime.utcfromtimestamp(exp)
+                    revoke_token(jti, expires_at)
+                    record_security_event("token_revoked", ip=ip, jti=jti, token_type="refresh")
+        except Exception as e:
+            security_logger.warning(f"Erro ao revogar refresh token no logout: {e}")
+
+    record_security_event("logout", ip=ip)
     redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     redirect.delete_cookie(key="access_token", path="/")
     redirect.delete_cookie(key="access_token", path="/api/auth")
@@ -315,6 +349,7 @@ async def microsoft_sso_enabled():
 
 
 @router.get("/microsoft/login")
+@limiter.limit("10/minute")
 async def microsoft_login(request: Request):
     """Inicia o fluxo de login com Microsoft SSO."""
     msal_app = get_msal_app()
@@ -341,6 +376,7 @@ async def microsoft_login(request: Request):
 
 
 @router.get("/microsoft/callback")
+@limiter.limit("10/minute")
 async def microsoft_callback(
     request: Request,
     code: str = None,
@@ -447,8 +483,9 @@ async def microsoft_callback(
             key="access_token",
             value=access_token,
             httponly=True,
-            max_age=86400,
+            secure=IS_PRODUCTION,
             samesite="lax",
+            max_age=86400,
             path="/"
         )
         redirect.set_cookie(

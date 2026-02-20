@@ -34,6 +34,9 @@ async def lifespan(app: FastAPI):
     confirmation_task = asyncio.create_task(confirmation_timeout_scheduler())
     background_tasks.append(confirmation_task)
     
+    token_cleanup_task = asyncio.create_task(revoked_tokens_cleanup_scheduler())
+    background_tasks.append(token_cleanup_task)
+    
     yield
     
     for task in background_tasks:
@@ -278,6 +281,23 @@ async def confirmation_timeout_scheduler():
         except Exception as e:
             print(f"[SCHEDULER] Erro inesperado: {e}")
             await asyncio.sleep(60)
+
+
+async def revoked_tokens_cleanup_scheduler():
+    """
+    Remove tokens expirados da blacklist a cada hora.
+    Tokens expirados não representam risco e podem ser removidos com segurança.
+    """
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            from core.security import cleanup_revoked_tokens
+            await asyncio.to_thread(cleanup_revoked_tokens)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[CLEANUP] Erro no cleanup de tokens revogados: {e}")
+            await asyncio.sleep(3600)
 
 
 # Inicializa a aplicação FastAPI

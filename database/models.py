@@ -1234,3 +1234,12 @@ class DocumentEmbedding(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RevokedToken(Base):
+    """Tokens JWT revogados (blacklist). Permite invalidar tokens antes da expiração natural."""
+    __tablename__ = "revoked_tokens"
+
+    jti = Column(String(36), primary_key=True)
+    revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
