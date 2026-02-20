@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conhecimento - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .filters-bar {
             display: grid;
@@ -720,7 +720,7 @@
                         <h1 class="page-title">Conhecimento</h1>
                         <p class="page-subtitle">Gerencie produtos, estratégias, materiais e scripts comerciais</p>
                     </div>
-                    <button class="btn btn-primary" onclick="openNewProductModal()">
+                    <button class="btn btn-primary" id="btn-new-product">
                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                         </svg>
@@ -733,12 +733,12 @@
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                         </svg>
-                        <input type="text" id="search-input" class="form-input" placeholder="Buscar por nome ou ticker..." oninput="filterProducts()">
+                        <input type="text" id="search-input" class="form-input" placeholder="Buscar por nome ou ticker...">
                     </div>
-                    <select id="filter-category" class="form-input" onchange="filterProducts()">
+                    <select id="filter-category" class="form-input">
                         <option value="">Todas categorias</option>
                     </select>
-                    <select id="filter-status" class="form-input" onchange="filterProducts()">
+                    <select id="filter-status" class="form-input">
                         <option value="">Todos status</option>
                         <option value="ativo">Ativo</option>
                         <option value="inativo">Inativo</option>
@@ -753,7 +753,7 @@
                     </svg>
                     <h3>Nenhum produto cadastrado</h3>
                     <p>Comece adicionando seu primeiro produto financeiro</p>
-                    <button class="btn btn-primary" onclick="openNewProductModal()">Adicionar Produto</button>
+                    <button class="btn btn-primary" id="btn-empty-new-product">Adicionar Produto</button>
                 </div>
 
                 <div id="products-loading" style="display: none;">
@@ -765,7 +765,7 @@
 
             <div id="product-detail-view" class="page-container" style="display: none;">
                 <div class="breadcrumb">
-                    <a href="#" onclick="showProductsList(); return false;">Conhecimento</a>
+                    <a href="#" id="breadcrumb-link">Conhecimento</a>
                     <span>&gt;</span>
                     <span id="breadcrumb-product-name">Produto</span>
                 </div>
@@ -780,19 +780,19 @@
                         </div>
                     </div>
                     <div class="product-detail-actions">
-                        <button class="btn btn-secondary" onclick="showProductsList()">
+                        <button class="btn btn-secondary" id="btn-back-products">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                             </svg>
                             Voltar
                         </button>
-                        <button class="btn btn-secondary" onclick="openEditProductModal()">
+                        <button class="btn btn-secondary" id="btn-edit-product">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                             </svg>
                             Editar
                         </button>
-                        <button class="btn btn-primary" onclick="openNewMaterialModal()">
+                        <button class="btn btn-primary" id="btn-add-material">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
@@ -802,9 +802,9 @@
                 </div>
 
                 <div class="tabs">
-                    <button class="tab active" data-tab="materials" onclick="switchTab('materials')">Materiais</button>
-                    <button class="tab" data-tab="scripts" onclick="switchTab('scripts')">Scripts WhatsApp</button>
-                    <button class="tab" data-tab="history" onclick="switchTab('history')">Histórico</button>
+                    <button class="tab active" data-tab="materials">Materiais</button>
+                    <button class="tab" data-tab="scripts">Scripts WhatsApp</button>
+                    <button class="tab" data-tab="history">Histórico</button>
                 </div>
 
                 <div id="tab-materials" class="tab-content active">
@@ -815,13 +815,13 @@
                         </svg>
                         <h3>Nenhum material adicionado</h3>
                         <p>Adicione materiais como One-page, Apresentações ou Atualizações</p>
-                        <button class="btn btn-primary" onclick="openNewMaterialModal()">Adicionar Material</button>
+                        <button class="btn btn-primary" id="btn-empty-add-material">Adicionar Material</button>
                     </div>
                 </div>
 
                 <div id="tab-scripts" class="tab-content">
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
-                        <button class="btn btn-primary" onclick="openNewScriptModal()">
+                        <button class="btn btn-primary" id="btn-new-script">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
@@ -835,7 +835,7 @@
                         </svg>
                         <h3>Nenhum script criado</h3>
                         <p>Crie textos prontos para enviar pelo WhatsApp</p>
-                        <button class="btn btn-primary" onclick="openNewScriptModal()">Criar Script</button>
+                        <button class="btn btn-primary" id="btn-empty-new-script">Criar Script</button>
                     </div>
                 </div>
 
@@ -857,7 +857,7 @@
         <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
                 <h3 class="modal-title" id="product-modal-title">Novo Produto</h3>
-                <button class="modal-close" onclick="closeProductModal()">&times;</button>
+                <button class="modal-close" id="btn-close-product-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="product-id">
@@ -883,8 +883,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeProductModal()">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveProduct()">Salvar</button>
+                <button class="btn btn-secondary" id="btn-cancel-product">Cancelar</button>
+                <button class="btn btn-primary" id="btn-save-product">Salvar</button>
             </div>
         </div>
     </div>
@@ -893,7 +893,7 @@
         <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
                 <h3 class="modal-title" id="material-modal-title">Novo Material</h3>
-                <button class="modal-close" onclick="closeMaterialModal()">&times;</button>
+                <button class="modal-close" id="btn-close-material-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="material-id">
@@ -919,8 +919,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeMaterialModal()">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveMaterial()">Criar Material</button>
+                <button class="btn btn-secondary" id="btn-cancel-material">Cancelar</button>
+                <button class="btn btn-primary" id="btn-save-material">Criar Material</button>
             </div>
         </div>
     </div>
@@ -929,7 +929,7 @@
         <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title" id="script-modal-title">Novo Script</h3>
-                <button class="modal-close" onclick="closeScriptModal()">&times;</button>
+                <button class="modal-close" id="btn-close-script-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="script-id">
@@ -951,8 +951,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeScriptModal()">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveScript()">Salvar</button>
+                <button class="btn btn-secondary" id="btn-cancel-script">Cancelar</button>
+                <button class="btn btn-primary" id="btn-save-script">Salvar</button>
             </div>
         </div>
     </div>
@@ -961,13 +961,13 @@
         <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title">Upload de PDF</h3>
-                <button class="modal-close" onclick="closeUploadModal()">&times;</button>
+                <button class="modal-close" id="btn-close-upload-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="upload-material-id">
                 
                 <div id="upload-dropzone-container">
-                    <div class="upload-dropzone" id="upload-dropzone" onclick="selectPdfFile()">
+                    <div class="upload-dropzone" id="upload-dropzone">
                         <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                         </svg>
@@ -985,7 +985,7 @@
                             <strong id="file-name">documento.pdf</strong>
                             <span id="file-size">0 KB</span>
                         </div>
-                        <button class="btn-icon btn-icon-delete" onclick="clearUploadFile()" title="Remover">
+                        <button class="btn-icon btn-icon-delete" id="btn-clear-upload" title="Remover">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                             </svg>
@@ -1001,8 +1001,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeUploadModal()">Cancelar</button>
-                <button class="btn btn-primary" id="btn-upload-pdf" onclick="uploadPdfFile()" disabled>
+                <button class="btn btn-secondary" id="btn-cancel-upload">Cancelar</button>
+                <button class="btn btn-primary" id="btn-upload-pdf" disabled>
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                     </svg>
@@ -1012,7 +1012,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let products = [];
         let categories = [];
         let currentProduct = null;
@@ -1101,7 +1101,7 @@
             emptyState.style.display = 'none';
 
             container.innerHTML = filtered.map(function(p) {
-                return '<div class="product-card" onclick="openProduct(' + p.id + ')">' +
+                return '<div class="product-card" data-product-id="' + p.id + '">' +
                     '<div class="product-header">' +
                         '<h3 class="product-title">' + escapeHtml(p.name) + '</h3>' +
                         (p.ticker ? '<span class="product-ticker">' + escapeHtml(p.ticker) + '</span>' : '') +
@@ -1230,13 +1230,13 @@
                             '<span class="publish-badge ' + statusClass + '">' + statusLabel + '</span>' +
                         '</div>' +
                         '<div class="block-actions">' +
-                            '<button class="btn-icon btn-icon-edit" onclick="uploadPdfToMaterial(' + m.id + ')" title="Upload PDF">' +
+                            '<button class="btn-icon btn-icon-edit" data-action="upload-material" data-material-id="' + m.id + '" title="Upload PDF">' +
                                 '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>' +
                             '</button>' +
-                            (m.is_indexed ? '' : '<button class="btn-icon btn-icon-publish" onclick="publishMaterial(' + m.id + ')" title="Publicar">' +
+                            (m.is_indexed ? '' : '<button class="btn-icon btn-icon-publish" data-action="publish-material" data-material-id="' + m.id + '" title="Publicar">' +
                                 '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' +
                             '</button>') +
-                            '<button class="btn-icon btn-icon-delete" onclick="deleteMaterial(' + m.id + ')" title="Excluir">' +
+                            '<button class="btn-icon btn-icon-delete" data-action="delete-material" data-material-id="' + m.id + '" title="Excluir">' +
                                 '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>' +
                             '</button>' +
                         '</div>' +
@@ -1268,17 +1268,17 @@
                             '<span class="script-version">v' + (s.current_version || 1) + '</span>' +
                         '</span>' +
                         '<div class="block-actions">' +
-                            '<button class="btn-icon btn-icon-edit" onclick="editScript(' + s.id + ')" title="Editar">' +
+                            '<button class="btn-icon btn-icon-edit" data-action="edit-script" data-script-id="' + s.id + '" title="Editar">' +
                                 '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>' +
                             '</button>' +
-                            '<button class="btn-icon btn-icon-delete" onclick="deleteScript(' + s.id + ')" title="Excluir">' +
+                            '<button class="btn-icon btn-icon-delete" data-action="delete-script" data-script-id="' + s.id + '" title="Excluir">' +
                                 '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>' +
                             '</button>' +
                         '</div>' +
                     '</div>' +
                     '<div class="script-content">' + escapeHtml(s.content) + '</div>' +
                     '<div class="script-actions">' +
-                        '<button class="btn-copy" id="copy-btn-' + s.id + '" onclick="copyScript(' + s.id + ', \'' + escapeHtml(s.content).replace(/'/g, "\\'").replace(/\n/g, '\\n') + '\')">' +
+                        '<button class="btn-copy" id="copy-btn-' + s.id + '" data-action="copy-script" data-script-id="' + s.id + '">' +
                             '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>' +
                             'Copiar' +
                         '</button>' +
@@ -1718,7 +1718,7 @@
             window.location.href = '/login';
         }
 
-        const dropzone = document.getElementById('upload-dropzone');
+        var dropzone = document.getElementById('upload-dropzone');
         if (dropzone) {
             dropzone.addEventListener('dragover', function(e) {
                 e.preventDefault();
@@ -1734,9 +1734,9 @@
                 e.preventDefault();
                 dropzone.classList.remove('dragover');
                 
-                const files = e.dataTransfer.files;
+                var files = e.dataTransfer.files;
                 if (files.length > 0) {
-                    const file = files[0];
+                    var file = files[0];
                     if (file.name.toLowerCase().endsWith('.pdf')) {
                         uploadFile = file;
                         document.getElementById('file-name').textContent = file.name;
@@ -1750,6 +1750,71 @@
                 }
             });
         }
+
+        document.getElementById('btn-new-product').addEventListener('click', function() { openNewProductModal(); });
+        document.getElementById('btn-empty-new-product').addEventListener('click', function() { openNewProductModal(); });
+        document.getElementById('search-input').addEventListener('input', function() { filterProducts(); });
+        document.getElementById('filter-category').addEventListener('change', function() { filterProducts(); });
+        document.getElementById('filter-status').addEventListener('change', function() { filterProducts(); });
+        document.getElementById('breadcrumb-link').addEventListener('click', function(e) { e.preventDefault(); showProductsList(); });
+        document.getElementById('btn-back-products').addEventListener('click', function() { showProductsList(); });
+        document.getElementById('btn-edit-product').addEventListener('click', function() { openEditProductModal(); });
+        document.getElementById('btn-add-material').addEventListener('click', function() { openNewMaterialModal(); });
+        document.getElementById('btn-empty-add-material').addEventListener('click', function() { openNewMaterialModal(); });
+        document.getElementById('btn-new-script').addEventListener('click', function() { openNewScriptModal(); });
+        document.getElementById('btn-empty-new-script').addEventListener('click', function() { openNewScriptModal(); });
+
+        document.querySelectorAll('.tab[data-tab]').forEach(function(tab) {
+            tab.addEventListener('click', function() { switchTab(this.dataset.tab); });
+        });
+
+        document.getElementById('btn-close-product-modal').addEventListener('click', function() { closeProductModal(); });
+        document.getElementById('btn-cancel-product').addEventListener('click', function() { closeProductModal(); });
+        document.getElementById('btn-save-product').addEventListener('click', function() { saveProduct(); });
+
+        document.getElementById('btn-close-material-modal').addEventListener('click', function() { closeMaterialModal(); });
+        document.getElementById('btn-cancel-material').addEventListener('click', function() { closeMaterialModal(); });
+        document.getElementById('btn-save-material').addEventListener('click', function() { saveMaterial(); });
+
+        document.getElementById('btn-close-script-modal').addEventListener('click', function() { closeScriptModal(); });
+        document.getElementById('btn-cancel-script').addEventListener('click', function() { closeScriptModal(); });
+        document.getElementById('btn-save-script').addEventListener('click', function() { saveScript(); });
+
+        document.getElementById('btn-close-upload-modal').addEventListener('click', function() { closeUploadModal(); });
+        document.getElementById('btn-cancel-upload').addEventListener('click', function() { closeUploadModal(); });
+        document.getElementById('btn-clear-upload').addEventListener('click', function() { clearUploadFile(); });
+        document.getElementById('upload-dropzone').addEventListener('click', function() { selectPdfFile(); });
+        document.getElementById('btn-upload-pdf').addEventListener('click', function() { uploadPdfFile(); });
+
+        document.getElementById('products-container').addEventListener('click', function(e) {
+            var card = e.target.closest('.product-card[data-product-id]');
+            if (card) {
+                openProduct(parseInt(card.dataset.productId, 10));
+            }
+        });
+
+        document.getElementById('materials-container').addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            var action = btn.dataset.action;
+            var materialId = parseInt(btn.dataset.materialId, 10);
+            if (action === 'upload-material') uploadPdfToMaterial(materialId);
+            else if (action === 'publish-material') publishMaterial(materialId);
+            else if (action === 'delete-material') deleteMaterial(materialId);
+        });
+
+        document.getElementById('scripts-container').addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            var action = btn.dataset.action;
+            var scriptId = parseInt(btn.dataset.scriptId, 10);
+            if (action === 'edit-script') editScript(scriptId);
+            else if (action === 'delete-script') deleteScript(scriptId);
+            else if (action === 'copy-script') {
+                var script = currentProduct.scripts.find(function(s) { return s.id === scriptId; });
+                if (script) copyScript(scriptId, script.content);
+            }
+        });
 
         loadProducts();
     </script>

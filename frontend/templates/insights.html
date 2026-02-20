@@ -8,12 +8,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Insights - Agente IA - RV</title>
     <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/static/tailwind.config.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/tailwind.config.js"></script>
     <!-- Design System SVN -->
     <link rel="stylesheet" href="/static/global.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .filters-container {
             background: var(--card-bg);
@@ -646,7 +646,7 @@
                     <div class="filters-row">
                         <div class="filter-group">
                             <label>Período</label>
-                            <select id="filterPeriod" onchange="handlePeriodChange()">
+                            <select id="filterPeriod">
                                 <option value="7d">Últimos 7 dias</option>
                                 <option value="30d" selected>Últimos 30 dias</option>
                                 <option value="90d">Últimos 90 dias</option>
@@ -682,11 +682,11 @@
                                 <option value="">Todos</option>
                             </select>
                         </div>
-                        <button class="btn-more-filters" id="btnMoreFilters" onclick="toggleMoreFilters()">
+                        <button class="btn-more-filters" id="btnMoreFilters">
                             <span>Mais Filtros</span>
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                         </button>
-                        <button class="btn btn-primary" onclick="loadDashboard()">Aplicar</button>
+                        <button class="btn btn-primary" id="btnApplyFilters">Aplicar</button>
                     </div>
                     <div class="extra-filters" id="extraFilters">
                         <div class="filter-group">
@@ -876,7 +876,7 @@
                 </div>
 
                 <div class="feedbacks-section">
-                    <div class="feedbacks-header" onclick="toggleFeedbacks()">
+                    <div class="feedbacks-header" id="feedbacksHeader">
                         <h3>
                             Feedbacks Recentes
                             <span class="badge" id="feedbacksCount">0</span>
@@ -893,8 +893,8 @@
         </main>
     </div>
 
-    <script src="/static/sidebar.js"></script>
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/sidebar.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let activityChart = null;
         let categoriesChart = null;
         let productsChart = null;
@@ -1537,6 +1537,11 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadFilters();
             loadDashboard();
+
+            document.getElementById('filterPeriod').addEventListener('change', function() { handlePeriodChange(); });
+            document.getElementById('btnMoreFilters').addEventListener('click', function() { toggleMoreFilters(); });
+            document.getElementById('btnApplyFilters').addEventListener('click', function() { loadDashboard(); });
+            document.getElementById('feedbacksHeader').addEventListener('click', function() { toggleFeedbacks(); });
         });
     </script>
 </body>

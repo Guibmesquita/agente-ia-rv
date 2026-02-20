@@ -7,10 +7,10 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Documentos - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/static/tailwind.config.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/tailwind.config.js"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .modal-overlay {
             position: fixed;
@@ -286,13 +286,13 @@
             <h3 id="confirmTitle">Confirmar ação</h3>
             <p id="confirmMessage">Tem certeza que deseja continuar?</p>
             <div class="btn-group">
-                <button class="btn btn-cancel" onclick="closeConfirmModal()">Cancelar</button>
-                <button class="btn btn-confirm" id="confirmBtn" onclick="confirmAction()">Confirmar</button>
+                <button class="btn btn-cancel" id="btn-cancel-modal">Cancelar</button>
+                <button class="btn btn-confirm" id="confirmBtn">Confirmar</button>
             </div>
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let allDocuments = [];
         const searchInput = document.getElementById('searchInput');
         const categoryFilter = document.getElementById('categoryFilter');
@@ -412,14 +412,14 @@
                             ${doc.processing_error ? `<p class="text-xs text-red-600 truncate" title="${doc.processing_error}">${doc.processing_error.substring(0, 40)}${doc.processing_error.length > 40 ? '...' : ''}</p>` : ''}
                             <div class="process-log hidden mt-2 p-2 bg-gray-50 rounded-lg text-xs max-h-20 overflow-y-auto border border-gray-200"></div>
                             <div class="flex gap-2">
-                                <button onclick="processDocument(${doc.id}, ${doc.product_id})" class="process-btn flex-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-medium rounded-lg flex items-center justify-center gap-1 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                                <button data-action="process" data-material-id="${doc.id}" data-product-id="${doc.product_id}" class="process-btn flex-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-medium rounded-lg flex items-center justify-center gap-1 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                     </svg>
                                     Processar
                                 </button>
-                                <button onclick="deleteDocument(${doc.id}, ${doc.product_id})" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium rounded-lg flex items-center justify-center gap-1 transition-colors">
+                                <button data-action="delete" data-material-id="${doc.id}" data-product-id="${doc.product_id}" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium rounded-lg flex items-center justify-center gap-1 transition-colors">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                     </svg>
@@ -613,6 +613,22 @@
 
         document.getElementById('confirmModal').addEventListener('click', function(e) {
             if (e.target === this) closeConfirmModal();
+        });
+
+        document.getElementById('btn-cancel-modal').addEventListener('click', function() { closeConfirmModal(); });
+        document.getElementById('confirmBtn').addEventListener('click', function() { confirmAction(); });
+
+        document.querySelector('#docGrid').addEventListener('click', function(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            const materialId = parseInt(target.dataset.materialId);
+            const productId = parseInt(target.dataset.productId);
+            if (action === 'process') {
+                processDocument(materialId, productId);
+            } else if (action === 'delete') {
+                deleteDocument(materialId, productId);
+            }
         });
 
         loadDocuments();

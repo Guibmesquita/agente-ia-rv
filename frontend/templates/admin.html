@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Usuários - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .role-badge {
             display: inline-block;
@@ -98,13 +98,13 @@
                         <p class="page-subtitle">Gerencie os usuários do sistema</p>
                     </div>
                     <div style="display: flex; gap: 12px;">
-                        <button class="btn btn-secondary" onclick="openImportModal()">
+                        <button class="btn btn-secondary" id="btnOpenImport">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                             </svg>
                             Importar Base
                         </button>
-                        <button class="btn btn-primary" onclick="openModal()">+ Novo Usuário</button>
+                        <button class="btn btn-primary" id="btnNewUser">+ Novo Usuário</button>
                     </div>
                 </div>
 
@@ -141,9 +141,9 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 class="modal-title" id="modal-title">Novo Usuário</h3>
-                <button class="modal-close" onclick="closeModal()">&times;</button>
+                <button class="modal-close" id="btnCloseModalX">&times;</button>
             </div>
-            <form id="userForm" onsubmit="saveUser(event)">
+            <form id="userForm">
                 <div class="modal-body">
                     <input type="hidden" id="userId" name="userId">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -183,7 +183,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+                    <button type="button" class="btn btn-secondary" id="btnCancelModal">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Salvar</button>
                 </div>
             </form>
@@ -194,15 +194,15 @@
         <div class="modal" style="max-width: 800px;">
             <div class="modal-header">
                 <h3 class="modal-title">Importar Planilha</h3>
-                <button class="modal-close" onclick="closeImportModal()">&times;</button>
+                <button class="modal-close" id="btnCloseImportX">&times;</button>
             </div>
             <div class="modal-body">
                 <div id="import-step-1">
-                    <div class="upload-area" onclick="document.getElementById('importFile').click()" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--bg-color);">
+                    <div class="upload-area" id="uploadArea" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--bg-color);">
                         <svg width="48" height="48" fill="none" stroke="var(--primary-color)" viewBox="0 0 24 24" style="margin-bottom: 16px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
                         <h3 style="font-size: 1.1rem; margin-bottom: 8px;">Selecione uma planilha</h3>
                         <p style="color: var(--text-secondary);">Suportamos arquivos Excel (.xlsx, .xls) e CSV</p>
-                        <input type="file" id="importFile" style="display: none;" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)">
+                        <input type="file" id="importFile" style="display: none;" accept=".xlsx,.xls,.csv">
                     </div>
                     <div id="import-loading" style="display: none; text-align: center; padding: 20px;">
                         <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
@@ -276,9 +276,9 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Cancelar</button>
-                <button type="button" class="btn btn-primary" id="confirmImportBtn" style="display: none;" onclick="confirmImport()">Confirmar Importação</button>
-                <button type="button" class="btn btn-primary" id="closeResultBtn" style="display: none;" onclick="closeImportModal(); loadUsers();">Concluir</button>
+                <button type="button" class="btn btn-secondary" id="btnCancelImport">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmImportBtn" style="display: none;">Confirmar Importação</button>
+                <button type="button" class="btn btn-primary" id="closeResultBtn" style="display: none;">Concluir</button>
             </div>
         </div>
     </div>
@@ -293,7 +293,7 @@
         }
     </style>
     
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let currentUserRole = null;
         let importFileId = null;
         let importColumns = [];
@@ -578,10 +578,10 @@
                         <td><span class="role-badge role-${user.role}">${getRoleLabel(user.role)}</span></td>
                         <td>
                             <div class="actions-cell">
-                                <button class="btn-icon btn-icon-edit" onclick="editUser(${user.id})" title="Editar">
+                                <button class="btn-icon btn-icon-edit" data-action="edit" data-id="${user.id}" title="Editar">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                                 </button>
-                                <button class="btn-icon btn-icon-delete" onclick="deleteUser(${user.id})" title="Excluir">
+                                <button class="btn-icon btn-icon-delete" data-action="delete" data-id="${user.id}" title="Excluir">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                 </button>
                             </div>
@@ -724,6 +724,53 @@
         document.getElementById('importModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeImportModal();
+            }
+        });
+
+        document.getElementById('btnOpenImport').addEventListener('click', function() {
+            openImportModal();
+        });
+        document.getElementById('btnNewUser').addEventListener('click', function() {
+            openModal();
+        });
+        document.getElementById('btnCloseModalX').addEventListener('click', function() {
+            closeModal();
+        });
+        document.getElementById('userForm').addEventListener('submit', function(e) {
+            saveUser(e);
+        });
+        document.getElementById('btnCancelModal').addEventListener('click', function() {
+            closeModal();
+        });
+        document.getElementById('btnCloseImportX').addEventListener('click', function() {
+            closeImportModal();
+        });
+        document.getElementById('uploadArea').addEventListener('click', function() {
+            document.getElementById('importFile').click();
+        });
+        document.getElementById('importFile').addEventListener('change', function(e) {
+            handleFileUpload(e);
+        });
+        document.getElementById('btnCancelImport').addEventListener('click', function() {
+            closeImportModal();
+        });
+        document.getElementById('confirmImportBtn').addEventListener('click', function() {
+            confirmImport();
+        });
+        document.getElementById('closeResultBtn').addEventListener('click', function() {
+            closeImportModal();
+            loadUsers();
+        });
+
+        document.getElementById('users-tbody').addEventListener('click', function(e) {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const action = btn.getAttribute('data-action');
+            const id = parseInt(btn.getAttribute('data-id'), 10);
+            if (action === 'edit') {
+                editUser(id);
+            } else if (action === 'delete') {
+                deleteUser(id);
             }
         });
     </script>

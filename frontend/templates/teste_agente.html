@@ -4,12 +4,12 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Testar Agente - Agente IA - RV</title>
-        <script src="https://cdn.tailwindcss.com"></script>
+        <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
         <link
             rel="stylesheet"
             href="/static/global.css?v={{ now().timestamp() if now else 1706371200 }}"
         />
-        <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+        <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
         <style>
             .main-content {
                 height: 100vh;
@@ -383,7 +383,7 @@
                                     </div>
                                     <button
                                         class="btn btn-secondary"
-                                        onclick="clearConversation()"
+                                        id="btn-clear-conversation"
                                         style="
                                             padding: 8px 16px;
                                             font-size: 0.85rem;
@@ -426,12 +426,10 @@
                                     id="chatInput"
                                     placeholder="Digite sua mensagem..."
                                     rows="1"
-                                    onkeydown="handleKeyDown(event)"
                                 ></textarea>
                                 <button
                                     class="chat-send-btn"
                                     id="sendBtn"
-                                    onclick="sendMessage()"
                                 >
                                     <svg
                                         width="24"
@@ -523,7 +521,7 @@
             </main>
         </div>
 
-        <script>
+        <script nonce="{{ request.state.csp_nonce }}">
             let isLoading = false;
 
             function toggleSidebar() {
@@ -794,6 +792,10 @@
 
                 loadHistory();
             });
+
+            document.getElementById('btn-clear-conversation').addEventListener('click', function() { clearConversation(); });
+            document.getElementById('chatInput').addEventListener('keydown', function(event) { handleKeyDown(event); });
+            document.getElementById('sendBtn').addEventListener('click', function() { sendMessage(); });
         </script>
     </body>
 </html>

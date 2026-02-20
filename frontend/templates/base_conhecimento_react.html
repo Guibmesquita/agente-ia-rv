@@ -7,10 +7,10 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Base de Conhecimento - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/static/tailwind.config.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/tailwind.config.js"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         #react-knowledge-root {
             width: 100%;
@@ -27,7 +27,7 @@
         </main>
     </div>
 
-    <script type="module" crossorigin src="/base-conhecimento/assets/{{ js_file }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" type="module" crossorigin src="/base-conhecimento/assets/{{ js_file }}"></script>
     <link rel="stylesheet" crossorigin href="/base-conhecimento/assets/{{ css_file }}">
 </body>
 </html>

@@ -6,6 +6,7 @@ import os
 import time
 import json
 import logging
+import secrets
 import traceback
 from datetime import datetime
 from collections import defaultdict
@@ -119,6 +120,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
+
         response = await call_next(request)
 
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -127,12 +131,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         response.headers["X-XSS-Protection"] = "1; mode=block"
 
-        if IS_PRODUCTION:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com",
+            f"script-src 'self' 'nonce-{nonce}' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com",
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: blob: https:",

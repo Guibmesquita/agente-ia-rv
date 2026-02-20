@@ -261,9 +261,40 @@ A aplicação aplica automaticamente os seguintes headers em todas as respostas 
 - `Permissions-Policy: geolocation=(), microphone=(), camera=()`
 - `X-XSS-Protection: 1; mode=block`
 - `Content-Security-Policy` com política restritiva (self + CDNs necessários)
-- `Strict-Transport-Security` (em produção)
+- `Strict-Transport-Security` — adicionado automaticamente pelo proxy Replit em produção (não duplicar no middleware)
 
 Não remova ou enfraqueça esses headers sem documentar o motivo. Se uma nova feature precisar de uma exceção no CSP (ex: carregar script de um novo CDN), adicione apenas o domínio específico necessário.
+
+### 8.1 CSP Nonces (Implementado)
+
+#### `script-src` — Nonces em vez de `unsafe-inline`
+
+**Status:** Implementado. `unsafe-inline` foi **removido** de `script-src`.
+
+**Implementação:** O `SecurityHeadersMiddleware` gera um nonce criptográfico único (`secrets.token_urlsafe(16)`) por requisição HTTP e o armazena em `request.state.csp_nonce`. Todos os 17 templates Jinja2 utilizam `nonce="{{ request.state.csp_nonce }}"` em todas as tags `<script>`. Os 222 inline event handlers (`onclick`, `onchange`, etc.) foram convertidos para `addEventListener()` com event delegation via `data-action` attributes.
+
+**Regras para novos templates:**
+1. Todo `<script>` (inline ou com src) deve incluir `nonce="{{ request.state.csp_nonce }}"`
+2. Nunca usar inline event handlers (`onclick`, `onchange`, etc.) — usar `addEventListener()` ou event delegation com `data-action`
+3. Testar com DevTools > Console para verificar ausência de violações CSP
+
+#### `'unsafe-eval'` em `script-src`
+
+**Status:** Necessário enquanto Tailwind CSS CDN for utilizado.
+
+**Justificativa técnica:** O Tailwind CSS via CDN (`cdn.tailwindcss.com`), utilizado em 15 templates, compila classes utilitárias em CSS no runtime do browser usando `eval()`. Não há alternativa viável sem migrar para build-time (Tailwind CLI ou PostCSS).
+
+**Mitigação futura:** Migrar de Tailwind CDN para build-time (Tailwind CLI com PostCSS), gerando CSS estático em tempo de compilação. Isso eliminaria a necessidade de `unsafe-eval`.
+
+#### `'unsafe-inline'` em `style-src`
+
+**Status:** Necessário enquanto Tailwind CSS CDN for utilizado. Nonces **não** são usados em `style-src` porque o Tailwind CDN injeta estilos inline dinamicamente e a presença de nonces causaria a rejeição desses estilos pelo browser (CSP Level 2: nonces ignoram `unsafe-inline`).
+
+**Risco:** Baixo. Estilos inline não podem executar código arbitrário. A mitigação futura é a mesma: migrar de Tailwind CDN para build-time.
+
+### 8.2 HSTS (Strict-Transport-Security)
+
+O header HSTS é adicionado automaticamente pelo proxy Replit em produção (`max-age=63072000; includeSubDomains`). O middleware da aplicação **não** adiciona HSTS para evitar duplicação de headers. Se a plataforma de deploy mudar, reativar HSTS no `SecurityHeadersMiddleware`.
 
 ---
 
@@ -271,7 +302,7 @@ Não remova ou enfraqueça esses headers sem documentar o motivo. Se uma nova fe
 
 Nenhum valor sensível pode estar hardcoded no código. Qualquer nova variável sensível adicionada ao projeto deve ser registrada no Replit Secrets e documentada aqui.
 
-As variáveis atualmente obrigatórias em produção são: `SECRET_KEY` (mínimo 64 caracteres hex), `DATABASE_URL`, `OPENAI_API_KEY`, `ZAPI_CLIENT_TOKEN`, `TAVILY_API_KEY`, e `WAHA_API_KEY`. Para SSO Microsoft: `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`.
+As variáveis atualmente obrigatórias em produção são: `SESSION_SECRET` (mínimo 64 caracteres hex, armazenado como Secret), `DATABASE_URL`, `OPENAI_API_KEY`, `ZAPI_CLIENT_TOKEN`, `TAVILY_API_KEY`, e `WAHA_API_KEY`. Para SSO Microsoft: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` (armazenado como Secret), `MICROSOFT_TENANT_ID`. Domínio de produção configurado em `ALLOWED_ORIGINS`.
 
 A aplicação falha na inicialização se `SECRET_KEY` não estiver definida ou contiver o valor padrão de desenvolvimento. Para gerar uma chave segura:
 
@@ -279,7 +310,7 @@ A aplicação falha na inicialização se `SECRET_KEY` não estiver definida ou 
 python -c "import secrets; print(secrets.token_hex(64))"
 ```
 
-Swagger/OpenAPI é automaticamente desabilitado em produção (`docs_url=None` quando `REPL_DEPLOYMENT` está definida).
+Swagger/OpenAPI é completamente desabilitado em produção (`docs_url=None`, `redoc_url=None`, `openapi_url=None` quando `REPL_DEPLOYMENT` está definida). Nenhuma especificação da API é exposta em produção.
 
 ---
 

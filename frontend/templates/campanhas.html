@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Campanhas Ativas - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .wizard-container {
             background: var(--card-bg);
@@ -830,7 +830,7 @@
                         <h1 class="page-title">Campanhas Ativas</h1>
                         <p class="page-subtitle">Dispare mensagens em massa para assessores com recomendacoes de investimento</p>
                     </div>
-                    <div id="zapiStatusBadge" class="zapi-status-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer;" onclick="checkZapiStatus()" title="Clique para atualizar">
+                    <div id="zapiStatusBadge" class="zapi-status-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer;" title="Clique para atualizar">
                         <span class="status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #9ca3af;"></span>
                         <span class="status-text">Verificando conexao...</span>
                     </div>
@@ -861,11 +861,11 @@
 
                         <div class="form-group" style="margin-bottom: 24px;">
                             <label class="form-label">Nome da Campanha <span style="color: #ef4444;">*</span></label>
-                            <input type="text" id="campaignName" class="form-input" placeholder="Ex: Comunicado Janeiro 2026" oninput="validateStep1()">
+                            <input type="text" id="campaignName" class="form-input" placeholder="Ex: Comunicado Janeiro 2026">
                         </div>
 
                         <div class="source-options">
-                            <div class="source-card" id="sourceCardBase" onclick="selectCampaignSource('base')">
+                            <div class="source-card" id="sourceCardBase">
                                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
                                 </svg>
@@ -873,7 +873,7 @@
                                 <p>Selecione assessores diretamente da base cadastrada no sistema</p>
                             </div>
 
-                            <div class="source-card" id="sourceCardUpload" onclick="selectCampaignSource('upload')">
+                            <div class="source-card" id="sourceCardUpload">
                                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                 </svg>
@@ -888,19 +888,19 @@
                             
                             <div class="selection-header">
                                 <div class="selection-search">
-                                    <input type="text" id="assessorSearch" class="form-input" placeholder="Buscar por nome ou email..." oninput="filterAssessors()">
+                                    <input type="text" id="assessorSearch" class="form-input" placeholder="Buscar por nome ou email...">
                                 </div>
                                 <div class="selection-filters">
-                                    <select id="filterUnidade" class="form-select" style="min-width: 150px;" onchange="filterAssessors()">
+                                    <select id="filterUnidade" class="form-select" style="min-width: 150px;">
                                         <option value="">Todas Unidades</option>
                                     </select>
-                                    <select id="filterEquipe" class="form-select" style="min-width: 150px;" onchange="filterAssessors()">
+                                    <select id="filterEquipe" class="form-select" style="min-width: 150px;">
                                         <option value="">Todas Equipes</option>
                                     </select>
                                 </div>
                                 <div class="selection-actions">
                                     <span class="selection-count" id="selectionCount">0 assessores selecionados</span>
-                                    <button class="btn btn-secondary btn-sm" onclick="clearAssessorSelection()">Limpar</button>
+                                    <button class="btn btn-secondary btn-sm" id="clearAssessorBtn">Limpar</button>
                                 </div>
                             </div>
 
@@ -908,7 +908,7 @@
                                 <table class="assessors-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 40px;"><input type="checkbox" id="selectAllAssessors" onchange="toggleSelectAllAssessors()"></th>
+                                            <th style="width: 40px;"><input type="checkbox" id="selectAllAssessors"></th>
                                             <th>Código</th>
                                             <th>Nome</th>
                                             <th>E-mail</th>
@@ -929,11 +929,8 @@
                         <div class="source-detail-container" id="uploadDetailContainer">
                             <h4 style="margin-bottom: 16px;">Envie sua planilha de dados</h4>
                             
-                            <div class="upload-zone-large" id="uploadZoneLarge" 
-                                 ondragover="handleDragOver(event)" 
-                                 ondragleave="handleDragLeave(event)" 
-                                 ondrop="handleDrop(event)"
-                                 onclick="document.getElementById('fileInput').click()">
+                            <div class="upload-zone-large"
+                                 id="uploadZoneLarge">
                                 <div class="upload-zone-content" id="uploadZoneContent">
                                     <svg width="48" height="48" fill="none" stroke="var(--primary-color)" viewBox="0 0 24 24" style="opacity: 0.7;">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
@@ -948,15 +945,15 @@
                                     </svg>
                                     <h4 style="color: #16a34a; margin: 16px 0 8px 0;" id="uploadedFileName">arquivo.xlsx</h4>
                                     <p style="color: #047857;" id="uploadedFileInfo">100 linhas detectadas</p>
-                                    <button class="btn btn-secondary btn-sm" style="margin-top: 16px;" onclick="event.stopPropagation(); removeUploadedFile()">Remover arquivo</button>
+                                    <button class="btn btn-secondary btn-sm" style="margin-top: 16px;" id="removeUploadedFileBtn">Remover arquivo</button>
                                 </div>
                             </div>
-                            <input type="file" id="fileInput" style="display: none;" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(event)">
+                            <input type="file" id="fileInput" style="display: none;" accept=".csv,.xlsx,.xls">
                         </div>
 
                         <div class="wizard-actions">
                             <div></div>
-                            <button class="btn btn-primary" id="btnStep1Next" onclick="handleStep1Next()">
+                            <button class="btn btn-primary" id="btnStep1Next">
                                 Proximo
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -982,7 +979,7 @@
                                 </div>
                             </div>
                             <div class="textarea-wrapper">
-                                <button type="button" class="var-insert-btn" onclick="toggleVarDropdown('header')" title="Inserir variavel">
+                                <button type="button" class="var-insert-btn" id="varDropdownBtnHeader" title="Inserir variavel">
                                     {x}
                                 </button>
                                 <div class="var-dropdown" id="varDropdownHeader">
@@ -991,7 +988,7 @@
                                 </div>
                                 <textarea id="messageHeader" class="message-textarea" placeholder="Ola, {{nome_assessor}}!
 
-Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMessagePreview()"></textarea>
+Seguem as recomendacoes de investimento para seus clientes:"></textarea>
                             </div>
                         </div>
 
@@ -1005,14 +1002,14 @@ Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMess
                                 </div>
                             </div>
                             <div class="textarea-wrapper">
-                                <button type="button" class="var-insert-btn" onclick="toggleVarDropdown('content')" title="Inserir variavel">
+                                <button type="button" class="var-insert-btn" id="varDropdownBtnContent" title="Inserir variavel">
                                     {x}
                                 </button>
                                 <div class="var-dropdown" id="varDropdownContent">
                                     <div class="var-dropdown-header">Variaveis Disponiveis</div>
                                     <div class="var-dropdown-list" id="varListContent"></div>
                                 </div>
-                                <textarea id="messageContent" class="message-textarea repeatable" placeholder="• Trocar {{ativo_saida}} por {{ativo_compra}}." oninput="updateMessagePreview()"></textarea>
+                                <textarea id="messageContent" class="message-textarea repeatable" placeholder="• Trocar {{ativo_saida}} por {{ativo_compra}}."></textarea>
                             </div>
                             <p style="font-size: 0.8rem; color: #92400e; margin-top: 8px; display: flex; align-items: center; gap: 6px;">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1032,7 +1029,7 @@ Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMess
                                 </div>
                             </div>
                             <div class="textarea-wrapper">
-                                <button type="button" class="var-insert-btn" onclick="toggleVarDropdown('footer')" title="Inserir variavel">
+                                <button type="button" class="var-insert-btn" id="varDropdownBtnFooter" title="Inserir variavel">
                                     {x}
                                 </button>
                                 <div class="var-dropdown" id="varDropdownFooter">
@@ -1042,7 +1039,7 @@ Seguem as recomendacoes de investimento para seus clientes:" oninput="updateMess
                                 <textarea id="messageFooter" class="message-textarea" placeholder="Por favor, entre em contato com cada cliente para alinhar as operacoes.
 
 Atenciosamente,
-Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
+Equipe de Gestao"></textarea>
                             </div>
                         </div>
 
@@ -1067,7 +1064,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                 </p>
                                 <div style="display: flex; gap: 16px; align-items: center;">
                                     <label style="font-weight: 500; color: #0369a1; min-width: 180px;">Coluna com Codigo do Assessor:</label>
-                                    <select id="assessorCodeColumn" class="form-select" style="flex: 1;" onchange="validateAssessorLink(); updateColumnMapping()">
+                                    <select id="assessorCodeColumn" class="form-select" style="flex: 1;">
                                         <option value="">Selecione uma coluna...</option>
                                     </select>
                                 </div>
@@ -1090,13 +1087,13 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                     Ative para combinar varias linhas do mesmo cliente em uma unica mensagem.
                                 </p>
                                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 12px;">
-                                    <input type="checkbox" id="groupByClientCheck" onchange="toggleClientGrouping()">
+                                    <input type="checkbox" id="groupByClientCheck">
                                     <span style="font-weight: 500; color: #7e22ce;">Agrupar conteudo por cliente</span>
                                 </label>
                                 <div id="clientColumnWrapper" style="display: none;">
                                     <div style="display: flex; gap: 16px; align-items: center;">
                                         <label style="font-weight: 500; color: #7e22ce; min-width: 180px;">Coluna com ID do Cliente:</label>
-                                        <select id="clientIdColumn" class="form-select" style="flex: 1;" onchange="updateColumnMapping()">
+                                        <select id="clientIdColumn" class="form-select" style="flex: 1;">
                                             <option value="">Selecione uma coluna...</option>
                                         </select>
                                     </div>
@@ -1118,14 +1115,14 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                         Variaveis da Base de Assessores
                                     </div>
                                     <div class="variables-list" id="assessorVariables">
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('primeiro_nome')">{<!-- -->{primeiro_nome}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('nome')">{<!-- -->{nome}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('codigo_ai')">{<!-- -->{codigo_ai}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('email')">{<!-- -->{email}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('telefone_whatsapp')">{<!-- -->{telefone_whatsapp}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('unidade')">{<!-- -->{unidade}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('equipe')">{<!-- -->{equipe}<!-- -->}</span>
-                                        <span class="variable-tag assessor" onclick="insertVariableLegacy('broker_responsavel')">{<!-- -->{broker_responsavel}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="primeiro_nome">{<!-- -->{primeiro_nome}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="nome">{<!-- -->{nome}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="codigo_ai">{<!-- -->{codigo_ai}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="email">{<!-- -->{email}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="telefone_whatsapp">{<!-- -->{telefone_whatsapp}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="unidade">{<!-- -->{unidade}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="equipe">{<!-- -->{equipe}<!-- -->}</span>
+                                        <span class="variable-tag assessor" data-action="insertVariableLegacy" data-var="broker_responsavel">{<!-- -->{broker_responsavel}<!-- -->}</span>
                                     </div>
                                 </div>
 
@@ -1165,26 +1162,26 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                         <span id="attachmentName" style="font-size: 0.9rem;"></span>
                                         <span id="attachmentType" style="font-size: 0.75rem; padding: 2px 6px; background: #CFE3DA; color: #381811; border-radius: 4px;"></span>
                                     </div>
-                                    <button type="button" class="btn btn-secondary" style="padding: 4px 8px;" onclick="removeAttachment()">
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 8px;" id="removeAttachmentBtn">
                                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                     </button>
                                 </div>
                             </div>
-                            <input type="file" id="attachmentInput" style="display: none;" onchange="handleAttachmentUpload(event)" accept="image/*,video/mp4,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
-                            <button type="button" class="btn btn-secondary" id="attachmentBtn" onclick="document.getElementById('attachmentInput').click()" style="width: 100%;">
+                            <input type="file" id="attachmentInput" style="display: none;" accept="image/*,video/mp4,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
+                            <button type="button" class="btn btn-secondary" id="attachmentBtn" style="width: 100%;">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
                                 Anexar Arquivo a Campanha
                             </button>
                         </div>
 
                         <div class="wizard-actions">
-                            <button class="btn btn-secondary" onclick="goToStep(1)">
+                            <button class="btn btn-secondary" id="btnStep2Back">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                                 </svg>
                                 Voltar
                             </button>
-                            <button class="btn btn-primary" id="btnStep2Next" onclick="handleStep2Next()">
+                            <button class="btn btn-primary" id="btnStep2Next">
                                 Proximo
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -1251,19 +1248,19 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         </div>
 
                         <div class="wizard-actions" id="dispatchActions">
-                            <button class="btn btn-secondary" id="backBtn" onclick="goToStep(2)">
+                            <button class="btn btn-secondary" id="backBtn">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                                 </svg>
                                 Voltar
                             </button>
-                            <button class="btn btn-danger" id="cancelDispatchBtn" onclick="cancelDispatch()" style="display: none; background: #dc2626; border-color: #dc2626;">
+                            <button class="btn btn-danger" id="cancelDispatchBtn" style="display: none; background: #dc2626; border-color: #dc2626;">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                 </svg>
                                 Cancelar Envio
                             </button>
-                            <button class="btn btn-primary dispatch-btn" id="dispatchBtn" onclick="dispatchCampaign()">
+                            <button class="btn btn-primary dispatch-btn" id="dispatchBtn">
                                 <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                                 </svg>
@@ -1309,13 +1306,13 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
         <div class="modal" style="max-width: 800px;">
             <div class="modal-header">
                 <h3>Resumo da Campanha</h3>
-                <button class="modal-close" onclick="closeSummaryModal()">&times;</button>
+                <button class="modal-close" id="closeSummaryModalBtn">&times;</button>
             </div>
             <div class="modal-body" id="summaryModalBody" style="max-height: 70vh; overflow-y: auto;">
                 <div style="text-align: center; padding: 40px;">Carregando...</div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeSummaryModal()">Fechar</button>
+                <button class="btn btn-secondary" id="closeSummaryModalBtn2">Fechar</button>
             </div>
         </div>
     </div>
@@ -1330,13 +1327,13 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                     </svg>
                     Analise de Falhas
                 </h3>
-                <button class="modal-close" onclick="closeFailuresModal()">&times;</button>
+                <button class="modal-close" id="closeFailuresModalBtn">&times;</button>
             </div>
             <div class="modal-body" id="failuresModalBody" style="max-height: 70vh; overflow-y: auto;">
                 <div style="text-align: center; padding: 40px;">Carregando...</div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeFailuresModal()">Fechar</button>
+                <button class="btn btn-secondary" id="closeFailuresModalBtn2">Fechar</button>
             </div>
         </div>
     </div>
@@ -1346,7 +1343,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
         <div class="modal" style="max-width: 800px; max-height: 90vh;">
             <div class="modal-header">
                 <h3 id="modalTitle">Criar Novo Template</h3>
-                <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+                <button class="modal-close" id="closeTemplateModalBtn">&times;</button>
             </div>
             <div class="modal-body" style="overflow-y: auto; max-height: calc(90vh - 140px);">
                 <div class="form-group">
@@ -1359,7 +1356,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Conteudo da Mensagem *</label>
-                    <textarea id="templateContent" class="form-input" rows="8" style="font-family: monospace;" oninput="updateTemplateVariables()" placeholder="Ola, {{nome}}!&#10;&#10;Escreva sua mensagem aqui usando variaveis entre chaves duplas."></textarea>
+                    <textarea id="templateContent" class="form-input" rows="8" style="font-family: monospace;" placeholder="Ola, {{nome}}!&#10;&#10;Escreva sua mensagem aqui usando variaveis entre chaves duplas."></textarea>
                     <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">
                         Use <code>{{variavel}}</code> para inserir dados dinamicos. Ex: <code>{{nome}}</code>, <code>{{email}}</code>
                     </p>
@@ -1379,13 +1376,13 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                                 <span id="templateAttachmentName" style="font-size: 0.9rem;"></span>
                                 <span id="templateAttachmentType" style="font-size: 0.75rem; padding: 2px 6px; background: #CFE3DA; color: #381811; border-radius: 4px;"></span>
                             </div>
-                            <button type="button" class="btn btn-secondary" style="padding: 4px 8px;" onclick="removeTemplateAttachment()">
+                            <button type="button" class="btn btn-secondary" style="padding: 4px 8px;" id="removeTemplateAttachmentBtn">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             </button>
                         </div>
                     </div>
-                    <input type="file" id="templateAttachmentInput" style="display: none;" onchange="handleTemplateAttachmentUpload(event)" accept="image/*,video/mp4,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
-                    <button type="button" class="btn btn-secondary" id="templateAttachmentBtn" onclick="document.getElementById('templateAttachmentInput').click()" style="width: 100%;">
+                    <input type="file" id="templateAttachmentInput" style="display: none;" accept="image/*,video/mp4,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
+                    <button type="button" class="btn btn-secondary" id="templateAttachmentBtn" style="width: 100%;">
                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
                         Anexar Arquivo ao Template
                     </button>
@@ -1397,8 +1394,8 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeTemplateModal()">Cancelar</button>
-                <button class="btn btn-primary" id="saveTemplateBtn" onclick="saveTemplate()">
+                <button class="btn btn-secondary" id="cancelTemplateModalBtn">Cancelar</button>
+                <button class="btn btn-primary" id="saveTemplateBtn">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                     Salvar Template
                 </button>
@@ -1406,7 +1403,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         const API_BASE = '/api/campaigns';
         let currentStep = 1;
         let campaignId = null;
@@ -1767,9 +1764,9 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             tbody.innerHTML = filteredAssessors.map(a => {
                 const isSelected = selectedAssessors.some(s => s.id === a.id);
                 return `
-                    <tr class="${isSelected ? 'selected' : ''}" onclick="toggleAssessorSelection(${a.id})">
-                        <td onclick="event.stopPropagation()">
-                            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleAssessorSelection(${a.id})">
+                    <tr class="${isSelected ? 'selected' : ''}" data-action="toggleAssessor" data-id="${a.id}">
+                        <td data-action="stopPropCheckbox">
+                            <input type="checkbox" ${isSelected ? 'checked' : ''} data-action="toggleAssessorCheck" data-id="${a.id}">
                         </td>
                         <td>${a.codigo_ai || '-'}</td>
                         <td>${a.nome || '-'}</td>
@@ -2047,7 +2044,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 html += `
                     <div class="mapping-item">
                         <label>${field.label} <span class="required">*</span></label>
-                        <select class="form-select" id="mapping_${field.key}" onchange="updateColumnMapping()">
+                        <select class="form-select" id="mapping_${field.key}" data-action="updateMapping">
                             <option value="">-- Selecione --</option>
                             ${columns.map(col => `<option value="${col}" ${col === suggestedCol ? 'selected' : ''}>${col}</option>`).join('')}
                         </select>
@@ -2060,7 +2057,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 html += `
                     <div class="mapping-item" id="mappingItem_${field.key}">
                         <label>${field.label} ${field.note ? `<span class="optional">(${field.note})</span>` : ''}</label>
-                        <select class="form-select" id="mapping_${field.key}" onchange="updateColumnMapping()">
+                        <select class="form-select" id="mapping_${field.key}" data-action="updateMapping">
                             <option value="">-- Selecione --</option>
                             ${columns.map(col => `<option value="${col}" ${col === suggestedCol ? 'selected' : ''}>${col}</option>`).join('')}
                         </select>
@@ -2128,7 +2125,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 
                 container.innerHTML = uploadedColumns.map(col => {
                     const varName = col.toLowerCase().replace(/\s+/g, '_');
-                    return '<span class="variable-tag planilha" onclick="insertVariableLegacy(\'' + varName + '\')">' + '{' + '{' + varName + '}' + '}' + '</span>';
+                    return '<span class="variable-tag planilha" data-action="insertVariableLegacy" data-var="' + varName + '">' + '{' + '{' + varName + '}' + '}' + '</span>';
                 }).join('');
                 
                 populateAssessorCodeSelect();
@@ -2185,13 +2182,13 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             row.className = 'custom-field-row';
             row.id = `customField_${index}`;
             row.innerHTML = `
-                <select class="form-select" onchange="updateCustomField(${index}, 'column', this.value)">
+                <select class="form-select" data-action="updateCustomFieldColumn" data-index="${index}">
                     <option value="">-- Coluna --</option>
                     ${uploadedColumns.map(col => `<option value="${col}">${col}</option>`).join('')}
                 </select>
                 <span>como</span>
-                <input type="text" class="form-input" placeholder="nome_variavel" onchange="updateCustomField(${index}, 'variable', this.value)">
-                <button class="btn btn-danger" onclick="removeCustomField(${index})" style="padding: 8px;">
+                <input type="text" class="form-input" placeholder="nome_variavel" data-action="updateCustomFieldVariable" data-index="${index}">
+                <button class="btn btn-danger" data-action="removeCustomField" data-index="${index}" style="padding: 8px;">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             `;
@@ -2221,7 +2218,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             if (validFields.length > 0) {
                 section.style.display = 'block';
                 container.innerHTML = validFields.map(f => 
-                    '<span class="variable-tag custom" onclick="insertVariable(\'' + f.variable + '\')">' + '{' + '{' + f.variable + '}' + '}' + '</span>'
+                    '<span class="variable-tag custom" data-action="insertVariableLegacy" data-var="' + f.variable + '">' + '{' + '{' + f.variable + '}' + '}' + '</span>'
                 ).join('');
             } else {
                 section.style.display = 'none';
@@ -2657,11 +2654,11 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         
                         const actionsDiv = document.getElementById('dispatchActions');
                         actionsDiv.innerHTML = `
-                            <button class="btn btn-primary" onclick="location.reload()">
+                            <button class="btn btn-primary" data-action="reloadPage">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                 Nova Campanha
                             </button>
-                            <button class="btn btn-secondary" onclick="location.reload()">
+                            <button class="btn btn-secondary" data-action="reloadPage">
                                 Ver Histórico
                             </button>
                         `;
@@ -2699,11 +2696,11 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         
                         const actionsDiv = document.getElementById('dispatchActions');
                         actionsDiv.innerHTML = `
-                            <button class="btn btn-primary" onclick="location.reload()">
+                            <button class="btn btn-primary" data-action="reloadPage">
                                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                 Nova Campanha
                             </button>
-                            <button class="btn btn-secondary" onclick="location.reload()">
+                            <button class="btn btn-secondary" data-action="reloadPage">
                                 Ver Historico
                             </button>
                         `;
@@ -2820,7 +2817,7 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                 tbody.innerHTML = campaigns.map(c => `
                     <tr>
                         <td>
-                            <a href="#" onclick="openCampaign(${c.id}, '${c.status}'); return false;" style="color: var(--primary-color); text-decoration: none; font-weight: 600;">
+                            <a href="#" data-action="openCampaign" data-id="${c.id}" data-status="${c.status}" style="color: var(--primary-color); text-decoration: none; font-weight: 600;">
                                 ${c.name}
                             </a>
                             <br><small style="color: var(--text-secondary);">${c.original_filename || ''}</small>
@@ -2830,19 +2827,19 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         <td>${c.messages_sent}</td>
                         <td style="color: ${c.messages_failed > 0 ? '#dc2626' : 'inherit'}; font-weight: ${c.messages_failed > 0 ? '600' : 'normal'};">
                             ${c.messages_failed}
-                            ${c.messages_failed > 0 ? `<button onclick="openFailuresModal(${c.id})" class="btn" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;">Ver Falhas</button>` : ''}
+                            ${c.messages_failed > 0 ? `<button data-action="openFailures" data-id="${c.id}" class="btn" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;">Ver Falhas</button>` : ''}
                         </td>
                         <td><span class="status-badge status-${c.status}">${c.status}</span></td>
                         <td>
                             <div style="position: relative;">
-                                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="toggleOptionsMenu(${c.id})">
+                                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" data-action="toggleOptions" data-id="${c.id}">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
                                     </svg>
                                 </button>
                                 <div id="optionsMenu-${c.id}" class="options-menu" style="display: none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 100; min-width: 120px;">
-                                    ${c.messages_failed > 0 ? `<button onclick="openFailuresModal(${c.id})" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">Analisar Falhas</button>` : ''}
-                                    <button onclick="deleteCampaign(${c.id})" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">
+                                    ${c.messages_failed > 0 ? `<button data-action="openFailures" data-id="${c.id}" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">Analisar Falhas</button>` : ''}
+                                    <button data-action="deleteCampaign" data-id="${c.id}" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">
                                         Excluir
                                     </button>
                                 </div>
@@ -3074,8 +3071,8 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
                         ${t.description ? `<p style="font-size: 0.8rem; color: var(--text-secondary); margin: 2px 0 0 0;">${t.description}</p>` : ''}
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-secondary btn-sm" onclick="editTemplate(${t.id})">Editar</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteTemplate(${t.id})">Excluir</button>
+                        <button class="btn btn-secondary btn-sm" data-action="editTemplate" data-id="${t.id}">Editar</button>
+                        <button class="btn btn-danger btn-sm" data-action="deleteTemplate" data-id="${t.id}">Excluir</button>
                     </div>
                 </div>
             `).join('');
@@ -3265,6 +3262,128 @@ Equipe de Gestao" oninput="updateMessagePreview()"></textarea>
             document.cookie = 'session_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
             window.location.href = '/login';
         }
+
+        document.getElementById('zapiStatusBadge').addEventListener('click', function() { checkZapiStatus(); });
+        document.getElementById('campaignName').addEventListener('input', function() { validateStep1(); });
+        document.getElementById('sourceCardBase').addEventListener('click', function() { selectCampaignSource('base'); });
+        document.getElementById('sourceCardUpload').addEventListener('click', function() { selectCampaignSource('upload'); });
+        document.getElementById('assessorSearch').addEventListener('input', function() { filterAssessors(); });
+        document.getElementById('filterUnidade').addEventListener('change', function() { filterAssessors(); });
+        document.getElementById('filterEquipe').addEventListener('change', function() { filterAssessors(); });
+        document.getElementById('clearAssessorBtn').addEventListener('click', function() { clearAssessorSelection(); });
+        document.getElementById('selectAllAssessors').addEventListener('change', function() { toggleSelectAllAssessors(); });
+
+        (function() {
+            var uz = document.getElementById('uploadZoneLarge');
+            uz.addEventListener('dragover', function(e) { handleDragOver(e); });
+            uz.addEventListener('dragleave', function(e) { handleDragLeave(e); });
+            uz.addEventListener('drop', function(e) { handleDrop(e); });
+            uz.addEventListener('click', function(e) {
+                if (!e.target.closest('#removeUploadedFileBtn')) {
+                    document.getElementById('fileInput').click();
+                }
+            });
+        })();
+
+        document.getElementById('removeUploadedFileBtn').addEventListener('click', function(e) { e.stopPropagation(); removeUploadedFile(); });
+        document.getElementById('fileInput').addEventListener('change', function(e) { handleFileSelect(e); });
+        document.getElementById('btnStep1Next').addEventListener('click', function() { handleStep1Next(); });
+
+        document.getElementById('varDropdownBtnHeader').addEventListener('click', function() { toggleVarDropdown('header'); });
+        document.getElementById('varDropdownBtnContent').addEventListener('click', function() { toggleVarDropdown('content'); });
+        document.getElementById('varDropdownBtnFooter').addEventListener('click', function() { toggleVarDropdown('footer'); });
+
+        document.getElementById('messageHeader').addEventListener('input', function() { updateMessagePreview(); });
+        document.getElementById('messageContent').addEventListener('input', function() { updateMessagePreview(); });
+        document.getElementById('messageFooter').addEventListener('input', function() { updateMessagePreview(); });
+
+        document.getElementById('assessorCodeColumn').addEventListener('change', function() { validateAssessorLink(); updateColumnMapping(); });
+        document.getElementById('groupByClientCheck').addEventListener('change', function() { toggleClientGrouping(); });
+        document.getElementById('clientIdColumn').addEventListener('change', function() { updateColumnMapping(); });
+
+        document.getElementById('removeAttachmentBtn').addEventListener('click', function() { removeAttachment(); });
+        document.getElementById('attachmentInput').addEventListener('change', function(e) { handleAttachmentUpload(e); });
+        document.getElementById('attachmentBtn').addEventListener('click', function() { document.getElementById('attachmentInput').click(); });
+
+        document.getElementById('closeSummaryModalBtn').addEventListener('click', function() { closeSummaryModal(); });
+        document.getElementById('closeSummaryModalBtn2').addEventListener('click', function() { closeSummaryModal(); });
+        document.getElementById('closeFailuresModalBtn').addEventListener('click', function() { closeFailuresModal(); });
+        document.getElementById('closeFailuresModalBtn2').addEventListener('click', function() { closeFailuresModal(); });
+        document.getElementById('closeTemplateModalBtn').addEventListener('click', function() { closeTemplateModal(); });
+        document.getElementById('cancelTemplateModalBtn').addEventListener('click', function() { closeTemplateModal(); });
+
+        document.getElementById('templateContent').addEventListener('input', function() { updateTemplateVariables(); });
+        document.getElementById('removeTemplateAttachmentBtn').addEventListener('click', function() { removeTemplateAttachment(); });
+        document.getElementById('templateAttachmentInput').addEventListener('change', function(e) { handleTemplateAttachmentUpload(e); });
+        document.getElementById('templateAttachmentBtn').addEventListener('click', function() { document.getElementById('templateAttachmentInput').click(); });
+        document.getElementById('saveTemplateBtn').addEventListener('click', function() { saveTemplate(); });
+
+        document.getElementById('btnStep2Back').addEventListener('click', function() { goToStep(1); });
+        document.getElementById('btnStep2Next').addEventListener('click', function() { handleStep2Next(); });
+        document.getElementById('backBtn').addEventListener('click', function() { goToStep(2); });
+        document.getElementById('cancelDispatchBtn').addEventListener('click', function() { cancelDispatch(); });
+        document.getElementById('dispatchBtn').addEventListener('click', function() { dispatchCampaign(); });
+
+        document.addEventListener('click', function(e) {
+            var actionEl = e.target.closest('[data-action]');
+            if (!actionEl) return;
+            var action = actionEl.dataset.action;
+
+            if (action === 'insertVariableLegacy') {
+                insertVariableLegacy(actionEl.dataset.var);
+            } else if (action === 'reloadPage') {
+                location.reload();
+            } else if (action === 'openCampaign') {
+                e.preventDefault();
+                openCampaign(parseInt(actionEl.dataset.id), actionEl.dataset.status);
+            } else if (action === 'openFailures') {
+                openFailuresModal(parseInt(actionEl.dataset.id));
+            } else if (action === 'toggleOptions') {
+                toggleOptionsMenu(parseInt(actionEl.dataset.id));
+            } else if (action === 'deleteCampaign') {
+                deleteCampaign(parseInt(actionEl.dataset.id));
+            } else if (action === 'editTemplate') {
+                editTemplate(parseInt(actionEl.dataset.id));
+            } else if (action === 'deleteTemplate') {
+                deleteTemplate(parseInt(actionEl.dataset.id));
+            } else if (action === 'updateMapping') {
+                updateColumnMapping();
+            } else if (action === 'updateCustomFieldColumn') {
+                updateCustomField(parseInt(actionEl.dataset.index), 'column', actionEl.value);
+            } else if (action === 'updateCustomFieldVariable') {
+                updateCustomField(parseInt(actionEl.dataset.index), 'variable', actionEl.value);
+            } else if (action === 'removeCustomField') {
+                removeCustomField(parseInt(actionEl.dataset.index));
+            }
+        });
+
+        document.addEventListener('change', function(e) {
+            var actionEl = e.target.closest('[data-action]');
+            if (!actionEl) return;
+            var action = actionEl.dataset.action;
+
+            if (action === 'toggleAssessorCheck') {
+                toggleAssessorSelection(parseInt(actionEl.dataset.id));
+            } else if (action === 'updateMapping') {
+                updateColumnMapping();
+            } else if (action === 'updateCustomFieldColumn') {
+                updateCustomField(parseInt(actionEl.dataset.index), 'column', actionEl.value);
+            } else if (action === 'updateCustomFieldVariable') {
+                updateCustomField(parseInt(actionEl.dataset.index), 'variable', actionEl.value);
+            }
+        });
+
+        document.getElementById('assessorsTableBody').addEventListener('click', function(e) {
+            var row = e.target.closest('tr[data-action="toggleAssessor"]');
+            if (!row) return;
+            var td = e.target.closest('td[data-action="stopPropCheckbox"]');
+            if (td) {
+                e.stopPropagation();
+                return;
+            }
+            if (e.target.closest('input[type="checkbox"]')) return;
+            toggleAssessorSelection(parseInt(row.dataset.id));
+        });
     </script>
 </body>
 </html>

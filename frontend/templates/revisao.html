@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central de Revisão - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .review-header {
             display: flex;
@@ -239,7 +239,7 @@
                 <h1 class="page-title">Central de Revisão</h1>
                 <p class="page-subtitle">Revise e aprove conteúdos extraídos automaticamente</p>
             </div>
-            <button class="btn btn-secondary" onclick="loadPendingItems()">
+            <button class="btn btn-secondary" id="btn-refresh">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                 Atualizar
             </button>
@@ -265,28 +265,28 @@
         </div>
 
         <div class="filters-bar">
-            <select id="filter-product" class="form-input" onchange="filterItems()">
+            <select id="filter-product" class="form-input">
                 <option value="">Todos os produtos</option>
             </select>
-            <select id="filter-type" class="form-input" onchange="filterItems()">
+            <select id="filter-type" class="form-input">
                 <option value="">Todos os tipos</option>
                 <option value="tabela">Tabelas</option>
                 <option value="grafico">Gráficos</option>
                 <option value="texto">Textos</option>
             </select>
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                <input type="checkbox" id="select-all">
                 <span>Selecionar todos</span>
             </label>
         </div>
 
         <div class="batch-actions hidden" id="batch-actions">
             <span class="selected-count"><span id="selected-count">0</span> selecionados</span>
-            <button class="btn btn-primary" onclick="approveSelected()">
+            <button class="btn btn-primary" id="btn-approve-selected">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 Aprovar Selecionados
             </button>
-            <button class="btn btn-secondary" onclick="rejectSelected()">
+            <button class="btn btn-secondary" id="btn-reject-selected">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                 Rejeitar Selecionados
             </button>
@@ -301,7 +301,7 @@
         </div>
     </main>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let pendingItems = [];
         let filteredItems = [];
         let selectedItems = new Set();
@@ -384,7 +384,7 @@
                         <div class="review-card-info">
                             <input type="checkbox" class="review-checkbox" 
                                    ${isSelected ? 'checked' : ''} 
-                                   onchange="toggleSelection(${item.id})">
+                                   data-action="toggle" data-id="${item.id}">
                             <div class="review-path">
                                 <span>${item.product_name || 'Produto'}</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
@@ -403,15 +403,15 @@
                         ${contentHtml}
                     </div>
                     <div class="review-card-actions">
-                        <button class="btn btn-primary" onclick="approveItem(${item.id})">
+                        <button class="btn btn-primary" data-action="approve" data-id="${item.id}">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                             Aprovar
                         </button>
-                        <button class="btn btn-secondary" onclick="editItem(${item.id})">
+                        <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                             Editar
                         </button>
-                        <button class="btn btn-secondary" onclick="rejectItem(${item.id})" style="color: #dc2626;">
+                        <button class="btn btn-secondary" data-action="reject" data-id="${item.id}" style="color: #dc2626;">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                             Rejeitar
                         </button>
@@ -595,6 +595,48 @@
             document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
             window.location.href = '/login';
         }
+
+        document.getElementById('btn-refresh').addEventListener('click', function() {
+            loadPendingItems();
+        });
+
+        document.getElementById('filter-product').addEventListener('change', function() {
+            filterItems();
+        });
+
+        document.getElementById('filter-type').addEventListener('change', function() {
+            filterItems();
+        });
+
+        document.getElementById('select-all').addEventListener('change', function() {
+            toggleSelectAll();
+        });
+
+        document.getElementById('btn-approve-selected').addEventListener('click', function() {
+            approveSelected();
+        });
+
+        document.getElementById('btn-reject-selected').addEventListener('click', function() {
+            rejectSelected();
+        });
+
+        document.getElementById('review-container').addEventListener('click', function(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            const id = target.dataset.id;
+            if (action === 'approve') approveItem(parseInt(id));
+            if (action === 'edit') editItem(parseInt(id));
+            if (action === 'reject') rejectItem(parseInt(id));
+        });
+
+        document.getElementById('review-container').addEventListener('change', function(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            const id = target.dataset.id;
+            if (action === 'toggle') toggleSelection(parseInt(id));
+        });
 
         loadPendingItems();
     </script>

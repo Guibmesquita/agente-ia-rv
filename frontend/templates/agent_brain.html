@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cérebro do Agente - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .config-card {
             background: var(--card-bg);
@@ -283,7 +283,7 @@ Os números devem incluir o código do país (55 para Brasil)."></textarea>
         </main>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         const loadingEl = document.getElementById('loading');
         const formEl = document.getElementById('configForm');
         const statusEl = document.getElementById('statusMessage');

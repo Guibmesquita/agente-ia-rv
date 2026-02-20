@@ -197,7 +197,7 @@
 
 </aside>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const sidebar = document.getElementById('svn-sidebar');
   const toggle = document.getElementById('sidebar-toggle');

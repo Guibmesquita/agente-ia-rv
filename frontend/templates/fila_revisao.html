@@ -7,10 +7,10 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fila de Revisão - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/static/tailwind.config.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/tailwind.config.js"></script>
     <link rel="stylesheet" href="/static/global.css?v={{ now().timestamp() if now else 1706371200 }}">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .review-card {
             background: white;
@@ -274,14 +274,14 @@
 
                 <div class="selection-bar" id="selectionBar">
                     <div class="checkbox-wrapper">
-                        <div class="checkbox-custom" id="selectAllCheckbox" onclick="toggleSelectAll()">
+                        <div class="checkbox-custom" id="selectAllCheckbox">
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
                             </svg>
                         </div>
                         <span class="text-sm text-gray-600" id="selectionText">Selecionar Todos</span>
                     </div>
-                    <button class="btn-bulk-approve" id="bulkApproveBtn" onclick="bulkApprove()" disabled>
+                    <button class="btn-bulk-approve" id="bulkApproveBtn" disabled>
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                         </svg>
@@ -310,7 +310,7 @@
                     <h2 class="text-xl font-semibold text-gray-800">Revisar Conteúdo</h2>
                     <p class="text-sm text-gray-500" id="editModalSubtitle">Compare o PDF original com o texto extraído</p>
                 </div>
-                <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600">
+                <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
@@ -322,19 +322,19 @@
                     <div class="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                         <span class="text-sm font-medium text-gray-700">Documento Original</span>
                         <div class="flex items-center gap-2">
-                            <button onclick="zoomOut()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50" title="Diminuir zoom">
+                            <button id="zoomOutBtn" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50" title="Diminuir zoom">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
                             </button>
                             <span class="text-xs text-gray-500" id="zoomLevel">100%</span>
-                            <button onclick="zoomIn()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50" title="Aumentar zoom">
+                            <button id="zoomInBtn" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50" title="Aumentar zoom">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                             </button>
                             <span class="mx-2 text-gray-300">|</span>
-                            <button onclick="prevPage()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50">
+                            <button id="prevPageBtn" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                             </button>
                             <span class="text-sm text-gray-600">Página <span id="currentPageNum">1</span> de <span id="totalPagesNum">1</span></span>
-                            <button onclick="nextPage()" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50">
+                            <button id="nextPageBtn" class="px-2 py-1 text-sm bg-white border rounded hover:bg-gray-50">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                             </button>
                         </div>
@@ -360,17 +360,17 @@
                 </div>
             </div>
             <div class="p-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                <button onclick="closeEditModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">Cancelar</button>
-                <button onclick="saveEdit()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">Salvar</button>
-                <button onclick="saveAndApprove()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Salvar e Aprovar</button>
+                <button id="cancelModalBtn" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">Cancelar</button>
+                <button id="saveEditBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">Salvar</button>
+                <button id="saveAndApproveBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Salvar e Aprovar</button>
             </div>
         </div>
     </div>
 
     <!-- PDF.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let allItems = [];
         let currentFilter = 'all';
         let selectedItems = new Set();
@@ -557,7 +557,7 @@
                 const checkboxHtml = item.block_id ? `
                     <div class="checkbox-custom ${isSelected ? 'checked' : ''}" 
                          data-block-id="${item.block_id}" 
-                         onclick="toggleItemSelection(${item.block_id})"
+                         data-action="toggleItemSelection" data-id="${item.block_id}"
                          style="margin-right: 12px;">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
@@ -580,10 +580,10 @@
                         ${item.risk_reason ? `<p class="text-sm text-red-600 mb-2"><strong>Motivo:</strong> ${item.risk_reason}</p>` : ''}
                         <div class="content-preview">${content}</div>
                         <div class="action-buttons">
-                            <button class="btn-approve" onclick="approveItem(${item.id})">Aprovar</button>
-                            <button class="btn-edit" onclick="editItem(${item.id})">Editar</button>
-                            <button class="btn-reprocess" onclick="reprocessItem(${item.id})" title="Re-extrair da imagem do PDF">Reprocessar</button>
-                            <button class="btn-reject" onclick="rejectItem(${item.id})">Rejeitar</button>
+                            <button class="btn-approve" data-action="approveItem" data-id="${item.id}">Aprovar</button>
+                            <button class="btn-edit" data-action="editItem" data-id="${item.id}">Editar</button>
+                            <button class="btn-reprocess" data-action="reprocessItem" data-id="${item.id}" title="Re-extrair da imagem do PDF">Reprocessar</button>
+                            <button class="btn-reject" data-action="rejectItem" data-id="${item.id}">Rejeitar</button>
                         </div>
                     </div>
                 `;
@@ -950,6 +950,58 @@
         }
 
         loadPendingItems();
+
+        document.getElementById('selectAllCheckbox').addEventListener('click', function() {
+            toggleSelectAll();
+        });
+
+        document.getElementById('bulkApproveBtn').addEventListener('click', function() {
+            bulkApprove();
+        });
+
+        document.getElementById('closeModalBtn').addEventListener('click', function() {
+            closeEditModal();
+        });
+
+        document.getElementById('cancelModalBtn').addEventListener('click', function() {
+            closeEditModal();
+        });
+
+        document.getElementById('saveEditBtn').addEventListener('click', function() {
+            saveEdit();
+        });
+
+        document.getElementById('saveAndApproveBtn').addEventListener('click', function() {
+            saveAndApprove();
+        });
+
+        document.getElementById('zoomOutBtn').addEventListener('click', function() {
+            zoomOut();
+        });
+
+        document.getElementById('zoomInBtn').addEventListener('click', function() {
+            zoomIn();
+        });
+
+        document.getElementById('prevPageBtn').addEventListener('click', function() {
+            prevPage();
+        });
+
+        document.getElementById('nextPageBtn').addEventListener('click', function() {
+            nextPage();
+        });
+
+        document.getElementById('reviewList').addEventListener('click', function(e) {
+            const actionEl = e.target.closest('[data-action]');
+            if (!actionEl) return;
+            const action = actionEl.dataset.action;
+            const id = Number(actionEl.dataset.id);
+            if (action === 'approveItem') approveItem(id);
+            else if (action === 'editItem') editItem(id);
+            else if (action === 'reprocessItem') reprocessItem(id);
+            else if (action === 'rejectItem') rejectItem(id);
+            else if (action === 'toggleItemSelection') toggleItemSelection(id);
+        });
     </script>
 </body>
 </html>

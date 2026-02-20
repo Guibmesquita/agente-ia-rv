@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Base de Assessores - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .filters-bar {
             display: grid;
@@ -359,15 +359,15 @@
                         <p class="page-subtitle" id="total-count">Carregando...</p>
                     </div>
                     <div class="header-actions">
-                        <button class="btn btn-secondary" onclick="openCustomFieldsModal()">
+                        <button class="btn btn-secondary" id="btn-custom-fields">
                             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                             Campos
                         </button>
-                        <button class="btn btn-secondary" onclick="openUploadModal()">
+                        <button class="btn btn-secondary" id="btn-import">
                             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                             Importar
                         </button>
-                        <button class="btn btn-primary" onclick="openFormModal()">
+                        <button class="btn btn-primary" id="btn-new-assessor">
                             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                             Novo Assessor
                         </button>
@@ -378,18 +378,18 @@
                     <div class="filters-bar" style="grid-template-columns: 2fr 1fr 1fr 1fr auto;">
                         <div class="search-input">
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                            <input type="text" class="form-input" id="search-input" placeholder="Buscar por nome ou telefone..." oninput="debounceFilter()">
+                            <input type="text" class="form-input" id="search-input" placeholder="Buscar por nome ou telefone...">
                         </div>
-                        <select class="form-select" id="filter-unidade" onchange="loadAssessores(); updateActiveFiltersCount()">
+                        <select class="form-select" id="filter-unidade">
                             <option value="">Todas as Unidades</option>
                         </select>
-                        <select class="form-select" id="filter-equipe" onchange="loadAssessores(); updateActiveFiltersCount()">
+                        <select class="form-select" id="filter-equipe">
                             <option value="">Todas as Equipes</option>
                         </select>
-                        <select class="form-select" id="filter-broker" onchange="loadAssessores(); updateActiveFiltersCount()">
+                        <select class="form-select" id="filter-broker">
                             <option value="">Todos os Brokers</option>
                         </select>
-                        <button class="more-filters-toggle" id="more-filters-btn" onclick="toggleMoreFilters()">
+                        <button class="more-filters-toggle" id="more-filters-btn">
                             <span>Mais Filtros</span>
                             <span class="active-filters-badge" id="active-filters-badge" style="display: none;">0</span>
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -399,7 +399,7 @@
                     <div class="expanded-filters" id="expanded-filters">
                         <div class="filters-header">
                             <h4>Filtros Adicionais</h4>
-                            <button class="clear-filters-btn" id="clear-filters-btn" onclick="clearAllFilters()">
+                            <button class="clear-filters-btn" id="clear-filters-btn">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                 Limpar Filtros
                             </button>
@@ -440,7 +440,7 @@
         <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title" id="form-title">Novo Assessor</h3>
-                <button class="modal-close" onclick="closeFormModal()">&times;</button>
+                <button class="modal-close" id="btn-close-form">&times;</button>
             </div>
             <form id="assessor-form">
                 <div class="modal-body">
@@ -481,7 +481,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeFormModal()">Cancelar</button>
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-form">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Salvar</button>
                 </div>
             </form>
@@ -492,11 +492,11 @@
         <div class="modal" style="max-width: 800px;">
             <div class="modal-header">
                 <h3 class="modal-title">Importar Planilha</h3>
-                <button class="modal-close" onclick="closeUploadModal()">&times;</button>
+                <button class="modal-close" id="btn-close-upload">&times;</button>
             </div>
             <div class="modal-body">
                 <div id="upload-step-1">
-                    <div class="upload-area" onclick="document.getElementById('upload-file').click()">
+                    <div class="upload-area" id="upload-area-click">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
                         <h3 style="font-size: 1.1rem; margin-bottom: 8px;">Selecione uma planilha</h3>
                         <p style="color: var(--text-secondary);">Suportamos arquivos Excel (.xlsx, .xls) e CSV</p>
@@ -555,9 +555,9 @@
                 </div>
             </div>
             <div class="modal-footer" id="upload-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Cancelar</button>
-                <button type="button" class="btn btn-primary" id="confirm-upload-btn" style="display: none;" onclick="confirmUpload()">Confirmar Importação</button>
-                <button type="button" class="btn btn-primary" id="finish-upload-btn" style="display: none;" onclick="finishUpload()">Concluir</button>
+                <button type="button" class="btn btn-secondary" id="btn-cancel-upload">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirm-upload-btn" style="display: none;">Confirmar Importação</button>
+                <button type="button" class="btn btn-primary" id="finish-upload-btn" style="display: none;">Concluir</button>
             </div>
         </div>
     </div>
@@ -566,7 +566,7 @@
         <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title">Campos Customizados</h3>
-                <button class="modal-close" onclick="closeCustomFieldsModal()">&times;</button>
+                <button class="modal-close" id="btn-close-custom-fields">&times;</button>
             </div>
             <div class="modal-body">
                 <div style="margin-bottom: 24px;">
@@ -598,7 +598,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let assessores = [];
         let customFields = [];
         let filterOptions = { unidades: [], equipes: [], brokers: [] };
@@ -728,19 +728,19 @@
             filtersHtml += `
                 <div class="filter-group">
                     <label class="filter-label">Código AI</label>
-                    <input type="text" class="form-input" id="filter-exp-codigo" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                    <input type="text" class="form-input" id="filter-exp-codigo" placeholder="Filtrar..." data-filter="text">
                 </div>
                 <div class="filter-group">
                     <label class="filter-label">Nome</label>
-                    <input type="text" class="form-input" id="filter-exp-nome" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                    <input type="text" class="form-input" id="filter-exp-nome" placeholder="Filtrar..." data-filter="text">
                 </div>
                 <div class="filter-group">
                     <label class="filter-label">E-mail</label>
-                    <input type="text" class="form-input" id="filter-exp-email" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                    <input type="text" class="form-input" id="filter-exp-email" placeholder="Filtrar..." data-filter="text">
                 </div>
                 <div class="filter-group">
                     <label class="filter-label">WhatsApp</label>
-                    <input type="text" class="form-input" id="filter-exp-telefone" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                    <input type="text" class="form-input" id="filter-exp-telefone" placeholder="Filtrar..." data-filter="text">
                 </div>
             `;
             
@@ -750,7 +750,7 @@
                     filtersHtml += `
                         <div class="filter-group">
                             <label class="filter-label">${cf.label}</label>
-                            <select class="form-select" id="filter-cf-${cf.slug}" onchange="loadAssessores(); updateActiveFiltersCount()">
+                            <select class="form-select" id="filter-cf-${cf.slug}" data-filter="select">
                                 <option value="">Todos</option>
                                 ${values.map(v => `<option value="${v}">${v}</option>`).join('')}
                             </select>
@@ -760,7 +760,7 @@
                     filtersHtml += `
                         <div class="filter-group">
                             <label class="filter-label">${cf.label}</label>
-                            <input type="text" class="form-input" id="filter-cf-${cf.slug}" placeholder="Filtrar..." onchange="loadAssessores(); updateActiveFiltersCount()" oninput="debounceFilter()">
+                            <input type="text" class="form-input" id="filter-cf-${cf.slug}" placeholder="Filtrar..." data-filter="text">
                         </div>
                     `;
                 }
@@ -888,7 +888,7 @@
                 const isSorted = sortColumn === col.key;
                 const sortedClass = isSorted ? 'sorted' : '';
                 const arrow = getSortArrow(col.key);
-                headerHtml += `<th class="sortable-header ${sortedClass}" onclick="toggleSort('${col.key}')">${col.label}${arrow}</th>`;
+                headerHtml += `<th class="sortable-header ${sortedClass}" data-action="sort" data-sort-key="${col.key}">${col.label}${arrow}</th>`;
             });
             
             customFields.forEach(cf => {
@@ -896,7 +896,7 @@
                 const isSorted = sortColumn === cfKey;
                 const sortedClass = isSorted ? 'sorted' : '';
                 const arrow = getSortArrow(cfKey);
-                headerHtml += `<th class="sortable-header ${sortedClass}" onclick="toggleSort('${cfKey}')">${cf.label}${arrow}</th>`;
+                headerHtml += `<th class="sortable-header ${sortedClass}" data-action="sort" data-sort-key="${cfKey}">${cf.label}${arrow}</th>`;
             });
             
             headerHtml += `<th style="text-align: right;">Ações</th></tr>`;
@@ -923,10 +923,10 @@
                     ${customFieldsCells}
                     <td>
                         <div class="table-actions">
-                            <button class="btn-icon btn-icon-edit" onclick="editAssessor(${a.id})" title="Editar">
+                            <button class="btn-icon btn-icon-edit" data-action="edit" data-id="${a.id}" title="Editar">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                             </button>
-                            <button class="btn-icon btn-icon-delete" onclick="deleteAssessor(${a.id})" title="Excluir">
+                            <button class="btn-icon btn-icon-delete" data-action="delete" data-id="${a.id}" title="Excluir">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                             </button>
                         </div>
@@ -1007,7 +1007,7 @@
                         <strong>${cf.label}</strong>
                         <span class="field-slug">${cf.slug}</span>
                     </div>
-                    <button class="btn btn-danger btn-sm" onclick="deleteCustomField(${cf.id})">Excluir</button>
+                    <button class="btn btn-danger btn-sm" data-action="delete-field" data-id="${cf.id}">Excluir</button>
                 </div>
             `).join('');
             
@@ -1480,14 +1480,56 @@
         }
 
         let searchTimeout;
-        document.getElementById('search-input').addEventListener('input', () => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(loadAssessores, 300);
+        document.getElementById('search-input').addEventListener('input', debounceFilter);
+
+        document.getElementById('filter-unidade').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); });
+        document.getElementById('filter-equipe').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); });
+        document.getElementById('filter-broker').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); });
+
+        document.getElementById('btn-custom-fields').addEventListener('click', () => openCustomFieldsModal());
+        document.getElementById('btn-import').addEventListener('click', () => openUploadModal());
+        document.getElementById('btn-new-assessor').addEventListener('click', () => openFormModal());
+        document.getElementById('more-filters-btn').addEventListener('click', () => toggleMoreFilters());
+        document.getElementById('clear-filters-btn').addEventListener('click', () => clearAllFilters());
+
+        document.getElementById('btn-close-form').addEventListener('click', () => closeFormModal());
+        document.getElementById('btn-cancel-form').addEventListener('click', () => closeFormModal());
+
+        document.getElementById('btn-close-upload').addEventListener('click', () => closeUploadModal());
+        document.getElementById('btn-cancel-upload').addEventListener('click', () => closeUploadModal());
+        document.getElementById('upload-area-click').addEventListener('click', () => document.getElementById('upload-file').click());
+        document.getElementById('confirm-upload-btn').addEventListener('click', () => confirmUpload());
+        document.getElementById('finish-upload-btn').addEventListener('click', () => finishUpload());
+
+        document.getElementById('btn-close-custom-fields').addEventListener('click', () => closeCustomFieldsModal());
+
+        document.getElementById('assessores-head').addEventListener('click', (e) => {
+            const th = e.target.closest('[data-action="sort"]');
+            if (th) toggleSort(th.dataset.sortKey);
         });
 
-        document.getElementById('filter-unidade').addEventListener('change', loadAssessores);
-        document.getElementById('filter-equipe').addEventListener('change', loadAssessores);
-        document.getElementById('filter-broker').addEventListener('change', loadAssessores);
+        document.getElementById('assessores-body').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const id = parseInt(btn.dataset.id);
+            if (btn.dataset.action === 'edit') editAssessor(id);
+            if (btn.dataset.action === 'delete') deleteAssessor(id);
+        });
+
+        document.getElementById('fields-list').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action="delete-field"]');
+            if (btn) deleteCustomField(parseInt(btn.dataset.id));
+        });
+
+        document.getElementById('all-filters-grid').addEventListener('change', (e) => {
+            const el = e.target.closest('[data-filter]');
+            if (el) { loadAssessores(); updateActiveFiltersCount(); }
+        });
+
+        document.getElementById('all-filters-grid').addEventListener('input', (e) => {
+            const el = e.target.closest('[data-filter="text"]');
+            if (el) debounceFilter();
+        });
 
         document.querySelectorAll('.modal-overlay').forEach(modal => {
             modal.addEventListener('click', (e) => {

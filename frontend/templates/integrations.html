@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Integrações - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .integration-card {
             background: var(--card-bg);
@@ -316,7 +316,7 @@
                                         <label class="input-label">Nome</label>
                                         <input type="text" id="newSourceName" class="form-control" placeholder="Nome da fonte">
                                     </div>
-                                    <button onclick="addTrustedSource()" class="btn btn-primary" style="height: 42px;">
+                                    <button id="addSourceBtn" class="btn btn-primary" style="height: 42px;">
                                         Adicionar
                                     </button>
                                 </div>
@@ -328,7 +328,7 @@
         </main>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         const API_BASE = '/api/integrations';
 
         function toggleSidebar() {
@@ -370,7 +370,7 @@
                 console.error('Erro:', error);
                 document.getElementById('integrationsContainer').innerHTML = `
                     <div class="alert alert-danger">
-                        <p>Erro ao carregar integrações. <button onclick="loadIntegrations()" class="btn btn-secondary btn-sm" style="margin-left: 12px;">Tentar novamente</button></p>
+                        <p>Erro ao carregar integrações. <button data-action="retry-load" class="btn btn-secondary btn-sm" style="margin-left: 12px;">Tentar novamente</button></p>
                     </div>
                 `;
             }
@@ -382,7 +382,7 @@
             if (integrations.length === 0) {
                 container.innerHTML = `
                     <div class="alert alert-info">
-                        <p>Nenhuma integração encontrada. <button onclick="initDefaults()" class="btn btn-primary btn-sm" style="margin-left: 12px;">Inicializar Padrões</button></p>
+                        <p>Nenhuma integração encontrada. <button data-action="init-defaults" class="btn btn-primary btn-sm" style="margin-left: 12px;">Inicializar Padrões</button></p>
                     </div>
                 `;
                 return;
@@ -405,7 +405,7 @@
                             <div style="display: flex; align-items: center; gap: 16px;">
                                 <label class="toggle-switch">
                                     <input type="checkbox" ${integration.is_active ? 'checked' : ''} 
-                                           onchange="toggleIntegration(${integration.id}, this.checked)">
+                                           data-action="toggle-integration" data-id="${integration.id}">
                                     <span class="toggle-slider"></span>
                                 </label>
                                 <span class="status-badge ${integration.is_active ? 'connected' : 'disconnected'}">
@@ -445,10 +445,10 @@
                                 `).join('')}
                             </div>
                             <div class="action-buttons">
-                                <button class="btn btn-primary" onclick="saveSecrets('${integration.type}', this)">
+                                <button class="btn btn-primary" data-action="save-secrets" data-type="${integration.type}">
                                     Salvar Configurações
                                 </button>
-                                <button class="btn btn-success" onclick="testConnection(${integration.id}, this)">
+                                <button class="btn btn-success" data-action="test-connection" data-id="${integration.id}">
                                     Testar Conexão
                                 </button>
                             </div>
@@ -650,10 +650,10 @@
                             <span style="font-size: 0.7rem; background: var(--primary-color); color: white; padding: 2px 8px; border-radius: 4px;">${source.category}</span>
                         </div>
                         <div style="display: flex; gap: 8px;">
-                            <button onclick="toggleSourceStatus(${source.id}, ${!source.is_active})" class="btn btn-secondary btn-sm" title="${source.is_active ? 'Desativar' : 'Ativar'}">
+                            <button data-action="toggle-source" data-id="${source.id}" data-status="${!source.is_active}" class="btn btn-secondary btn-sm" title="${source.is_active ? 'Desativar' : 'Ativar'}">
                                 ${source.is_active ? '⏸️' : '▶️'}
                             </button>
-                            <button onclick="deleteSource(${source.id})" class="btn btn-secondary btn-sm" title="Remover" style="color: var(--danger-color);">
+                            <button data-action="delete-source" data-id="${source.id}" class="btn btn-secondary btn-sm" title="Remover" style="color: var(--danger-color);">
                                 🗑️
                             </button>
                         </div>
@@ -738,6 +738,42 @@
                 toast.error('Erro ao remover fonte');
             }
         }
+
+        document.getElementById('addSourceBtn').addEventListener('click', function() {
+            addTrustedSource();
+        });
+
+        document.getElementById('integrationsContainer').addEventListener('click', function(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            if (action === 'retry-load') {
+                loadIntegrations();
+            } else if (action === 'init-defaults') {
+                initDefaults();
+            } else if (action === 'save-secrets') {
+                saveSecrets(target.dataset.type, target);
+            } else if (action === 'test-connection') {
+                testConnection(parseInt(target.dataset.id), target);
+            }
+        });
+
+        document.getElementById('integrationsContainer').addEventListener('change', function(e) {
+            const target = e.target.closest('[data-action="toggle-integration"]');
+            if (!target) return;
+            toggleIntegration(parseInt(target.dataset.id), target.checked);
+        });
+
+        document.getElementById('trustedSourcesList').addEventListener('click', function(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            if (action === 'toggle-source') {
+                toggleSourceStatus(parseInt(target.dataset.id), target.dataset.status === 'true');
+            } else if (action === 'delete-source') {
+                deleteSource(parseInt(target.dataset.id));
+            }
+        });
     </script>
 </body>
 </html>

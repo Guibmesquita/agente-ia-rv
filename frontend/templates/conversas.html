@@ -7,9 +7,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conversas - Agente IA - RV</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/global.css">
-    <script src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
     <style>
         .conversations-layout {
             display: grid;
@@ -525,7 +525,7 @@
                         <h1 class="page-title">Conversas</h1>
                         <p class="page-subtitle">Visualize e gerencie todas as conversas do agente</p>
                     </div>
-                    <button class="btn btn-primary" onclick="openNewConversationModal()">
+                    <button class="btn btn-primary" id="btnNewConversation">
                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                         </svg>
@@ -540,12 +540,12 @@
                                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                                 </svg>
-                                <input type="text" id="searchInput" placeholder="Buscar por número ou nome..." oninput="searchConversations()">
+                                <input type="text" id="searchInput" placeholder="Buscar por número ou nome...">
                             </div>
                             <div class="filters-row">
-                                <button class="filter-btn active" data-status="" onclick="filterByStatus(this, '')">Todas</button>
-                                <button class="filter-btn" data-status="bot_active" onclick="filterByStatus(this, 'bot_active')">Novo</button>
-                                <button class="filter-btn" data-status="human_takeover" onclick="filterByStatus(this, 'human_takeover')">Em andamento</button>
+                                <button class="filter-btn active" id="filterAll" data-status="">Todas</button>
+                                <button class="filter-btn" id="filterNew" data-status="bot_active">Novo</button>
+                                <button class="filter-btn" id="filterInProgress" data-status="human_takeover">Em andamento</button>
                             </div>
                         </div>
                         <div class="conversations-items" id="conversationsList">
@@ -573,13 +573,13 @@
                                 </div>
                             </div>
                             <div class="chat-actions">
-                                <button class="btn-takeover" id="takeoverBtn" onclick="toggleTakeover()">
+                                <button class="btn-takeover" id="takeoverBtn">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                                     </svg>
                                     <span>Assumir Conversa</span>
                                 </button>
-                                <button class="btn-resolve" id="resolveBtn" onclick="openResolveModal()" style="display: none;">
+                                <button class="btn-resolve" id="resolveBtn" style="display: none;">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                     </svg>
@@ -591,8 +591,8 @@
                         <div class="chat-messages" id="chatMessages" style="display: none;"></div>
 
                         <div class="chat-input" id="chatInput" style="display: none;">
-                            <input type="text" id="messageInput" placeholder="Digite sua mensagem..." onkeypress="handleKeyPress(event)">
-                            <button onclick="sendMessage()" id="sendBtn">
+                            <input type="text" id="messageInput" placeholder="Digite sua mensagem...">
+                            <button id="sendBtn">
                                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                                 </svg>
@@ -605,7 +605,7 @@
         </main>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         let conversations = [];
         let currentConversation = null;
         let currentFilter = '';
@@ -708,7 +708,7 @@
                 const timeAgo = conv.last_message_at ? formatTimeAgo(new Date(conv.last_message_at)) : '';
 
                 return `
-                    <div class="conversation-item ${currentConversation?.id === conv.id ? 'active' : ''}" onclick="selectConversation(${conv.id})">
+                    <div class="conversation-item ${currentConversation?.id === conv.id ? 'active' : ''}" data-action="selectConversation" data-id="${conv.id}">
                         <div class="conv-header">
                             <span class="conv-name-title">
                                 ${displayName}
@@ -1115,13 +1115,44 @@
                 eventSource.close();
             }
         });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('btnNewConversation').addEventListener('click', function() { openNewConversationModal(); });
+            document.getElementById('searchInput').addEventListener('input', function() { searchConversations(); });
+            document.getElementById('filterAll').addEventListener('click', function() { filterByStatus(this, ''); });
+            document.getElementById('filterNew').addEventListener('click', function() { filterByStatus(this, 'bot_active'); });
+            document.getElementById('filterInProgress').addEventListener('click', function() { filterByStatus(this, 'human_takeover'); });
+            document.getElementById('takeoverBtn').addEventListener('click', function() { toggleTakeover(); });
+            document.getElementById('resolveBtn').addEventListener('click', function() { openResolveModal(); });
+            document.getElementById('messageInput').addEventListener('keypress', function(event) { handleKeyPress(event); });
+            document.getElementById('sendBtn').addEventListener('click', function() { sendMessage(); });
+            document.getElementById('closeNewConvModalBtn').addEventListener('click', function() { closeNewConversationModal(); });
+            document.getElementById('cancelNewConvBtn').addEventListener('click', function() { closeNewConversationModal(); });
+            document.getElementById('startConversationBtn').addEventListener('click', function() { startNewConversation(); });
+            document.getElementById('closeResolveModalBtn').addEventListener('click', function() { closeResolveModal(); });
+            document.getElementById('cancelResolveBtn').addEventListener('click', function() { closeResolveModal(); });
+            document.getElementById('confirmResolveBtn').addEventListener('click', function() { confirmResolveTicket(); });
+
+            document.getElementById('conversationsList').addEventListener('click', function(e) {
+                var target = e.target.closest('[data-action="selectConversation"]');
+                if (!target) return;
+                var id = parseInt(target.dataset.id, 10);
+                selectConversation(id);
+            });
+
+            document.getElementById('knowledgeTags').addEventListener('click', function(e) {
+                var target = e.target.closest('.tag-chip');
+                if (!target) return;
+                toggleResolveTag(target);
+            });
+        });
     </script>
 
     <div class="modal-overlay" id="newConversationModal">
         <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
                 <h3 class="modal-title">Nova Conversa</h3>
-                <button class="modal-close" onclick="closeNewConversationModal()">&times;</button>
+                <button class="modal-close" id="closeNewConvModalBtn">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -1135,8 +1166,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeNewConversationModal()">Cancelar</button>
-                <button class="btn btn-primary" id="startConversationBtn" onclick="startNewConversation()">Enviar Mensagem</button>
+                <button class="btn btn-secondary" id="cancelNewConvBtn">Cancelar</button>
+                <button class="btn btn-primary" id="startConversationBtn">Enviar Mensagem</button>
             </div>
         </div>
     </div>
@@ -1145,7 +1176,7 @@
         <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title">Concluir Ticket</h3>
-                <button class="modal-close" onclick="closeResolveModal()">&times;</button>
+                <button class="modal-close" id="closeResolveModalBtn">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -1176,22 +1207,22 @@
                         <div class="form-group" style="margin-top: 12px;">
                             <label class="form-label">Tags (opcional)</label>
                             <div id="knowledgeTags" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
-                                <span class="tag-chip" data-tag="fii" onclick="toggleResolveTag(this)">FII</span>
-                                <span class="tag-chip" data-tag="taxa" onclick="toggleResolveTag(this)">Taxa</span>
-                                <span class="tag-chip" data-tag="dividendos" onclick="toggleResolveTag(this)">Dividendos</span>
-                                <span class="tag-chip" data-tag="rentabilidade" onclick="toggleResolveTag(this)">Rentabilidade</span>
-                                <span class="tag-chip" data-tag="compra" onclick="toggleResolveTag(this)">Compra</span>
-                                <span class="tag-chip" data-tag="venda" onclick="toggleResolveTag(this)">Venda</span>
-                                <span class="tag-chip" data-tag="imposto" onclick="toggleResolveTag(this)">Imposto</span>
-                                <span class="tag-chip" data-tag="processo" onclick="toggleResolveTag(this)">Processo</span>
+                                <span class="tag-chip" data-tag="fii">FII</span>
+                                <span class="tag-chip" data-tag="taxa">Taxa</span>
+                                <span class="tag-chip" data-tag="dividendos">Dividendos</span>
+                                <span class="tag-chip" data-tag="rentabilidade">Rentabilidade</span>
+                                <span class="tag-chip" data-tag="compra">Compra</span>
+                                <span class="tag-chip" data-tag="venda">Venda</span>
+                                <span class="tag-chip" data-tag="imposto">Imposto</span>
+                                <span class="tag-chip" data-tag="processo">Processo</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeResolveModal()">Cancelar</button>
-                <button class="btn btn-primary" id="confirmResolveBtn" onclick="confirmResolveTicket()">
+                <button class="btn btn-secondary" id="cancelResolveBtn">Cancelar</button>
+                <button class="btn btn-primary" id="confirmResolveBtn">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 6px;">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
