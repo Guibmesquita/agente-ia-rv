@@ -1,0 +1,45 @@
+Quero verificar se a implementação de segurança está realmente correta e completa.
+Não me dê um resumo do que foi feito — responda cada pergunta abaixo com evidência
+concreta: mostre o trecho de código relevante e o resultado esperado.
+
+1. SECRET_KEY: Mostre o trecho exato do código onde a SECRET_KEY é carregada.
+   O código lança uma exceção se ela não estiver definida? O que acontece se eu
+   iniciar a aplicação sem essa variável de ambiente configurada?
+
+2. Security Headers: Mostre o middleware de headers. Cole uma resposta HTTP real
+   (ou simulada) de qualquer endpoint mostrando os headers presentes. O header
+   HSTS está sendo enviado apenas em produção ou também em desenvolvimento?
+
+3. Rate Limiting: Mostre o decorator exato no endpoint de login. Se eu enviar
+   6 requisições em sequência agora, qual é a resposta da 6ª? Retorna HTTP 429?
+   O contador de tentativas por username também existe, separado do por IP?
+
+4. JWT: Mostre o payload de um token gerado agora. Os campos iss, aud e jti estão
+   presentes? Na decodificação, iss e aud estão sendo validados — ou apenas
+   presentes no payload sem verificação?
+
+5. Blacklist de tokens no logout: Quando o usuário faz logout, o jti do token
+   é inserido em alguma tabela ou cache? Se eu fizer logout e usar o token antigo
+   numa requisição, o que acontece? Mostre o código do endpoint de logout.
+
+6. Auth Middleware Global: Mostre o middleware. Se eu criar agora uma nova rota
+   /api/qualquer-coisa sem nenhum decorator, ela estará protegida automaticamente
+   ou precisaria adicionar algo manualmente?
+
+7. Validação de Upload: Se eu renomear um arquivo .png para .pdf e tentar fazer
+   upload, o que acontece? Mostre o trecho de código que usa python-magic para
+   detectar o tipo MIME real.
+
+8. Logging: Cole um exemplo real de uma linha de log gerada por um login com falha.
+   O log contém o IP, o username tentado e o timestamp? Algum token ou senha
+   aparece nesse log?
+
+9. CORS: Qual é o valor atual de allow_origins? Se estiver como ["*"], isso precisa
+   ser corrigido antes do deploy.
+
+10. O campo auth_method no JWT está sendo validado em algum lugar? Um usuário que
+    autentica pelo login interno (se ainda existir) tem acesso restrito comparado
+    a um usuário que autenticou via SSO?
+
+Para cada item, se você encontrar algo que não está completamente correto,
+me diga — não tente esconder lacunas.
