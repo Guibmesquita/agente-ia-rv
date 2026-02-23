@@ -816,6 +816,8 @@ class Material(Base):
     is_indexed = Column(Boolean, default=False)
     source_file_path = Column(String(500), nullable=True)
     source_filename = Column(String(255), nullable=True)
+    file_hash = Column(String(64), nullable=True, index=True)
+    file_hash_checked_at = Column(DateTime(timezone=True), nullable=True)
     tags = Column(Text, default="[]")  # JSON array de tags estruturadas
     material_categories = Column(Text, default="[]")  # JSON array de categorias selecionadas
     auto_generated_tags = Column(Text, default="[]")  # Tags geradas automaticamente pelo GPT-4 Vision

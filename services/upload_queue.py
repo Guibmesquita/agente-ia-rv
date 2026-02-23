@@ -506,6 +506,29 @@ class UploadQueue:
                 with open(item.file_path, 'rb') as f:
                     file_hash = hashlib.sha256(f.read()).hexdigest()
 
+                duplicate = db.query(Material).filter(
+                    Material.file_hash == file_hash,
+                    Material.file_hash != None,
+                    Material.id != item.material_id
+                ).first()
+                if duplicate:
+                    dup_date = duplicate.created_at.strftime('%d/%m/%Y') if duplicate.created_at else 'data desconhecida'
+                    dup_msg = (
+                        f"Arquivo idêntico já carregado como "
+                        f"'{duplicate.name}' em {dup_date}."
+                    )
+                    item.add_log(f"Aviso: {dup_msg}", "warning")
+                    self._broadcast_event({
+                        "type": "warning", "upload_id": item.upload_id,
+                        "message": dup_msg,
+                        "existing_material_id": duplicate.id
+                    })
+                    logger.warning(f"[UPLOAD] Duplicata detectada: file_hash={file_hash[:12]}... material_id={duplicate.id}")
+
+                mat.file_hash = file_hash
+                mat.file_hash_checked_at = datetime.utcnow()
+                db.commit()
+
                 doc_processor = get_document_processor()
                 total_pages = doc_processor.get_pdf_page_count(item.file_path)
                 item.total_pages = total_pages

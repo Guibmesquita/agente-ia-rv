@@ -130,6 +130,11 @@ class ProductIngestor:
             facts = page.get("facts", [])
             raw_data = page.get("raw_data", {})
             
+            if content_type == "structural_only" or (not facts and not raw_data.get("tables") and not summary):
+                stats["skipped_structural"] = stats.get("skipped_structural", 0) + 1
+                print(f"[INGESTOR] Página {page_num} ignorada — structural_only")
+                continue
+            
             if content_type == "table" or raw_data.get("tables"):
                 tables = raw_data.get("tables", [])
                 for i, table in enumerate(tables):
@@ -239,7 +244,8 @@ class ProductIngestor:
             status="success",
             details_json=json.dumps({
                 "products_detected": stats.get("products_detected", []),
-                "pages_processed": len(processed.get("pages", []))
+                "pages_processed": len(processed.get("pages", [])),
+                "skipped_structural": stats.get("skipped_structural", 0)
             }),
             user_id=user_id
         )
@@ -293,6 +299,11 @@ class ProductIngestor:
             facts = page.get("facts", [])
             raw_data = page.get("raw_data", {})
             products_in_page = page.get("products", [])
+            
+            if content_type == "structural_only" or (not facts and not raw_data.get("tables") and not summary):
+                stats["skipped_structural"] = stats.get("skipped_structural", 0) + 1
+                print(f"[INGESTOR] Página {page_num} ignorada — structural_only")
+                continue
             
             matched_product = None
             for prod_name in products_in_page:
@@ -430,7 +441,8 @@ class ProductIngestor:
             status="success",
             details_json=json.dumps({
                 "products_matched": stats["products_matched"],
-                "smart_upload": True
+                "smart_upload": True,
+                "skipped_structural": stats.get("skipped_structural", 0)
             }),
             user_id=user_id
         )
@@ -527,6 +539,13 @@ class ProductIngestor:
             facts = page.get("facts", [])
             raw_data = page.get("raw_data", {})
             products_in_page = page.get("products", [])
+            
+            if content_type == "structural_only" or (not facts and not raw_data.get("tables") and not summary):
+                stats["skipped_structural"] = stats.get("skipped_structural", 0) + 1
+                log(f"Página {page_num} ignorada — structural_only", "info")
+                if page_completed_callback:
+                    page_completed_callback(page_num, total_pages)
+                continue
             
             page_auto_tags = page.get("auto_tags", {})
             for category in ["contexto", "perfil", "momento", "informacao"]:
@@ -706,7 +725,8 @@ class ProductIngestor:
             details_json=json.dumps({
                 "products_matched": stats["products_matched"],
                 "smart_upload": True,
-                "streaming": True
+                "streaming": True,
+                "skipped_structural": stats.get("skipped_structural", 0)
             }),
             user_id=user_id
         )
@@ -861,8 +881,16 @@ class ProductIngestor:
                     table_data = json.loads(block.content)
                     text_repr = self._table_to_text(table_data)
                     content_for_indexing = f"Tabela: {block.title}\n{text_repr}"
-                except:
-                    pass
+                except json.JSONDecodeError as e:
+                    print(
+                        f"[INGESTOR] Bloco TABLE {block.id} tem JSON inválido: {e}. "
+                        f"Indexando conteúdo bruto como fallback."
+                    )
+                except Exception as e:
+                    print(
+                        f"[INGESTOR] Erro ao converter tabela {block.id}: {e}. "
+                        f"Indexando conteúdo bruto como fallback."
+                    )
             
             content_with_context = f"{global_context}\n\n{content_for_indexing}"
             

@@ -113,9 +113,19 @@ INSTRUÇÕES:
    Selecione APENAS as tags que se aplicam claramente ao conteúdo.
    Se não houver evidência clara, deixe a categoria vazia.
 
+7. IGNORAR ELEMENTOS ESTRUTURAIS DO DOCUMENTO:
+   Não extraia como fatos: cabeçalhos de página, rodapés,
+   numeração de página, logos, disclaimers legais padrão,
+   datas que aparecem apenas como timbre do documento.
+   Esses elementos não têm valor para busca de informação.
+   Se uma página contém APENAS esses elementos, retorne:
+   content_type: "structural_only" e facts: [].
+   Regra prática: se o texto seria idêntico em qualquer
+   outra página do mesmo documento, ignore-o.
+
 FORMATO DE RESPOSTA (JSON):
 {{
-    "content_type": "table|infographic|text|mixed|image_only",
+    "content_type": "table|infographic|text|mixed|image_only|structural_only",
     "summary": "Resumo breve do conteúdo da página",
     "products_mentioned": ["TGRI", "TG Core", "BTG Pactual", ...],
     "auto_tags": {{

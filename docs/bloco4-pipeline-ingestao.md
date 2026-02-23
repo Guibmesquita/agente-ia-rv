@@ -754,3 +754,29 @@ Serviço agnóstico à estrutura da tabela que implementa 3 camadas:
 8. Registro de auditoria
    → IngestionLog com estatísticas completas
 ```
+
+---
+
+## Melhorias implementadas (2026-02-23)
+
+### Melhoria 4 — Detecção de duplicata por hash de arquivo
+
+Campo `file_hash` (SHA-256) adicionado à tabela `materials` com índice parcial. Durante o upload, o hash é calculado e comparado contra materials existentes. Se duplicata encontrada, um aviso é emitido ao usuário (não bloqueia). Backfill automático feito via `document_processing_jobs`.
+
+```sql
+ALTER TABLE materials ADD COLUMN file_hash VARCHAR(64);
+ALTER TABLE materials ADD COLUMN file_hash_checked_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX idx_materials_file_hash ON materials(file_hash) WHERE file_hash IS NOT NULL;
+```
+
+### Melhoria 2 — Filtro de elementos estruturais
+
+Instrução 7 adicionada ao prompt do GPT-4o Vision para ignorar cabeçalhos, rodapés, logos, disclaimers e numeração de página. Novo `content_type: "structural_only"` retornado quando página contém apenas elementos estruturais. No `product_ingestor.py`, páginas `structural_only` são puladas e registradas no `IngestionLog.details_json` como `skipped_structural`.
+
+### Melhoria 1 — Logging explícito em fallback de tabelas
+
+O `except: pass` no `index_approved_blocks()` foi substituído por tratamento granular:
+- `json.JSONDecodeError`: Loga aviso com ID do bloco e detalhes do erro
+- `Exception`: Loga erro genérico com ID do bloco
+
+Em ambos os casos, o conteúdo bruto é indexado como fallback (comportamento preservado), mas agora com visibilidade total nos logs.
