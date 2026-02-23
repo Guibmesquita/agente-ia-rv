@@ -50,6 +50,7 @@ PUBLIC_PREFIXES = (
     "/static/",
     "/api/auth/",
     "/api/whatsapp/",
+    "/api/webhook/",
     "/docs",
     "/openapi.json",
     "/base-conhecimento",
