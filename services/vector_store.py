@@ -15,6 +15,30 @@ from sqlalchemy import text as sql_text
 
 TICKER_PATTERN = re.compile(r'\b([A-Z]{4,5})\s*11\b', re.IGNORECASE)
 
+PUBLISH_STATUS_FILTER = "AND publish_status NOT IN ('rascunho', 'arquivado')"
+
+
+def _log_zero_results(query_label: str, query_text: str):
+    """Log diagnóstico quando busca retorna zero resultados."""
+    try:
+        db = SessionLocal()
+        try:
+            total = db.execute(sql_text("SELECT COUNT(*) FROM document_embeddings")).scalar()
+            published = db.execute(sql_text(
+                "SELECT COUNT(*) FROM document_embeddings "
+                "WHERE publish_status NOT IN ('rascunho', 'arquivado')"
+            )).scalar()
+            print(
+                f"[VECTORSTORE] {query_label} retornou 0 resultados. "
+                f"Base: {published} publicados / {total} total. "
+                f"Query: '{query_text[:80]}'"
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[VECTORSTORE] Erro ao logar zero resultados: {e}")
+
+
 KNOWN_MANAGERS = {
     "manati": "Manatí Capital",
     "manatí": "Manatí Capital",
@@ -170,7 +194,7 @@ class VectorStore:
         try:
             rows = db.execute(sql_text(
                 "SELECT DISTINCT product_ticker, product_name FROM document_embeddings "
-                "WHERE product_ticker IS NOT NULL AND product_ticker != ''"
+                f"WHERE product_ticker IS NOT NULL AND product_ticker != '' {PUBLISH_STATUS_FILTER}"
             )).fetchall()
             
             products = {}
@@ -525,7 +549,7 @@ class VectorStore:
                         "SELECT *, (embedding <=> :query_vec) as distance "
                         "FROM document_embeddings "
                         "WHERE product_ticker = :product_filter "
-                        "AND publish_status NOT IN ('rascunho', 'arquivado') "
+                        f"{PUBLISH_STATUS_FILTER} "
                         "ORDER BY embedding <=> :query_vec "
                         "LIMIT :fetch_count"
                     ), {
@@ -538,7 +562,7 @@ class VectorStore:
                     rows = db.execute(sql_text(
                         "SELECT *, (embedding <=> :query_vec) as distance "
                         "FROM document_embeddings "
-                        "WHERE publish_status NOT IN ('rascunho', 'arquivado') "
+                        f"WHERE 1=1 {PUBLISH_STATUS_FILTER} "
                         "ORDER BY embedding <=> :query_vec "
                         "LIMIT :fetch_count"
                     ), {
@@ -549,7 +573,7 @@ class VectorStore:
                 rows = db.execute(sql_text(
                     "SELECT *, (embedding <=> :query_vec) as distance "
                     "FROM document_embeddings "
-                    "WHERE publish_status NOT IN ('rascunho', 'arquivado') "
+                    f"WHERE 1=1 {PUBLISH_STATUS_FILTER} "
                     "ORDER BY embedding <=> :query_vec "
                     "LIMIT :fetch_count"
                 ), {
@@ -730,6 +754,9 @@ class VectorStore:
         deduplicated = self._deduplicate_results(all_documents)
         
         final_results = deduplicated[:n_results]
+        
+        if not final_results:
+            _log_zero_results("search()", query)
         
         if has_ticker:
             print(f"[VECTOR_STORE] Busca híbrida: {len(ticker_results)} por ticker + {len(documents)} semânticos = {len(final_results)} finais")
@@ -949,7 +976,7 @@ class VectorStore:
             try:
                 rows = db.execute(sql_text(
                     "SELECT * FROM document_embeddings WHERE product_ticker = :ticker "
-                    "AND publish_status NOT IN ('rascunho', 'arquivado') LIMIT :limit"
+                    f"{PUBLISH_STATUS_FILTER} LIMIT :limit"
                 ), {'ticker': ticker_upper, 'limit': n_results}).fetchall()
             finally:
                 db.close()
@@ -1025,6 +1052,8 @@ class VectorStore:
                     })
             
             documents.sort(key=lambda x: x.get("distance", 0))
+            if not documents:
+                _log_zero_results("search_by_ticker()", ticker)
             return documents
             
         except Exception as e:
@@ -1056,7 +1085,7 @@ class VectorStore:
             try:
                 rows = db.execute(sql_text(
                     "SELECT * FROM document_embeddings WHERE product_ticker = :ticker "
-                    "AND publish_status NOT IN ('rascunho', 'arquivado') LIMIT :limit"
+                    f"{PUBLISH_STATUS_FILTER} LIMIT :limit"
                 ), {'ticker': product_upper, 'limit': n_results}).fetchall()
             finally:
                 db.close()
@@ -1129,6 +1158,8 @@ class VectorStore:
             
             documents.sort(key=lambda x: x.get("distance", 0))
             
+            if not documents:
+                _log_zero_results("search_by_product()", product_name)
             return documents
         except Exception as e:
             print(f"[VECTOR_STORE] Erro ao buscar por produto: {e}")
@@ -1150,7 +1181,7 @@ class VectorStore:
             try:
                 ticker_rows = db.execute(sql_text(
                     "SELECT DISTINCT product_ticker FROM document_embeddings "
-                    "WHERE product_ticker IS NOT NULL AND product_ticker != ''"
+                    f"WHERE product_ticker IS NOT NULL AND product_ticker != '' {PUBLISH_STATUS_FILTER}"
                 )).fetchall()
                 for row in ticker_rows:
                     t = row[0]
@@ -1158,7 +1189,7 @@ class VectorStore:
                         tickers.add(t.upper())
                 
                 content_rows = db.execute(sql_text(
-                    "SELECT content FROM document_embeddings"
+                    f"SELECT content FROM document_embeddings WHERE 1=1 {PUBLISH_STATUS_FILTER}"
                 )).fetchall()
                 for row in content_rows:
                     doc = row[0] or ''
@@ -1186,7 +1217,7 @@ class VectorStore:
             try:
                 rows = db.execute(sql_text(
                     "SELECT DISTINCT product_ticker FROM document_embeddings "
-                    "WHERE product_ticker IS NOT NULL AND product_ticker != ''"
+                    f"WHERE product_ticker IS NOT NULL AND product_ticker != '' {PUBLISH_STATUS_FILTER}"
                 )).fetchall()
                 for row in rows:
                     ticker = row[0]
@@ -1197,7 +1228,7 @@ class VectorStore:
                 
                 name_rows = db.execute(sql_text(
                     "SELECT DISTINCT product_name FROM document_embeddings "
-                    "WHERE product_name IS NOT NULL AND product_name != ''"
+                    f"WHERE product_name IS NOT NULL AND product_name != '' {PUBLISH_STATUS_FILTER}"
                 )).fetchall()
                 for row in name_rows:
                     name = row[0]
