@@ -1,0 +1,71 @@
+Antes de qualquer mudança no código, preciso que você responda cada pergunta
+abaixo com evidência concreta — queries executadas, resultados reais, prints
+de log. Não suponha, verifique.
+
+BLOCO 1 — O dado realmente está lá?
+
+1. Execute uma query direta no banco de dados e me diga:
+   - Quantas linhas existem na tabela onde os embeddings são armazenados?
+   - Qual é o nome exato dessa tabela?
+   - Cole as primeiras 3 linhas com todas as colunas (exceto o vetor em si,
+     que é longo — substitua pelo tamanho dele: ex: "vetor: 1536 dimensões")
+
+2. Existe algum campo de "coleção", "namespace", "agent_id" ou "tenant_id"
+   nessa tabela? Se sim, quais são os valores distintos presentes?
+   SELECT DISTINCT collection_id FROM sua_tabela; (adapte o nome da coluna)
+
+3. Quando o VectorStore faz a busca, ele filtra por algum desses campos?
+   Mostre o trecho exato da query SQL ou ORM que é executado na busca.
+
+BLOCO 2 — O embedding está sendo gerado e tem o formato certo?
+
+4. Adicione um print temporário IMEDIATAMENTE antes da query de busca
+   que mostre:
+   - O tamanho do vetor de query gerado (len(embedding))
+   - Os primeiros 5 valores do vetor (embedding[:5])
+   - O valor exato de qualquer filtro aplicado (collection_id, agent_id, etc.)
+
+5. Qual é o tipo da coluna de embedding no banco?
+   (ex: vector(1536), float[], jsonb, text?)
+   Se for pgvector, execute:
+   SELECT typname FROM pg_type WHERE typname = 'vector';
+   para confirmar que a extensão está instalada.
+
+6. O modelo de embedding usado para INDEXAR os documentos é o mesmo
+   usado para BUSCAR agora?
+   (ex: text-embedding-ada-002 gera 1536 dims, text-embedding-3-small
+   pode gerar 1536 ou 512 dependendo da configuração)
+   Mostre o modelo usado em cada ponto.
+
+BLOCO 3 — A query de similaridade está sendo executada corretamente?
+
+7. Qual operador de similaridade está sendo usado?
+   (ex: <-> para distância coseno no pgvector, <#> para produto interno)
+   E qual é o threshold de corte? Se a query faz WHERE distancia < 0.8,
+   por exemplo, me mostre esse valor.
+
+8. Execute manualmente uma busca pelo vetor zerado só para ver se a
+   query roda sem erro:
+   SELECT id, content, embedding <-> '[0,0,0,...0]'::vector AS distancia
+   FROM sua_tabela
+   ORDER BY distancia
+   LIMIT 5;
+   O que retorna?
+
+9. O singleton _vector_store: quando ele é criado pela primeira vez,
+   o self.openai_client é None ou tem valor?
+   Adicione este print no __init__ do VectorStore:
+   print(f"[VECTORSTORE INIT] openai_client = {self.openai_client is not None}")
+   print(f"[VECTORSTORE INIT] collection = {getattr(self, 'collection_id', 'N/A')}")
+   e reinicie a aplicação para ver o que aparece.
+
+BLOCO 4 — O except:pass que engole o erro
+
+10. Na inicialização global do vector_store (linha 1507-1511), substitua
+    temporariamente o except:pass por:
+    except Exception as e:
+        print(f"[VECTORSTORE GLOBAL INIT ERROR] {type(e).__name__}: {e}")
+    Reinicie e me diga se aparece alguma mensagem de erro.
+
+Com as respostas desses 10 pontos consigo identificar exatamente onde
+a busca está quebrando sem precisar de tentativa e erro no código.

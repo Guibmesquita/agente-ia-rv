@@ -1,0 +1,65 @@
+Confirmada a causa raiz. Execute em duas etapas:
+
+ETAPA 1 — Prova definitiva (sem corrigir nada ainda):
+
+Substitua temporariamente as linhas 1507-1511 (o bloco global de
+inicialização com except: pass) por:
+
+try:
+    vector_store = VectorStore()
+    print(f"[VECTORSTORE INIT] Sucesso | openai_client={vector_store.openai_client is not None}")
+except Exception as e:
+    print(f"[VECTORSTORE INIT ERROR] {type(e).__name__}: {e}")
+    vector_store = None
+
+Reinicie e me mostre exatamente o que aparece no log de inicialização.
+Só isso — não faça mais nada ainda.
+
+---
+
+ETAPA 2 — Correção definitiva (apenas após confirmar o erro da Etapa 1):
+
+A correção tem três partes obrigatórias:
+
+PARTE A — Eliminar o except: pass e adicionar log de erro real:
+
+try:
+    vector_store = VectorStore()
+except Exception as e:
+    logger.error(f"[VECTORSTORE] Falha na inicialização: {type(e).__name__}: {e}")
+    vector_store = None
+
+PARTE B — Adicionar log na guarda silenciosa (linha 467):
+
+# Substitua:
+if not self.openai_client: return []
+
+# Por:
+if not self.openai_client:
+    logger.error("[VECTORSTORE] search() abortado: openai_client é None. "
+                 "VectorStore não foi inicializado corretamente.")
+    return []
+
+PARTE C — Adicionar tentativa de recuperação no get_vector_store():
+
+def get_vector_store():
+    global _vector_store
+    if _vector_store is None:
+        try:
+            _vector_store = VectorStore()
+            logger.info("[VECTORSTORE] Singleton criado com sucesso na primeira chamada.")
+        except Exception as e:
+            logger.error(f"[VECTORSTORE] Falha ao criar singleton: {e}")
+    return _vector_store
+
+A Parte C é importante porque resolve o problema de timing:
+se na inicialização do módulo a key ainda não estava disponível,
+a primeira chamada real ao get_vector_store() tenta novamente.
+
+---
+
+Após implementar as três partes, reinicie e faça uma pergunta
+de teste sobre os produtos cadastrados. Me mostre:
+1. O log de inicialização
+2. O log da busca (deve aparecer [VECTOR_STORE] agora)
+3. O resultado retornado ao usuário
