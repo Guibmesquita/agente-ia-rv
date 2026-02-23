@@ -465,7 +465,18 @@ class VectorStore:
             Lista de documentos relevantes com scores
         """
         if not self.openai_client:
-            return []
+            print("[VECTORSTORE] search() abortado: openai_client é None. "
+                  "VectorStore não foi inicializado corretamente. "
+                  f"OPENAI_API_KEY presente: {bool(settings.OPENAI_API_KEY)}")
+            if settings.OPENAI_API_KEY:
+                try:
+                    self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                    print("[VECTORSTORE] openai_client recuperado com sucesso via lazy init!")
+                except Exception as e:
+                    print(f"[VECTORSTORE] Falha ao recuperar openai_client: {e}")
+                    return []
+            else:
+                return []
         
         detected_tickers = extract_tickers_from_query(query)
         has_ticker = len(detected_tickers) > 0
@@ -514,6 +525,7 @@ class VectorStore:
                         "SELECT *, (embedding <=> :query_vec) as distance "
                         "FROM document_embeddings "
                         "WHERE product_ticker = :product_filter "
+                        "AND publish_status NOT IN ('rascunho', 'arquivado') "
                         "ORDER BY embedding <=> :query_vec "
                         "LIMIT :fetch_count"
                     ), {
@@ -526,6 +538,7 @@ class VectorStore:
                     rows = db.execute(sql_text(
                         "SELECT *, (embedding <=> :query_vec) as distance "
                         "FROM document_embeddings "
+                        "WHERE publish_status NOT IN ('rascunho', 'arquivado') "
                         "ORDER BY embedding <=> :query_vec "
                         "LIMIT :fetch_count"
                     ), {
@@ -536,12 +549,14 @@ class VectorStore:
                 rows = db.execute(sql_text(
                     "SELECT *, (embedding <=> :query_vec) as distance "
                     "FROM document_embeddings "
+                    "WHERE publish_status NOT IN ('rascunho', 'arquivado') "
                     "ORDER BY embedding <=> :query_vec "
                     "LIMIT :fetch_count"
                 ), {
                     'query_vec': embedding_str,
                     'fetch_count': fetch_count
                 }).fetchall()
+            print(f"[VECTOR_STORE] SQL retornou {len(rows)} rows (fetch_count={fetch_count})")
         finally:
             db.close()
         
@@ -1498,17 +1513,29 @@ class VectorStore:
 _vector_store = None
 
 def get_vector_store() -> VectorStore:
-    """Retorna instância singleton do VectorStore."""
+    """Retorna instância singleton do VectorStore, com auto-recuperação."""
     global _vector_store
     if _vector_store is None:
-        _vector_store = VectorStore()
+        try:
+            _vector_store = VectorStore()
+            print(f"[VECTORSTORE] Singleton criado com sucesso | openai_client={_vector_store.openai_client is not None}")
+        except Exception as e:
+            print(f"[VECTORSTORE] Falha ao criar singleton: {type(e).__name__}: {e}")
+    elif _vector_store.openai_client is None and settings.OPENAI_API_KEY:
+        try:
+            _vector_store.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            print("[VECTORSTORE] Singleton existente: openai_client recuperado via lazy init")
+        except Exception as e:
+            print(f"[VECTORSTORE] Falha ao recuperar openai_client no singleton: {e}")
     return _vector_store
 
 vector_store = None
 try:
     vector_store = VectorStore()
-except Exception:
-    pass
+    print(f"[VECTORSTORE] Init global OK | openai_client={vector_store.openai_client is not None}")
+except Exception as e:
+    print(f"[VECTORSTORE] Falha na inicialização global: {type(e).__name__}: {e}")
+    vector_store = None
 
 
 def filter_expired_results(results: list, db) -> list:
