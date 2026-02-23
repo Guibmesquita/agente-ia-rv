@@ -1,0 +1,143 @@
+Vou te passar uma série de melhorias no pipeline RAG do Stevan,
+ordenadas por prioridade. Implemente uma de cada vez e confirme
+antes de passar para a próxima.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MELHORIA 1 — Temperatura adaptiva por categoria
+(maior impacto, menor risco, mudança de 2 linhas)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo services/openai_agent.py, onde a temperatura é definida
+antes da chamada ao GPT-4o, substitua o valor fixo por uma função
+de temperatura baseada na categoria classificada:
+
+def _get_temperature(self, categoria: str, config: dict) -> float:
+    """Temperatura adaptiva por tipo de resposta."""
+    config_temp = config.get("temperature", 0.7) if config else 0.7
+    
+    # Se admin configurou manualmente, respeita (mas avisa se alto para DOCUMENTAL)
+    if config and "temperature" in config:
+        return config_temp
+    
+    # Defaults inteligentes por categoria
+    temperature_map = {
+        "DOCUMENTAL": 0.2,   # Dados factuais — precisão máxima
+        "ESCOPO":     0.3,   # Técnico — quase sem variação
+        "MERCADO":    0.4,   # Dados externos — leve flexibilidade
+        "PITCH":      0.7,   # Texto criativo — variação necessária
+        "SAUDACAO":   0.5,   # Conversacional — natural mas controlado
+    }
+    return temperature_map.get(categoria, 0.4)  # default 0.4 para demais
+
+Passe a categoria como parâmetro e use essa função no lugar de
+config.get("temperature", 0.7).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MELHORIA 2 — Max tokens adaptivo por categoria
+(alto impacto, baixo risco)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Mesma lógica que a temperatura. Substitua o max_tokens fixo de 500 por:
+
+def _get_max_tokens(self, categoria: str, config: dict) -> int:
+    if config and "max_tokens" in config:
+        return config.get("max_tokens", 500)
+    
+    tokens_map = {
+        "DOCUMENTAL": 900,   # Produtos têm muitos dados — precisa de espaço
+        "PITCH":      800,   # Texto de venda pode ser longo
+        "ESCOPO":     700,   # Explicações técnicas moderadas
+        "MERCADO":    600,   # Dados de mercado + fontes
+        "SAUDACAO":   150,   # Saudação não precisa de espaço
+    }
+    return tokens_map.get(categoria, 600)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MELHORIA 3 — Confirmar e corrigir o texto embedado
+(potencialmente o maior impacto de todos)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Antes de qualquer mudança, me mostre o trecho exato do código que
+monta o texto passado para _generate_embedding() durante a indexação.
+Especificamente: o que é passado como argumento quando um chunk
+atômico é indexado? É apenas o conteúdo do fato ("Vacância: 0%")
+ou inclui metadados do produto?
+
+Se for apenas o conteúdo bruto, implemente o seguinte prefixo
+semântico antes de gerar o embedding:
+
+def _prepare_text_for_embedding(self, content: str, metadata: dict) -> str:
+    """Enriquece o texto com contexto antes de embedar."""
+    parts = []
+    
+    # Prefixo com identidade do produto (âncora semântica)
+    if metadata.get("product_ticker"):
+        parts.append(metadata["product_ticker"])
+    if metadata.get("product_name") and metadata.get("product_name") != metadata.get("product_ticker"):
+        parts.append(metadata["product_name"])
+    if metadata.get("gestora"):
+        parts.append(metadata["gestora"])
+    if metadata.get("category"):
+        parts.append(metadata["category"])
+    if metadata.get("topic"):
+        parts.append(metadata["topic"])
+    
+    prefix = " | ".join(parts)
+    
+    if prefix:
+        return f"{prefix}\n{content}"
+    return content
+
+ATENÇÃO: Se essa mudança for implementada, os 262 documentos
+publicados precisam ser RE-EMBEDADOS com o novo formato — os
+vetores antigos ficam incompatíveis com as queries novas.
+Antes de implementar, me confirme: há uma função de re-indexação
+em lote disponível? Qual é o custo estimado de re-embedar
+262 documentos com text-embedding-3-large?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MELHORIA 4 — Categoria MERCADO consulta base antes do Tavily
+(impacto médio, risco baixo)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No tratamento da categoria MERCADO, em vez de ir direto para o
+Tavily, faça uma busca rápida na base interna primeiro:
+
+elif categoria == "MERCADO":
+    # Tenta base interna primeiro — pode ter análises relevantes
+    internal_docs = enhanced_search.search(
+        query=enriched_query,
+        n_results=3,           # Poucos — só o mais relevante
+        similarity_threshold=0.75  # Threshold mais permissivo para mercado
+    )
+    
+    high_quality_internal = [
+        d for d in internal_docs
+        if d.get("composite_score", 0) > 0.5
+    ]
+    
+    # Sempre vai para Tavily para dados em tempo real
+    web_results = web_search.search(enriched_query)
+    
+    # Combina: base interna (visão SVN) + Tavily (dados externos)
+    context_documents = high_quality_internal + web_results
+
+Isso garante que a visão interna da SVN sobre o mercado complemente
+os dados externos do Tavily, em vez de ser completamente ignorada.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MELHORIA 5 — Esclarecer o duplo scoring
+(limpeza arquitetural)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Preciso entender o que alimenta o "vector_score" no CompositeScorer
+do EnhancedSearch (Nível 2). Quando ele calcula:
+    composite_score = vector_score × 0.40 + fuzzy_score × 0.25 ...
+
+O "vector_score" é:
+  (a) A distância cosseno original do pgvector, ou
+  (b) O composite_score calculado pelo VectorStore no Nível 1?
+
+Me mostre o trecho exato do código que monta o SearchResult
+antes de passar ao CompositeScorer. Com essa informação decido
+se o scoring do Nível 1 precisa ser simplificado ou eliminado.
