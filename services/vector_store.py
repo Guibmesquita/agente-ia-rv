@@ -948,7 +948,8 @@ class VectorStore:
             db = SessionLocal()
             try:
                 rows = db.execute(sql_text(
-                    "SELECT * FROM document_embeddings WHERE product_ticker = :ticker LIMIT :limit"
+                    "SELECT * FROM document_embeddings WHERE product_ticker = :ticker "
+                    "AND publish_status NOT IN ('rascunho', 'arquivado') LIMIT :limit"
                 ), {'ticker': ticker_upper, 'limit': n_results}).fetchall()
             finally:
                 db.close()
@@ -1054,7 +1055,8 @@ class VectorStore:
             db = SessionLocal()
             try:
                 rows = db.execute(sql_text(
-                    "SELECT * FROM document_embeddings WHERE product_ticker = :ticker LIMIT :limit"
+                    "SELECT * FROM document_embeddings WHERE product_ticker = :ticker "
+                    "AND publish_status NOT IN ('rascunho', 'arquivado') LIMIT :limit"
                 ), {'ticker': product_upper, 'limit': n_results}).fetchall()
             finally:
                 db.close()
