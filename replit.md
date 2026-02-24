@@ -34,6 +34,8 @@ The application is built using FastAPI with a modular architecture.
 - **Admin Panel:** Provides tools for user, integration, advisor, and campaign management, a "Message Center," and knowledge base management.
 - **Product CMS:** Manages products, materials, and content blocks, featuring PDF upload with GPT-4 Vision extraction, approval system, semantic indexing, WhatsApp scripts, versioning, and validity control.
 - **Intelligent Upload with Metadata Extraction:** The `DocumentMetadataExtractor` service uses GPT-4 Vision to analyze PDFs and extract metadata like fund name, ticker, manager, and document type, enabling automated product matching or creation.
+- **Adaptive DPI (Melhoria 3):** PDF pages are pre-classified via PyMuPDF native text analysis (text/table/infographic/mixed/image_only) and rendered at optimal DPI (150-250) before Vision extraction. Zero overhead — uses document already open in memory.
+- **Dependency Health Check:** `services/dependency_check.py` validates critical dependencies (PyMuPDF, OpenAI, pgvector, python-magic, Pillow) on startup. `GET /api/health/detailed` returns real-time status of database, vector store, PDF processing, OpenAI, and Z-API with HTTP 503 on critical failures.
 - **Observability and Auditing:** Includes `RetrievalLog` for RAG searches, `IngestionLog` for document ingestion, RAG analytics, intelligent re-ranking, and content block tracking.
 - **AI Agent Response Framework:** Utilizes a `ConversationState` machine, message normalization, contact identification, and AI-based intent classification for human transfer.
 - **Escalation Intelligence V2.1:** GPT analysis on each escalation with 11 categories, auto-generating ticket summaries and conversation topics, and tracking important timestamps.

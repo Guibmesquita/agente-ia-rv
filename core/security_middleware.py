@@ -49,6 +49,7 @@ PUBLIC_PATHS: Set[str] = {
 PUBLIC_PREFIXES = (
     "/static/",
     "/api/auth/",
+    "/api/health/",
     "/api/whatsapp/",
     "/api/webhook/",
     "/docs",

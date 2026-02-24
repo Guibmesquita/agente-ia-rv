@@ -12,7 +12,7 @@ import os
 
 from database.database import engine, Base, SessionLocal
 from database import crud
-from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, agent_config, assessores, campaigns, knowledge, agent_test, conversations, products, insights, search, trusted_sources, costs
+from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, agent_config, assessores, campaigns, knowledge, agent_test, conversations, products, insights, search, trusted_sources, costs, health
 from core.security import decode_token
 
 
@@ -23,6 +23,9 @@ async def lifespan(app: FastAPI):
     Yield imediato para responder health checks rápido.
     Inicialização pesada roda em background.
     """
+    from services.dependency_check import check_critical_dependencies
+    check_critical_dependencies()
+    
     background_tasks = []
     
     init_task = asyncio.create_task(run_init_background())
@@ -347,6 +350,7 @@ app.include_router(insights.router)
 app.include_router(search.router)
 app.include_router(trusted_sources.router)
 app.include_router(costs.router)
+app.include_router(health.router)
 
 
 # ========== Health Check ==========

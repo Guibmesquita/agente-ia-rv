@@ -28,6 +28,17 @@ class ContentType(str, Enum):
     IMAGE_ONLY = "image_only"
 
 
+DPI_BY_CONTENT = {
+    ContentType.TEXT: 150,
+    ContentType.MIXED: 200,
+    ContentType.TABLE: 250,
+    ContentType.INFOGRAPHIC: 200,
+    ContentType.IMAGE_ONLY: 150,
+}
+
+DPI_DEFAULT = 150
+
+
 class DocumentProcessor:
     """Processador inteligente de documentos usando GPT-4 Vision."""
     
@@ -35,6 +46,45 @@ class DocumentProcessor:
         self.client = None
         if settings.OPENAI_API_KEY:
             self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    
+    def _classify_page_content(self, page) -> ContentType:
+        """Pré-classifica o tipo de conteúdo de uma página usando texto nativo do PyMuPDF.
+        Usado para determinar o DPI ideal antes de enviar ao Vision."""
+        text = page.get_text("text").strip()
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE).get("blocks", [])
+        
+        image_blocks = sum(1 for b in blocks if b.get("type") == 1)
+        text_blocks = sum(1 for b in blocks if b.get("type") == 0)
+        
+        if text_blocks == 0 and image_blocks > 0:
+            return ContentType.IMAGE_ONLY
+        
+        text_lower = text.lower()
+        table_indicators = ["|", "\t", "   "]
+        table_score = sum(1 for ind in table_indicators if ind in text)
+        
+        lines = text.split("\n")
+        numeric_lines = sum(1 for line in lines if any(c.isdigit() for c in line))
+        
+        if table_score >= 2 or (len(lines) > 5 and numeric_lines / max(len(lines), 1) > 0.5):
+            if image_blocks > 0:
+                return ContentType.MIXED
+            return ContentType.TABLE
+        
+        if image_blocks > 0 and text_blocks > 0:
+            return ContentType.MIXED
+        
+        if image_blocks > text_blocks and image_blocks > 0:
+            return ContentType.INFOGRAPHIC
+        
+        return ContentType.TEXT
+    
+    def _page_to_image(self, page, dpi: int = DPI_DEFAULT) -> Image.Image:
+        """Renderiza uma página do PyMuPDF como imagem PIL com DPI específico."""
+        zoom = dpi / 72.0
+        matrix = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=matrix)
+        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     
     def _image_to_base64(self, image: Image.Image, format: str = "PNG") -> str:
         """Converte imagem PIL para base64."""
@@ -261,9 +311,16 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         Returns:
             Dict com informações estruturadas de todas as páginas
         """
-        images = self._pdf_to_images(pdf_path=pdf_path, pdf_bytes=pdf_bytes)
+        doc = None
+        try:
+            if pdf_path:
+                doc = fitz.open(pdf_path)
+            elif pdf_bytes:
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        except Exception as e:
+            print(f"[DOC_PROCESSOR] Erro ao abrir PDF: {e}")
         
-        if not images:
+        if not doc or len(doc) == 0:
             return {
                 "title": document_title,
                 "total_pages": 0,
@@ -272,7 +329,7 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 "error": "Não foi possível converter o PDF em imagens"
             }
         
-        total_pages = len(images)
+        total_pages = len(doc)
         pages_data = []
         all_facts = []
         all_products = set()
@@ -280,22 +337,30 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         if progress_callback:
             progress_callback(0, total_pages)
         
-        for i, image in enumerate(images):
-            print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages}...")
-            
-            page_result = self.analyze_page(image, document_title, page_number=i + 1)
-            page_result["page_number"] = i + 1
-            pages_data.append(page_result)
-            
-            if progress_callback:
-                progress_callback(i + 1, total_pages)
-            
-            for product in page_result.get("products_mentioned", []):
-                all_products.add(product.strip().upper())
-            
-            for fact in page_result.get("facts", []):
-                prefixed_fact = f"[{document_title} - Página {i + 1}] {fact}"
-                all_facts.append(prefixed_fact)
+        try:
+            for i, page in enumerate(doc):
+                content_type = self._classify_page_content(page)
+                dpi = DPI_BY_CONTENT.get(content_type, DPI_DEFAULT)
+                print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages} (tipo={content_type.value}, dpi={dpi})...")
+                
+                image = self._page_to_image(page, dpi=dpi)
+                page_result = self.analyze_page(image, document_title, page_number=i + 1)
+                page_result["page_number"] = i + 1
+                page_result["adaptive_dpi"] = dpi
+                page_result["pre_classification"] = content_type.value
+                pages_data.append(page_result)
+                
+                if progress_callback:
+                    progress_callback(i + 1, total_pages)
+                
+                for product in page_result.get("products_mentioned", []):
+                    all_products.add(product.strip().upper())
+                
+                for fact in page_result.get("facts", []):
+                    prefixed_fact = f"[{document_title} - Página {i + 1}] {fact}"
+                    all_facts.append(prefixed_fact)
+        finally:
+            doc.close()
         
         return {
             "title": document_title,
@@ -326,9 +391,13 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         Returns:
             Dict com informações estruturadas de todas as páginas
         """
-        images = self._pdf_to_images(pdf_path=pdf_path)
+        doc = None
+        try:
+            doc = fitz.open(pdf_path)
+        except Exception as e:
+            print(f"[DOC_PROCESSOR] Erro ao abrir PDF: {e}")
         
-        if not images:
+        if not doc or len(doc) == 0:
             return {
                 "title": document_title,
                 "total_pages": 0,
@@ -337,7 +406,7 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 "error": "Não foi possível converter o PDF em imagens"
             }
         
-        total_pages = len(images)
+        total_pages = len(doc)
         pages_data = []
         all_facts = []
         all_products = set()
@@ -346,57 +415,65 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         if progress_callback:
             progress_callback(start_page, total_pages)
         
-        for i in range(start_page, total_pages):
-            image = images[i]
-            print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages}...")
-            
-            try:
-                import time
-                start_time = time.time()
+        try:
+            for i in range(start_page, total_pages):
+                page = doc[i]
+                content_type = self._classify_page_content(page)
+                dpi = DPI_BY_CONTENT.get(content_type, DPI_DEFAULT)
+                image = self._page_to_image(page, dpi=dpi)
+                print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages} (tipo={content_type.value}, dpi={dpi})...")
                 
-                page_result = self.analyze_page(image, document_title, page_number=i + 1)
-                page_result["page_number"] = i + 1
-                
-                processing_time_ms = int((time.time() - start_time) * 1000)
-                page_result["processing_time_ms"] = processing_time_ms
-                
-                pages_data.append(page_result)
-                last_successful_page = i
-                
-                if progress_callback:
-                    progress_callback(i + 1, total_pages)
-                
-                for product in page_result.get("products_mentioned", []):
-                    all_products.add(product.strip().upper())
-                
-                for fact in page_result.get("facts", []):
-                    prefixed_fact = f"[{document_title} - Página {i + 1}] {fact}"
-                    all_facts.append(prefixed_fact)
-                
-                if page_callback:
-                    page_callback(i + 1, page_result, True, None)
+                try:
+                    import time
+                    start_time = time.time()
                     
-            except Exception as e:
-                print(f"[DOC_PROCESSOR] Erro na página {i + 1}: {e}")
-                error_result = {
-                    "page_number": i + 1,
-                    "error": str(e)
-                }
-                pages_data.append(error_result)
-                
-                if page_callback:
-                    page_callback(i + 1, error_result, False, str(e))
-                
-                return {
-                    "title": document_title,
-                    "total_pages": total_pages,
-                    "pages": pages_data,
-                    "all_facts": all_facts,
-                    "all_products": list(all_products),
-                    "last_successful_page": last_successful_page,
-                    "error": f"Falha na página {i + 1}: {str(e)}",
-                    "interrupted": True
-                }
+                    page_result = self.analyze_page(image, document_title, page_number=i + 1)
+                    page_result["page_number"] = i + 1
+                    page_result["adaptive_dpi"] = dpi
+                    page_result["pre_classification"] = content_type.value
+                    
+                    processing_time_ms = int((time.time() - start_time) * 1000)
+                    page_result["processing_time_ms"] = processing_time_ms
+                    
+                    pages_data.append(page_result)
+                    last_successful_page = i
+                    
+                    if progress_callback:
+                        progress_callback(i + 1, total_pages)
+                    
+                    for product in page_result.get("products_mentioned", []):
+                        all_products.add(product.strip().upper())
+                    
+                    for fact in page_result.get("facts", []):
+                        prefixed_fact = f"[{document_title} - Página {i + 1}] {fact}"
+                        all_facts.append(prefixed_fact)
+                    
+                    if page_callback:
+                        page_callback(i + 1, page_result, True, None)
+                        
+                except Exception as e:
+                    print(f"[DOC_PROCESSOR] Erro na página {i + 1}: {e}")
+                    error_result = {
+                        "page_number": i + 1,
+                        "error": str(e)
+                    }
+                    pages_data.append(error_result)
+                    
+                    if page_callback:
+                        page_callback(i + 1, error_result, False, str(e))
+                    
+                    return {
+                        "title": document_title,
+                        "total_pages": total_pages,
+                        "pages": pages_data,
+                        "all_facts": all_facts,
+                        "all_products": list(all_products),
+                        "last_successful_page": last_successful_page,
+                        "error": f"Falha na página {i + 1}: {str(e)}",
+                        "interrupted": True
+                    }
+        finally:
+            doc.close()
         
         return {
             "title": document_title,
