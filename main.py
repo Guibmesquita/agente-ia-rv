@@ -106,14 +106,6 @@ def _sync_init_database():
     finally:
         db.close()
 
-    from sqlalchemy import text
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_products_ticker_non_empty ON products (ticker) WHERE ticker IS NOT NULL AND ticker != ''"))
-            conn.commit()
-        print("[INIT] Índice único de ticker criado/verificado com sucesso.")
-    except Exception as e:
-        print(f"[INIT] Aviso ao criar índice único de ticker: {e}")
 
 
 def _resolve_orphan_materials(db):
