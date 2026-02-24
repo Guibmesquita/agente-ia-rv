@@ -45,21 +45,7 @@
       "created_at": "2026-02-04T15:23:37.719417+00:00",
       "updated_at": null
     },
-    {
-      "id": 26,
-      "name": "[Sistema] Documentos Não Vinculados",
-      "ticker": "__SYSTEM_UNASSIGNED__",
-      "manager": null,
-      "category": "sistema",
-      "status": "ativo",
-      "description": "Produto de sistema para armazenar materiais sem produto vinculado. Não editar.",
-      "name_aliases": "[]",
-      "valid_from": null,
-      "valid_until": null,
-      "created_by": null,
-      "created_at": "2026-02-04T16:42:18.639492+00:00",
-      "updated_at": null
-    },
+    
     {
       "id": 27,
       "name": "XP Log Prime II",

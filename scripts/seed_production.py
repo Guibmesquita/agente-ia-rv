@@ -109,7 +109,7 @@ def run_seed(seed_file=None):
     with open(seed_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    seed_tickers = [p.get('ticker', '') for p in data.get('products', []) if p.get('ticker') and p.get('ticker') != '__SYSTEM_UNASSIGNED__']
+    seed_tickers = [p.get('ticker', '') for p in data.get('products', []) if p.get('ticker')]
     
     db = SessionLocal()
     try:
@@ -124,7 +124,7 @@ def run_seed(seed_file=None):
         print("\n--- Iniciando seed de produção ---")
         
         seed_ids = {r.get('id') for r in data.get('products', []) if r.get('id')}
-        all_valid_tickers = set(seed_tickers) | {'__SYSTEM_UNASSIGNED__'}
+        all_valid_tickers = set(seed_tickers)
         orphan_query = db.query(Product).filter(Product.ticker.notin_(all_valid_tickers))
         if seed_ids:
             orphan_query = orphan_query.filter(Product.id.notin_(seed_ids))

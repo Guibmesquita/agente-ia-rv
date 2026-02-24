@@ -118,6 +118,66 @@ def reindex_block(block: ContentBlock, db: Session):
         return False
 
 
+def find_or_create_product_from_name(db: Session, material_name: str, gestora: str = None, document_type: str = None):
+    import re as _re
+    from services.document_metadata_extractor import TICKER_PATTERN, normalize_text
+    from services.product_resolver import ProductResolver
+
+    ticker_match = TICKER_PATTERN.search(material_name.upper())
+    ticker = f"{ticker_match.group(1)}{ticker_match.group(2)}" if ticker_match else None
+
+    fund_name = material_name
+    for pfx in ["Relatório gerencial ", "Relatório Gerencial ", "MP ", "Material Publicitário "]:
+        if fund_name.startswith(pfx):
+            fund_name = fund_name[len(pfx):]
+            break
+    fund_name = _re.sub(r'\s*\(\d+\)\s*$', '', fund_name).strip()
+    fund_name = _re.sub(r'\s*\(vf\)\s*', ' ', fund_name, flags=_re.IGNORECASE).strip()
+
+    resolver = ProductResolver(db)
+    result = resolver.resolve(fund_name=fund_name, ticker=ticker, gestora=gestora)
+    if result.matched_product_id:
+        matched = db.query(Product).filter(Product.id == result.matched_product_id).first()
+        if matched:
+            return matched
+
+    if ticker:
+        existing = db.query(Product).filter(Product.ticker == ticker).first()
+        if existing:
+            return existing
+
+    if fund_name:
+        norm = normalize_text(fund_name)
+        for p in db.query(Product).all():
+            if normalize_text(p.name) == norm:
+                return p
+
+    product_name = fund_name or ticker or material_name
+    if ticker and ticker not in (product_name or ""):
+        product_name = f"{product_name} ({ticker})"
+
+    try:
+        new_product = Product(
+            name=product_name,
+            ticker=ticker,
+            manager=gestora,
+            category="fii",
+            status="ativo",
+            description=f"Produto criado automaticamente a partir de upload de documento ({document_type or 'N/A'})",
+        )
+        db.add(new_product)
+        db.commit()
+        db.refresh(new_product)
+        return new_product
+    except Exception:
+        db.rollback()
+        if ticker:
+            existing = db.query(Product).filter(Product.ticker == ticker).first()
+            if existing:
+                return existing
+        return None
+
+
 def _build_global_context_for_block(material, product) -> str:
     """
     Constrói o contexto global que será prefixado em todos os chunks.
@@ -288,7 +348,7 @@ async def list_products(
     """Lista todos os produtos com filtros opcionais."""
     query = db.query(Product)
     
-    query = query.filter(Product.ticker != "__SYSTEM_UNASSIGNED__")
+    
     
     if search:
         search_term = f"%{search}%"
@@ -1893,15 +1953,13 @@ async def smart_upload_without_product(
     if not name or not name.strip():
         raise HTTPException(status_code=400, detail="Nome do material é obrigatório")
     
-    placeholder_product = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
-    if not placeholder_product:
-        raise HTTPException(
-            status_code=500, 
-            detail="Produto de sistema não encontrado. Execute o seed do banco de dados."
-        )
-    
     from datetime import datetime
-    
+
+    material_name = name or file.filename.replace('.pdf', '')
+    temp_product = find_or_create_product_from_name(db, material_name)
+    if not temp_product:
+        raise HTTPException(status_code=500, detail="Não foi possível criar ou encontrar produto para o material")
+
     parsed_valid_from = None
     parsed_valid_until = None
     
@@ -1918,7 +1976,7 @@ async def smart_upload_without_product(
             pass
     
     material = Material(
-        product_id=placeholder_product.id,
+        product_id=temp_product.id,
         material_type=material_type,
         name=name,
         description=description,
@@ -1954,7 +2012,7 @@ async def smart_upload_without_product(
             "id": material.id,
             "name": material.name
         },
-        "product_id": placeholder_product.id
+        "product_id": temp_product.id
     }
 
 
@@ -1988,12 +2046,13 @@ async def smart_upload_stream(
     if not name or not name.strip():
         raise HTTPException(status_code=400, detail="Nome do material é obrigatório")
     
-    placeholder_product = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
-    if not placeholder_product:
-        raise HTTPException(status_code=500, detail="Produto de sistema não encontrado")
-    
     from datetime import datetime as dt
-    
+
+    material_name2 = name or file.filename.replace('.pdf', '')
+    temp_product2 = find_or_create_product_from_name(db, material_name2)
+    if not temp_product2:
+        raise HTTPException(status_code=500, detail="Não foi possível criar ou encontrar produto para o material")
+
     parsed_valid_from = None
     parsed_valid_until = None
     
@@ -2023,7 +2082,7 @@ async def smart_upload_stream(
         parsed_categories = []
     
     material = Material(
-        product_id=placeholder_product.id,
+        product_id=temp_product2.id,
         material_type=material_type,
         name=name,
         description=description,
@@ -2113,9 +2172,7 @@ async def smart_upload_stream(
             
             try:
                 extractor = get_metadata_extractor()
-                existing_products = db_local.query(Product).filter(
-                    (Product.ticker != "__SYSTEM_UNASSIGNED__") | (Product.ticker == None)
-                ).all()
+                existing_products = db_local.query(Product).all()
                 existing_products_list = [{"id": p.id, "name": p.name, "ticker": p.ticker} for p in existing_products]
                 
                 metadata = extractor.extract_metadata(
@@ -2151,7 +2208,7 @@ async def smart_upload_stream(
                                 matched_product = prod
                                 break
                     
-                    if matched_product and matched_product.ticker != "__SYSTEM_UNASSIGNED__":
+                    if matched_product:
                         if mat:
                             mat.product_id = matched_product.id
                             db_local.commit()
@@ -2216,37 +2273,7 @@ async def smart_upload_stream(
                 mat.processing_status = ProcessingStatus.SUCCESS.value
                 db_local.commit()
                 
-                placeholder = db_local.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
-                if mat.product_id == placeholder.id:
-                    first_block = db_local.query(ContentBlock).filter(
-                        ContentBlock.material_id == mat.id
-                    ).first()
-                    
-                    if first_block:
-                        existing_review = db_local.query(PendingReviewItem).filter(
-                            PendingReviewItem.block_id == first_block.id
-                        ).first()
-                        
-                        if not existing_review:
-                            first_block.status = ContentBlockStatus.PENDING_REVIEW.value
-                            first_block.is_high_risk = True
-                            db_local.commit()
-                            
-                            review_item = PendingReviewItem(
-                                block_id=first_block.id,
-                                original_content=first_block.content[:500] if first_block.content else "",
-                                extracted_content=first_block.content,
-                                confidence_score=30,
-                                risk_reason="Material não vinculado a produto - requer categorização manual"
-                            )
-                            db_local.add(review_item)
-                            db_local.commit()
-                            
-                            progress_queue.put({
-                                "type": "log",
-                                "message": "Material enviado para revisão (produto não identificado)",
-                                "log_type": "warning"
-                            })
+                pass
             
             processing_success = True
             
@@ -2885,13 +2912,6 @@ async def batch_upload(
         except ValueError:
             pass
 
-    target_product_id = selected_product_id
-    if not target_product_id:
-        placeholder_product = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
-        if not placeholder_product:
-            raise HTTPException(status_code=500, detail="Produto de sistema não encontrado")
-        target_product_id = placeholder_product.id
-
     queued_items = []
 
     for file in files:
@@ -2901,8 +2921,17 @@ async def batch_upload(
 
         name = file.filename.replace('.pdf', '')
 
+        file_product_id = selected_product_id
+        if not file_product_id:
+            auto_product = find_or_create_product_from_name(db, name)
+            if auto_product:
+                file_product_id = auto_product.id
+            else:
+                queued_items.append({"filename": file.filename, "error": "Não foi possível criar produto automaticamente", "queued": False})
+                continue
+
         material = Material(
-            product_id=target_product_id,
+            product_id=file_product_id,
             material_type=material_type,
             name=name,
             valid_from=parsed_valid_from,
@@ -3034,3 +3063,143 @@ async def stream_upload_queue(
             "X-Accel-Buffering": "no"
         }
     )
+
+
+@router.post("/materials/{material_id}/reassign-product")
+async def reassign_material_product(
+    material_id: int,
+    target_product_id: int = Form(...),
+    reindex: bool = Form(True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role not in ("admin", "gestor"):
+        raise HTTPException(status_code=403, detail="Apenas administradores podem reassociar materiais")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    target_product = db.query(Product).filter(Product.id == target_product_id).first()
+    if not target_product:
+        raise HTTPException(status_code=404, detail="Produto de destino não encontrado")
+
+    old_product_name = material.product.name if material.product else "N/A"
+    material.product_id = target_product_id
+    db.commit()
+
+    reindexed = 0
+    if reindex:
+        blocks = db.query(ContentBlock).filter(
+            ContentBlock.material_id == material_id,
+            ContentBlock.status == "approved"
+        ).all()
+        for block in blocks:
+            db.refresh(block)
+            success = reindex_block(block, db)
+            if success:
+                reindexed += 1
+
+    return {
+        "success": True,
+        "message": f"Material '{material.name}' reassociado de '{old_product_name}' para '{target_product.name}'",
+        "reindexed_blocks": reindexed
+    }
+
+
+@router.post("/admin/migrate-orphan-materials")
+async def migrate_orphan_materials(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role not in ("admin", "gestor"):
+        raise HTTPException(status_code=403, detail="Apenas administradores")
+
+    import re as re_migrate
+    from services.document_metadata_extractor import TICKER_PATTERN as TP_MIG, normalize_text as nt_mig
+
+    placeholder_products = db.query(Product).filter(
+        Product.ticker == "__SYSTEM_UNASSIGNED__"
+    ).all()
+
+    if not placeholder_products:
+        return {"success": True, "message": "Nenhum produto __SYSTEM_UNASSIGNED__ encontrado", "migrated": 0}
+
+    placeholder_ids = [p.id for p in placeholder_products]
+    orphan_materials = db.query(Material).filter(
+        Material.product_id.in_(placeholder_ids)
+    ).all()
+
+    results = []
+    for mat in orphan_materials:
+        material_name = mat.name or ""
+        ticker_match = TP_MIG.search(material_name.upper())
+        ticker = f"{ticker_match.group(1)}{ticker_match.group(2)}" if ticker_match else None
+
+        fund_name = material_name
+        for pfx in ["Relatório gerencial ", "Relatório Gerencial ", "MP ", "Material Publicitário "]:
+            if fund_name.startswith(pfx):
+                fund_name = fund_name[len(pfx):]
+                break
+        fund_name = re_migrate.sub(r'\s*\(\d+\)\s*$', '', fund_name).strip()
+        fund_name = re_migrate.sub(r'\s*\(vf\)\s*', ' ', fund_name, flags=re_migrate.IGNORECASE).strip()
+
+        target_product = None
+        if ticker:
+            target_product = db.query(Product).filter(
+                Product.ticker == ticker,
+                ~Product.id.in_(placeholder_ids)
+            ).first()
+
+        if not target_product and fund_name:
+            norm = nt_mig(fund_name)
+            for p in db.query(Product).filter(~Product.id.in_(placeholder_ids)).all():
+                if nt_mig(p.name) == norm:
+                    target_product = p
+                    break
+
+        if not target_product:
+            target_product = Product(
+                name=fund_name or material_name,
+                ticker=ticker,
+                category="fii",
+                status="ativo",
+                description="Produto criado automaticamente durante migração de materiais órfãos",
+            )
+            db.add(target_product)
+            db.commit()
+            db.refresh(target_product)
+
+        old_product_id = mat.product_id
+        mat.product_id = target_product.id
+        db.commit()
+
+        reindexed = 0
+        blocks = db.query(ContentBlock).filter(
+            ContentBlock.material_id == mat.id,
+            ContentBlock.status == "approved"
+        ).all()
+        for block in blocks:
+            db.refresh(block)
+            if reindex_block(block, db):
+                reindexed += 1
+
+        results.append({
+            "material_id": mat.id,
+            "material_name": mat.name,
+            "new_product": target_product.name,
+            "new_product_ticker": target_product.ticker,
+            "reindexed_blocks": reindexed,
+        })
+
+    for ph in placeholder_products:
+        remaining = db.query(Material).filter(Material.product_id == ph.id).count()
+        if remaining == 0:
+            db.delete(ph)
+            db.commit()
+
+    return {
+        "success": True,
+        "migrated": len(results),
+        "details": results,
+    }

@@ -1278,20 +1278,17 @@ class VectorStore:
         db = SessionLocal()
         try:
             product = db.query(Product).filter(
-                Product.ticker.ilike(f"%{query}%"),
-                Product.name != '__SYSTEM_UNASSIGNED__'
+                Product.ticker.ilike(f"%{query}%")
             ).first()
             
             if not product:
                 product = db.query(Product).filter(
-                    Product.name.ilike(f"%{query}%"),
-                    Product.name != '__SYSTEM_UNASSIGNED__'
+                    Product.name.ilike(f"%{query}%")
                 ).first()
             
             if not product:
                 all_products = db.query(Product).filter(
-                    Product.status == 'ativo',
-                    Product.name != '__SYSTEM_UNASSIGNED__'
+                    Product.status == 'ativo'
                 ).all()
                 
                 for p in all_products:
@@ -1369,7 +1366,7 @@ class VectorStore:
             if not vigent_materials:
                 vigent_products = db.query(Product).filter(
                     Product.status == 'ativo',
-                    Product.name != '__SYSTEM_UNASSIGNED__',
+                    
                     or_(
                         Product.valid_until >= now,
                         Product.valid_until.is_(None)

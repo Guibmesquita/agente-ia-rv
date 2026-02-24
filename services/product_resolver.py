@@ -127,7 +127,7 @@ class ProductResolver:
                 "_obj": p,
             }
             for p in products
-            if not p.ticker or p.ticker != "__SYSTEM_UNASSIGNED__"
+            if not p.ticker or not p.ticker.startswith("__SYSTEM")
         ]
         self._cache_timestamp = datetime.utcnow()
         return self._products_cache

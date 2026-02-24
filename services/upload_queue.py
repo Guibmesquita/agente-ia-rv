@@ -418,6 +418,91 @@ class UploadQueue:
         for lid in dead:
             self._event_listeners.pop(lid, None)
 
+    def _auto_create_product(self, db, fund_name, ticker, gestora, document_type=None):
+        from database.models import Product, ProductStatus
+        from services.product_resolver import ProductResolver
+        if not fund_name and not ticker:
+            return None
+
+        resolver = ProductResolver(db)
+        result = resolver.resolve(
+            fund_name=fund_name,
+            ticker=ticker,
+            gestora=gestora,
+        )
+
+        if result.matched_product_id:
+            matched = db.query(Product).filter(Product.id == result.matched_product_id).first()
+            if matched:
+                logger.info(f"[AutoCreate] ProductResolver encontrou match: {matched.name} (id={matched.id}, tipo={result.match_type})")
+                return matched
+
+        if ticker:
+            existing = db.query(Product).filter(Product.ticker == ticker).first()
+            if existing:
+                logger.info(f"[AutoCreate] Produto já existe com ticker {ticker}: {existing.name} (id={existing.id})")
+                return existing
+
+        product_name = fund_name or ticker
+        if ticker and ticker not in (product_name or ""):
+            product_name = f"{product_name} ({ticker})"
+
+        category = "fii"
+
+        try:
+            new_product = Product(
+                name=product_name,
+                ticker=ticker,
+                manager=gestora,
+                category=category,
+                status=ProductStatus.ACTIVE.value,
+                description=f"Produto criado automaticamente a partir de upload de documento ({document_type or 'N/A'})",
+            )
+            db.add(new_product)
+            db.commit()
+            db.refresh(new_product)
+            logger.info(f"[AutoCreate] Produto criado: {new_product.name} (ticker={ticker}, id={new_product.id})")
+            return new_product
+        except Exception as e:
+            db.rollback()
+            if ticker:
+                existing = db.query(Product).filter(Product.ticker == ticker).first()
+                if existing:
+                    logger.info(f"[AutoCreate] Produto já existia (concurrent): {existing.name}")
+                    return existing
+            logger.error(f"[AutoCreate] Erro ao criar produto: {e}")
+            return None
+
+    def _auto_create_product_from_material_name(self, db, mat, item):
+        import re
+        from database.models import Product
+        from services.document_metadata_extractor import TICKER_PATTERN
+
+        material_name = mat.name or ""
+        ticker_match = TICKER_PATTERN.search(material_name.upper())
+        ticker = f"{ticker_match.group(1)}{ticker_match.group(2)}" if ticker_match else None
+
+        fund_name = material_name
+        for prefix in ["Relatório gerencial ", "Relatório Gerencial ", "MP ", "Material Publicitário "]:
+            if fund_name.startswith(prefix):
+                fund_name = fund_name[len(prefix):]
+                break
+
+        fund_name = re.sub(r'\s*\(\d+\)\s*$', '', fund_name).strip()
+        fund_name = re.sub(r'\s*\(vf\)\s*', ' ', fund_name, flags=re.IGNORECASE).strip()
+
+        if not fund_name and not ticker:
+            logger.warning(f"[AutoCreate] Não foi possível extrair nome/ticker do material: {material_name}")
+            return None
+
+        return self._auto_create_product(
+            db=db,
+            fund_name=fund_name,
+            ticker=ticker,
+            gestora=None,
+            document_type="relatorio_gerencial",
+        )
+
     def _ensure_worker_running(self):
         if self._worker_thread is None or not self._worker_thread.is_alive():
             self._worker_thread = threading.Thread(target=self._worker, daemon=True)
@@ -567,9 +652,7 @@ class UploadQueue:
 
                 try:
                     extractor = get_metadata_extractor()
-                    existing_products = db.query(Product).filter(
-                        (Product.ticker != "__SYSTEM_UNASSIGNED__") | (Product.ticker == None)
-                    ).all()
+                    existing_products = db.query(Product).all()
                     existing_products_list = [{"id": p.id, "name": p.name, "ticker": p.ticker} for p in existing_products]
 
                     metadata = extractor.extract_metadata(
@@ -584,7 +667,7 @@ class UploadQueue:
 
                     item.add_log(f"Metadados: {metadata.fund_name or 'N/A'} | Ticker: {metadata.ticker or 'N/A'}", "info")
 
-                    if metadata.confidence >= 0.5 and (metadata.ticker or metadata.fund_name):
+                    if metadata.ticker or metadata.fund_name:
                         from services.product_resolver import get_product_resolver
                         resolver = get_product_resolver(db)
                         resolve_result = resolver.resolve(
@@ -624,34 +707,28 @@ class UploadQueue:
                                 resolver.save_alias_on_match(resolve_result.matched_product_id, metadata.fund_name)
 
                         else:
-                            resolve_data = {
-                                "resolver_result": resolve_result.to_dict(),
-                                "extracted_metadata": metadata.to_dict(),
-                            }
-                            existing_meta = {}
-                            if mat.extracted_metadata:
-                                try:
-                                    existing_meta = json.loads(mat.extracted_metadata)
-                                except (json.JSONDecodeError, TypeError):
-                                    pass
-                            existing_meta["product_resolver"] = resolve_data
-                            mat.extracted_metadata = json.dumps(existing_meta, ensure_ascii=False)
-                            mat.processing_status = "pending_product_match"
-                            db.commit()
-
-                            if resolve_result.has_candidates:
-                                candidate_names = ", ".join(
-                                    f"{c.product_name} ({c.score:.0%})"
-                                    for c in resolve_result.candidates[:3]
-                                )
+                            new_product = self._auto_create_product(
+                                db=db,
+                                fund_name=metadata.fund_name,
+                                ticker=metadata.ticker,
+                                gestora=metadata.gestora,
+                                document_type=metadata.document_type,
+                            )
+                            if new_product:
+                                mat.product_id = new_product.id
+                                mat.processing_status = "processing"
+                                db.commit()
+                                item.product_name = new_product.name
+                                item.product_ticker = new_product.ticker
                                 item.add_log(
-                                    f"Produto não confirmado. Candidatos: {candidate_names}",
-                                    "warning"
+                                    f"Produto criado automaticamente: {new_product.name} "
+                                    f"({new_product.ticker or 'sem ticker'})",
+                                    "success"
                                 )
                             else:
                                 item.add_log(
-                                    f"Produto não encontrado: {metadata.fund_name or 'N/A'}. "
-                                    f"Requer confirmação manual.",
+                                    f"Metadados insuficientes para criar produto: "
+                                    f"{metadata.fund_name or 'N/A'}",
                                     "warning"
                                 )
                 except Exception as meta_err:
@@ -713,29 +790,18 @@ class UploadQueue:
                 mat.processing_status = ProcessingStatus.SUCCESS.value
                 db.commit()
 
-                placeholder = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
-                if placeholder and mat.product_id == placeholder.id:
-                    first_block = db.query(ContentBlock).filter(
-                        ContentBlock.material_id == mat.id
-                    ).first()
-                    if first_block:
-                        existing_review = db.query(PendingReviewItem).filter(
-                            PendingReviewItem.block_id == first_block.id
-                        ).first()
-                        if not existing_review:
-                            first_block.status = ContentBlockStatus.PENDING_REVIEW.value
-                            first_block.is_high_risk = True
-                            db.commit()
-                            review_item = PendingReviewItem(
-                                block_id=first_block.id,
-                                original_content=first_block.content[:500] if first_block.content else "",
-                                extracted_content=first_block.content,
-                                confidence_score=30,
-                                risk_reason="Material não vinculado a produto"
-                            )
-                            db.add(review_item)
-                            db.commit()
-                            item.add_log("Enviado para revisão (produto não identificado)", "warning")
+                if not mat.product or (mat.product.ticker and mat.product.ticker == "__SYSTEM_UNASSIGNED__"):
+                    auto_product = self._auto_create_product_from_material_name(db, mat, item)
+                    if auto_product:
+                        mat.product_id = auto_product.id
+                        db.commit()
+                        item.product_name = auto_product.name
+                        item.product_ticker = auto_product.ticker
+                        item.add_log(
+                            f"Produto criado a partir do nome do material: {auto_product.name} "
+                            f"({auto_product.ticker or 'sem ticker'})",
+                            "success"
+                        )
 
             processing_job.status = ProcessingJobStatus.COMPLETED.value
             processing_job.processed_pages = processing_job.total_pages

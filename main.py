@@ -81,6 +81,14 @@ def _sync_init_database():
 
     Base.metadata.create_all(bind=engine)
 
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_products_ticker_non_empty ON products (ticker) WHERE ticker IS NOT NULL AND ticker != ''"))
+            conn.commit()
+    except Exception as e:
+        print(f"[INIT] Aviso ao criar índice único de ticker: {e}")
+
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -102,18 +110,7 @@ def _sync_init_database():
         crud.init_default_categories(db)
         crud.init_default_agent_config(db)
 
-        system_product = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").first()
-        if not system_product:
-            system_product = Product(
-                name="[Sistema] Documentos Não Vinculados",
-                ticker="__SYSTEM_UNASSIGNED__",
-                category="sistema",
-                status="ativo",
-                description="Produto de sistema para armazenar materiais sem produto vinculado. Não editar."
-            )
-            db.add(system_product)
-            db.commit()
-            print("Produto de sistema '__SYSTEM_UNASSIGNED__' criado.")
+        pass
     finally:
         db.close()
 
