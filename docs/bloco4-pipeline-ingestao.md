@@ -35,7 +35,7 @@ PDF Upload
 
 Arquivo: `services/document_processor.py`, método `analyze_page()`.
 
-Cada página do PDF é convertida para imagem PNG a 150 DPI via `pdf2image` e enviada como base64 inline ao GPT-4o.
+Cada página do PDF é convertida para imagem PNG a 150 DPI via `PyMuPDF (fitz)` e enviada como base64 inline ao GPT-4o.
 
 ```python
 prompt = f"""Analise esta página do documento "{document_title}" e extraia as informações de forma estruturada.
@@ -283,7 +283,7 @@ O `UploadQueueItem` suporta retomada via `start_page` e `resume_from_page`, perm
 
 | Cenário | Comportamento |
 |---------|---------------|
-| **PDF com senha** | `pdf2image.convert_from_path()` falha (usa poppler). Retorna erro "Não foi possível converter o PDF em imagens". |
+| **PDF com senha** | `fitz.open()` falha ao abrir PDF protegido. Retorna erro "Não foi possível converter o PDF em imagens". |
 | **PDF escaneado (imagem pura)** | **Funciona perfeitamente.** Cada página é convertida para imagem e enviada ao Vision, que faz OCR nativo. |
 | **PDF corrompido** | Validação em `upload_validator.py` verifica MIME type real via `python-magic` e rejeita na hora. |
 
@@ -730,7 +730,7 @@ Serviço agnóstico à estrutura da tabela que implementa 3 camadas:
    → upload_queue.py: Cria UploadQueueItem com metadados e prioridade
 
 3. Conversão para imagens
-   → document_processor.py: pdf2image a 150 DPI
+   → document_processor.py: PyMuPDF (fitz) a 150 DPI
 
 4. Extração por página (GPT-4o Vision)
    → analyze_page(): Prompt estruturado → JSON com facts/tables/products/tags
