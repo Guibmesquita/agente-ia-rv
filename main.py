@@ -187,23 +187,30 @@ def _resolve_orphan_materials(db):
             db.commit()
 
     if resolved > 0:
-        from database.models import ContentBlock
-        reindexed = 0
-        resolved_mat_ids = [m.id for m in orphans if m.product_id not in placeholder_ids]
-        if resolved_mat_ids:
-            blocks = db.query(ContentBlock).filter(
-                ContentBlock.material_id.in_(resolved_mat_ids),
-                ContentBlock.status.in_(["approved", "auto_approved"])
-            ).all()
-            for block in blocks:
-                try:
-                    from api.endpoints.products import reindex_block
-                    db.refresh(block)
-                    if reindex_block(block, db):
-                        reindexed += 1
-                except Exception as e:
-                    print(f"[INIT] Erro ao reindexar bloco {block.id}: {e}")
-            print(f"[INIT] Reindexados {reindexed} blocos de materiais reassociados.")
+        from sqlalchemy import text as sql_text
+        try:
+            fix_result = db.execute(sql_text("""
+                UPDATE document_embeddings de
+                SET
+                    product_ticker = p.ticker,
+                    product_name   = p.name,
+                    gestora        = COALESCE(p.manager, de.gestora),
+                    category       = COALESCE(p.category, de.category)
+                FROM content_blocks cb
+                JOIN materials m ON cb.material_id = m.id
+                JOIN products p ON m.product_id = p.id
+                WHERE de.doc_id = 'product_block_' || cb.id::text
+                  AND de.product_ticker = '__SYSTEM_UNASSIGNED__'
+            """))
+            embeddings_fixed = fix_result.rowcount
+            db.commit()
+            if embeddings_fixed > 0:
+                print(f"[INIT] Corrigidos {embeddings_fixed} embeddings órfãos no vector store.")
+            else:
+                print(f"[INIT] Nenhum embedding órfão encontrado no vector store.")
+        except Exception as e:
+            db.rollback()
+            print(f"[INIT] Erro ao corrigir embeddings órfãos: {e}")
 
     print(f"[INIT] Resolvidos {resolved}/{len(orphans)} materiais órfãos.")
 
@@ -463,64 +470,6 @@ async def root(request: Request):
 async def login_page(request: Request):
     """Página de login."""
     return templates.TemplateResponse("login.html", {"request": request})
-
-
-@app.post("/api/admin/fix-orphan-embeddings")
-async def fix_orphan_embeddings(request: Request):
-    """
-    TEMPORÁRIO: Corrige metadados de embeddings órfãos no vector store.
-    Atualiza product_ticker, product_name, gestora e category dos embeddings
-    que ainda apontam para __SYSTEM_UNASSIGNED__.
-    """
-    from fastapi.responses import JSONResponse
-    from sqlalchemy import text as sql_text
-    
-    token = request.cookies.get("access_token")
-    if not token:
-        return JSONResponse(status_code=401, content={"error": "Não autenticado"})
-    payload = decode_token(token)
-    if not payload or payload.get("role") != "admin":
-        return JSONResponse(status_code=403, content={"error": "Acesso negado"})
-    
-    db = SessionLocal()
-    try:
-        before = db.execute(sql_text(
-            "SELECT product_ticker, COUNT(*) as cnt FROM document_embeddings GROUP BY product_ticker ORDER BY cnt DESC"
-        )).fetchall()
-        before_data = [{"ticker": r[0], "count": r[1]} for r in before]
-        
-        result = db.execute(sql_text("""
-            UPDATE document_embeddings de
-            SET
-                product_ticker = p.ticker,
-                product_name   = p.name,
-                gestora        = COALESCE(p.manager, de.gestora),
-                category       = COALESCE(p.category, de.category)
-            FROM content_blocks cb
-            JOIN materials m ON cb.material_id = m.id
-            JOIN products p ON m.product_id = p.id
-            WHERE de.doc_id = 'product_block_' || cb.id::text
-              AND de.product_ticker = '__SYSTEM_UNASSIGNED__'
-        """))
-        rowcount = result.rowcount
-        db.commit()
-        
-        after = db.execute(sql_text(
-            "SELECT product_ticker, COUNT(*) as cnt FROM document_embeddings GROUP BY product_ticker ORDER BY cnt DESC"
-        )).fetchall()
-        after_data = [{"ticker": r[0], "count": r[1]} for r in after]
-        
-        return JSONResponse(content={
-            "success": True,
-            "rowcount": rowcount,
-            "before": before_data,
-            "after": after_data
-        })
-    except Exception as e:
-        db.rollback()
-        return JSONResponse(status_code=500, content={"error": str(e)})
-    finally:
-        db.close()
 
 
 @app.get("/admin", response_class=HTMLResponse)
