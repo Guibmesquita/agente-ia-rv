@@ -129,21 +129,37 @@ def _sync_init_database():
         _apply_incremental_migrations()
 
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
 
     db = SessionLocal()
     try:
+        import secrets as _secrets
+        from core.security import get_password_hash as _hash
+        from database.models import User as _User
+
         admin = crud.get_user_by_username(db, admin_username)
         if not admin:
+            # Cria o usuário bootstrap com senha aleatória irrecuperável.
+            # O login por senha é bloqueado (HTTP 410) — a senha nunca é usada.
+            # O acesso real é feito via SSO Microsoft com o email cadastrado na tabela.
             crud.create_user(
                 db,
                 username=admin_username,
                 email=admin_email,
-                password=admin_password,
+                password=_secrets.token_hex(64),
                 role="admin"
             )
-            print(f"Usuário admin criado. Configure ADMIN_PASSWORD em produção!")
+            print(f"[INIT] Usuário bootstrap '{admin_username}' criado. Acesso via SSO Microsoft.")
+        else:
+            # Neutralizar credenciais bootstrap em qualquer banco (dev ou produção).
+            # Se o email ainda for o placeholder genérico, troca por domínio inválido
+            # para evitar que alguém crie admin@example.com no Azure AD e faça SSO.
+            PLACEHOLDER_EMAILS = {"admin@example.com", "admin@localhost"}
+            if admin.email in PLACEHOLDER_EMAILS:
+                admin.email = "admin-bootstrap-disabled@invalid.local"
+                admin.hashed_password = _hash(_secrets.token_hex(64))
+                db.commit()
+                print(f"[INIT] Usuário admin bootstrap neutralizado: email e senha tornados irrecuperáveis.")
 
         crud.init_default_integrations(db)
         crud.init_default_categories(db)
