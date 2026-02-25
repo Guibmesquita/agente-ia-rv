@@ -1,0 +1,292 @@
+Perfeito.
+Abaixo está o `.md` pronto para subir no Replit.
+Ele força clareza arquitetural antes de qualquer outra melhoria no RAG.
+
+---
+
+# Diagnóstico Arquitetural Obrigatório — Ingestão e Persistência
+
+## Objetivo
+
+Antes de evoluir RAG, embeddings ou ranking, precisamos garantir:
+
+* Persistência consistente no PostgreSQL
+* Worker estável em produção
+* Transações atômicas
+* Governança de duplicidade
+* Arquitetura determinística
+
+Este documento deve ser preenchido pela equipe técnica antes de qualquer nova implementação.
+
+---
+
+# 1. Ambiente de Produção
+
+## 1.1 Infraestrutura
+
+Descrever:
+
+* Onde a aplicação está hospedada
+* Tipo de deploy (container, serverless, VM, etc.)
+* Se existe auto-restart
+* Se há escalabilidade horizontal (mais de uma instância rodando)
+
+Perguntas obrigatórias:
+
+* O worker roda no mesmo serviço da API?
+* Existem múltiplas instâncias rodando simultaneamente?
+* O deploy reinicia automaticamente durante processamento?
+* Há limite de memória que pode matar o processo?
+
+---
+
+## 1.2 Variáveis de Ambiente
+
+Confirmar explicitamente:
+
+* DATABASE_URL está definido no ambiente de produção?
+* Existe fallback para SQLite?
+* O fallback está habilitado em produção?
+
+Regra obrigatória:
+
+* Em produção, o sistema não pode ter fallback para SQLite.
+* Se DATABASE_URL não estiver definido, a aplicação deve falhar no boot.
+
+---
+
+## 1.3 Logging de Engine
+
+Adicionar verificação obrigatória:
+
+* Logar o tipo de engine ao iniciar aplicação
+* Logar o tipo de engine ao iniciar worker
+* Confirmar que ambos usam PostgreSQL
+
+Critério de validação:
+
+* Logs devem mostrar explicitamente conexão com PostgreSQL
+* Não pode haver engine SQLite em produção
+
+---
+
+# 2. Banco de Dados e Persistência
+
+## 2.1 Origem do Banco
+
+Descrever:
+
+* Onde o PostgreSQL está hospedado
+* Se é banco externo ou interno ao deploy
+* Se há pool de conexão configurado
+
+---
+
+## 2.2 Fluxo de Persistência
+
+Descrever o fluxo real:
+
+Upload → Queue → Worker → Chunk → Embed → Persist
+
+Para cada etapa, responder:
+
+* Em que momento o registro de material é criado?
+* Em que momento os blocos são criados?
+* Em que momento os embeddings são persistidos?
+* Há transação única ou múltiplas transações?
+
+---
+
+## 2.3 Transações
+
+Confirmar:
+
+* Uso de transação explícita?
+* Commit manual?
+* Autocommit?
+* Existe rollback em caso de erro?
+
+Regra obrigatória:
+
+* O pipeline de ingestão deve ser atômico.
+* Se embedding falhar, o material não pode ficar parcialmente salvo.
+* Se persistência falhar, nada deve permanecer.
+
+---
+
+## 2.4 Verificação Pós-Commit
+
+Após cada commit crítico:
+
+* Confirmar via SELECT se o registro realmente existe
+* Logar ID criado
+* Logar total de registros na tabela
+
+Critério de validação:
+
+* Se sequences não avançarem, o processo deve falhar explicitamente
+
+---
+
+# 3. Worker e Execução em Background
+
+## 3.1 Modelo de Execução
+
+Descrever:
+
+* Worker roda em thread?
+* Worker roda em processo separado?
+* Worker usa Celery, RQ ou similar?
+* Worker é background task do framework?
+
+---
+
+## 3.2 Isolamento de Sessão
+
+Confirmar:
+
+* Worker cria nova sessão?
+* Session é compartilhada?
+* Session é fechada corretamente?
+* Existe risco de sessão morrer durante processamento?
+
+Regra obrigatória:
+
+* Worker deve ter sessão isolada e independente.
+* Sessão deve ser aberta e fechada dentro do escopo do processamento.
+
+---
+
+## 3.3 Falhas Silenciosas
+
+Verificar:
+
+* Existe try/except que captura erro sem logar?
+* Existe swallow de exception?
+* Existe timeout que mata thread sem rollback?
+
+Regra obrigatória:
+
+* Nenhuma falha pode ser silenciosa.
+* Toda falha deve gerar log crítico.
+* Toda falha deve atualizar status do material para erro.
+
+---
+
+## 3.4 Consistência em Deploy
+
+Confirmar:
+
+* O worker pode ser interrompido por restart?
+* Existe mecanismo de retry?
+* Existe status intermediário (processing, success, failed)?
+
+Regra obrigatória:
+
+* Upload nunca pode depender de memória local.
+* Tudo deve estar persistido antes do próximo estágio.
+
+---
+
+# 4. Definição Formal do Pipeline de Ingestão
+
+## 4.1 Estado do Documento
+
+Definir estados possíveis:
+
+* pending
+* processing
+* success
+* failed
+* duplicate
+
+Transição obrigatória:
+
+pending → processing → success
+ou
+pending → processing → failed
+
+---
+
+## 4.2 Regra de Duplicidade
+
+Definir comportamento obrigatório:
+
+Se file_hash já existir com status=success:
+
+* Bloquear novo upload
+* Não criar novo material
+* Retornar mensagem clara
+* Não processar novamente
+
+Se file_hash existir com status=failed:
+
+* Permitir reprocessamento
+
+---
+
+## 4.3 Ordem Correta de Persistência
+
+Fluxo recomendado:
+
+1. Criar registro de material com status=pending
+2. Commit
+3. Processar documento
+4. Criar blocos
+5. Criar embeddings
+6. Commit final
+7. Atualizar status para success
+
+Se qualquer etapa falhar:
+
+* Atualizar status para failed
+* Não deixar dados órfãos
+
+---
+
+## 4.4 Logs Obrigatórios
+
+Cada upload deve registrar:
+
+* ID do material
+* Engine ativa
+* Número de páginas processadas
+* Número de blocos criados
+* Número de embeddings criados
+* Tempo total de processamento
+* Status final
+
+---
+
+# Critério de Aprovação Arquitetural
+
+O sistema só pode avançar para melhorias de RAG quando:
+
+* Upload persiste corretamente no PostgreSQL
+* Sequences avançam após cada upload
+* Duplicatas são bloqueadas corretamente
+* Worker usa engine correta
+* Pipeline é atômico
+* Nenhuma falha é silenciosa
+
+---
+
+# Observação Final
+
+Problemas de RAG não devem ser tratados antes de:
+
+* Persistência estar garantida
+* Arquitetura estar validada
+* Pipeline estar formalmente definido
+
+Sem isso, qualquer melhoria será superficial.
+
+---
+
+Quando essas quatro seções estiverem completamente respondidas e validadas, podemos evoluir para:
+
+* Otimização de embeddings
+* Re-ranking híbrido
+* Ajustes finos de chunking
+* Observabilidade de busca
+* Testes reais de qualidade do agente

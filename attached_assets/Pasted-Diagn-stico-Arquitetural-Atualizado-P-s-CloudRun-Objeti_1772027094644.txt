@@ -1,0 +1,233 @@
+Diagnóstico Arquitetural Atualizado — Pós CloudRun
+Objetivo
+
+Validar que:
+
+O problema do autoscale foi realmente eliminado
+
+Persistência está garantida
+
+Worker é resiliente
+
+Upload não precisa ser refeito
+
+O pipeline é determinístico
+
+1. Ambiente de Execução Atual
+1.1 Modelo de Deploy
+
+Confirmar:
+
+Deployment target agora é vm (always running)
+
+Não há mais autoscale para zero
+
+Container não é reciclado sem motivo
+
+Não há scale-to-zero automático
+
+Validação obrigatória:
+
+Logs mostram uptime contínuo
+
+Não há reinicializações inesperadas durante upload
+
+1.2 Processo do Worker
+
+Confirmar:
+
+Worker roda dentro do mesmo container
+
+Worker não depende de request HTTP ativo
+
+Worker não depende de memória temporária
+
+Pergunta crítica:
+
+Se você parar de fazer polling, o upload continua?
+
+Se não continuar, ainda há dependência incorreta.
+
+2. Persistência e Garantia de Commit
+2.1 Ordem Atual do Pipeline
+
+Descrever exatamente:
+
+Material é criado com status=pending?
+
+Commit inicial ocorre?
+
+Blocos são criados?
+
+Embeddings são criados?
+
+Commit final ocorre?
+
+Status vira success?
+
+Se não houver commit inicial antes do processamento pesado, ainda há risco.
+
+2.2 Checkpoint de Segurança
+
+Pergunta fundamental:
+
+Se o container cair no meio da página 22 de 44:
+
+O material já está salvo?
+
+Os blocos anteriores já estão salvos?
+
+Ou tudo depende de um commit final único?
+
+Ideal:
+
+Material deve ser salvo imediatamente
+
+Blocos devem ser persistidos incrementalmente
+
+Embeddings devem ser persistidos incrementalmente
+
+Status deve refletir progresso
+
+3. Retomada de Upload Interrompido
+
+O _resume_interrupted_uploads() é bom, mas precisamos validar:
+
+Ele detecta status processing?
+
+Ele detecta pending?
+
+Ele reprocessa sem duplicar blocos?
+
+Ele valida se blocos já existem?
+
+Ele valida se embeddings já existem?
+
+Pergunta crítica:
+
+Se o upload morrer na página 30, ao retomar ele:
+
+Continua da 30?
+ou
+
+Recomeça do zero?
+
+Recomeçar do zero é aceitável.
+Duplicar dados não é.
+
+4. Regra de Duplicidade
+
+Confirmado:
+
+Mesmo file_hash + status=success → bloqueia upload
+
+Isso está correto.
+
+Mas validar também:
+
+Mesmo file_hash + status=processing → bloquear?
+
+Mesmo file_hash + status=failed → permitir retry?
+
+Regra ideal:
+
+success → bloquear
+processing → bloquear
+failed → permitir
+
+5. Garantia de Banco Correto
+
+Mesmo com VM, validar:
+
+Worker loga explicitamente engine PostgreSQL
+
+SELECT COUNT após commit confirma persistência
+
+Sequences avançam
+
+Sequences são o melhor detector de verdade.
+
+6. Sobre o Tempo de 15 Minutos
+
+44 páginas demorando 15 minutos indica:
+
+Processamento serial
+
+Embeddings síncronos
+
+Possibly blocking I/O
+
+Perguntas importantes:
+
+Embeddings estão sendo gerados página a página?
+
+Existe paralelização?
+
+Existe batching?
+
+Isso não é bug, mas é otimização futura.
+
+7. Agora Respondendo Sua Dúvida Real
+
+Você não deveria precisar subir toda vez.
+
+Se:
+
+O container agora é persistente
+
+O commit é feito corretamente
+
+O status é atualizado
+
+O banco é PostgreSQL real
+
+Então:
+
+Upload deve ser feito uma vez só.
+
+Se você ainda precisar repetir upload após a mudança para VM, então:
+
+Ainda há problema de transação
+
+Ou há erro silencioso
+
+Ou o worker ainda depende de contexto HTTP
+
+8. Novo Critério de Validação
+
+Após publicar:
+
+Subir Eurogarden
+
+Confirmar:
+
+material criado
+
+blocos criados
+
+embeddings criados
+
+sequences avançaram
+
+status=success
+
+Reiniciar aplicação
+
+Confirmar que dados continuam lá
+
+Perguntar ao agente algo específico
+
+Confirmar resposta com dados reais
+
+Se passar nesses 6 pontos, o problema estrutural acabou.
+
+Conclusão Técnica
+
+O problema anterior fazia sentido.
+CloudRun + background thread + processamento longo = risco real de perda.
+
+Agora que mudou para VM:
+
+A arquitetura ficou mais adequada
+
+Mas ainda precisamos validar atomicidade e persistência incremental
