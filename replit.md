@@ -59,6 +59,11 @@ The application is built using FastAPI with a modular architecture.
 ## Deployment (CRÍTICO)
 **Deployment target: `vm` (always running).** Mudado de `cloudrun` (autoscale) para `vm` porque o upload de documentos requer processamento background em threads. Em autoscale, o container escalava para zero após o HTTP response, matando o worker de processamento antes de completar — causando uploads que pareciam bem-sucedidos mas nunca persistiam.
 
+**Lazy Router Registration (cold start fix):** Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo requisições. Isso reduz o cold start de 25s para <2s em produção (containers frescos). O health check em `/` recebe 200 imediatamente. As rotas da API ficam disponíveis ~10-25s depois — aceitável pois nenhum usuário acessa durante o deploy.
+- **Não reverter este padrão**: importar os endpoints no top-level de `main.py` volta o cold start para 25s e quebra o health check.
+- Rotas `/`, `/health`, arquivos estáticos e middleware de segurança são configurados no top-level (instantâneos).
+- `SESSION_SECRET` é obrigatória em produção: assina os JWTs emitidos após SSO Microsoft. Deve estar nos Secrets do Replit.
+
 **Resiliência de upload:**
 - `_resume_interrupted_uploads()` roda no startup: detecta materiais com `processing_status=processing/pending` e re-enfileira para retomada
 - `_process_item` em `upload_queue.py` inclui logging diagnóstico: tipo do engine (PostgreSQL/SQLite), verificação pós-commit, contagem de blocos

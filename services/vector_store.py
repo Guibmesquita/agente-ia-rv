@@ -1516,13 +1516,6 @@ def get_vector_store() -> VectorStore:
             print(f"[VECTORSTORE] Falha ao recuperar openai_client no singleton: {e}")
     return _vector_store
 
-vector_store = None
-try:
-    vector_store = VectorStore()
-    print(f"[VECTORSTORE] Init global OK | openai_client={vector_store.openai_client is not None}")
-except Exception as e:
-    print(f"[VECTORSTORE] Falha na inicialização global: {type(e).__name__}: {e}")
-    vector_store = None
 
 
 def filter_expired_results(results: list, db) -> list:

@@ -12,7 +12,6 @@ import os
 
 from database.database import engine, Base, SessionLocal
 from database import crud
-from api.endpoints import auth, users, tickets, whatsapp_webhook, integrations, agent_config, assessores, campaigns, knowledge, agent_test, conversations, products, insights, search, trusted_sources, costs, health
 from core.security import decode_token
 
 
@@ -48,7 +47,46 @@ async def lifespan(app: FastAPI):
 
 
 async def run_init_background():
-    """Inicialização pesada em background: dependency check, tabelas, admin, seed, upload queue."""
+    """Inicialização pesada em background: routers, dependency check, tabelas, admin, seed, upload queue."""
+    def _import_endpoint_modules():
+        from api.endpoints import (
+            auth, users, tickets, whatsapp_webhook, integrations, agent_config,
+            assessores, campaigns, knowledge, agent_test, conversations, products,
+            insights, search, trusted_sources, costs, health
+        )
+        return (auth, users, tickets, whatsapp_webhook, integrations, agent_config,
+                assessores, campaigns, knowledge, agent_test, conversations, products,
+                insights, search, trusted_sources, costs, health)
+
+    try:
+        (auth, users, tickets, whatsapp_webhook, integrations, agent_config,
+         assessores, campaigns, knowledge, agent_test, conversations, products,
+         insights, search, trusted_sources, costs, health) = await asyncio.to_thread(_import_endpoint_modules)
+        app.include_router(auth.router)
+        app.include_router(users.router)
+        app.include_router(tickets.router)
+        app.include_router(whatsapp_webhook.router)
+        app.include_router(integrations.router)
+        app.include_router(agent_config.router)
+        app.include_router(assessores.router)
+        app.include_router(assessores.custom_fields_router)
+        app.include_router(assessores.upload_router)
+        app.include_router(campaigns.router)
+        app.include_router(knowledge.router)
+        app.include_router(agent_test.router)
+        app.include_router(conversations.router)
+        app.include_router(products.router)
+        app.include_router(insights.router)
+        app.include_router(search.router)
+        app.include_router(trusted_sources.router)
+        app.include_router(costs.router)
+        app.include_router(health.router)
+        print("[INIT] Routers registrados com sucesso.")
+    except Exception as e:
+        print(f"[INIT] Erro ao registrar routers: {e}")
+        import traceback
+        traceback.print_exc()
+
     try:
         from services.dependency_check import check_critical_dependencies
         check_critical_dependencies()
@@ -174,6 +212,7 @@ def _sync_init_database():
 
 
 def _resume_interrupted_uploads():
+    from datetime import datetime
     from database.models import Material, ProcessingStatus, PersistentQueueItem, QueueItemStatus
     from database.models import DocumentProcessingJob, ProcessingJobStatus
     db = SessionLocal()
@@ -555,28 +594,6 @@ async def favicon():
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.mount("/derivatives-diagrams", StaticFiles(directory="static/derivatives_diagrams"), name="derivatives-diagrams")
-
-# Inclui routers da API
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(tickets.router)
-app.include_router(whatsapp_webhook.router)
-app.include_router(integrations.router)
-app.include_router(agent_config.router)
-app.include_router(assessores.router)
-app.include_router(assessores.custom_fields_router)
-app.include_router(assessores.upload_router)
-app.include_router(campaigns.router)
-app.include_router(knowledge.router)
-app.include_router(agent_test.router)
-app.include_router(conversations.router)
-app.include_router(products.router)
-app.include_router(insights.router)
-app.include_router(search.router)
-app.include_router(trusted_sources.router)
-app.include_router(costs.router)
-app.include_router(health.router)
-
 
 # ========== Health Check ==========
 
