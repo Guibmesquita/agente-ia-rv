@@ -21,11 +21,8 @@ async def lifespan(app: FastAPI):
     """
     Gerencia o ciclo de vida da aplicação.
     Yield imediato para responder health checks rápido.
-    Inicialização pesada roda em background.
+    Inicialização pesada (check_critical_dependencies, banco, seed, queue) roda em background.
     """
-    from services.dependency_check import check_critical_dependencies
-    check_critical_dependencies()
-    
     background_tasks = []
     
     init_task = asyncio.create_task(run_init_background())
@@ -51,7 +48,13 @@ async def lifespan(app: FastAPI):
 
 
 async def run_init_background():
-    """Inicialização pesada em background: tabelas, admin, seed, upload queue."""
+    """Inicialização pesada em background: dependency check, tabelas, admin, seed, upload queue."""
+    try:
+        from services.dependency_check import check_critical_dependencies
+        check_critical_dependencies()
+    except Exception as e:
+        print(f"[INIT] dependency check warning: {e}")
+
     try:
         await asyncio.to_thread(_sync_init_database)
         print("[INIT] Banco de dados inicializado com sucesso.")
