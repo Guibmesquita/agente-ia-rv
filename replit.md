@@ -59,7 +59,18 @@ The application is built using FastAPI with a modular architecture.
 ## Deployment (CRÍTICO)
 **Deployment target: `vm` (always running).** Mudado de `cloudrun` (autoscale) para `vm` porque o upload de documentos requer processamento background em threads. Em autoscale, o container escalava para zero após o HTTP response, matando o worker de processamento antes de completar — causando uploads que pareciam bem-sucedidos mas nunca persistiam.
 
-**Lazy Router Registration (cold start fix):** Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo requisições. Isso reduz o cold start de 25s para <2s em produção (containers frescos). O health check em `/` recebe 200 imediatamente. As rotas da API ficam disponíveis ~10-25s depois — aceitável pois nenhum usuário acessa durante o deploy.
+**TCP Health Shim + Lazy Router Registration (cold start fix):** O `main.py` usa dois mecanismos combinados para garantir que o health check passe mesmo em containers frios:
+
+1. **TCP Health Shim** (`_TCPHealthShim` — primeiras linhas de `main.py`): Antes de qualquer import pesado, um servidor TCP raw (stdlib `socket` + `threading`) bind na porta 5000 com `SO_REUSEPORT`. Responde HTTP 200 a qualquer request em <1ms. O shim coexiste com o uvicorn via SO_REUSEPORT e é parado no `lifespan` quando o uvicorn está pronto.
+
+2. **Lazy Router Registration**: Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo. Rotas ficam disponíveis ~10-25s após o uvicorn subir.
+
+**Timeline em produção (cold start):**
+- t=0s: Python inicia → shim bind() → health checks recebem 200 ✅
+- t=12s: Imports compilados → uvicorn bind (SO_REUSEPORT coexiste com shim)
+- t=14s: lifespan → shim.stop() → uvicorn exclusivo
+- t=25s: Routers registrados em background → app completo
+
 - **Não reverter este padrão**: importar os endpoints no top-level de `main.py` volta o cold start para 25s e quebra o health check.
 - Rotas `/`, `/health`, arquivos estáticos e middleware de segurança são configurados no top-level (instantâneos).
 - `SESSION_SECRET` é obrigatória em produção: assina os JWTs emitidos após SSO Microsoft. Deve estar nos Secrets do Replit.
