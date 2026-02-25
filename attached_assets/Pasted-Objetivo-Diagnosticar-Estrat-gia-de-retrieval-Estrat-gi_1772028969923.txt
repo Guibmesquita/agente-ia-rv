@@ -1,0 +1,123 @@
+Objetivo
+
+Diagnosticar:
+
+Estratégia de retrieval
+
+Estratégia de filtro
+
+Ranking
+
+Construção de contexto
+
+Engenharia de prompt
+
+Tratamento de “não encontrado”
+
+Sem isso, performance é sorte.
+
+🧠 Perguntas Técnicas para o Arquiteto (Replit)
+
+Copie e envie exatamente isso para ele.
+
+🔎 BLOCO 1 — Estratégia de Retrieval
+
+A busca vetorial é feita globalmente ou há filtro prévio por product_id antes do similarity search?
+
+Se o usuário menciona explicitamente um fundo (ex: TG Eurogarden), o sistema resolve o produto antes de buscar embeddings?
+
+Qual é o valor de top_k atualmente usado?
+
+Existe re-ranking após a busca vetorial?
+
+A busca combina keyword search + vetor (híbrida) ou é apenas vetorial?
+
+🔎 BLOCO 2 — Estrutura dos Embeddings
+
+Cada chunk contém explicitamente o nome do produto dentro do texto antes de gerar embedding?
+
+Qual é o tamanho médio dos chunks (em tokens)?
+
+O chunking é por página inteira ou por parágrafo/seção?
+
+Existe metadado estruturado salvo junto ao embedding (product_id, tipo, categoria, data)?
+
+A busca utiliza filtros por metadado no pgvector?
+
+🔎 BLOCO 3 — Construção do Contexto
+
+Após recuperar os top_k resultados, o sistema apenas concatena os textos ou organiza por relevância?
+
+Existe deduplicação de blocos semelhantes?
+
+Existe limite máximo de tokens enviados ao modelo?
+
+O sistema prioriza blocos mais recentes?
+
+Como o sistema lida quando encontra blocos de múltiplos fundos na mesma busca?
+
+🔎 BLOCO 4 — Prompt Engineering
+
+O prompt obriga o agente a usar apenas informações recuperadas?
+
+O agente é instruído a dizer explicitamente quando não encontra a informação?
+
+Existe separação entre:
+
+Pergunta factual
+
+Pergunta comparativa
+
+Pergunta aberta?
+
+O prompt força citação interna ou apenas resposta natural?
+
+Existe sistema de score/confiança da resposta?
+
+🔎 BLOCO 5 — Casos Limite
+
+Se similarity search retorna vazio, qual é o comportamento?
+
+Se o top_k contém blocos irrelevantes, há filtro posterior?
+
+Existe fallback para busca por keyword quando vetor falha?
+
+Existe threshold mínimo de similaridade?
+
+Como o sistema evita misturar fundos em perguntas comparativas?
+
+🧩 O que estou procurando nas respostas
+
+Se ele disser:
+
+“Busca global, depois o modelo entende” → ❌ risco alto de mistura
+
+“Não filtramos por product_id” → ❌
+
+“Não temos threshold mínimo” → ❌
+
+“Chunk é página inteira” → ⚠️
+
+“top_k=3 fixo” → ⚠️
+
+“Sem re-ranking” → ⚠️
+
+“Sem híbrido” → ⚠️
+
+Se ele disser:
+
+“Resolve produto primeiro”
+
+“Filtra embeddings por product_id”
+
+“Híbrido vetor + keyword”
+
+“Chunks 300–800 tokens”
+
+“Re-ranking”
+
+“Threshold mínimo”
+
+“Prompt com proibição de extrapolação”
+
+Aí sim vocês estão no caminho enterprise.
