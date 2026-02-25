@@ -542,7 +542,7 @@ class UploadQueue:
                 self._processing = False
 
     def _process_item(self, item: UploadQueueItem):
-        from database.database import SessionLocal
+        from database.database import SessionLocal, engine
         from database.models import (
             Material, Product, ContentBlock, PendingReviewItem,
             ProcessingStatus, DocumentProcessingJob, DocumentPageResult,
@@ -552,11 +552,21 @@ class UploadQueue:
         from services.document_metadata_extractor import get_metadata_extractor
         from services.document_processor import get_document_processor
 
+        db_url_str = str(engine.url)
+        is_sqlite = "sqlite" in db_url_str.lower()
+        db_type = "SQLite" if is_sqlite else "PostgreSQL"
+        safe_url = db_url_str.split("@")[-1] if "@" in db_url_str else db_url_str
+        print(f"[UPLOAD_WORKER] Engine: {db_type} ({safe_url})")
+        logger.info(f"[UPLOAD_WORKER] Engine: {db_type} ({safe_url})")
+        if is_sqlite:
+            print("[UPLOAD_WORKER] ALERTA CRÍTICO: Worker conectado a SQLite!")
+            logger.error("[UPLOAD_WORKER] ALERTA CRÍTICO: Worker conectado a SQLite! Dados NÃO serão persistidos no PostgreSQL.")
+
         db = SessionLocal()
         try:
             mat = db.query(Material).filter(Material.id == item.material_id).first()
             if not mat:
-                raise Exception("Material não encontrado no banco")
+                raise Exception(f"Material id={item.material_id} não encontrado no banco ({db_type})")
 
             mat.processing_status = ProcessingStatus.PROCESSING.value
             db.commit()
@@ -596,11 +606,32 @@ class UploadQueue:
                     Material.file_hash != None,
                     Material.id != item.material_id
                 ).first()
-                if duplicate:
+                if duplicate and duplicate.processing_status == ProcessingStatus.SUCCESS.value:
                     dup_date = duplicate.created_at.strftime('%d/%m/%Y') if duplicate.created_at else 'data desconhecida'
                     dup_msg = (
-                        f"Arquivo idêntico já carregado como "
-                        f"'{duplicate.name}' em {dup_date}."
+                        f"Arquivo idêntico já processado com sucesso como "
+                        f"'{duplicate.name}' em {dup_date}. Upload duplicado bloqueado."
+                    )
+                    item.add_log(f"Bloqueado: {dup_msg}", "error")
+                    self._broadcast_event({
+                        "type": "error", "upload_id": item.upload_id,
+                        "message": dup_msg,
+                        "existing_material_id": duplicate.id
+                    })
+                    logger.warning(f"[UPLOAD] Duplicata bloqueada: file_hash={file_hash[:12]}... material_id_existente={duplicate.id}")
+                    mat.processing_status = ProcessingStatus.FAILED.value if hasattr(ProcessingStatus, 'FAILED') else "failed"
+                    mat.processing_error = dup_msg
+                    db.commit()
+                    item.status = UploadStatus.FAILED
+                    item.error = dup_msg
+                    self._update_db_status(item)
+                    return
+                elif duplicate:
+                    dup_date = duplicate.created_at.strftime('%d/%m/%Y') if duplicate.created_at else 'data desconhecida'
+                    dup_msg = (
+                        f"Arquivo idêntico encontrado como "
+                        f"'{duplicate.name}' em {dup_date} (status: {duplicate.processing_status}). "
+                        f"Reprocessando."
                     )
                     item.add_log(f"Aviso: {dup_msg}", "warning")
                     self._broadcast_event({
@@ -608,7 +639,7 @@ class UploadQueue:
                         "message": dup_msg,
                         "existing_material_id": duplicate.id
                     })
-                    logger.warning(f"[UPLOAD] Duplicata detectada: file_hash={file_hash[:12]}... material_id={duplicate.id}")
+                    logger.warning(f"[UPLOAD] Duplicata com status={duplicate.processing_status}: file_hash={file_hash[:12]}... Reprocessando.")
 
                 mat.file_hash = file_hash
                 mat.file_hash_checked_at = datetime.utcnow()
@@ -785,10 +816,17 @@ class UploadQueue:
                 page_completed_callback=page_completed_callback
             )
 
+            from sqlalchemy import text as sql_text
+            verify_count = db.execute(sql_text(
+                f"SELECT COUNT(*) FROM content_blocks WHERE material_id = {item.material_id}"
+            )).scalar()
+            print(f"[UPLOAD_WORKER] Verificação pós-processamento: material_id={item.material_id}, blocos no banco={verify_count}")
+
             mat = db.query(Material).filter(Material.id == item.material_id).first()
             if mat:
                 mat.processing_status = ProcessingStatus.SUCCESS.value
                 db.commit()
+                print(f"[UPLOAD_WORKER] Material {item.material_id} marcado como success, product_id={mat.product_id}")
 
                 if not mat.product:
                     auto_product = self._auto_create_product_from_material_name(db, mat, item)
@@ -831,11 +869,16 @@ class UploadQueue:
             })
 
         except Exception as e:
-            mat = db.query(Material).filter(Material.id == item.material_id).first()
-            if mat:
-                mat.processing_status = ProcessingStatus.FAILED.value if hasattr(ProcessingStatus, 'FAILED') else "failed"
-                mat.processing_error = str(e)[:500]
-                db.commit()
+            logger.error(f"[UPLOAD_WORKER] ERRO no processamento material_id={item.material_id}: {e}", exc_info=True)
+            try:
+                db.rollback()
+                mat = db.query(Material).filter(Material.id == item.material_id).first()
+                if mat:
+                    mat.processing_status = ProcessingStatus.FAILED.value if hasattr(ProcessingStatus, 'FAILED') else "failed"
+                    mat.processing_error = str(e)[:500]
+                    db.commit()
+            except Exception as inner_e:
+                logger.error(f"[UPLOAD_WORKER] Erro ao marcar material como falho: {inner_e}")
             self._update_db_status(item)
             raise
         finally:

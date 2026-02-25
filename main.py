@@ -68,6 +68,11 @@ async def run_init_background():
         print(f"[INIT] Erro no upload queue: {e}")
 
     try:
+        _resume_interrupted_uploads()
+    except Exception as e:
+        print(f"[INIT] Erro ao retomar uploads: {e}")
+
+    try:
         from scripts.seed_production import run_seed
         await asyncio.to_thread(run_seed)
     except Exception as e:
@@ -78,6 +83,13 @@ def _sync_init_database():
     """Operações síncronas de inicialização do banco (roda em thread separada)."""
     import os
     from database.models import Product
+
+    db_url_str = str(engine.url)
+    is_sqlite = "sqlite" in db_url_str.lower()
+    safe_url = db_url_str.split("@")[-1] if "@" in db_url_str else db_url_str
+    print(f"[INIT] Database engine: {'SQLite' if is_sqlite else 'PostgreSQL'} ({safe_url})")
+    if is_sqlite:
+        print("[INIT] ALERTA CRÍTICO: App conectado a SQLite! Verifique DATABASE_URL.")
 
     Base.metadata.create_all(bind=engine)
 
@@ -103,6 +115,68 @@ def _sync_init_database():
         crud.init_default_agent_config(db)
 
         _resolve_orphan_materials(db)
+    finally:
+        db.close()
+
+
+def _resume_interrupted_uploads():
+    from database.models import Material, ProcessingStatus, PersistentQueueItem, QueueItemStatus
+    from database.models import DocumentProcessingJob, ProcessingJobStatus
+    db = SessionLocal()
+    try:
+        interrupted_materials = db.query(Material).filter(
+            Material.processing_status.in_(["processing", "pending"])
+        ).all()
+
+        if not interrupted_materials:
+            return
+
+        print(f"[INIT] Encontrados {len(interrupted_materials)} materiais com processamento interrompido.")
+
+        for mat in interrupted_materials:
+            already_queued = db.query(PersistentQueueItem).filter(
+                PersistentQueueItem.material_id == mat.id,
+                PersistentQueueItem.status.in_(["queued", "processing"])
+            ).first()
+            if already_queued:
+                print(f"[INIT] Material '{mat.name}' (id={mat.id}): já possui item na fila, pulando.")
+                continue
+
+            job = db.query(DocumentProcessingJob).filter(
+                DocumentProcessingJob.material_id == mat.id,
+                DocumentProcessingJob.status.in_(["processing", "pending"])
+            ).first()
+
+            if job and job.file_path and os.path.exists(job.file_path):
+                resume_page = job.last_processed_page or 0
+                print(f"[INIT] Material '{mat.name}' (id={mat.id}): retomando da página {resume_page}/{job.total_pages}")
+
+                mat.processing_status = "pending"
+                job.status = ProcessingJobStatus.PENDING.value if hasattr(ProcessingJobStatus, 'PENDING') else "pending"
+                db.commit()
+
+                from services.upload_queue import upload_queue, UploadQueueItem
+                queue_item = UploadQueueItem(
+                    upload_id=f"resume_{mat.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                    file_path=job.file_path,
+                    filename=mat.source_filename or mat.name,
+                    material_id=mat.id,
+                    name=mat.name,
+                    user_id=None,
+                    is_resume=True,
+                    resume_from_page=resume_page,
+                    existing_job_id=job.id,
+                )
+                upload_queue.add(queue_item)
+                print(f"[INIT] Material '{mat.name}' enfileirado para retomada.")
+            else:
+                mat.processing_status = "failed"
+                mat.processing_error = "Processamento interrompido e arquivo não disponível para retomada"
+                if job:
+                    job.status = "failed"
+                    job.error_message = mat.processing_error
+                db.commit()
+                print(f"[INIT] Material '{mat.name}' (id={mat.id}): marcado como falho (arquivo não disponível).")
     finally:
         db.close()
 

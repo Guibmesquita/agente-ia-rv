@@ -56,6 +56,14 @@ The application is built using FastAPI with a modular architecture.
 - Migrações de schema (ALTER TABLE, CREATE INDEX) também precisam rodar em produção — isso acontece automaticamente no startup via `init_database()`, mas dados não são migrados.
 - Ao republicar, apenas o **código** é atualizado. Os dados do banco de produção permanecem como estavam.
 
+## Deployment (CRÍTICO)
+**Deployment target: `vm` (always running).** Mudado de `cloudrun` (autoscale) para `vm` porque o upload de documentos requer processamento background em threads. Em autoscale, o container escalava para zero após o HTTP response, matando o worker de processamento antes de completar — causando uploads que pareciam bem-sucedidos mas nunca persistiam.
+
+**Resiliência de upload:**
+- `_resume_interrupted_uploads()` roda no startup: detecta materiais com `processing_status=processing/pending` e re-enfileira para retomada
+- `_process_item` em `upload_queue.py` inclui logging diagnóstico: tipo do engine (PostgreSQL/SQLite), verificação pós-commit, contagem de blocos
+- Detecção de duplicatas: uploads com `file_hash` idêntico a material com `processing_status=success` são **bloqueados** (não apenas avisados)
+
 ## External Dependencies
 - **API OpenAI:** AI agent interactions and text embeddings.
 - **Z-API:** WhatsApp messaging integration.
