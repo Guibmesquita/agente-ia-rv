@@ -53,14 +53,17 @@ class _TCPHealthShim(_threading.Thread):
 
     def run(self):
         import time as _time
+        import sys as _sys
         while self._active:
             try:
                 conn, addr = self._sock.accept()
-                print(f"[SHIM] Conexão aceita de {addr} em {_time.time_ns()//1_000_000}ms", flush=True)
+                _sys.stderr.write(f"[SHIM] Conexão aceita de {addr} em {_time.time_ns()//1_000_000}ms\n")
+                _sys.stderr.flush()
                 try:
                     conn.recv(2048)
                     conn.sendall(self._HTTP_200)
-                    print(f"[SHIM] Resposta enviada para {addr}", flush=True)
+                    _sys.stderr.write(f"[SHIM] Resposta enviada para {addr}\n")
+                    _sys.stderr.flush()
                 except Exception:
                     pass
                 finally:
@@ -667,17 +670,18 @@ setup_security(app)
 
 @app.middleware("http")
 async def log_all_requests(request: Request, call_next):
-    import time
+    import time, sys
     start = time.time()
-    print(
+    sys.stderr.write(
         f"[ACCESS] {request.method} {request.url.path} "
         f"from {request.client.host if request.client else 'unknown'} "
-        f"headers={dict(request.headers)}",
-        flush=True
+        f"headers={dict(request.headers)}\n"
     )
+    sys.stderr.flush()
     response = await call_next(request)
     duration = (time.time() - start) * 1000
-    print(f"[ACCESS] → {response.status_code} ({duration:.0f}ms)", flush=True)
+    sys.stderr.write(f"[ACCESS] → {response.status_code} ({duration:.0f}ms)\n")
+    sys.stderr.flush()
     return response
 
 # Configura templates Jinja2 (auto_reload=True evita cache de templates)
