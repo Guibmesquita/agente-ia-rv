@@ -13,7 +13,7 @@ Prefiro um design de UI limpo e minimalista.
 Garanta que todos os textos voltados ao usuário estejam em português gramaticalmente correto com acentuação adequada.
 **CRÍTICO: NUNCA perca funcionalidades existentes ao fazer mudanças.** Sempre verifique se as funcionalidades implementadas anteriormente permanecem intactas. Antes de modificar qualquer componente, revise quais funcionalidades existem e garanta que sejam preservadas. Chame o architect para validar mudanças de UX.
 
-**SEGURANÇA: Antes de criar qualquer nova rota, endpoint, integração externa, funcionalidade de upload ou lógica de autenticação, leia o `SECURITY.md` na raiz do repositório.** Ele contém as diretrizes de segurança obrigatórias, exemplos de código correto e incorreto, e o checklist que todo código novo deve passar. Após concluir qualquer tarefa de segurança, verifique se o `SECURITY.md` precisa ser atualizado para refletir o novo estado do projeto.
+**GUIDELINES: Para mudanças em deploy, segurança, banco de dados, RAG, WhatsApp, upload, visual ou integrações externas, consulte a seção relevante do `GUIDELINES.md` antes de implementar.** Ele contém todas as regras, padrões, identidade visual, sistema de notificações, tech stack, workflows e lições aprendidas do projeto. Após concluir qualquer tarefa significativa, verifique se o `GUIDELINES.md` precisa ser atualizado.
 
 ## System Architecture
 The application is built using FastAPI with a modular architecture.
