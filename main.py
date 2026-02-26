@@ -2,82 +2,6 @@
 Ponto de entrada da aplicação FastAPI.
 Configura rotas, middleware e inicialização do banco de dados.
 """
-import socket as _socket
-import threading as _threading
-
-
-class _TCPHealthShim(_threading.Thread):
-    """Servidor TCP mínimo (stdlib only) que responde HTTP 200 ao health check
-    durante o cold start, enquanto Python compila os módulos pesados em produção.
-    Usa SO_REUSEPORT para coexistir com o uvicorn sem conflito de porta."""
-
-    _HTTP_200 = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Type: application/json\r\n"
-        b"Content-Length: 15\r\n"
-        b"Connection: close\r\n\r\n"
-        b'{"status":"ok"}'
-    )
-
-    def __init__(self, port: int = 5000):
-        super().__init__(daemon=True)
-        self._port = port
-        self._sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        self._sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        self._sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
-        self._active = False
-
-    def start_listening(self) -> bool:
-        """Tenta bind na porta. Retorna False silenciosamente se já ocupada (dev)."""
-        import sys as _sys
-        try:
-            self._sock.bind(('0.0.0.0', self._port))
-            self._sock.listen(10)
-            self._sock.settimeout(0.5)
-            self._active = True
-            self.start()
-            _sys.stderr.write(f"[SHIM] Health check shim ativo na porta {self._port}\n")
-            _sys.stderr.flush()
-            return True
-        except OSError as e:
-            _sys.stderr.write(f"[SHIM] Bind falhou na porta {self._port}: {e}\n")
-            _sys.stderr.flush()
-            return False
-
-    def stop(self):
-        self._active = False
-        try:
-            self._sock.close()
-        except Exception:
-            pass
-
-    def run(self):
-        import time as _time
-        import sys as _sys
-        while self._active:
-            try:
-                conn, addr = self._sock.accept()
-                _sys.stderr.write(f"[SHIM] Conexão aceita de {addr} em {_time.time_ns()//1_000_000}ms\n")
-                _sys.stderr.flush()
-                try:
-                    conn.recv(2048)
-                    conn.sendall(self._HTTP_200)
-                    _sys.stderr.write(f"[SHIM] Resposta enviada para {addr}\n")
-                    _sys.stderr.flush()
-                except Exception:
-                    pass
-                finally:
-                    conn.close()
-            except _socket.timeout:
-                continue
-            except Exception:
-                break
-
-
-_health_shim = _TCPHealthShim()
-_health_shim.start_listening()
-
-
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -97,20 +21,8 @@ async def lifespan(app: FastAPI):
     Gerencia o ciclo de vida da aplicação.
     Yield imediato para responder health checks rápido.
     Inicialização pesada (check_critical_dependencies, banco, seed, queue) roda em background.
-    O shim TCP é parado via background task 10s após o uvicorn subir, eliminando gap de transição.
     """
-    async def _delayed_shim_stop():
-        """Para o shim 10s após o uvicorn estar operacional (evita gap de transição)."""
-        await asyncio.sleep(10)
-        _health_shim.stop()
-        import sys as _sys
-        _sys.stderr.write("[SHIM] Health check shim parado — uvicorn operacional.\n")
-        _sys.stderr.flush()
-
     background_tasks = []
-
-    shim_stop_task = asyncio.create_task(_delayed_shim_stop())
-    background_tasks.append(shim_stop_task)
 
     init_task = asyncio.create_task(run_init_background())
     background_tasks.append(init_task)
@@ -1170,14 +1082,4 @@ async def revisao_page(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-
-    _uvicorn_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-    _uvicorn_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-    _uvicorn_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
-    _uvicorn_sock.bind(('0.0.0.0', 5000))
-    _uvicorn_sock.listen(10)
-
-    import asyncio as _asyncio
-    config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="info")
-    server = uvicorn.Server(config)
-    _asyncio.run(server.serve(sockets=[_uvicorn_sock]))
+    uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
