@@ -494,13 +494,14 @@ healthcheckPath = "/health"
 - **`healthcheckPath` só funciona para autoscale/cloudrun**, não para VM
 - **REGRA:** a rota `/` NUNCA deve ser pesada ou dependente de inicialização lazy
 
-### Cold Start (Otimização Crítica)
-- **Timeout do health check VM é FIXO em 5 segundos** — não configurável no Replit
-- **Lazy imports em main.py:** os imports pesados (`database.database`, `database.crud`, `core.security`) são feitos dentro das funções que os usam, NÃO no topo do módulo. Isso reduz o tempo de startup do Python/uvicorn para <3s
-- **REGRA:** NUNCA adicionar imports pesados (SQLAlchemy, passlib, OpenAI, etc.) no topo de `main.py`. Sempre usar import local dentro da função
-- Lazy router registration: routers importados em background thread (~10-25s)
-- Rotas `/`, `/health`, static files: disponíveis imediatamente
-- Lição aprendida: imports top-level de SQLAlchemy+bcrypt+models causavam 10-13s de startup, estourando o timeout de 5s do health check
+### Cold Start (Otimização Crítica — 3 Camadas)
+- **Timeout do health check VM é FIXO em 5 segundos** a partir do start do container — não configurável no Replit
+- **Camada 1: Pre-startup HTTP server** — no topo de `main.py`, ANTES de qualquer import pesado, um `http.server.HTTPServer` (stdlib) sobe em <100ms no port 5000 via daemon thread. Responde `{"status":"ok"}` a qualquer GET. Satisfaz o health check do Replit enquanto Python carrega o resto. Desligado antes de `uvicorn.run()`.
+- **Camada 2: Lazy imports** — imports pesados (`database.database`, `database.crud`, `core.security`) são feitos DENTRO das funções que os usam, NÃO no topo do módulo. **REGRA: NUNCA adicionar imports pesados no topo de main.py.**
+- **Camada 3: Lazy router registration** — 16 módulos de endpoint importados em background thread (~10-25s após startup)
+- Rotas `/`, `/health`, static files: disponíveis imediatamente após uvicorn iniciar
+- **Fluxo de startup:** pre-startup server (t=0) → Python imports (~5s) → pre-startup server shutdown → uvicorn bind port 5000 → lifespan → app ready
+- Lição aprendida: Python+FastAPI+SQLAlchemy+bcrypt levam ~10s para importar. Sem o pre-startup server, o health check de 5s sempre falhava
 
 ### Resiliência de Upload
 - `_resume_interrupted_uploads()` roda no startup

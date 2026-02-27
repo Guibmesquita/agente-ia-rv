@@ -59,17 +59,21 @@ The application is built using FastAPI with a modular architecture.
 ## Deployment (CRÍTICO)
 **Deployment target: `vm` (always running).** Mudado de `cloudrun` (autoscale) para `vm` porque o upload de documentos requer processamento background em threads. Em autoscale, o container escalava para zero após o HTTP response, matando o worker de processamento antes de completar — causando uploads que pareciam bem-sucedidos mas nunca persistiam.
 
-**Lazy Loading (cold start optimization — CRÍTICO):** O `main.py` usa lazy loading em 2 camadas para startup <3s:
+**Cold Start Optimization (3 Camadas — CRÍTICO):** O `main.py` usa 3 camadas para sobreviver ao health check de 5s do Replit VM:
 
-1. **Lazy Imports no main.py**: Imports pesados (`database.database`, `database.crud`, `core.security`) são feitos DENTRO das funções que os usam, NÃO no topo do módulo. Isso evita que Python carregue SQLAlchemy+bcrypt+models antes do uvicorn iniciar. **REGRA: NUNCA adicionar imports pesados no topo de main.py.**
+1. **Pre-startup HTTP server (Camada 1):** No TOPO ABSOLUTO de `main.py`, antes de qualquer import pesado, um `http.server.HTTPServer` (stdlib) sobe em <100ms no port 5000 via daemon thread. Responde `{"status":"ok"}` a qualquer GET, satisfazendo o health check do Replit enquanto Python carrega o resto. É desligado antes de `uvicorn.run()`. **REGRA: O pre-startup server DEVE ser o primeiro código executável do arquivo.**
 
-2. **Lazy Router Registration**: Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo. Rotas ficam disponíveis ~10-25s após o uvicorn subir.
+2. **Lazy Imports (Camada 2):** Imports pesados (`database.database`, `database.crud`, `core.security`) são feitos DENTRO das funções que os usam, NÃO no topo do módulo. **REGRA: NUNCA adicionar imports pesados no topo de main.py.**
 
-3. **Rota `/health` no nível do app** (não via lazy router): Registrada antes do lifespan, retorna `{"status":"ok"}` instantaneamente sem dependências.
+3. **Lazy Router Registration (Camada 3):** Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo. Rotas ficam disponíveis ~10-25s após o uvicorn subir.
 
-4. **Health check VM bate em `/`** (não em `/health`): Deploy VM ignora `healthcheckPath` e faz health check na homepage com timeout de 5s. A rota `/` detecta `Accept: text/html` — browsers recebem `login.html`, health checkers recebem JSON `{"status":"ok"}`. **Rota `/` NUNCA deve ser pesada.**
+4. **Rota `/health` no nível do app** (não via lazy router): Registrada antes do lifespan, retorna `{"status":"ok"}` instantaneamente sem dependências.
 
-5. **Uvicorn bind padrão**: `uvicorn.run(app, host="0.0.0.0", port=5000)` — sem socket pré-criado, sem `SO_REUSEPORT`.
+5. **Health check VM bate em `/`** (não em `/health`): Deploy VM ignora `healthcheckPath` e faz health check na homepage com timeout de 5s. A rota `/` detecta `Accept: text/html` — browsers recebem `login.html`, health checkers recebem JSON `{"status":"ok"}`. **Rota `/` NUNCA deve ser pesada.**
+
+6. **Uvicorn bind padrão**: `uvicorn.run(app, host="0.0.0.0", port=5000)` — sem socket pré-criado, sem `SO_REUSEPORT`.
+
+**Fluxo de startup:** pre-startup server (t<100ms) → Python imports (~5s) → pre-startup shutdown → uvicorn bind :5000 → lifespan → app ready (~10s total, mas health check já passou em t<100ms).
 
 - Rotas `/`, `/health`, arquivos estáticos e middleware de segurança são configurados no top-level (instantâneos).
 - `SESSION_SECRET` é obrigatória em produção: assina os JWTs emitidos após SSO Microsoft. Deve estar nos Secrets do Replit.

@@ -1,7 +1,41 @@
 """
 Ponto de entrada da aplicação FastAPI.
 Configura rotas, middleware e inicialização do banco de dados.
+
+PRE-STARTUP HEALTH SERVER: Replit VM faz health check em / com timeout de 5s
+a partir do start do container. Como Python+FastAPI levam ~10s para inicializar,
+um servidor HTTP mínimo (stdlib) sobe em <100ms e responde 200 ao health check
+enquanto o app real carrega. Uvicorn assume o port quando estiver pronto.
 """
+import socket
+import threading
+import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+_health_server = None
+_health_thread = None
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
+
+    def log_message(self, format, *args):
+        pass
+
+try:
+    _health_server = HTTPServer(("0.0.0.0", 5000), _HealthHandler)
+    _health_server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _health_thread = threading.Thread(target=_health_server.serve_forever, daemon=True)
+    _health_thread.start()
+    print("[HEALTH] Pre-startup health server running on :5000", flush=True)
+except OSError as e:
+    print(f"[HEALTH] Pre-startup server skipped (port 5000 busy): {e}", flush=True)
+    _health_server = None
+    _health_thread = None
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -18,6 +52,8 @@ async def lifespan(app: FastAPI):
     Yield imediato para responder health checks rápido.
     Inicialização pesada (check_critical_dependencies, banco, seed, queue) roda em background.
     """
+    _shutdown_health_server()
+
     background_tasks = []
 
     init_task = asyncio.create_task(run_init_background())
@@ -1128,6 +1164,18 @@ async def revisao_page(request: Request):
     return templates.TemplateResponse("revisao.html", {"request": request, "user_role": user_role})
 
 
+def _shutdown_health_server():
+    global _health_server, _health_thread
+    if _health_server is not None:
+        _health_server.shutdown()
+        _health_server.server_close()
+        if _health_thread is not None:
+            _health_thread.join(timeout=2.0)
+        _health_server = None
+        _health_thread = None
+        print("[HEALTH] Pre-startup server stopped, uvicorn taking over", flush=True)
+
 if __name__ == "__main__":
     import uvicorn
+    _shutdown_health_server()
     uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
