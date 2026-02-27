@@ -306,5 +306,5 @@ def setup_security(app: FastAPI):
             allow_headers=["Authorization", "Content-Type"],
         )
 
-    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(GlobalAuthMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
