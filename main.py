@@ -5,7 +5,7 @@ Configura rotas, middleware e inicialização do banco de dados.
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from contextlib import asynccontextmanager
 import asyncio
 import os
@@ -621,10 +621,17 @@ async def health_check():
 
 # ========== Rotas de Páginas HTML ==========
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def root(request: Request):
-    """Página inicial - serve a página de login diretamente."""
-    return templates.TemplateResponse("login.html", {"request": request})
+    """Página inicial - serve login para browsers, JSON 200 para health checks.
+    
+    Deploy VM do Replit faz health check em / com timeout de 5s.
+    Browsers enviam Accept: text/html; health checkers não.
+    """
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return templates.TemplateResponse("login.html", {"request": request})
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/login", response_class=HTMLResponse)

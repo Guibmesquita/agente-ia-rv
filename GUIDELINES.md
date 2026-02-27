@@ -484,10 +484,19 @@ healthcheckPath = "/health"
 - **Exemplos de mudanças que exigem edição manual do `.replit`:** deploymentTarget, healthcheckPath, ports, modules, nix packages
 - **Lição aprendida:** `deployConfig()` reportou sucesso ao trocar `cloudrun` → `vm`, mas o arquivo continuou com `cloudrun`. Isso causou deploys incorretos em produção
 
+### Health Check no Deploy VM (CRÍTICO)
+- **Deploy VM faz health check na homepage `/`** — ignora `healthcheckPath` do `.replit`
+- **Timeout de 5 segundos** — se `/` não responder em 5s, deploy falha
+- **Solução implementada:** rota `/` detecta header `Accept`:
+  - Sem `text/html` (health checker) → retorna `JSONResponse({"status":"ok"})` imediatamente
+  - Com `text/html` (browser) → renderiza `login.html` normalmente
+- **Fonte:** https://docs.replit.com/cloud-services/deployments/reserved-vm-deployments
+- **`healthcheckPath` só funciona para autoscale/cloudrun**, não para VM
+- **REGRA:** a rota `/` NUNCA deve ser pesada ou dependente de inicialização lazy
+
 ### Cold Start
 - Lazy router registration: routers importados em background thread (~10-25s)
 - Rotas `/`, `/health`, static files: disponíveis imediatamente
-- Health check do Replit: timeout de 5s, bate em `healthcheckPath`
 
 ### Resiliência de Upload
 - `_resume_interrupted_uploads()` roda no startup

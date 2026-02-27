@@ -63,7 +63,9 @@ The application is built using FastAPI with a modular architecture.
 
 1. **Lazy Router Registration**: Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo. Rotas ficam disponíveis ~10-25s após o uvicorn subir.
 
-2. **Rota `/health` no nível do app** (não via lazy router): Registrada antes do lifespan, retorna `{"status":"ok"}` instantaneamente sem dependências. Ideal para o health check do deployment.
+2. **Rota `/health` no nível do app** (não via lazy router): Registrada antes do lifespan, retorna `{"status":"ok"}` instantaneamente sem dependências.
+
+3. **Health check VM bate em `/`** (não em `/health`): Deploy VM ignora `healthcheckPath` e faz health check na homepage com timeout de 5s. A rota `/` detecta `Accept: text/html` — browsers recebem `login.html`, health checkers recebem JSON `{"status":"ok"}`. **Rota `/` NUNCA deve ser pesada.**
 
 3. **Uvicorn bind padrão**: `uvicorn.run(app, host="0.0.0.0", port=5000)` — sem socket pré-criado, sem `SO_REUSEPORT`.
 
