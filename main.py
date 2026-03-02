@@ -105,13 +105,6 @@ async def lifespan(app: FastAPI):
     Yield imediato para responder health checks rápido.
     Inicialização pesada (check_critical_dependencies, banco, seed, queue) roda em background.
     """
-    global _pre_startup_active
-    if _pre_startup_active:
-        _pre_startup_active = False
-        _pre_startup_thread.join(timeout=3)
-        _shared_sock.settimeout(None)
-        _log("Pre-startup responder parado via lifespan (fallback)")
-
     background_tasks = []
 
     init_task = asyncio.create_task(run_init_background())
@@ -125,6 +118,13 @@ async def lifespan(app: FastAPI):
     
     token_cleanup_task = asyncio.create_task(revoked_tokens_cleanup_scheduler())
     background_tasks.append(token_cleanup_task)
+
+    global _pre_startup_active
+    if _pre_startup_active:
+        _pre_startup_active = False
+        _pre_startup_thread.join(timeout=3)
+        _shared_sock.settimeout(None)
+        _log("Pre-startup responder parado — uvicorn assumindo (lifespan ready)")
     
     yield
     
@@ -1225,10 +1225,7 @@ async def revisao_page(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    _pre_startup_active = False
-    _pre_startup_thread.join(timeout=3)
-    _shared_sock.settimeout(None)
-    _log("Pre-startup responder parado — uvicorn assumindo")
+    _log("Iniciando uvicorn — pre-startup responder continua ativo até lifespan completar")
 
     config = uvicorn.Config(app, log_level="info")
     server = uvicorn.Server(config)
