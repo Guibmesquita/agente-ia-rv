@@ -18,7 +18,8 @@ from core.security import create_access_token, decode_token, create_refresh_toke
 from core.security_middleware import limiter, record_successful_login, record_security_event
 from slowapi.util import get_remote_address
 
-IS_PRODUCTION = bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT"))
+from core.config import is_production
+IS_PRODUCTION = is_production()
 
 router = APIRouter(prefix="/api/auth", tags=["Autenticação"])
 

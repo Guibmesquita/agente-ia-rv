@@ -17,18 +17,16 @@ class Settings(BaseSettings):
     
     ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "")
     
-    # API Keys - serão carregadas das Secrets do Replit
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
-    # Configuração do Z-API (WhatsApp API)
     ZAPI_INSTANCE_ID: str = os.getenv("ZAPI_INSTANCE_ID", "")
     ZAPI_TOKEN: str = os.getenv("ZAPI_TOKEN", "")
     ZAPI_CLIENT_TOKEN: str = os.getenv("ZAPI_CLIENT_TOKEN", "")
     
-    # Configuração do banco de dados (usa PostgreSQL do Replit ou SQLite local)
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "")
     
-    # Configuração do ChromaDB
     CHROMA_PERSIST_DIRECTORY: str = "./chroma_db"
     
     class Config:
@@ -38,5 +36,32 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Retorna uma instância cacheada das configurações."""
     return Settings()
+
+
+def is_production() -> bool:
+    return bool(
+        os.getenv("ENV") == "production"
+        or os.getenv("REPL_DEPLOYMENT")
+        or os.getenv("REPLIT_DEPLOYMENT")
+    )
+
+
+def get_public_domain() -> str:
+    base_url = os.getenv("APP_BASE_URL", "")
+    if base_url:
+        return base_url.replace("https://", "").replace("http://", "").rstrip("/")
+    domain = os.getenv("REPLIT_DOMAINS", os.getenv("REPLIT_DEV_DOMAIN", ""))
+    if "," in domain:
+        domain = domain.split(",")[0]
+    return domain
+
+
+def get_public_base_url() -> str:
+    base_url = os.getenv("APP_BASE_URL", "")
+    if base_url:
+        return base_url.rstrip("/")
+    domain = get_public_domain()
+    if domain:
+        return f"https://{domain}"
+    return ""

@@ -1771,12 +1771,11 @@ async def dispatch_campaign_stream(
     
     async def generate_events():
         from services.whatsapp_client import zapi_client
+        from core.config import get_public_domain
         import os
         
         zapi_configured = zapi_client.is_configured()
-        replit_domain = os.getenv("REPLIT_DOMAINS", os.getenv("REPLIT_DEV_DOMAIN", ""))
-        if "," in replit_domain:
-            replit_domain = replit_domain.split(",")[0]
+        replit_domain = get_public_domain()
         sent_count = 0
         failed_count = 0
         current_index = 0
@@ -2144,10 +2143,9 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     attachment_filename = campaign.attachment_filename
     
     async def generate_events():
+        from core.config import get_public_domain
         zapi_configured = zapi_client.is_configured()
-        replit_domain = os.getenv("REPLIT_DOMAINS", os.getenv("REPLIT_DEV_DOMAIN", ""))
-        if "," in replit_domain:
-            replit_domain = replit_domain.split(",")[0]
+        replit_domain = get_public_domain()
         sent_count = 0
         failed_count = 0
         current_index = 0

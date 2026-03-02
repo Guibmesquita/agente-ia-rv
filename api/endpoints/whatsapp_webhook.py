@@ -380,9 +380,8 @@ async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
         print(f"[DIAGRAM] Arquivo de diagrama não encontrado: {diagram_path}")
         return False
 
-    domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
-    if "," in domain:
-        domain = domain.split(",")[0]
+    from core.config import get_public_domain
+    domain = get_public_domain()
 
     diagram_url = f"https://{domain}/derivatives-diagrams/{slug}.png"
     name = structure.get("name", slug)
@@ -454,12 +453,11 @@ async def _send_material_pdf(phone: str, material_id: str, db: Session) -> bool:
             print(f"[MATERIAL] Arquivo não encontrado: {file_path}")
             return False
         
-        domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
-        if "," in domain:
-            domain = domain.split(",")[0]
+        from core.config import get_public_domain
+        domain = get_public_domain()
         
         if not domain:
-            print(f"[MATERIAL] Erro: domínio público não configurado (REPLIT_DOMAINS/REPLIT_DEV_DOMAIN)")
+            print(f"[MATERIAL] Erro: dominio publico nao configurado (APP_BASE_URL)")
             return False
         
         file_url = f"https://{domain}/{file_path}"
@@ -558,10 +556,8 @@ async def _send_derivatives_diagram_if_requested(
         print(f"[DIAGRAM] Confirmação de diagrama detectada mas sem estruturas no contexto")
         return
 
-    import os
-    domain = os.environ.get("REPLIT_DOMAINS", os.environ.get("REPLIT_DEV_DOMAIN", ""))
-    if "," in domain:
-        domain = domain.split(",")[0]
+    from core.config import get_public_domain
+    domain = get_public_domain()
 
     for structure in derivatives_structures:
         if not structure.get("has_diagram"):

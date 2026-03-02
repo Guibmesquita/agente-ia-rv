@@ -1,94 +1,7 @@
 """
-Ponto de entrada da aplicação FastAPI.
-Configura rotas, middleware e inicialização do banco de dados.
-
-PRE-STARTUP HEALTH SERVER (socket compartilhado):
-Replit VM faz health check em / com timeout de 5s a partir do start do container.
-Python+FastAPI levam ~10s para inicializar. Solução: criar o socket UMA vez no topo
-(antes de qualquer import pesado), usar um responder raw em daemon thread para
-atender health checks, e depois passar o MESMO socket para o uvicorn via
-server.serve(sockets=[_shared_sock]). Zero rebind, zero gap.
+Ponto de entrada da aplicacao FastAPI.
+Configura rotas, middleware e inicializacao do banco de dados.
 """
-import socket as _socket
-import threading as _threading
-import time as _time
-import sys as _sys
-
-_START_TIME = _time.time()
-
-def _log(msg):
-    elapsed = _time.time() - _START_TIME
-    line = f"[HEALTH] t={elapsed:.3f}s - {msg}"
-    print(line, flush=True)
-    _sys.stderr.write(line + "\n")
-    _sys.stderr.flush()
-
-_shared_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-_shared_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-_shared_sock.bind(("0.0.0.0", 5000))
-_shared_sock.listen(10)
-_log("Socket bound e listening em :5000")
-
-_pre_startup_active = True
-
-_LOADING_HTML = (
-    b"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-    b"<meta http-equiv='refresh' content='3'>"
-    b"<title>Agente IA - RV</title>"
-    b"<style>body{font-family:Inter,sans-serif;display:flex;align-items:center;"
-    b"justify-content:center;height:100vh;margin:0;background:#f8f9fa;color:#333}"
-    b".c{text-align:center}.s{width:40px;height:40px;border:4px solid #e0e0e0;"
-    b"border-top:4px solid #2563eb;border-radius:50%;animation:r .8s linear infinite;"
-    b"margin:0 auto 16px}@keyframes r{to{transform:rotate(360deg)}}</style></head>"
-    b"<body><div class='c'><div class='s'></div>"
-    b"<h2>Carregando...</h2>"
-    b"<p>O sistema est\xc3\xa1 iniciando. Aguarde alguns segundos.</p>"
-    b"</div></body></html>"
-)
-
-def _pre_startup_responder():
-    JSON_RESPONSE = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Type: application/json\r\n"
-        b"Content-Length: 15\r\n"
-        b"Connection: close\r\n\r\n"
-        b'{"status":"ok"}'
-    )
-    HTML_RESPONSE = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Type: text/html; charset=utf-8\r\n"
-        b"Content-Length: " + str(len(_LOADING_HTML)).encode() + b"\r\n"
-        b"Connection: close\r\n\r\n"
-        + _LOADING_HTML
-    )
-    while _pre_startup_active:
-        try:
-            _shared_sock.settimeout(0.5)
-            conn, addr = _shared_sock.accept()
-            try:
-                conn.settimeout(2)
-                raw = b""
-                try:
-                    raw = conn.recv(2048)
-                except _socket.timeout:
-                    pass
-                if b"text/html" in raw:
-                    conn.sendall(HTML_RESPONSE)
-                else:
-                    conn.sendall(JSON_RESPONSE)
-            except Exception:
-                pass
-            finally:
-                conn.close()
-        except _socket.timeout:
-            continue
-        except Exception:
-            break
-
-_pre_startup_thread = _threading.Thread(target=_pre_startup_responder, daemon=True)
-_pre_startup_thread.start()
-_log("Pre-startup responder iniciado")
-
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -96,6 +9,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from contextlib import asynccontextmanager
 import asyncio
 import os
+
+from core.config import is_production
 
 
 @asynccontextmanager
@@ -661,9 +576,9 @@ app = FastAPI(
     description="API para agente de IA de assessores financeiros com integração WhatsApp",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs" if not bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT")) else None,
-    redoc_url="/redoc" if not bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT")) else None,
-    openapi_url="/openapi.json" if not bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT")) else None,
+    docs_url="/docs" if not is_production() else None,
+    redoc_url="/redoc" if not is_production() else None,
+    openapi_url="/openapi.json" if not is_production() else None,
 )
 
 from core.security_middleware import setup_security
@@ -1218,17 +1133,5 @@ async def revisao_page(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    class _PatchedServer(uvicorn.Server):
-        async def startup(self, sockets=None):
-            await super().startup(sockets=sockets)
-            global _pre_startup_active
-            if _pre_startup_active:
-                _pre_startup_active = False
-                _pre_startup_thread.join(timeout=3)
-                _log("Pre-startup responder parado — uvicorn create_server completo, serving")
-
-    _log("Iniciando uvicorn — pre-startup responder continua ativo até create_server")
-
-    config = uvicorn.Config(app, log_level="info")
-    server = _PatchedServer(config)
-    asyncio.run(server.serve(sockets=[_shared_sock]))
+    port = int(os.getenv("PORT", "5000"))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

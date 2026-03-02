@@ -55,6 +55,10 @@ Thumbs.db
 # Replit
 .cache/
 .upm/
+.local/
+.replit
+replit.nix
+replit.md
 
 # Node.js
 node_modules/
@@ -69,3 +73,7 @@ uploads/
 
 # Build
 frontend/dist/
+
+# Backups
+backup_migracao.sql
+*.sql.bak

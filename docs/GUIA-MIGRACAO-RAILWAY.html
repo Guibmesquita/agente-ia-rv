@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guia de Migração — Replit → Railway</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #111;
+    padding: 2cm;
+    max-width: 210mm;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 18pt;
+    text-align: center;
+    border-bottom: 2px solid #333;
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    text-align: center;
+    font-size: 10pt;
+    color: #555;
+    margin-bottom: 24px;
+  }
+
+  h2 {
+    font-size: 14pt;
+    margin-top: 24px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #999;
+    padding-bottom: 4px;
+  }
+
+  h3 {
+    font-size: 12pt;
+    margin-top: 16px;
+    margin-bottom: 6px;
+  }
+
+  p, li {
+    margin-bottom: 6px;
+  }
+
+  ul, ol {
+    padding-left: 24px;
+    margin-bottom: 12px;
+  }
+
+  code {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10pt;
+    background: #eee;
+    border: 1px solid #ccc;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  pre {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 9.5pt;
+    background: #f0f0f0;
+    border: 1px solid #bbb;
+    padding: 10px 12px;
+    margin: 8px 0 12px 0;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.4;
+  }
+
+  .checklist {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .checklist li {
+    padding-left: 24px;
+    position: relative;
+    margin-bottom: 4px;
+  }
+
+  .checklist li::before {
+    content: "☐";
+    position: absolute;
+    left: 0;
+    font-size: 13pt;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 16px 0;
+    font-size: 10pt;
+  }
+
+  th, td {
+    border: 1px solid #999;
+    padding: 5px 8px;
+    text-align: left;
+  }
+
+  th {
+    background: #e8e8e8;
+    font-weight: bold;
+  }
+
+  .warning {
+    border: 1px solid #888;
+    background: #f5f5f5;
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: 10pt;
+  }
+
+  .warning strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  @media print {
+    body { padding: 1cm; font-size: 10pt; }
+    h1 { font-size: 16pt; }
+    h2 { font-size: 13pt; }
+    h3 { font-size: 11pt; }
+    pre { font-size: 9pt; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Guia de Migração: Replit → Railway</h1>
+<p class="subtitle">Agente IA - RV &nbsp;|&nbsp; Documento para o usuário &nbsp;|&nbsp; Versão 1.0</p>
+
+<h2>1. Visão Geral</h2>
+<p>Este guia descreve o passo a passo que <strong>você</strong> (usuário/administrador) precisa executar para migrar a aplicação do Replit para o Railway. Tarefas de código já foram realizadas pelo agente — este documento foca em <strong>ações, validações e configurações</strong> que dependem de você.</p>
+
+<h3>O que muda para você?</h3>
+<table>
+  <tr><th>Aspecto</th><th>Antes (Replit)</th><th>Depois (Railway)</th></tr>
+  <tr><td>URL da aplicação</td><td><code>*.replit.app</code></td><td>Domínio próprio ou <code>*.up.railway.app</code></td></tr>
+  <tr><td>Cold start</td><td>Sim (delay ao acessar)</td><td>Não — sempre online</td></tr>
+  <tr><td>Banco de dados</td><td>PostgreSQL do Replit</td><td>PostgreSQL no Railway</td></tr>
+  <tr><td>Deploys</td><td>Manual no Replit</td><td>Automático via push no GitHub</td></tr>
+</table>
+
+<h2>2. Pré-requisitos</h2>
+<ul class="checklist">
+  <li>Conta no <strong>Railway</strong> (railway.com) — plano Pro recomendado</li>
+  <li>Conta no <strong>GitHub</strong> com acesso ao repositório do projeto</li>
+  <li>Acesso ao <strong>Replit</strong> atual (para extrair dados e secrets)</li>
+  <li>Acesso ao painel <strong>Azure AD</strong> (Microsoft Entra ID) para atualizar redirect URIs do SSO</li>
+  <li>Acesso ao painel do <strong>Z-API</strong> para atualizar webhooks</li>
+</ul>
+
+<h2 class="page-break">3. Etapa 1 — Conectar GitHub ao Railway</h2>
+
+<h3>3.1 Verificar o repositório GitHub</h3>
+<ol>
+  <li>Acesse o repositório no GitHub e confirme que o código está atualizado.</li>
+  <li>Verifique que os seguintes arquivos existem na raiz:
+    <ul>
+      <li><code>Dockerfile</code></li>
+      <li><code>railway.json</code></li>
+      <li><code>requirements.txt</code></li>
+      <li><code>.gitignore</code></li>
+    </ul>
+  </li>
+</ol>
+
+<h3>3.2 Criar projeto no Railway</h3>
+<ol>
+  <li>Acesse <strong>railway.com</strong> e faça login.</li>
+  <li>Clique em <strong>"New Project"</strong>.</li>
+  <li>Selecione <strong>"Deploy from GitHub Repo"</strong>.</li>
+  <li>Autorize o Railway a acessar sua conta GitHub (se ainda não fez).</li>
+  <li>Selecione o repositório do projeto.</li>
+  <li>O Railway detectará automaticamente o <code>Dockerfile</code> e o <code>railway.json</code>.</li>
+</ol>
+
+<ul class="checklist">
+  <li>Projeto criado no Railway</li>
+  <li>Repositório GitHub conectado</li>
+</ul>
+
+<h2>4. Etapa 2 — Provisionar o Banco de Dados</h2>
+
+<h3>4.1 Criar PostgreSQL no Railway</h3>
+<ol>
+  <li>No projeto Railway, clique em <strong>"+ New"</strong> → <strong>"Database"</strong> → <strong>"PostgreSQL"</strong>.</li>
+  <li>O Railway cria automaticamente e expõe a variável <code>DATABASE_URL</code>.</li>
+</ol>
+
+<h3>4.2 Habilitar extensão pgvector</h3>
+<ol>
+  <li>No painel do PostgreSQL no Railway, acesse a aba <strong>"Data"</strong> ou <strong>"Query"</strong>.</li>
+  <li>Execute:
+    <pre>CREATE EXTENSION IF NOT EXISTS vector;</pre>
+  </li>
+</ol>
+
+<h3>4.3 Restaurar o backup do banco</h3>
+<ol>
+  <li>Baixe o arquivo <code>backup_migracao.sql</code> do Replit (disponível na raiz do projeto).</li>
+  <li>No painel do Railway PostgreSQL, copie a <strong>connection string</strong> (formato: <code>postgresql://user:pass@host:port/dbname</code>).</li>
+  <li>No seu terminal local (com <code>psql</code> instalado), execute:
+    <pre>psql "CONNECTION_STRING_DO_RAILWAY" &lt; backup_migracao.sql</pre>
+  </li>
+  <li>Alternativamente, use uma ferramenta gráfica como <strong>DBeaver</strong> ou <strong>pgAdmin</strong> para importar.</li>
+</ol>
+
+<h3>4.4 Validar a restauração</h3>
+<p>Execute no console SQL do Railway:</p>
+<pre>SELECT count(*) FROM users;
+SELECT count(*) FROM knowledge_chunks;
+SELECT count(*) FROM conversations;</pre>
+<p>Compare os números com o ambiente Replit atual.</p>
+
+<ul class="checklist">
+  <li>PostgreSQL criado no Railway</li>
+  <li>Extensão <code>vector</code> habilitada</li>
+  <li>Backup restaurado com sucesso</li>
+  <li>Contagem de registros confere</li>
+</ul>
+
+<h2 class="page-break">5. Etapa 3 — Configurar Variáveis de Ambiente</h2>
+
+<p>No Railway, acesse o serviço da aplicação → aba <strong>"Variables"</strong>. Configure cada variável abaixo:</p>
+
+<table>
+  <tr><th>Variável</th><th>Onde obter</th><th>Observação</th></tr>
+  <tr><td><code>DATABASE_URL</code></td><td>Railway (automática)</td><td>Já injetada se o DB estiver linkado ao serviço</td></tr>
+  <tr><td><code>OPENAI_API_KEY</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>SESSION_SECRET</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>ZAPI_INSTANCE_ID</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>ZAPI_TOKEN</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>ZAPI_CLIENT_TOKEN</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>TAVILY_API_KEY</code></td><td>Replit Secrets</td><td>Copiar do Replit (se existir)</td></tr>
+  <tr><td><code>MICROSOFT_CLIENT_ID</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>MICROSOFT_CLIENT_SECRET</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>MICROSOFT_TENANT_ID</code></td><td>Replit Secrets</td><td>Copiar do Replit</td></tr>
+  <tr><td><code>ALLOWED_ORIGINS</code></td><td>Definir manualmente</td><td>URL do novo domínio Railway (ex: <code>https://seuapp.up.railway.app</code>)</td></tr>
+  <tr><td><code>APP_BASE_URL</code></td><td>Definir manualmente</td><td>Mesma URL acima, sem barra final</td></tr>
+  <tr><td><code>ENV</code></td><td>Definir manualmente</td><td>Valor: <code>production</code></td></tr>
+</table>
+
+<div class="warning">
+  <strong>⚠ Atenção:</strong> O Railway injeta automaticamente a variável <code>PORT</code>. Não defina manualmente. O <code>DATABASE_URL</code> também é injetado automaticamente se você linkar o serviço PostgreSQL ao serviço da aplicação.
+</div>
+
+<ul class="checklist">
+  <li>Todas as variáveis copiadas do Replit</li>
+  <li><code>ALLOWED_ORIGINS</code> atualizada com o novo domínio</li>
+  <li><code>APP_BASE_URL</code> configurada</li>
+  <li><code>ENV=production</code> definida</li>
+</ul>
+
+<h2>6. Etapa 4 — Deploy e Verificação Inicial</h2>
+
+<h3>6.1 Disparar o primeiro deploy</h3>
+<ol>
+  <li>Após configurar as variáveis, o Railway fará o deploy automaticamente.</li>
+  <li>Acompanhe os logs em tempo real na aba <strong>"Deployments"</strong>.</li>
+  <li>Aguarde a mensagem de que o servidor está rodando (porta ativa).</li>
+</ol>
+
+<h3>6.2 Testar o health check</h3>
+<p>Acesse no navegador:</p>
+<pre>https://SEU-DOMINIO.up.railway.app/health</pre>
+<p>Deve retornar <code>{"status": "healthy", ...}</code>.</p>
+
+<ul class="checklist">
+  <li>Deploy concluído sem erros</li>
+  <li>Health check retorna status <code>healthy</code></li>
+</ul>
+
+<h2 class="page-break">7. Etapa 5 — Reconfigurar Integrações Externas</h2>
+
+<h3>7.1 SSO Microsoft (Azure AD / Entra ID)</h3>
+<ol>
+  <li>Acesse o <strong>Azure Portal</strong> → <strong>App Registrations</strong> → selecione o app.</li>
+  <li>Vá em <strong>Authentication</strong> → <strong>Redirect URIs</strong>.</li>
+  <li>Adicione a nova URI:
+    <pre>https://SEU-DOMINIO.up.railway.app/auth/callback</pre>
+  </li>
+  <li>Você pode manter a URI antiga do Replit enquanto estiver em transição.</li>
+</ol>
+
+<h3>7.2 Webhook do Z-API (WhatsApp)</h3>
+<ol>
+  <li>Acesse o painel do <strong>Z-API</strong>.</li>
+  <li>Na instância configurada, atualize a URL do webhook para:
+    <pre>https://SEU-DOMINIO.up.railway.app/api/whatsapp/webhook</pre>
+  </li>
+  <li>Teste enviando uma mensagem pelo WhatsApp e verifique nos logs do Railway se chegou.</li>
+</ol>
+
+<h3>7.3 Domínio personalizado (opcional)</h3>
+<ol>
+  <li>No Railway, vá em <strong>Settings</strong> → <strong>Networking</strong> → <strong>Custom Domain</strong>.</li>
+  <li>Adicione seu domínio (ex: <code>agente.suaempresa.com.br</code>).</li>
+  <li>Configure o DNS (CNAME) conforme instruções do Railway.</li>
+  <li>Se usar domínio personalizado, atualize <code>ALLOWED_ORIGINS</code>, <code>APP_BASE_URL</code>, redirect URI do Azure AD e webhook do Z-API.</li>
+</ol>
+
+<ul class="checklist">
+  <li>Redirect URI do SSO atualizada no Azure AD</li>
+  <li>Webhook do Z-API apontando para o novo domínio</li>
+  <li>Domínio personalizado configurado (se aplicável)</li>
+</ul>
+
+<h2>8. Etapa 6 — Validação Funcional Completa</h2>
+
+<p>Teste cada funcionalidade abaixo no novo ambiente. Marque quando validado:</p>
+
+<h3>8.1 Autenticação</h3>
+<ul class="checklist">
+  <li>Login via SSO Microsoft funciona</li>
+  <li>Sessão mantida após refresh da página</li>
+  <li>Logout funciona corretamente</li>
+</ul>
+
+<h3>8.2 Conversas / Chat</h3>
+<ul class="checklist">
+  <li>Histórico de conversas carrega corretamente</li>
+  <li>Nova conversa pode ser iniciada</li>
+  <li>Agente responde com contexto da base de conhecimento</li>
+  <li>Pesquisa semântica retorna resultados relevantes</li>
+</ul>
+
+<h3>8.3 Base de Conhecimento</h3>
+<ul class="checklist">
+  <li>Produtos listados corretamente</li>
+  <li>Upload de novos materiais funciona</li>
+  <li>Busca por produto/material funciona</li>
+  <li>Fila de revisão acessível</li>
+</ul>
+
+<h3>8.4 Insights (Dashboard)</h3>
+<ul class="checklist">
+  <li>Dashboard carrega com dados</li>
+  <li>Gráficos e KPIs exibidos</li>
+  <li>Filtros funcionam</li>
+</ul>
+
+<h3>8.5 Campanhas</h3>
+<ul class="checklist">
+  <li>Lista de campanhas carrega</li>
+  <li>Criação de nova campanha funciona</li>
+</ul>
+
+<h3>8.6 WhatsApp (Z-API)</h3>
+<ul class="checklist">
+  <li>Mensagem recebida aparece no sistema</li>
+  <li>Resposta do agente é enviada ao WhatsApp</li>
+</ul>
+
+<h3>8.7 Custos</h3>
+<ul class="checklist">
+  <li>Painel de custos carrega</li>
+  <li>Dados de consumo OpenAI exibidos</li>
+</ul>
+
+<h3>8.8 Configuração do Agente</h3>
+<ul class="checklist">
+  <li>Página de configuração do cérebro acessível</li>
+  <li>Alterações salvas com sucesso</li>
+</ul>
+
+<h2 class="page-break">9. Etapa 7 — Descomissionar o Replit</h2>
+
+<div class="warning">
+  <strong>⚠ Importante:</strong> Só execute esta etapa após validar completamente o ambiente Railway (Etapa 6). Recomenda-se manter o Replit ativo por pelo menos 1 semana após a migração como fallback.
+</div>
+
+<ol>
+  <li>Confirme que todas as funcionalidades foram validadas na Etapa 6.</li>
+  <li>Remova a URI antiga do Replit no Azure AD (Redirect URIs).</li>
+  <li>Atualize <code>ALLOWED_ORIGINS</code> removendo o domínio Replit.</li>
+  <li>Pause ou delete o projeto no Replit.</li>
+</ol>
+
+<ul class="checklist">
+  <li>Todas as validações da Etapa 6 passaram</li>
+  <li>Ambiente rodando estável por pelo menos 48h</li>
+  <li>Replit descomissionado</li>
+</ul>
+
+<h2>10. Referência Rápida — APIs e Serviços</h2>
+
+<table>
+  <tr><th>Serviço</th><th>Painel</th><th>O que reconfigurar</th></tr>
+  <tr><td>Railway</td><td>railway.com/dashboard</td><td>Variáveis, domínio, deploy</td></tr>
+  <tr><td>Azure AD (SSO)</td><td>portal.azure.com</td><td>Redirect URI</td></tr>
+  <tr><td>Z-API (WhatsApp)</td><td>Painel Z-API</td><td>URL do webhook</td></tr>
+  <tr><td>OpenAI</td><td>platform.openai.com</td><td>Nenhuma (mesma API key)</td></tr>
+  <tr><td>Tavily</td><td>tavily.com</td><td>Nenhuma (mesma API key)</td></tr>
+  <tr><td>GitHub</td><td>github.com</td><td>Nenhuma (já conectado)</td></tr>
+</table>
+
+<h2>11. Troubleshooting</h2>
+
+<h3>O deploy falha no Railway</h3>
+<ul>
+  <li>Verifique os logs na aba "Deployments". Erros de build aparecem ali.</li>
+  <li>Confirme que todas as variáveis de ambiente obrigatórias estão definidas.</li>
+  <li>Certifique-se de que o <code>DATABASE_URL</code> do PostgreSQL Railway está linkado ao serviço.</li>
+</ul>
+
+<h3>Health check falha</h3>
+<ul>
+  <li>Acesse <code>/health</code> manualmente. Se retornar erro, verifique os logs.</li>
+  <li>Confirme que o banco de dados está acessível (variável <code>DATABASE_URL</code> correta).</li>
+</ul>
+
+<h3>SSO não funciona</h3>
+<ul>
+  <li>Verifique se a redirect URI no Azure AD bate exatamente com a URL do Railway (incluindo <code>https://</code>).</li>
+  <li>Confirme que <code>MICROSOFT_CLIENT_ID</code>, <code>MICROSOFT_CLIENT_SECRET</code> e <code>MICROSOFT_TENANT_ID</code> estão configurados.</li>
+</ul>
+
+<h3>WhatsApp não recebe/envia mensagens</h3>
+<ul>
+  <li>Verifique se o webhook do Z-API aponta para a URL correta do Railway.</li>
+  <li>Confirme que <code>ZAPI_INSTANCE_ID</code>, <code>ZAPI_TOKEN</code> e <code>ZAPI_CLIENT_TOKEN</code> estão configurados.</li>
+  <li>Teste o endpoint diretamente: <code>POST /api/whatsapp/webhook</code>.</li>
+</ul>
+
+<h3>Dados não aparecem</h3>
+<ul>
+  <li>Confirme que o backup foi restaurado corretamente (Etapa 2.4).</li>
+  <li>Verifique se a extensão <code>vector</code> está habilitada: <code>SELECT * FROM pg_extension WHERE extname = 'vector';</code></li>
+</ul>
+
+<hr style="margin-top: 32px; border: none; border-top: 1px solid #999;">
+<p style="font-size: 9pt; color: #666; text-align: center; margin-top: 12px;">
+  Agente IA - RV &nbsp;|&nbsp; Guia de Migração Replit → Railway &nbsp;|&nbsp; Documento gerado automaticamente
+</p>
+
+</body>
+</html>

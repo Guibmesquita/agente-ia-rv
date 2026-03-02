@@ -57,28 +57,34 @@ The application is built using FastAPI with a modular architecture.
 - Ao republicar, apenas o **código** é atualizado. Os dados do banco de produção permanecem como estavam.
 
 ## Deployment (CRÍTICO)
-**Deployment target: `vm` (always running).** Mudado de `cloudrun` (autoscale) para `vm` porque o upload de documentos requer processamento background em threads. Em autoscale, o container escalava para zero após o HTTP response, matando o worker de processamento antes de completar — causando uploads que pareciam bem-sucedidos mas nunca persistiam.
+**Migração ativa: Replit → Railway via GitHub.**
 
-**Cold Start Optimization (3 Camadas — CRÍTICO):** O `main.py` usa 3 camadas para sobreviver ao health check de 5s do Replit VM:
+O deploy no Replit foi abandonado porque o health check da VM (timeout 5s) falhava persistentemente mesmo com pre-startup responder cobrindo t=0 até t=11.6s. O mecanismo interno do Replit não conseguia alcançar a aplicação — problema confirmado após múltiplas tentativas com socket compartilhado, `SO_REUSEADDR`, etc.
 
-1. **Pre-startup HTTP server (Camada 1):** No TOPO ABSOLUTO de `main.py`, antes de qualquer import pesado, um raw socket é criado com `socket.socket()`, `SO_REUSEADDR`, `bind('0.0.0.0', 5000)`, `listen(10)`. Um responder em daemon thread aceita conexões e responde HTTP 200 `{"status":"ok"}` manualmente. Esse **mesmo socket** (`_shared_sock`) é passado ao uvicorn via `server.serve(sockets=[_shared_sock])`. Zero rebind, zero gap. **REGRA: O socket bind DEVE ser o primeiro código executável do arquivo.**
+**Railway setup:**
+- **Dockerfile:** `python:3.12-slim` com deps de sistema (ffmpeg, libmagic1, poppler-utils, ghostscript, mupdf-tools, libpq-dev, gcc).
+- **CMD:** `uvicorn main:app --host 0.0.0.0 --port $PORT` (Railway injeta `PORT`).
+- **Health check:** `/health` com `start-period=40s`, timeout 10s, interval 30s.
+- **Banco:** PostgreSQL com pgvector (template `pgvector-pg17` no Railway — NÃO o PostgreSQL padrão).
+- **Dump de migração:** `backup_migracao.sql` (não commitado no repo — `.gitignore`).
 
-2. **Lazy Imports (Camada 2):** Imports pesados (`database.database`, `database.crud`, `core.security`) são feitos DENTRO das funções que os usam, NÃO no topo do módulo. **REGRA: NUNCA adicionar imports pesados no topo de main.py.**
+**Variáveis de ambiente portáveis:**
+- `ENV=production` substitui `REPL_DEPLOYMENT`/`REPLIT_DEPLOYMENT` para detectar produção.
+- `APP_BASE_URL=https://SEU-DOMINIO.up.railway.app` substitui `REPLIT_DOMAINS`/`REPLIT_DEV_DOMAIN`.
+- Funções centralizadas em `core/config.py`: `is_production()`, `get_public_domain()`, `get_public_base_url()`.
+- Compatibilidade dual: se variáveis Replit existirem, são usadas como fallback.
 
-3. **Lazy Router Registration (Camada 3):** Os 16 módulos de endpoint (`api/endpoints/*.py`) são importados em uma worker thread via `asyncio.to_thread()` dentro de `run_init_background()`, APÓS o uvicorn já estar respondendo. Rotas ficam disponíveis ~10-25s após o uvicorn subir.
+**Startup simplificado (sem hack de cold start):**
+- `main.py` usa `uvicorn.run(app, host="0.0.0.0", port=PORT)` diretamente.
+- Lazy router registration mantida: routers importados em background via `asyncio.to_thread()`.
+- Rota `/health` registrada no top-level (instantânea).
+- `SESSION_SECRET` obrigatória em produção.
 
-4. **Rota `/health` no nível do app** (não via lazy router): Registrada antes do lifespan, retorna `{"status":"ok"}` instantaneamente sem dependências.
-
-5. **Health check VM bate em `/`** (não em `/health`): Deploy VM ignora `healthcheckPath` e faz health check na homepage com timeout de 5s. A rota `/` detecta `Accept: text/html` — browsers recebem `login.html`, health checkers recebem JSON `{"status":"ok"}`. **Rota `/` NUNCA deve ser pesada.**
-
-6. **Uvicorn bind padrão**: `uvicorn.Config(app)` + `uvicorn.Server(config)` + `asyncio.run(server.serve(sockets=[_shared_sock]))` — NÃO usar `uvicorn.run()` (não aceita `sockets=`). Sem `SO_REUSEPORT`.
-
-**Fluxo de startup:** socket bind :5000 (t<1ms) → pre-startup responder (t<1ms) → Python imports (~5-8s) → responder parado → uvicorn assume o MESMO socket → lifespan → app ready (~10s total, mas health check já passou em t<1ms).
-
-- Rotas `/`, `/health`, arquivos estáticos e middleware de segurança são configurados no top-level (instantâneos).
-- `SESSION_SECRET` é obrigatória em produção: assina os JWTs emitidos após SSO Microsoft. Deve estar nos Secrets do Replit.
-- **REGRA: `.replit` é ARQUIVO PROTEGIDO** — o agente IA NÃO consegue editar `.replit` nem `replit.nix`. A função `deployConfig()` pode não refletir no arquivo de texto. **Toda alteração necessária no `.replit` deve ser comunicada ao usuário com o texto exato antes/depois, e aguardar edição manual.**
-- **IMPORTANTE: NÃO usar `SO_REUSEPORT`** — interfere com o proxy interno do Replit (metasidecar) e impede que o health check alcance a aplicação. Confirmado após 6 tentativas de deploy falhadas.
+**Pós-migração obrigatório:**
+- Reconfigurar redirect URI no Azure AD (SSO Microsoft).
+- Reconfigurar webhook URL no Z-API (WhatsApp).
+- Atualizar `ALLOWED_ORIGINS` no Railway.
+- Guia imprimível completo: `docs/GUIA-MIGRACAO-RAILWAY.html`.
 
 **Resiliência de upload:**
 - `_resume_interrupted_uploads()` roda no startup: detecta materiais com `processing_status=processing/pending` e re-enfileira para retomada

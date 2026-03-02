@@ -18,8 +18,10 @@ security_logger = logging.getLogger("security")
 
 settings = get_settings()
 
+from core.config import is_production
+
 UNSAFE_KEYS = {"dev-secret-key-change-in-production", "change-me", "secret", ""}
-IS_PRODUCTION = bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT"))
+IS_PRODUCTION = is_production()
 
 if settings.SECRET_KEY in UNSAFE_KEYS:
     if IS_PRODUCTION:

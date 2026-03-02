@@ -17,12 +17,16 @@ def configure_webhooks():
         print(f"  ZAPI_CLIENT_TOKEN: {'OK' if client_token else 'MISSING'}")
         return False
     
-    domain = os.getenv("REPLIT_DEV_DOMAIN")
-    if not domain:
-        print("Erro: REPLIT_DEV_DOMAIN não encontrado")
+    base_url = os.getenv("APP_BASE_URL", "")
+    if not base_url:
+        domain = os.getenv("REPLIT_DEV_DOMAIN", "")
+        if domain:
+            base_url = f"https://{domain}"
+    if not base_url:
+        print("Erro: APP_BASE_URL nao configurado")
         return False
     
-    webhook_url = f"https://{domain}/api/webhook/zapi"
+    webhook_url = f"{base_url.rstrip('/')}/api/webhook/zapi"
     
     url = f"https://api.z-api.io/instances/{instance_id}/token/{token}/update-every-webhooks"
     

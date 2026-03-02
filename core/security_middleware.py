@@ -21,11 +21,11 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import SQLAlchemyError
 
-from core.config import get_settings
+from core.config import get_settings, is_production
 
 settings = get_settings()
 
-IS_PRODUCTION = bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT"))
+IS_PRODUCTION = is_production()
 
 security_logger = logging.getLogger("security")
 if not security_logger.handlers:
@@ -205,7 +205,7 @@ class GlobalAuthMiddleware(BaseHTTPMiddleware):
 
                         response = await call_next(request)
 
-                        is_prod = bool(os.getenv("REPL_DEPLOYMENT") or os.getenv("REPLIT_DEPLOYMENT"))
+                        is_prod = IS_PRODUCTION
                         response.set_cookie(
                             key="access_token",
                             value=new_access_token,
@@ -286,13 +286,10 @@ def setup_security(app: FastAPI):
         allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 
     if not allowed_origins:
-        repl_slug = os.getenv("REPL_SLUG", "")
-        repl_owner = os.getenv("REPL_OWNER", "")
-        if repl_slug and repl_owner:
-            allowed_origins = [
-                f"https://{repl_slug}-{repl_owner.lower()}.replit.app",
-                f"https://{repl_slug}.{repl_owner.lower()}.repl.co",
-            ]
+        from core.config import get_public_base_url
+        base_url = get_public_base_url()
+        if base_url:
+            allowed_origins = [base_url]
         if not IS_PRODUCTION:
             allowed_origins.append("http://localhost:5000")
             allowed_origins.append("http://0.0.0.0:5000")
