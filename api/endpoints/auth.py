@@ -325,44 +325,53 @@ def require_role(allowed_roles: list):
 
 async def get_current_user_sse(request: Request, db: Session = Depends(get_db)):
     """
-    Dependência de autenticação específica para endpoints SSE.
-    APENAS aceita token via query string com purpose='sse'.
-    O token deve ser de curta duração, gerado por /api/auth/sse-token.
+    Dependência de autenticação para endpoints SSE.
+    Aceita dois mecanismos (em ordem de prioridade):
+    1. Token SSE via query string (?token=...) — gerado por /api/auth/sse-token
+    2. Fallback: cookie access_token padrão (compatibilidade com clientes antigos)
     """
     from database.models import User
-    
-    token = request.query_params.get("token")
-    
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token SSE obrigatório. Use /api/auth/sse-token para obter um token."
-        )
-    
-    payload = decode_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido ou expirado"
-        )
-    
-    if payload.get("purpose") != "sse":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido para SSE. Use /api/auth/sse-token para obter o token correto."
-        )
-    
-    sub = payload.get("sub")
-    user = crud.get_user_by_username_icase(db, sub)
-    if not user and "@" in sub:
-        user = crud.get_user_by_email_icase(db, sub)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuário não encontrado"
-        )
-    
-    return user
+
+    sse_token = request.query_params.get("token")
+
+    if sse_token:
+        payload = decode_token(sse_token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token SSE inválido ou expirado"
+            )
+        if payload.get("purpose") != "sse":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido para SSE. Use /api/auth/sse-token para obter o token correto."
+            )
+        sub = payload.get("sub")
+        user = crud.get_user_by_username_icase(db, sub)
+        if not user and "@" in sub:
+            user = crud.get_user_by_email_icase(db, sub)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuário não encontrado"
+            )
+        return user
+
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        payload = decode_token(cookie_token)
+        if payload:
+            sub = payload.get("sub")
+            user = crud.get_user_by_username_icase(db, sub)
+            if not user and "@" in sub:
+                user = crud.get_user_by_email_icase(db, sub)
+            if user:
+                return user
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Não autenticado. Faça login e tente novamente."
+    )
 
 
 @router.get("/microsoft/enabled")
