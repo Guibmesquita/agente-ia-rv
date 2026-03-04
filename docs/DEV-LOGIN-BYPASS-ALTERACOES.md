@@ -70,8 +70,50 @@ Dentro do `<script>`, apos o bloco `if (urlParams.has('error')) { ... }`, foi ad
 
 ---
 
+## Arquivo 3: `main.py`
+
+### ALTERADO: Rota `/` (root) — linhas 631-643
+
+**CODIGO ORIGINAL:**
+```python
+@app.get("/")
+async def root(request: Request):
+    """Página inicial - serve login para browsers, JSON 200 para health checks.
+    
+    Deploy VM do Replit faz health check em / com timeout de 5s.
+    Browsers enviam Accept: text/html; health checkers não.
+    """
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return templates.TemplateResponse("login.html", {"request": request})
+    return JSONResponse({"status": "ok"})
+```
+
+**CODIGO NOVO:**
+```python
+@app.get("/")
+async def root(request: Request):
+    """Página inicial - redireciona ao dashboard se autenticado, senão mostra login."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        token = request.cookies.get("access_token")
+        if token:
+            from core.security import decode_token
+            payload = decode_token(token)
+            if payload:
+                return RedirectResponse(url="/conversas", status_code=302)
+        return templates.TemplateResponse("login.html", {"request": request})
+    return JSONResponse({"status": "ok"})
+```
+
+### COMO REVERTER:
+Substituir o bloco NOVO pelo bloco ORIGINAL acima.
+
+---
+
 ## Resumo rapido para reverter TUDO:
 
 1. Em `api/endpoints/auth.py`: deletar o endpoint `dev_login` (linhas 30-48)
 2. Em `frontend/templates/login.html`: deletar o div `dev-login-container` e o fetch no script
-3. Ou pedir ao agente: "reverta o bypass de login dev"
+3. Em `main.py`: restaurar a rota `/` ao codigo original (sem verificacao de cookie)
+4. Ou pedir ao agente: "reverta o bypass de login dev"

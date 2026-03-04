@@ -627,13 +627,15 @@ async def health_check():
 
 @app.get("/")
 async def root(request: Request):
-    """Página inicial - serve login para browsers, JSON 200 para health checks.
-    
-    Deploy VM do Replit faz health check em / com timeout de 5s.
-    Browsers enviam Accept: text/html; health checkers não.
-    """
+    """Página inicial - redireciona ao dashboard se autenticado, senão mostra login."""
     accept = request.headers.get("accept", "")
     if "text/html" in accept:
+        token = request.cookies.get("access_token")
+        if token:
+            from core.security import decode_token
+            payload = decode_token(token)
+            if payload:
+                return RedirectResponse(url="/conversas", status_code=302)
         return templates.TemplateResponse("login.html", {"request": request})
     return JSONResponse({"status": "ok"})
 
