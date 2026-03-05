@@ -110,12 +110,6 @@ def get_env_var_mapping():
     Chaves sensíveis devem ser configuradas via Secrets do Replit.
     """
     return {
-        "openai": {
-            "api_key": {"env": "OPENAI_API_KEY", "required": True, "is_secret": True},
-            "model": {"env": "OPENAI_MODEL", "required": False, "default": "gpt-4"},
-            "max_tokens": {"env": "OPENAI_MAX_TOKENS", "required": False, "default": "2000"},
-            "temperature": {"env": "OPENAI_TEMPERATURE", "required": False, "default": "0.7"},
-        },
         "zapi": {
             "instance_id": {"env": "ZAPI_INSTANCE_ID", "required": True, "is_secret": False},
             "token": {"env": "ZAPI_TOKEN", "required": True, "is_secret": True},
@@ -145,7 +139,7 @@ async def list_integrations(
     current_user: dict = Depends(get_current_admin)
 ):
     """Lista todas as integrações disponíveis."""
-    integrations = crud.get_integrations(db)
+    integrations = [i for i in crud.get_integrations(db) if i.type != "openai"]
     
     result = []
     for integration in integrations:
@@ -338,35 +332,7 @@ async def check_integration_status(
     message = "Verificando conexão..."
     
     try:
-        if integration.type == "openai":
-            api_key = os.getenv("OPENAI_API_KEY")
-            org_id = os.getenv("OPENAI_ORG_ID")
-            project_id = os.getenv("OPENAI_PROJECT_ID")
-            if api_key:
-                headers = {"Authorization": f"Bearer {api_key}"}
-                if org_id:
-                    headers["OpenAI-Organization"] = org_id
-                if project_id:
-                    headers["OpenAI-Project"] = project_id
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        "https://api.openai.com/v1/models",
-                        headers=headers,
-                        timeout=10.0
-                    )
-                    if response.status_code == 200:
-                        data = response.json()
-                        model_count = len(data.get("data", []))
-                        is_connected = True
-                        message = f"Conexão estabelecida! {model_count} modelos disponíveis."
-                    elif response.status_code == 401:
-                        message = "Erro de autenticação. Verifique a OPENAI_API_KEY."
-                    else:
-                        message = f"Erro na API: {response.status_code}"
-            else:
-                message = "OPENAI_API_KEY não configurada. Configure em Secrets."
-        
-        elif integration.type == "zapi":
+        if integration.type == "zapi":
             instance_id = os.getenv("ZAPI_INSTANCE_ID")
             token = os.getenv("ZAPI_TOKEN")
             client_token = os.getenv("ZAPI_CLIENT_TOKEN")
@@ -458,7 +424,7 @@ class SecretInput(BaseModel):
     value: str
 
 
-ALLOWED_SECRET_KEYS = {"OPENAI_API_KEY", "ZAPI_INSTANCE_ID", "ZAPI_TOKEN", "ZAPI_CLIENT_TOKEN"}
+ALLOWED_SECRET_KEYS = {"ZAPI_INSTANCE_ID", "ZAPI_TOKEN", "ZAPI_CLIENT_TOKEN"}
 
 
 @router.post("/save-secrets")

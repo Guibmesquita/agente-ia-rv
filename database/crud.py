@@ -350,16 +350,6 @@ def init_default_integrations(db: Session):
     """
     default_integrations = [
         {
-            "name": "OpenAI",
-            "type": "openai",
-            "settings": [
-                {"key": "api_key", "description": "Chave da API OpenAI", "is_secret": True},
-                {"key": "model", "description": "Modelo a ser usado (ex: gpt-4)", "is_secret": False},
-                {"key": "max_tokens", "description": "Máximo de tokens por resposta", "is_secret": False},
-                {"key": "temperature", "description": "Temperatura (criatividade) 0-1", "is_secret": False},
-            ]
-        },
-        {
             "name": "WhatsApp (Z-API)",
             "type": "zapi",
             "settings": [

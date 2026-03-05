@@ -27,10 +27,6 @@
             color: white;
         }
 
-        .integration-header.openai {
-            background: linear-gradient(135deg, #10a37f 0%, #1a7f5a 100%);
-        }
-
         .integration-header.zapi {
             background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
         }
@@ -388,7 +384,7 @@
                 return;
             }
 
-            container.innerHTML = integrations.map(integration => {
+            container.innerHTML = integrations.filter(i => i.type !== 'openai').map(integration => {
                 const mapping = envMapping[integration.type] || { settings: {} };
                 const settings = mapping.settings || {};
 
@@ -461,7 +457,6 @@
 
         function getIcon(type) {
             const icons = {
-                'openai': '🤖',
                 'zapi': '💬'
             };
             return icons[type] || '🔌';
