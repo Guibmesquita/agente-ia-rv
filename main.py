@@ -206,8 +206,6 @@ def _sync_init_database():
         crud.init_default_integrations(db)
         crud.init_default_categories(db)
         crud.init_default_agent_config(db)
-
-        _resolve_orphan_materials(db)
     finally:
         db.close()
 
@@ -275,113 +273,6 @@ def _resume_interrupted_uploads():
     finally:
         db.close()
 
-
-
-def _resolve_orphan_materials(db):
-    import re as _re
-    from database.models import Product, Material
-    from services.document_metadata_extractor import TICKER_PATTERN, normalize_text
-
-    placeholder_products = db.query(Product).filter(Product.ticker == "__SYSTEM_UNASSIGNED__").all()
-    if not placeholder_products:
-        return
-
-    placeholder_ids = [p.id for p in placeholder_products]
-    orphans = db.query(Material).filter(Material.product_id.in_(placeholder_ids)).all()
-
-    if not orphans:
-        for ph in placeholder_products:
-            db.delete(ph)
-        db.commit()
-        print(f"[INIT] Removidos {len(placeholder_products)} produtos __SYSTEM_UNASSIGNED__ sem materiais.")
-        return
-
-    resolved = 0
-    for mat in orphans:
-        material_name = mat.name or ""
-        ticker_match = TICKER_PATTERN.search(material_name.upper())
-        ticker = f"{ticker_match.group(1)}{ticker_match.group(2)}" if ticker_match else None
-
-        fund_name = material_name
-        for pfx in ["Relatório gerencial ", "Relatório Gerencial ", "MP ", "Material Publicitário "]:
-            if fund_name.startswith(pfx):
-                fund_name = fund_name[len(pfx):]
-                break
-        fund_name = _re.sub(r'\s*\(\d+\)\s*$', '', fund_name).strip()
-        fund_name = _re.sub(r'\s*\(vf\)\s*', ' ', fund_name, flags=_re.IGNORECASE).strip()
-
-        target = None
-        if ticker:
-            target = db.query(Product).filter(
-                Product.ticker == ticker,
-                ~Product.id.in_(placeholder_ids)
-            ).first()
-
-        if not target and fund_name:
-            norm = normalize_text(fund_name)
-            for p in db.query(Product).filter(~Product.id.in_(placeholder_ids)).all():
-                if normalize_text(p.name) == norm:
-                    target = p
-                    break
-
-        if not target:
-            target = Product(
-                name=fund_name or material_name,
-                ticker=ticker,
-                category="fii",
-                status="ativo",
-                description="Produto criado automaticamente a partir de material órfão",
-            )
-            db.add(target)
-            try:
-                db.commit()
-                db.refresh(target)
-            except Exception:
-                db.rollback()
-                if ticker:
-                    target = db.query(Product).filter(Product.ticker == ticker).first()
-                if not target:
-                    print(f"[INIT] Não foi possível criar produto para material '{material_name}' (id={mat.id})")
-                    continue
-
-        mat.product_id = target.id
-        db.commit()
-        resolved += 1
-        print(f"[INIT] Material '{mat.name}' (id={mat.id}) → produto '{target.name}' (id={target.id})")
-
-    for ph in placeholder_products:
-        remaining = db.query(Material).filter(Material.product_id == ph.id).count()
-        if remaining == 0:
-            db.delete(ph)
-            db.commit()
-
-    if resolved > 0:
-        from sqlalchemy import text as sql_text
-        try:
-            fix_result = db.execute(sql_text("""
-                UPDATE document_embeddings de
-                SET
-                    product_ticker = p.ticker,
-                    product_name   = p.name,
-                    gestora        = COALESCE(p.manager, de.gestora),
-                    category       = COALESCE(p.category, de.category)
-                FROM content_blocks cb
-                JOIN materials m ON cb.material_id = m.id
-                JOIN products p ON m.product_id = p.id
-                WHERE de.doc_id = 'product_block_' || cb.id::text
-                  AND de.product_ticker = '__SYSTEM_UNASSIGNED__'
-            """))
-            embeddings_fixed = fix_result.rowcount
-            db.commit()
-            if embeddings_fixed > 0:
-                print(f"[INIT] Corrigidos {embeddings_fixed} embeddings órfãos no vector store.")
-            else:
-                print(f"[INIT] Nenhum embedding órfão encontrado no vector store.")
-        except Exception as e:
-            db.rollback()
-            print(f"[INIT] Erro ao corrigir embeddings órfãos: {e}")
-
-    print(f"[INIT] Resolvidos {resolved}/{len(orphans)} materiais órfãos.")
 
 
 async def check_and_reindex_embeddings():

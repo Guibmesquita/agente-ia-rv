@@ -123,18 +123,6 @@ def run_seed(seed_file=None):
         
         print("\n--- Iniciando seed de produção ---")
         
-        seed_ids = {r.get('id') for r in data.get('products', []) if r.get('id')}
-        all_valid_tickers = set(seed_tickers)
-        orphan_query = db.query(Product).filter(Product.ticker.notin_(all_valid_tickers))
-        if seed_ids:
-            orphan_query = orphan_query.filter(Product.id.notin_(seed_ids))
-        orphan_products = orphan_query.all()
-        if orphan_products:
-            for op in orphan_products:
-                print(f"  Removendo produto órfão: '{op.name}' (ticker: {op.ticker})")
-                db.delete(op)
-            db.flush()
-        
         tables = [
             (User, 'users', data.get('users', [])),
             (Assessor, 'assessores', data.get('assessores', [])),
