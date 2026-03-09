@@ -22,6 +22,8 @@ export function Dashboard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newProduct, setNewProduct] = useState({ name: '', ticker: '', category: '' });
   const [creating, setCreating] = useState(false);
+  const [productToDelete, setProductToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   
   const [globalSearchResults, setGlobalSearchResults] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -120,14 +122,22 @@ export function Dashboard() {
     }
   };
 
-  const handleDelete = async (product) => {
-    if (!window.confirm(`Tem certeza que deseja excluir "${product.name}"? Esta ação não pode ser desfeita.`)) return;
+  const handleDelete = (product) => {
+    setProductToDelete(product);
+  };
+
+  const confirmDelete = async () => {
+    if (!productToDelete) return;
+    setDeleting(true);
     try {
-      await productsAPI.delete(product.id);
-      setProducts((prev) => prev.filter((p) => p.id !== product.id));
-      addToast(`"${product.name}" excluído com sucesso`, 'success');
+      await productsAPI.delete(productToDelete.id);
+      setProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
+      addToast(`"${productToDelete.name}" excluído com sucesso`, 'success');
+      setProductToDelete(null);
     } catch (err) {
       addToast(`Erro ao excluir: ${err.message}`, 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -331,6 +341,36 @@ export function Dashboard() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!productToDelete}
+        onClose={() => !deleting && setProductToDelete(null)}
+        title="Confirmar exclusão"
+        size="sm"
+      >
+        <p className="text-foreground mb-6">
+          Tem certeza que deseja excluir <strong>"{productToDelete?.name}"</strong>?
+          Esta ação não pode ser desfeita.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <Button
+            variant="secondary"
+            onClick={() => setProductToDelete(null)}
+            disabled={deleting}
+          >
+            Cancelar
+          </Button>
+          <button
+            onClick={confirmDelete}
+            disabled={deleting}
+            className="px-4 py-2 rounded-input text-sm font-medium text-white
+                       bg-red-600 hover:bg-red-700 disabled:opacity-50
+                       disabled:cursor-not-allowed transition-colors"
+          >
+            {deleting ? 'Excluindo...' : 'Excluir'}
+          </button>
+        </div>
       </Modal>
     </div>
   );

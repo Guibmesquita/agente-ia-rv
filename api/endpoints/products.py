@@ -567,13 +567,13 @@ async def delete_product(
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     product = db.query(Product).filter(Product.id == product_id).options(
-        joinedload(Product.materials).joinedload(Material.content_blocks)
+        joinedload(Product.materials).joinedload(Material.blocks)
     ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
     vector_store = VectorStore()
-    block_ids = [block.id for mat in product.materials for block in mat.content_blocks]
+    block_ids = [block.id for mat in product.materials for block in mat.blocks]
     for bid in block_ids:
         vector_store.delete_document(f"product_block_{bid}")
     print(f"[DELETE] Produto '{product.name}': {len(block_ids)} embeddings removidos do vector store")
