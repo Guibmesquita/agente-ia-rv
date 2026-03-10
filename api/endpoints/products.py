@@ -2969,6 +2969,68 @@ async def cleanup_orphan_embeddings(
     }
 
 
+@router.post("/admin/fix-publish-status")
+async def fix_publish_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Corrige embeddings gravados com publish_status='rascunho', tornando-os visíveis na busca."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar")
+
+    from sqlalchemy import text
+
+    result = db.execute(text(
+        "UPDATE document_embeddings "
+        "SET publish_status = 'publicado' "
+        "WHERE doc_id LIKE 'product_block_%' "
+        "AND publish_status = 'rascunho'"
+    ))
+    db.commit()
+
+    updated = result.rowcount
+    print(f"[FIX-PUBLISH] {updated} embeddings atualizados para 'publicado'")
+
+    return {
+        "success": True,
+        "updated_count": updated
+    }
+
+
+@router.post("/admin/fix-stuck-blocks")
+async def fix_stuck_blocks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Aprova blocos travados em pending_review sem entrada na fila de revisão (TVRI11 e VGHF11)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar")
+
+    from sqlalchemy import text
+
+    result = db.execute(text(
+        "UPDATE content_blocks "
+        "SET status = 'auto_approved', "
+        "    reviewed_at = NOW(), "
+        "    reviewer_notes = 'Aprovado via correção de dados — sem entrada na fila de revisão' "
+        "WHERE status = 'pending_review' "
+        "AND material_id IN ("
+        "  SELECT m.id FROM materials m "
+        "  JOIN products p ON p.id = m.product_id "
+        "  WHERE p.name IN ('TVRI11', 'VGHF11')"
+        ")"
+    ))
+    db.commit()
+
+    approved = result.rowcount
+    print(f"[FIX-STUCK] {approved} blocos aprovados (TVRI11/VGHF11)")
+
+    return {
+        "success": True,
+        "approved_count": approved
+    }
+
+
 UPLOAD_DIR_QUEUE = "uploads/materials"
 os.makedirs(UPLOAD_DIR_QUEUE, exist_ok=True)
 
