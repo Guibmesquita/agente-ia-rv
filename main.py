@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     """
     Gerencia o ciclo de vida da aplicação.
     Yield imediato para responder health checks rápido.
-    Inicialização pesada (check_critical_dependencies, banco, seed, queue) roda em background.
+    Inicialização pesada (check_critical_dependencies, banco, queue) roda em background.
     """
     background_tasks = []
 
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 
 async def run_init_background():
-    """Inicialização pesada em background: routers, dependency check, tabelas, admin, seed, upload queue."""
+    """Inicialização pesada em background: routers, dependency check, tabelas, upload queue."""
     def _import_endpoint_modules():
         from api.endpoints import (
             auth, users, tickets, whatsapp_webhook, integrations, agent_config,
@@ -110,12 +110,6 @@ async def run_init_background():
         _resume_interrupted_uploads()
     except Exception as e:
         print(f"[INIT] Erro ao retomar uploads: {e}")
-
-    try:
-        from scripts.seed_production import run_seed
-        await asyncio.to_thread(run_seed)
-    except Exception as e:
-        print(f"[SEED] Aviso: {e}")
 
 
 def _apply_incremental_migrations():
