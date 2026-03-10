@@ -582,13 +582,19 @@ async def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-    vector_store = VectorStore()
-    block_ids = [block.id for mat in product.materials for block in mat.blocks]
-    for bid in block_ids:
-        vector_store.delete_document(f"product_block_{bid}")
-    print(f"[DELETE] Produto '{product.name}': {len(block_ids)} embeddings removidos do vector store")
+    product_name = product.name
 
+    # Coletar IDs ANTES de qualquer delete
+    block_ids = [block.id for mat in product.materials for block in mat.blocks]
     material_ids = [mat.id for mat in product.materials]
+
+    # Deletar tabelas sem cascade ORM — ordem importa:
+    # PendingReviewItem antes de ContentBlock (FK block_id → content_blocks.id)
+    if block_ids:
+        db.query(PendingReviewItem).filter(
+            PendingReviewItem.block_id.in_(block_ids)
+        ).delete(synchronize_session=False)
+
     if material_ids:
         db.query(PersistentQueueItem).filter(
             PersistentQueueItem.material_id.in_(material_ids)
@@ -600,8 +606,19 @@ async def delete_product(
             DocumentProcessingJob.material_id.in_(material_ids)
         ).delete(synchronize_session=False)
 
+    # Delete principal com cascata ORM (materials → blocks → versions)
     db.delete(product)
     db.commit()
+
+    # Vector store APÓS commit bem-sucedido
+    # Falha aqui não reverte o DB — use /admin/cleanup-orphan-embeddings para recuperar
+    vector_store = VectorStore()
+    removed = 0
+    for bid in block_ids:
+        if vector_store.delete_document(f"product_block_{bid}"):
+            removed += 1
+    print(f"[DELETE] Produto '{product_name}': {removed}/{len(block_ids)} embeddings removidos do vector store")
+
     return {"success": True}
 
 
