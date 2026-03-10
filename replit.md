@@ -50,6 +50,13 @@ The application is built using FastAPI with a modular architecture.
 ## Database Environment (CRÍTICO)
 **Desenvolvimento e produção usam bancos PostgreSQL SEPARADOS.** A ferramenta de SQL do agente executa contra o banco de desenvolvimento por padrão. O banco de produção aceita apenas consultas de leitura (SELECT) via ferramenta.
 
+**Banco de produção Railway (única fonte de verdade para verificações):**
+```
+postgresql://postgres:3a3npoippvnwb30cfwf18dxh5xkwghex@tramway.proxy.rlwy.net:45306/railway
+```
+Acesso via psql: `PGPASSWORD=3a3npoippvnwb30cfwf18dxh5xkwghex psql -h tramway.proxy.rlwy.net -p 45306 -U postgres -d railway`
+**Regra:** Ao discutir dados em produção, SEMPRE consultar este banco. Ignorar o banco de desenvolvimento do Replit para essas verificações.
+
 **Consequências práticas:**
 - Alterações de dados (INSERT, UPDATE, DELETE) feitas pelo agente **NÃO refletem em produção**.
 - Para alterar dados em produção, usar a interface do app em produção ou criar endpoints admin específicos.
