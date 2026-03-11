@@ -848,6 +848,12 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             search_results = vector_store.search(normalized_message, n_results=6, similarity_threshold=0.8)
             
             search_results = filter_expired_results(search_results, db)[:3]
+
+            try:
+                from services.temporal_enrichment import enrich_results_with_temporal_refs
+                search_results = enrich_results_with_temporal_refs(search_results, db)
+            except Exception as e:
+                print(f"[WEBHOOK] Erro no enriquecimento temporal (não-bloqueante): {e}")
             
             if search_results:
                 knowledge_context = "\n\n--- Informações da Base de Conhecimento ---\n"

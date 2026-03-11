@@ -117,7 +117,8 @@ async def test_agent_message(
                 query=search_query,
                 n_results=6,
                 conversation_id=f"test_{user_id}",
-                similarity_threshold=0.8
+                similarity_threshold=0.8,
+                db=db
             )
             # Filtrar expirados e converter para dict para compatibilidade
             raw_dicts = [

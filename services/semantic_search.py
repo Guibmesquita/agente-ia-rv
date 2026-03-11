@@ -1016,7 +1016,8 @@ class EnhancedSearch:
         query: str,
         n_results: int = 5,
         conversation_id: Optional[str] = None,
-        similarity_threshold: float = 0.8
+        similarity_threshold: float = 0.8,
+        db: Optional[Any] = None
     ) -> List[SearchResult]:
         """
         Executa busca aprimorada com todas as camadas.
@@ -1152,6 +1153,13 @@ class EnhancedSearch:
                 r.extra_meta = {}
             r.extra_meta['query_intent'] = query_intent
             r.extra_meta['is_comparative'] = is_comparative
+
+        if db and final_results:
+            try:
+                from services.temporal_enrichment import enrich_results_with_temporal_refs
+                final_results = enrich_results_with_temporal_refs(final_results, db)
+            except Exception as e:
+                print(f"[EnhancedSearch] Erro no enriquecimento temporal (não-bloqueante): {e}")
 
         duration_ms = (time.time() - start_time) * 1000
         print(f"[EnhancedSearch] query_intent={query_intent} | {len(final_results)} resultados | {duration_ms:.0f}ms")
