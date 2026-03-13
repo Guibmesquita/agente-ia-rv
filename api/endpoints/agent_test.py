@@ -110,8 +110,9 @@ async def test_agent_message(
     entities_detected = rewrite_result.entities.copy()
 
     try:
+        skip_search = rewrite_result.clarification_needed or rewrite_result.categoria in ("SAUDACAO", "ATENDIMENTO_HUMANO", "FORA_ESCOPO")
         enhanced = _get_enhanced_search()
-        if enhanced and not rewrite_result.clarification_needed:
+        if enhanced and not skip_search:
             from services.vector_store import filter_expired_results
             raw_results = enhanced.search(
                 query=search_query,
@@ -205,6 +206,8 @@ async def test_agent_message(
                 print(f"[AGENT_TEST] EnhancedSearch: {len(search_results)} docs | intent={query_intent} | entities={entities_detected}")
             else:
                 print(f"[AGENT_TEST] EnhancedSearch: nenhum resultado para '{message[:50]}'")
+        elif skip_search:
+            print(f"[AGENT_TEST] Busca RAG pulada — categoria={rewrite_result.categoria}")
         else:
             print("[AGENT_TEST] EnhancedSearch indisponível, seguindo sem contexto RAG")
     except Exception as e:

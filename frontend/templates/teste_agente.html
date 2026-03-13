@@ -530,7 +530,7 @@
         </div>
 
         <script nonce="{{ request.state.csp_nonce }}">
-            let isLoading = false;
+            
 
             function toggleSidebar() {
                 const sidebar = document.getElementById("sidebar");
@@ -645,71 +645,69 @@
                 }
             }
 
-            async function sendMessage() {
+            const messageQueue = [];
+            let processing = false;
+
+            function sendMessage() {
                 const input = document.getElementById("chatInput");
                 const message = input.value.trim();
-
-                if (!message || isLoading) return;
-
-                isLoading = true;
-                const sendBtn = document.getElementById("sendBtn");
-                sendBtn.disabled = true;
+                if (!message) return;
 
                 addMessageToChat("user", message);
                 input.value = "";
                 autoResizeTextarea();
+                input.focus();
 
+                messageQueue.push(message);
+                if (!processing) processQueue();
+            }
+
+            async function processQueue() {
+                if (processing || messageQueue.length === 0) return;
+                processing = true;
                 showTypingIndicator();
 
-                try {
-                    const response = await fetch("/api/agent/test", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({ message }),
-                        credentials: "same-origin",
-                    });
+                while (messageQueue.length > 0) {
+                    const msg = messageQueue.shift();
+                    try {
+                        const response = await fetch("/api/agent/test", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ message: msg }),
+                            credentials: "same-origin",
+                        });
 
-                    hideTypingIndicator();
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.detail || "Erro ao enviar mensagem");
+                        }
 
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(
-                            error.detail || "Erro ao enviar mensagem",
-                        );
+                        const data = await response.json();
+                        addMessageToChat("assistant", data.response);
+
+                        document.getElementById("lastIntent").textContent =
+                            data.intent || "question";
+                        document.getElementById("lastQueryType").textContent =
+                            data.query_type || "-";
+                        document.getElementById("lastEntities").textContent =
+                            (data.entities_detected && data.entities_detected.length > 0)
+                                ? data.entities_detected.join(", ") : "-";
+                        document.getElementById("lastTicket").textContent =
+                            data.should_create_ticket ? "Sim" : "Nao";
+                        document.getElementById("lastTicket").className =
+                            "value " + (data.should_create_ticket ? "warning" : "success");
+                        document.getElementById("messageCount").textContent =
+                            data.conversation_length;
+
+                        updateAssessorInfo(data.identified_assessor);
+                        updateKnowledgeList(data.knowledge_documents);
+                    } catch (error) {
+                        toast.error(error.message);
                     }
-
-                    const data = await response.json();
-
-                    addMessageToChat("assistant", data.response);
-
-                    document.getElementById("lastIntent").textContent =
-                        data.intent || "question";
-                    document.getElementById("lastQueryType").textContent =
-                        data.query_type || "-";
-                    document.getElementById("lastEntities").textContent =
-                        (data.entities_detected && data.entities_detected.length > 0)
-                            ? data.entities_detected.join(", ")
-                            : "-";
-                    document.getElementById("lastTicket").textContent =
-                        data.should_create_ticket ? "Sim" : "Nao";
-                    document.getElementById("lastTicket").className =
-                        "value " +
-                        (data.should_create_ticket ? "warning" : "success");
-                    document.getElementById("messageCount").textContent =
-                        data.conversation_length;
-
-                    updateAssessorInfo(data.identified_assessor);
-                    updateKnowledgeList(data.knowledge_documents);
-                } catch (error) {
-                    hideTypingIndicator();
-                    toast.error(error.message);
-                } finally {
-                    isLoading = false;
-                    sendBtn.disabled = false;
-                    input.focus();
                 }
+
+                hideTypingIndicator();
+                processing = false;
             }
 
             function updateAssessorInfo(assessor) {
