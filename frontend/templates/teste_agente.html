@@ -743,6 +743,7 @@
                 processing = false;
 
                 if (pendingMessages.length > 0) {
+                    if (debounceTimer) clearTimeout(debounceTimer);
                     showDebounceIndicator(pendingMessages.length);
                     debounceTimer = setTimeout(() => {
                         debounceTimer = null;
