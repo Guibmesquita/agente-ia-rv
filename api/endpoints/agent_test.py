@@ -150,14 +150,16 @@ async def test_agent_message(
     except Exception as e:
         print(f"[AGENT_TEST] Erro na detecção de sessão (não-bloqueante): {e}")
 
-    history_for_ai = [
-        {
+    history_for_ai = []
+    for msg in history[-20:]:
+        entry = {
             "role": msg["role"],
             "content": msg["content"],
             "metadata": msg.get("metadata", {})
         }
-        for msg in history[-20:]
-    ]
+        if msg.get("timestamp"):
+            entry["timestamp"] = msg["timestamp"]
+        history_for_ai.append(entry)
 
     if session.get("last_session_summary"):
         history_for_ai = [{"role": "system", "content": f"[Contexto da sessão anterior]: {session['last_session_summary']}"}] + history_for_ai

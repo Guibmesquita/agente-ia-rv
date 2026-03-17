@@ -59,13 +59,19 @@ def load_history_from_db(phone: str, db: Session, limit: int = HISTORY_WINDOW, a
 
     history = []
     for msg in messages:
+        ts = msg.created_at.isoformat() if msg.created_at else None
         if msg.direction == MessageDirection.INBOUND.value or not msg.from_me:
             if msg.body:
-                history.append({"role": "user", "content": msg.body})
+                entry = {"role": "user", "content": msg.body}
+                if ts:
+                    entry["timestamp"] = ts
+                history.append(entry)
         elif msg.direction == MessageDirection.OUTBOUND.value or msg.from_me:
             content = msg.ai_response or msg.body
             if content:
                 entry = {"role": "assistant", "content": content}
+                if ts:
+                    entry["timestamp"] = ts
                 if msg.ai_intent:
                     entry["metadata"] = {"intent": msg.ai_intent}
                 history.append(entry)
@@ -97,7 +103,7 @@ def append_to_history(phone: str, role: str, content: str, metadata: dict = None
     _history_cache[phone] = _history_cache[phone][-HISTORY_WINDOW:]
 
 
-def build_context_dedup_instruction(history: list, current_message: str, recency_seconds: int = 90) -> Optional[str]:
+def build_context_dedup_instruction(history: list, current_message: str, recency_seconds: int = 60) -> Optional[str]:
     """
     Analisa o histórico recente de conversa para detectar respostas do bot
     que já cobriram tópicos similares à pergunta atual. Retorna instrução
@@ -105,7 +111,8 @@ def build_context_dedup_instruction(history: list, current_message: str, recency
 
     Condições para ativar dedup:
     1. Deve haver pelo menos uma resposta recente do bot no histórico
-    2. A resposta deve ser recente (dentro de recency_seconds)
+    2. A resposta deve ter timestamp e ser recente (dentro de recency_seconds, default 60s)
+       Mensagens sem timestamp são ignoradas (não elegíveis para dedup)
     3. Deve haver sobreposição de palavras-chave entre a pergunta atual
        e as perguntas/respostas anteriores (indicando mesmo tópico)
     """
@@ -119,14 +126,17 @@ def build_context_dedup_instruction(history: list, current_message: str, recency
         msg = history[i]
         if msg.get("role") == "assistant" and msg.get("content"):
             ts_str = msg.get("timestamp")
-            if ts_str:
-                try:
-                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00").replace("+00:00", ""))
-                    if (now - ts).total_seconds() > recency_seconds:
-                        i -= 1
-                        continue
-                except (ValueError, TypeError):
-                    pass
+            if not ts_str:
+                i -= 1
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "").replace("+00:00", ""))
+                if (now - ts).total_seconds() > recency_seconds:
+                    i -= 1
+                    continue
+            except (ValueError, TypeError):
+                i -= 1
+                continue
 
             user_q = None
             if i > 0 and history[i - 1].get("role") == "user":
