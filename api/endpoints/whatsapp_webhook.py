@@ -1077,11 +1077,6 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 print(f"[WEBHOOK] Marcações de material (texto fallback): {text_material_ids}")
                 response = clean_response2
         
-        append_to_history(phone, "user", normalized_message)
-        if response:
-            metadata = context if context else None
-            append_to_history(phone, "assistant", response, metadata)
-        
         reset_stalled_counter(db, conversation)
         
         is_human_transfer = should_create_ticket or (context and context.get("human_transfer"))
@@ -1155,6 +1150,11 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     response = f"Registrado! O broker responsável já tá sendo avisado e responde em breve.\n\nChamado #{fallback_ticket.id} criado com sucesso!"
                 else:
                     response = "Registrado! O broker responsável já tá sendo avisado e responde em breve."
+        
+        append_to_history(phone, "user", normalized_message)
+        if response:
+            metadata = context if context else None
+            append_to_history(phone, "assistant", response, metadata)
         
         if message_record:
             if response:

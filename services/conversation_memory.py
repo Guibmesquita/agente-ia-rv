@@ -90,40 +90,87 @@ def update_history(phone: str, history: list):
 def append_to_history(phone: str, role: str, content: str, metadata: dict = None):
     if phone not in _history_cache:
         _history_cache[phone] = []
-    entry = {"role": role, "content": content}
+    entry = {"role": role, "content": content, "timestamp": datetime.now().isoformat()}
     if metadata:
         entry["metadata"] = metadata
     _history_cache[phone].append(entry)
     _history_cache[phone] = _history_cache[phone][-HISTORY_WINDOW:]
 
 
-def build_context_dedup_instruction(history: list, current_message: str) -> Optional[str]:
+def build_context_dedup_instruction(history: list, current_message: str, recency_seconds: int = 90) -> Optional[str]:
     """
     Analisa o histórico recente de conversa para detectar respostas do bot
-    que já cobriram tópicos. Retorna instrução para a IA focar em questões novas,
-    ou None se não há deduplicação necessária.
+    que já cobriram tópicos similares à pergunta atual. Retorna instrução
+    para a IA focar em questões novas, ou None se não há deduplicação necessária.
+
+    Condições para ativar dedup:
+    1. Deve haver pelo menos uma resposta recente do bot no histórico
+    2. A resposta deve ser recente (dentro de recency_seconds)
+    3. Deve haver sobreposição de palavras-chave entre a pergunta atual
+       e as perguntas/respostas anteriores (indicando mesmo tópico)
     """
     if not history or len(history) < 2:
         return None
 
-    recent_bot_responses = []
-    recent_user_questions = []
-    for msg in history[-6:]:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if role == "assistant" and content:
-            recent_bot_responses.append(content[:300])
-        elif role == "user" and content:
-            recent_user_questions.append(content)
+    now = datetime.now()
+    recent_pairs = []
+    i = len(history) - 1
+    while i >= max(0, len(history) - 8):
+        msg = history[i]
+        if msg.get("role") == "assistant" and msg.get("content"):
+            ts_str = msg.get("timestamp")
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00").replace("+00:00", ""))
+                    if (now - ts).total_seconds() > recency_seconds:
+                        i -= 1
+                        continue
+                except (ValueError, TypeError):
+                    pass
 
-    if not recent_bot_responses:
+            user_q = None
+            if i > 0 and history[i - 1].get("role") == "user":
+                user_q = history[i - 1].get("content", "")
+            recent_pairs.append({
+                "user_question": user_q or "",
+                "bot_response": msg["content"][:300],
+            })
+        i -= 1
+
+    if not recent_pairs:
         return None
 
-    bot_summary = " | ".join(recent_bot_responses[-2:])
+    def _extract_keywords(text: str) -> set:
+        import re as _re
+        words = set(_re.findall(r'[a-záàâãéêíóôõúüç]{3,}', text.lower()))
+        stopwords = {
+            'que', 'qual', 'como', 'para', 'com', 'por', 'uma', 'dos', 'das',
+            'nos', 'nas', 'esse', 'essa', 'sobre', 'mais', 'pode', 'tem',
+            'não', 'sim', 'são', 'foi', 'está', 'ser', 'ter', 'fala', 'isso',
+            'aqui', 'ali', 'dele', 'dela', 'meu', 'sua', 'nos', 'nós', 'eles',
+        }
+        return words - stopwords
+
+    current_kw = _extract_keywords(current_message)
+    if not current_kw:
+        return None
+
+    overlapping_responses = []
+    for pair in recent_pairs:
+        prev_kw = _extract_keywords(pair["user_question"] + " " + pair["bot_response"])
+        overlap = current_kw & prev_kw
+        if len(overlap) >= 2 or (len(overlap) >= 1 and len(current_kw) <= 3):
+            overlapping_responses.append(pair["bot_response"])
+
+    if not overlapping_responses:
+        print(f"[CONTEXT_DEDUP] Sem sobreposição de tópicos detectada — dedup não necessário")
+        return None
+
+    bot_summary = " | ".join(overlapping_responses[:2])
 
     instruction = (
         f"\n\n⚠️ ATENÇÃO — CONTEXTO DE MENSAGENS ANTERIORES:\n"
-        f"Você JÁ respondeu recentemente sobre os seguintes tópicos nesta conversa:\n"
+        f"Você JÁ respondeu recentemente sobre tópicos relacionados nesta conversa:\n"
         f'"{bot_summary[:500]}"\n\n'
         f"REGRAS OBRIGATÓRIAS:\n"
         f"1. NÃO repita informações que você já forneceu nas respostas acima.\n"
@@ -134,7 +181,7 @@ def build_context_dedup_instruction(history: list, current_message: str) -> Opti
         f"sem repetir os dados já enviados."
     )
 
-    print(f"[CONTEXT_DEDUP] Instrução de dedup gerada — {len(recent_bot_responses)} respostas recentes analisadas")
+    print(f"[CONTEXT_DEDUP] Sobreposição detectada com {len(overlapping_responses)} resposta(s) recente(s) — instrução de dedup gerada")
     return instruction
 
 
