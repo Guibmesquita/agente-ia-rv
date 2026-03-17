@@ -868,9 +868,13 @@ TIR, VPL, percentual de CDI, IPCA+ ou qualquer outro dado quantitativo — que n
 LITERALMENTE presentes no texto recuperado abaixo (contexto da base de conhecimento).
 Se o número não aparecer explicitamente no contexto fornecido, diga EXATAMENTE:
 "Não encontrei esse dado nos documentos indexados para [nome do fundo]."
-Em seguida, ofereça: busca na internet (para FIIs com dados públicos) ou abertura de ticket
-para o broker responsável. É preferível admitir a ausência da informação do que citar
-qualquer número que não esteja literalmente na base de documentos.
+Se o contexto incluir INFORMAÇÕES OBTIDAS DA INTERNET, USE-AS imediatamente na resposta —
+elas já foram buscadas automaticamente. Cite sempre a fonte e o link.
+Se NEM a base de conhecimento NEM a internet tiverem a informação, ofereça abertura de ticket
+para o broker responsável. NUNCA pergunte ao assessor "quer que eu busque na internet?" —
+se dados da web estão no contexto, já foram recuperados automaticamente.
+É preferível admitir a ausência da informação do que citar
+qualquer número que não esteja literalmente na base de documentos ou nas fontes web citadas.
 
 REFERÊNCIA TEMPORAL EM DADOS QUANTITATIVOS (REGRA CRÍTICA):
 Ao citar qualquer dado quantitativo (rentabilidade, DY, dividendo, P/VP, valorização, cota, retorno), SEMPRE inclua o período de referência que consta no documento.
@@ -1209,7 +1213,7 @@ TROCA DE TÓPICO (REGRA CRÍTICA):
         if not web_results or not web_results.get('results'):
             return ""
         
-        parts = ["INFORMAÇÕES OBTIDAS DA INTERNET (fontes confiáveis):", ""]
+        parts = ["INFORMAÇÕES OBTIDAS DA INTERNET (já recuperadas automaticamente — USE na resposta):", ""]
         
         for i, result in enumerate(web_results['results'][:5], 1):
             title = result.get('title', 'Sem título')
@@ -1859,16 +1863,23 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
             confirmed_ticker = None
         elif confirmed_ticker and confirmed_ticker.startswith("DENIAL:"):
             denial_ticker = confirmed_ticker.split(":")[1]
-            print(f"[OpenAI] Usuário negou sugestões e quer FII {denial_ticker} - oferecendo busca externa")
+            print(f"[OpenAI] Usuário negou sugestões e quer FII {denial_ticker} - buscando automaticamente")
             if denial_ticker.upper().endswith('11'):
-                return (
-                    f"Entendi que você quer informações sobre {denial_ticker}, que não está na nossa base. Quer que eu busque informações públicas sobre este fundo na internet?",
-                    False,
-                    {
-                        "intent": "fii_external_search_offer",
-                        "ticker": denial_ticker
-                    }
-                )
+                fii_service_denial = get_fii_lookup_service()
+                fii_result_denial = fii_service_denial.lookup(denial_ticker)
+                if fii_result_denial and fii_result_denial.get('data'):
+                    fii_info = fii_service_denial.format_complete_response(fii_result_denial['data'])
+                    return (
+                        f"Encontrei informações públicas sobre {denial_ticker}. Lembre-se que este fundo NÃO está na nossa base oficial de recomendações.\n\n{fii_info}",
+                        False,
+                        {
+                            "intent": "fii_external_result",
+                            "ticker": denial_ticker,
+                            "source": "fundsexplorer"
+                        }
+                    )
+                else:
+                    print(f"[OpenAI] FII {denial_ticker} não encontrado no FundsExplorer - continuando para busca web")
             confirmed_ticker = None
         elif confirmed_ticker == "DENIAL":
             print(f"[OpenAI] Usuário negou todas as sugestões - verificando ticker original")
@@ -1882,14 +1893,21 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                             original_ticker = ticker_match.group(1).upper()
                         break
             if original_ticker and original_ticker.endswith('11'):
-                return (
-                    f"Entendi. {original_ticker} não está na nossa base oficial. Quer que eu busque informações públicas sobre este fundo na internet?",
-                    False,
-                    {
-                        "intent": "fii_external_search_offer",
-                        "ticker": original_ticker
-                    }
-                )
+                fii_service_denial2 = get_fii_lookup_service()
+                fii_result_denial2 = fii_service_denial2.lookup(original_ticker)
+                if fii_result_denial2 and fii_result_denial2.get('data'):
+                    fii_info = fii_service_denial2.format_complete_response(fii_result_denial2['data'])
+                    return (
+                        f"Encontrei informações públicas sobre {original_ticker}. Lembre-se que este fundo NÃO está na nossa base oficial de recomendações.\n\n{fii_info}",
+                        False,
+                        {
+                            "intent": "fii_external_result",
+                            "ticker": original_ticker,
+                            "source": "fundsexplorer"
+                        }
+                    )
+                else:
+                    print(f"[OpenAI] FII {original_ticker} não encontrado no FundsExplorer - continuando para busca web")
             confirmed_ticker = None
         elif confirmed_ticker == "AMBIGUOUS":
             print(f"[OpenAI] Resposta ambígua - solicitando clarificação")
@@ -2144,8 +2162,14 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
         fii_lookup_result = None
         similar_tickers_suggestion = None
         database_fallback_product = None
+        force_web_for_ticker = False
         fii_service = get_fii_lookup_service()
         detected_ticker = fii_service.extract_ticker(user_message)
+        if not detected_ticker:
+            general_ticker_match = re.search(r'\b([A-Z]{4}[0-9]{1,2})\b', user_message.upper())
+            if general_ticker_match:
+                detected_ticker = general_ticker_match.group(1)
+                print(f"[OpenAI] Ticker geral detectado (não-FII): {detected_ticker}")
         
         if not context_documents or len(context_documents) == 0:
             print(f"[OpenAI] Busca semântica vazia - tentando fallback no banco de dados")
@@ -2190,19 +2214,27 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                 else:
                     is_fii = detected_ticker.upper().endswith('11')
                     if is_fii:
-                        print(f"[OpenAI] Nenhum similar para FII {detected_ticker} - oferecendo busca externa")
-                        return (
-                            f"Não encontrei {detected_ticker} na nossa base de conhecimento oficial. Quer que eu busque informações públicas sobre este fundo na internet?",
-                            False,
-                            {
-                                "intent": "fii_external_search_offer",
-                                "ticker": detected_ticker,
-                                "documents": context_documents,
-                                "identified_assessor": assessor_data
-                            }
-                        )
+                        print(f"[OpenAI] Nenhum similar para FII {detected_ticker} - buscando automaticamente no FundsExplorer")
+                        fii_auto_result = fii_service.lookup(detected_ticker)
+                        if fii_auto_result and fii_auto_result.get('data'):
+                            fii_info = fii_service.format_complete_response(fii_auto_result['data'])
+                            return (
+                                f"O fundo {detected_ticker} não está na nossa base oficial de recomendações, mas encontrei informações públicas:\n\n{fii_info}",
+                                False,
+                                {
+                                    "intent": "fii_external_result",
+                                    "ticker": detected_ticker,
+                                    "source": "fundsexplorer",
+                                    "documents": context_documents,
+                                    "identified_assessor": assessor_data
+                                }
+                            )
+                        else:
+                            print(f"[OpenAI] FII {detected_ticker} não encontrado no FundsExplorer - forçando busca web")
+                            force_web_for_ticker = True
                     else:
-                        print(f"[OpenAI] Nenhum similar para {detected_ticker} - produto não encontrado")
+                        print(f"[OpenAI] Nenhum similar para {detected_ticker} - forçando busca web")
+                        force_web_for_ticker = True
         
         if rewrite_result and rewrite_result.is_comparative and len(rewrite_result.entities) >= 2:
             context = self._build_comparative_context(context_documents, rewrite_result.entities)
@@ -2215,8 +2247,9 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
         should_search_web, web_reason = self._should_web_search(context_documents, user_message)
         
         force_web = retrieval_strategy in ("web", "hybrid")
-        if categoria == "MERCADO" or force_web or (should_search_web and categoria not in ["SAUDACAO", "FORA_ESCOPO", "ATENDIMENTO_HUMANO"]):
-            print(f"[OpenAI] Ativando busca na web: {web_reason}")
+        if categoria == "MERCADO" or force_web or force_web_for_ticker or (should_search_web and categoria not in ["SAUDACAO", "FORA_ESCOPO", "ATENDIMENTO_HUMANO"]):
+            effective_reason = web_reason if web_reason else ("Ticker não encontrado na base" if force_web_for_ticker else "Forçado por estratégia/categoria")
+            print(f"[OpenAI] Ativando busca na web: {effective_reason}")
             try:
                 from database.database import SessionLocal
                 db = SessionLocal()
@@ -2296,6 +2329,7 @@ INSTRUÇÕES PARA O PITCH:
             if web_context:
                 user_content += f"\n\n{web_context}"
                 user_content += f"\n\n{self._get_fact_extraction_prompt()}"
+                user_content += "\n\nINSTRUÇÃO: As informações da internet acima já foram buscadas automaticamente. USE-AS na resposta junto com o contexto da base. Cite as fontes. NUNCA pergunte se o assessor quer buscar na internet — os dados já estão aqui."
 
         if similar_tickers_suggestion:
             suggestions = similar_tickers_suggestion['suggestions']
