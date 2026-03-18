@@ -698,7 +698,7 @@ export function SmartUpload() {
         >
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-red-600" />
-            <h3 className="font-semibold text-red-800">Processamento Falhou</h3>
+            <h3 className="font-semibold text-red-800">Processamento Incompleto</h3>
             <span className="text-xs px-2 py-0.5 bg-red-200 text-red-800 rounded-full">
               {failedMaterials.length}
             </span>
