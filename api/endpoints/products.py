@@ -3164,19 +3164,23 @@ async def all_materials_without_pdf(
         for mf in db.query(MaterialFile.material_id).all()
     }
 
-    materials_with_blocks = {
-        row[0]
-        for row in db.query(ContentBlock.material_id).group_by(ContentBlock.material_id).having(func.count(ContentBlock.id) > 0).all()
-    }
+    blocks_count_map = dict(
+        db.query(ContentBlock.material_id, func.count(ContentBlock.id))
+        .group_by(ContentBlock.material_id)
+        .having(func.count(ContentBlock.id) > 0)
+        .all()
+    )
 
-    all_materials = db.query(Material).join(Product).order_by(Product.ticker, Material.name).all()
+    all_materials = db.query(Material).join(Product).filter(
+        Material.processing_status == "success"
+    ).order_by(Product.ticker, Material.name).all()
 
     missing = []
     for m in all_materials:
         if m.id in materials_with_db_file:
             continue
 
-        if m.id not in materials_with_blocks:
+        if m.id not in blocks_count_map:
             continue
 
         if m.processing_error and 'duplicado bloqueado' in m.processing_error.lower():
@@ -3189,7 +3193,7 @@ async def all_materials_without_pdf(
             "product_name": product.name if product else "—",
             "ticker": product.ticker if product else "—",
             "material_type": m.material_type,
-            "blocks_count": 1 if m.id in materials_with_blocks else 0,
+            "blocks_count": blocks_count_map.get(m.id, 0),
         })
 
     return {
@@ -3307,6 +3311,25 @@ async def batch_upload(
 
         name = file.filename.replace('.pdf', '')
 
+        content = await file.read()
+
+        import hashlib as hl
+        file_hash = hl.sha256(content).hexdigest()
+        existing_success = db.query(Material).filter(
+            Material.file_hash == file_hash,
+            Material.file_hash != None,
+            Material.processing_status == "success"
+        ).first()
+        if existing_success:
+            dup_name = existing_success.name
+            queued_items.append({
+                "filename": file.filename,
+                "error": f"Arquivo idêntico já processado como '{dup_name}'. Upload duplicado bloqueado.",
+                "queued": False,
+                "existing_material_id": existing_success.id
+            })
+            continue
+
         file_product_id = selected_product_id
         if not file_product_id:
             auto_product = find_or_create_product_from_name(db, name)
@@ -3325,7 +3348,8 @@ async def batch_upload(
             tags=json_lib.dumps(parsed_tags),
             material_categories=json_lib.dumps(parsed_categories),
             publish_status="rascunho",
-            processing_status=ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, 'PENDING') else "pending"
+            processing_status=ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, 'PENDING') else "pending",
+            file_hash=file_hash
         )
         db.add(material)
         db.commit()
@@ -3333,32 +3357,8 @@ async def batch_upload(
 
         unique_filename = f"{uuid.uuid4()}.pdf"
         file_path = os.path.join(UPLOAD_DIR_QUEUE, unique_filename)
-        content = await file.read()
         with open(file_path, "wb") as f:
             f.write(content)
-
-        import hashlib as hl
-        file_hash = hl.sha256(content).hexdigest()
-        existing_success = db.query(Material).filter(
-            Material.file_hash == file_hash,
-            Material.file_hash != None,
-            Material.processing_status == "success"
-        ).first()
-        if existing_success:
-            db.delete(material)
-            db.commit()
-            try:
-                os.remove(file_path)
-            except OSError:
-                pass
-            dup_name = existing_success.name
-            queued_items.append({
-                "filename": file.filename,
-                "error": f"Arquivo idêntico já processado como '{dup_name}'. Upload duplicado bloqueado.",
-                "queued": False,
-                "existing_material_id": existing_success.id
-            })
-            continue
 
         _save_file_to_db(db, material.id, file.filename or "documento.pdf", content)
 
