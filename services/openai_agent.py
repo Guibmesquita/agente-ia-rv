@@ -1352,74 +1352,78 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                                 {"intent": "manager_selection_resolved", "selected_ticker": ticker}
                             )
                 
+                print(f"[OpenAI] Resposta à desambiguação não reconhecida: '{user_message[:60]}' - seguindo para RAG normal")
                 break
         
         return None
     
 
-    def _check_manager_disambiguation(
+    def _check_manager_disambiguation_gpt(
         self, 
-        user_message: str
+        manager_name: str
     ) -> Optional[Tuple[str, bool, dict]]:
         """
-        Verifica se a query menciona uma gestora sem ticker específico.
-        Se a gestora tem múltiplos produtos, pergunta qual o usuário quer.
+        Verifica se a gestora identificada pelo GPT-4o (via QueryRewriter) tem
+        múltiplos produtos na base, disparando desambiguação se necessário.
+        
+        Diferente da versão antiga que usava substring matching, aqui o GPT-4o
+        já decidiu que o usuário está perguntando sobre uma gestora específica.
         """
         vs = get_vector_store()
         if not vs:
             return None
+
+        from services.vector_store import KNOWN_MANAGERS
+        normalized_manager = None
+        manager_lower = manager_name.lower().strip()
+        for keyword, name in KNOWN_MANAGERS.items():
+            if manager_lower == keyword or manager_lower == name.lower():
+                normalized_manager = name
+                break
+        if not normalized_manager:
+            import re
+            for keyword, name in KNOWN_MANAGERS.items():
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                if re.search(pattern, manager_lower):
+                    normalized_manager = name
+                    break
+        if not normalized_manager:
+            normalized_manager = manager_name
+
+        products = vs.get_products_by_manager(normalized_manager)
         
-        disambiguation = vs.detect_ambiguous_query(user_message)
-        
-        if not disambiguation:
+        if len(products) == 0:
+            print(f"[OpenAI] GPT detectou gestora '{manager_name}' mas sem produtos na base - seguindo para RAG")
             return None
         
-        
-        if disambiguation['type'] == 'manager_ambiguous':
-            products = disambiguation['products']
-            manager = disambiguation['manager']
-            
-            product_list = []
-            for p in products:
-                product_list.append(f"• {p['ticker']} - {p['name']}")
-            
-            products_text = "\n".join(product_list)
-            
-            response = f"Você quer saber sobre a gestora {manager} ou sobre um ativo específico dela?\n\nTemos {len(products)} ativos da {manager} na base:\n{products_text}"
-            
-            print(f"[OpenAI] Gestora {manager} tem {len(products)} produtos - perguntando intenção")
-            
+        if len(products) == 1:
+            product = products[0]
+            response = f"Você quer saber sobre a gestora {normalized_manager} ou sobre o ativo {product['ticker']} ({product['name']})?"
+            print(f"[OpenAI] GPT detectou gestora {normalized_manager} com 1 produto - perguntando intenção")
             return (
                 response,
                 False,
                 {
                     "intent": "manager_disambiguation",
-                    "manager": manager,
+                    "manager": normalized_manager,
                     "products": products
                 }
             )
         
-        if disambiguation['type'] == 'manager_single':
-            products = disambiguation['products']
-            manager = disambiguation['manager']
-            inferred_ticker = disambiguation['inferred_ticker']
-            product_name = products[0]['name'] if products else inferred_ticker
-            
-            response = f"Você quer saber sobre a gestora {manager} ou sobre o ativo {inferred_ticker} ({product_name})?"
-            
-            print(f"[OpenAI] Gestora {manager} tem 1 produto - perguntando intenção")
-            
-            return (
-                response,
-                False,
-                {
-                    "intent": "manager_disambiguation",
-                    "manager": manager,
-                    "products": products
-                }
-            )
+        product_list = [f"• {p['ticker']} - {p['name']}" for p in products]
+        products_text = "\n".join(product_list)
+        response = f"Você quer saber sobre a gestora {normalized_manager} ou sobre um ativo específico dela?\n\nTemos {len(products)} ativos da {normalized_manager} na base:\n{products_text}"
+        print(f"[OpenAI] GPT detectou gestora {normalized_manager} com {len(products)} produtos - perguntando intenção")
         
-        return None
+        return (
+            response,
+            False,
+            {
+                "intent": "manager_disambiguation",
+                "manager": normalized_manager,
+                "products": products
+            }
+        )
     
     def _build_context(self, documents: List[dict]) -> str:
         """Constrói o contexto a partir dos documentos encontrados."""
@@ -1749,10 +1753,11 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                 print(f"[OpenAI] Query substituída para buscar info da gestora: {manager}")
             else:
                 return pending_manager_selection
-        
-        manager_disambiguation = self._check_manager_disambiguation(user_message)
-        if manager_disambiguation:
-            return manager_disambiguation
+
+        if rewrite_result.manager_query:
+            manager_disambiguation = self._check_manager_disambiguation_gpt(rewrite_result.manager_query)
+            if manager_disambiguation:
+                return manager_disambiguation
         
         enriched_query = rewrite_result.rewritten_query
         

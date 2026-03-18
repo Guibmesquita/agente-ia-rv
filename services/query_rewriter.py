@@ -32,6 +32,7 @@ class QueryRewriteResult:
     is_implicit_continuation: bool = False
     resolved_context: str = ""
     emotional_tone: str = "neutral"
+    manager_query: str = ""
 
 
 REWRITER_SYSTEM_PROMPT = """Você é um módulo interno de pré-processamento de mensagens. Seu papel é analisar a mensagem atual de um assessor financeiro, junto com o histórico recente da conversa, e produzir uma versão da mensagem que seja autocontida — ou seja, que faça sentido sozinha, sem precisar ler o histórico.
@@ -74,6 +75,18 @@ ESTRATÉGIA DE BUSCA (campo "retrieval_strategy"):
 - "hybrid": buscar tanto na base interna quanto na web (comparações entre ativo interno e mercado, perguntas que precisam de dados internos + contexto de mercado)
 - "none": não precisa de busca (saudações, fora de escopo)
 
+DETECÇÃO DE GESTORA (campo "manager_query"):
+- Se o assessor está CLARAMENTE perguntando sobre uma gestora/asset manager específica (ex: "me fala sobre a Kinea", "quais fundos da XP vocês recomendam?", "o que a Hedge tem?"), preencha com o nome da gestora mencionada.
+- NÃO preencha se "xp" aparece apenas dentro de outra palavra (ex: "explicar", "experiência") ou como parte de um nome de fundo/ativo (ex: "XP Log Prime", "XPAG11").
+- NÃO preencha se o assessor está perguntando sobre um conceito, estrutura ou produto genérico (ex: "o que é uma booster?", "como funciona um put spread?").
+- Exemplos:
+  - "me fala sobre a Kinea" → manager_query: "Kinea"
+  - "quais fundos da XP?" → manager_query: "XP Asset"
+  - "o que é uma booster?" → manager_query: "" (é conceito, não gestora)
+  - "consegue me explicar?" → manager_query: "" (a palavra "explicar" contém "xp" mas não é gestora)
+  - "XP Log Prime II" → manager_query: "" (é nome de fundo, não menção à gestora)
+  - "o que a Hedge Investments tem?" → manager_query: "Hedge Investments"
+
 TOM EMOCIONAL (campo "emotional_tone"):
 - "neutral": pergunta técnica normal
 - "urgent": assessor com urgência ou pressão
@@ -93,7 +106,8 @@ FORMATO DE SAÍDA (JSON):
   "retrieval_strategy": "rag",
   "is_implicit_continuation": false,
   "resolved_context": "",
-  "emotional_tone": "neutral"
+  "emotional_tone": "neutral",
+  "manager_query": ""
 }
 
 Retorne APENAS o JSON, sem explicação."""
@@ -245,7 +259,8 @@ def _parse_rewriter_response(raw: str, original_message: str) -> QueryRewriteRes
         retrieval_strategy=data.get("retrieval_strategy", "rag"),
         is_implicit_continuation=bool(data.get("is_implicit_continuation", False)),
         resolved_context=data.get("resolved_context", ""),
-        emotional_tone=data.get("emotional_tone", "neutral")
+        emotional_tone=data.get("emotional_tone", "neutral"),
+        manager_query=str(data.get("manager_query", "") or "").strip()[:100]
     )
 
 
@@ -307,7 +322,8 @@ async def rewrite_query(
             f"clarification={result.clarification_needed} | "
             f"strategy={result.retrieval_strategy} | "
             f"implicit_cont={result.is_implicit_continuation} | "
-            f"tone={result.emotional_tone}"
+            f"tone={result.emotional_tone}" +
+            (f" | manager={result.manager_query}" if result.manager_query else "")
         )
         return result
 
