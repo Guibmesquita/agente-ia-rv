@@ -938,6 +938,14 @@ export function SmartUpload() {
       exit={{ opacity: 0, x: -20 }}
       className="space-y-6"
     >
+      {!loadingUnified && (missingPdfMaterials.length > 0 || failedMaterials.length > 0) && (
+        <div className="flex items-center gap-2 p-3 bg-slate-100 border border-slate-200 rounded-xl">
+          <AlertCircle className="w-5 h-5 text-slate-600" />
+          <span className="text-sm font-medium text-slate-700">
+            {missingPdfMaterials.length + failedMaterials.length} material(is) pendente(s) de ação
+          </span>
+        </div>
+      )}
       {renderMissingPdfSection()}
       {renderFailedSection()}
 

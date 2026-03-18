@@ -3252,61 +3252,6 @@ async def materials_without_files(
     }
 
 
-@router.get("/admin/all-materials-without-pdf")
-async def all_materials_without_pdf(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Apenas administradores podem acessar")
-
-    from database.models import Material, MaterialFile, Product
-    from sqlalchemy import func
-
-    materials_with_db_file = {
-        mf.material_id
-        for mf in db.query(MaterialFile.material_id).all()
-    }
-
-    blocks_count_map = dict(
-        db.query(ContentBlock.material_id, func.count(ContentBlock.id))
-        .group_by(ContentBlock.material_id)
-        .having(func.count(ContentBlock.id) > 0)
-        .all()
-    )
-
-    all_materials = db.query(Material).join(Product).filter(
-        Material.processing_status == "success"
-    ).order_by(Product.ticker, Material.name).all()
-
-    missing = []
-    for m in all_materials:
-        if m.id in materials_with_db_file:
-            continue
-
-        if m.id not in blocks_count_map:
-            continue
-
-        if m.processing_error and 'duplicado bloqueado' in m.processing_error.lower():
-            continue
-
-        product = m.product
-        missing.append({
-            "material_id": m.id,
-            "material_name": m.name,
-            "product_name": product.name if product else "—",
-            "ticker": product.ticker if product else "—",
-            "material_type": m.material_type,
-            "blocks_count": blocks_count_map.get(m.id, 0),
-        })
-
-    return {
-        "total_materials": len(all_materials),
-        "without_pdf": len(missing),
-        "materials": missing,
-    }
-
-
 @router.post("/admin/reupload-pdf/{material_id}")
 async def reupload_pdf(
     material_id: int,
