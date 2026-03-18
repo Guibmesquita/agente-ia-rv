@@ -1950,6 +1950,110 @@ async def list_pending_materials(
     return {"pending_materials": result, "total": len(result)}
 
 
+@router.get("/materials/pending-unified")
+async def list_pending_unified(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lista unificada de materiais que precisam de ação: sem PDF ou com processamento falho."""
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    from sqlalchemy import func
+
+    materials_with_file = {
+        mf.material_id
+        for mf in db.query(MaterialFile.material_id).all()
+    }
+
+    blocks_count_map = dict(
+        db.query(ContentBlock.material_id, func.count(ContentBlock.id))
+        .group_by(ContentBlock.material_id)
+        .all()
+    )
+
+    active_queue_ids = {
+        row.material_id for row in
+        db.query(PersistentQueueItem.material_id).filter(
+            PersistentQueueItem.status.in_(['queued', 'processing'])
+        ).all()
+    }
+
+    all_materials = db.query(Material).options(
+        joinedload(Material.product)
+    ).order_by(Material.created_at.desc()).all()
+
+    success_names = {}
+    for m in all_materials:
+        if m.processing_status == "success" and blocks_count_map.get(m.id, 0) > 0:
+            key = (m.name or "").strip().lower()
+            if key and (key not in success_names or blocks_count_map.get(m.id, 0) > blocks_count_map.get(success_names[key], 0)):
+                success_names[key] = m.id
+
+    missing_pdf = []
+    failed_processing = []
+
+    for m in all_materials:
+        if m.processing_error and 'duplicado bloqueado' in (m.processing_error or '').lower():
+            continue
+        if m.id in active_queue_ids:
+            continue
+
+        bc = blocks_count_map.get(m.id, 0)
+        product = m.product
+
+        base = {
+            "id": m.id,
+            "name": m.name,
+            "source_filename": m.source_filename,
+            "product_id": m.product_id,
+            "product_name": product.name if product else None,
+            "product_ticker": product.ticker if product else None,
+            "material_type": m.material_type,
+            "blocks_count": bc,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "processing_status": m.processing_status,
+        }
+
+        if m.processing_status == "success" and bc > 0 and m.id not in materials_with_file:
+            base["pending_type"] = "missing_pdf"
+            missing_pdf.append(base)
+
+        elif m.processing_status in ["failed", "pending", "processing"]:
+            key = (m.name or "").strip().lower()
+            dup_id = success_names.get(key)
+            has_dup = dup_id is not None and dup_id != m.id
+            base["pending_type"] = "failed_processing"
+            base["processing_error"] = m.processing_error
+            base["has_success_duplicate"] = has_dup
+            if has_dup:
+                base["success_duplicate_id"] = dup_id
+                base["success_duplicate_blocks"] = blocks_count_map.get(dup_id, 0)
+
+            job = db.query(DocumentProcessingJob).filter(
+                DocumentProcessingJob.material_id == m.id
+            ).order_by(DocumentProcessingJob.created_at.desc()).first()
+            base["job_info"] = {
+                "total_pages": job.total_pages if job else None,
+                "processed_pages": job.processed_pages if job else None,
+            } if job else None
+            base["can_resume"] = m.processing_status in ['processing', 'failed'] and (
+                (m.source_file_path and os.path.exists(m.source_file_path)) or
+                (job and job.file_path and os.path.exists(job.file_path))
+            )
+            failed_processing.append(base)
+
+    missing_pdf.sort(key=lambda x: (x.get("product_ticker") or "", x.get("name") or ""))
+
+    return {
+        "missing_pdf": missing_pdf,
+        "failed_processing": failed_processing,
+        "total_missing_pdf": len(missing_pdf),
+        "total_failed": len(failed_processing),
+        "total": len(missing_pdf) + len(failed_processing),
+    }
+
+
 @router.post("/{product_id}/materials/{material_id}/upload")
 async def upload_pdf_to_material(
     product_id: int,
@@ -3210,8 +3314,8 @@ async def reupload_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Apenas administradores podem acessar")
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
 
     from database.models import Material
 

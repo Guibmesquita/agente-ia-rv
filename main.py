@@ -611,22 +611,6 @@ async def admin_page(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request, "user_role": "admin"})
 
 
-@app.get("/admin/reupload-pdfs", response_class=HTMLResponse)
-async def reupload_pdfs_page(request: Request):
-    from core.security import decode_token
-    token = request.cookies.get("access_token")
-    
-    if not token:
-        return RedirectResponse(url="/login")
-    
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    
-    if payload.get("role") != "admin":
-        return RedirectResponse(url="/login?error=permission")
-    
-    return templates.TemplateResponse("reupload_pdfs.html", {"request": request, "user_role": "admin"})
 
 
 @app.get("/integrations", response_class=HTMLResponse)

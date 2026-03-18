@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info, AlertCircle, RotateCcw, Clock, Trash2, X, Loader, Loader2, Files, List, ChevronUp, ChevronDown } from 'lucide-react';
+import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info, AlertCircle, RotateCcw, Clock, Trash2, X, Loader, Loader2, Files, List, ChevronUp, ChevronDown, FileWarning, FileUp, Copy, Search } from 'lucide-react';
 import { materialsAPI, productsAPI } from '../services/api';
 import { Button } from '../components/Button';
 import { ProductAutocomplete } from '../components/ProductAutocomplete';
@@ -9,6 +9,83 @@ import { MaterialCategories } from '../components/MaterialCategories';
 import { StructuredTags } from '../components/StructuredTags';
 import { useToast } from '../components/Toast';
 import { useDropzone } from 'react-dropzone';
+
+function normalize(str) {
+  return (str || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function extractTickers(filename) {
+  const upper = filename.toUpperCase();
+  const matches = upper.match(/\b[A-Z]{4}[0-9]{1,2}\b/g);
+  return matches || [];
+}
+
+function matchFileToMaterial(file, materials) {
+  const fname = file.name;
+  const fnameNorm = normalize(fname.replace(/\.pdf$/i, ''));
+  const fileTickers = extractTickers(fname);
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const m of materials) {
+    let score = 0;
+    const mTicker = (m.product_ticker || '').toUpperCase();
+    const mNameNorm = normalize(m.name);
+    const pNameNorm = normalize(m.product_name);
+
+    if (mTicker && fileTickers.includes(mTicker)) {
+      score += 50;
+      const typeKeywords = {
+        research: ['research', 'relatorio', 'gerencial'],
+        apresentacao: ['apresentacao', 'apresenta'],
+        one_page: ['one_page', 'onepage', 'one pager', 'lamina'],
+        comite: ['comite'],
+        campanha: ['campanha']
+      };
+      const typeWords = typeKeywords[m.material_type] || [];
+      if (typeWords.some(tw => fnameNorm.includes(tw))) {
+        score += 20;
+      }
+      const sameTickerCount = materials.filter(x => (x.product_ticker || '').toUpperCase() === mTicker).length;
+      if (sameTickerCount === 1) {
+        score += 15;
+      }
+    }
+
+    const mWords = mNameNorm.split(' ').filter(w => w.length > 2);
+    const matchedWords = mWords.filter(w => fnameNorm.includes(w));
+    if (matchedWords.length > 0) {
+      score += Math.min(30, matchedWords.length * 10);
+    }
+
+    const pWords = pNameNorm.split(' ').filter(w => w.length > 2);
+    const matchedPWords = pWords.filter(w => fnameNorm.includes(w));
+    if (matchedPWords.length > 0) {
+      score += Math.min(15, matchedPWords.length * 5);
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = m;
+    }
+  }
+
+  let confidence = 'none';
+  if (bestScore >= 50) confidence = 'high';
+  else if (bestScore >= 20) confidence = 'medium';
+
+  return { file, match: bestMatch, score: bestScore, confidence, selectedMaterialId: bestMatch ? bestMatch.id : null };
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
 
 export function SmartUpload() {
   const navigate = useNavigate();
@@ -27,12 +104,20 @@ export function SmartUpload() {
   const [logs, setLogs] = useState([]);
   const [hasError, setHasError] = useState(false);
   const [stats, setStats] = useState(null);
-  const [pendingMaterials, setPendingMaterials] = useState([]);
-  const [loadingPending, setLoadingPending] = useState(true);
 
   const [queueItems, setQueueItems] = useState([]);
   const [showQueue, setShowQueue] = useState(false);
   const eventSourceRef = useRef(null);
+
+  const [missingPdfMaterials, setMissingPdfMaterials] = useState([]);
+  const [failedMaterials, setFailedMaterials] = useState([]);
+  const [loadingUnified, setLoadingUnified] = useState(true);
+  const [bulkMatches, setBulkMatches] = useState([]);
+  const [showBulkResults, setShowBulkResults] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [reuploadingIds, setReuploadingIds] = useState(new Set());
+  const [showMissingPdf, setShowMissingPdf] = useState(false);
+  const [showFailed, setShowFailed] = useState(false);
 
   useEffect(() => {
     if (logRef.current) {
@@ -50,8 +135,8 @@ export function SmartUpload() {
   }, [searchParams]);
 
   useEffect(() => {
-    loadPendingMaterials();
     loadQueueStatus();
+    loadUnifiedPending();
   }, []);
 
   useEffect(() => {
@@ -93,20 +178,23 @@ export function SmartUpload() {
     pollQueue();
   };
 
-  const loadPendingMaterials = async () => {
-    setLoadingPending(true);
+  const loadUnifiedPending = async () => {
+    setLoadingUnified(true);
     try {
-      const response = await fetch('/api/products/materials/pending', {
+      const response = await fetch('/api/products/materials/pending-unified', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (response.ok) {
         const data = await response.json();
-        setPendingMaterials(data.pending_materials || []);
+        setMissingPdfMaterials(data.missing_pdf || []);
+        setFailedMaterials(data.failed_processing || []);
+        if ((data.missing_pdf || []).length > 0) setShowMissingPdf(true);
+        if ((data.failed_processing || []).length > 0) setShowFailed(true);
       }
     } catch (err) {
-      console.error('Erro ao carregar materiais pendentes:', err);
+      console.error('Erro ao carregar pendentes unificados:', err);
     } finally {
-      setLoadingPending(false);
+      setLoadingUnified(false);
     }
   };
 
@@ -121,7 +209,7 @@ export function SmartUpload() {
         addToast(data.message || 'Processamento retomado em segundo plano', 'success');
         setShowQueue(true);
         loadQueueStatus();
-        loadPendingMaterials();
+        loadUnifiedPending();
       } else {
         const err = await response.json().catch(() => ({}));
         addToast(err.detail || 'Erro ao retomar processamento', 'error');
@@ -141,7 +229,7 @@ export function SmartUpload() {
       });
       if (response.ok) {
         addToast('Upload descartado', 'success');
-        loadPendingMaterials();
+        loadUnifiedPending();
       } else {
         throw new Error('Falha ao descartar');
       }
@@ -184,6 +272,129 @@ export function SmartUpload() {
       console.error('Erro ao remover da fila:', err);
       addToast('Erro ao remover da fila', 'error');
     }
+  };
+
+  const handleSingleReupload = async (materialId, file) => {
+    setReuploadingIds(prev => new Set(prev).add(materialId));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`/api/products/admin/reupload-pdf/${materialId}`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Erro ao enviar');
+      }
+      addToast('PDF enviado com sucesso', 'success');
+      loadUnifiedPending();
+    } catch (err) {
+      addToast(err.message || 'Erro ao enviar PDF', 'error');
+    } finally {
+      setReuploadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(materialId);
+        return next;
+      });
+    }
+  };
+
+  const handleBulkDrop = useCallback((acceptedFiles) => {
+    const pdfFiles = acceptedFiles.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfFiles.length === 0) {
+      addToast('Apenas arquivos PDF são aceitos', 'warning');
+      return;
+    }
+    const pending = missingPdfMaterials;
+    const matches = pdfFiles.map(f => matchFileToMaterial(f, pending));
+    setBulkMatches(matches);
+    setShowBulkResults(true);
+  }, [missingPdfMaterials, addToast]);
+
+  const { getRootProps: getBulkRootProps, getInputProps: getBulkInputProps, isDragActive: isBulkDragActive } = useDropzone({
+    onDrop: handleBulkDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    multiple: true,
+    noClick: false,
+  });
+
+  const updateBulkMatch = (idx, materialId) => {
+    setBulkMatches(prev => {
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        selectedMaterialId: materialId ? parseInt(materialId) : null,
+        confidence: materialId ? 'medium' : 'none'
+      };
+      return next;
+    });
+  };
+
+  const confirmBulkUpload = async () => {
+    const toUpload = bulkMatches.filter(e => e.selectedMaterialId);
+    if (toUpload.length === 0) {
+      addToast('Nenhum arquivo associado a um material', 'warning');
+      return;
+    }
+
+    setBulkUploading(true);
+    let success = 0;
+    let errors = 0;
+
+    const updated = [...bulkMatches];
+
+    for (let i = 0; i < updated.length; i++) {
+      const entry = updated[i];
+      if (!entry.selectedMaterialId) {
+        updated[i] = { ...entry, uploadStatus: 'skipped' };
+        continue;
+      }
+
+      updated[i] = { ...entry, uploadStatus: 'uploading' };
+      setBulkMatches([...updated]);
+
+      try {
+        const formData = new FormData();
+        formData.append('file', entry.file);
+        const res = await fetch(`/api/products/admin/reupload-pdf/${entry.selectedMaterialId}`, {
+          method: 'POST',
+          body: formData,
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Erro');
+        }
+        const data = await res.json();
+        updated[i] = { ...entry, uploadStatus: 'success', uploadResult: formatFileSize(data.file_size) };
+        success++;
+      } catch (err) {
+        updated[i] = { ...entry, uploadStatus: 'error', uploadError: err.message };
+        errors++;
+      }
+      setBulkMatches([...updated]);
+    }
+
+    setBulkUploading(false);
+
+    if (errors === 0) {
+      addToast(`${success} PDF(s) enviado(s) com sucesso!`, 'success');
+      setTimeout(() => {
+        setShowBulkResults(false);
+        setBulkMatches([]);
+        loadUnifiedPending();
+      }, 1500);
+    } else {
+      addToast(`${success} enviado(s), ${errors} erro(s)`, 'error');
+      loadUnifiedPending();
+    }
+  };
+
+  const cancelBulk = () => {
+    setShowBulkResults(false);
+    setBulkMatches([]);
   };
 
   const addLog = (message, type = 'info') => {
@@ -302,87 +513,266 @@ export function SmartUpload() {
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const renderPendingSection = () => {
-    if (loadingPending || pendingMaterials.length === 0) return null;
-    
+  const renderMissingPdfSection = () => {
+    if (loadingUnified || missingPdfMaterials.length === 0) return null;
+
     return (
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl"
+        className="mb-6"
       >
-        <div className="flex items-center gap-2 mb-3">
-          <Clock className="w-5 h-5 text-amber-600" />
-          <h3 className="font-semibold text-amber-800">Uploads Pendentes</h3>
-          <span className="text-xs px-2 py-0.5 bg-amber-200 text-amber-800 rounded-full">
-            {pendingMaterials.length}
-          </span>
-        </div>
-        <p className="text-sm text-amber-700 mb-3">
-          Estes arquivos tiveram o processamento interrompido. Você pode retomar de onde parou.
-        </p>
-        <div className="space-y-2">
-          {pendingMaterials.map((material) => {
-            const processed = material.job_info?.processed_pages || 0;
-            const total = material.job_info?.total_pages || 0;
-            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
-            return (
-              <div 
-                key={material.id}
-                className="p-3 bg-white rounded-lg border border-amber-100"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-slate-800 truncate">{material.name}</p>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                        {material.product_name && (
-                          <span className="text-primary font-medium">{material.product_ticker || material.product_name}</span>
+        <button
+          onClick={() => setShowMissingPdf(!showMissingPdf)}
+          className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <FileUp className="w-5 h-5 text-blue-600" />
+            <h3 className="font-semibold text-blue-800">Sem PDF para WhatsApp</h3>
+            <span className="text-xs px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full">
+              {missingPdfMaterials.length}
+            </span>
+          </div>
+          <ChevronDown className={`w-5 h-5 text-blue-600 transition-transform ${showMissingPdf ? 'rotate-180' : ''}`} />
+        </button>
+
+        <AnimatePresence>
+          {showMissingPdf && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-2 p-4 bg-white border border-blue-100 rounded-xl space-y-4">
+                <p className="text-sm text-blue-700">
+                  Materiais processados com sucesso (conteúdo indexado) mas sem o arquivo PDF necessário para envio via WhatsApp.
+                </p>
+
+                {!showBulkResults && (
+                  <div
+                    {...getBulkRootProps()}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                      isBulkDragActive ? 'border-blue-500 bg-blue-50' : 'border-blue-200 hover:border-blue-400 bg-blue-50/50'
+                    }`}
+                  >
+                    <input {...getBulkInputProps()} />
+                    <Upload className={`w-8 h-8 mx-auto mb-2 ${isBulkDragActive ? 'text-blue-500' : 'text-blue-400'}`} />
+                    <p className="text-sm font-medium text-blue-700">
+                      Arraste vários PDFs aqui para upload automático
+                    </p>
+                    <p className="text-xs text-blue-500 mt-1">
+                      O sistema identifica o material correspondente pelo nome do arquivo (ticker)
+                    </p>
+                  </div>
+                )}
+
+                {showBulkResults && (
+                  <div className="border border-blue-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold text-blue-800 text-sm">Arquivos identificados</h4>
+                        <p className="text-xs text-blue-600 mt-0.5">
+                          {bulkMatches.length} arquivo(s) — {bulkMatches.filter(e => e.selectedMaterialId).length} identificado(s)
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={cancelBulk} disabled={bulkUploading}>
+                          Cancelar
+                        </Button>
+                        <Button size="sm" onClick={confirmBulkUpload} disabled={bulkUploading || bulkMatches.filter(e => e.selectedMaterialId).length === 0}>
+                          {bulkUploading ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : 'Confirmar e Enviar'}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-blue-100 max-h-64 overflow-y-auto">
+                      {bulkMatches.map((entry, idx) => (
+                        <div key={idx} className={`px-4 py-3 flex items-center gap-3 ${
+                          entry.confidence === 'high' ? 'bg-green-50/50' :
+                          entry.confidence === 'medium' ? 'bg-amber-50/50' : 'bg-red-50/50'
+                        }`}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{entry.file.name}</p>
+                            <p className="text-xs text-slate-500">{formatFileSize(entry.file.size)}</p>
+                          </div>
+                          <select
+                            className="text-xs border border-slate-300 rounded px-2 py-1.5 max-w-[200px] bg-white"
+                            value={entry.selectedMaterialId || ''}
+                            onChange={(e) => updateBulkMatch(idx, e.target.value)}
+                            disabled={bulkUploading}
+                          >
+                            <option value="">-- Selecionar --</option>
+                            {missingPdfMaterials.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.product_ticker ? `${m.product_ticker} - ` : ''}{m.name}
+                              </option>
+                            ))}
+                          </select>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                            entry.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                            entry.confidence === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {entry.confidence === 'high' ? 'Alto' : entry.confidence === 'medium' ? 'Médio' : 'Sem match'}
+                          </span>
+                          <div className="w-16 text-right">
+                            {entry.uploadStatus === 'uploading' && <Loader2 className="w-4 h-4 text-blue-500 animate-spin inline" />}
+                            {entry.uploadStatus === 'success' && <CheckCircle className="w-4 h-4 text-green-500 inline" />}
+                            {entry.uploadStatus === 'error' && (
+                              <span className="text-xs text-red-500" title={entry.uploadError}>Erro</span>
+                            )}
+                            {entry.uploadStatus === 'skipped' && <span className="text-xs text-slate-400">—</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="max-h-72 overflow-y-auto space-y-2">
+                  {missingPdfMaterials.map((m) => (
+                    <div key={m.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 group">
+                      <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{m.name}</p>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                          {m.product_ticker && (
+                            <span className="text-primary font-medium">{m.product_ticker}</span>
+                          )}
+                          <span>{m.blocks_count} blocos indexados</span>
+                          {m.material_type && (
+                            <span className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px]">{m.material_type}</span>
+                          )}
+                        </div>
+                      </div>
+                      <label className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+                        reuploadingIds.has(m.id)
+                          ? 'bg-slate-200 text-slate-400 cursor-wait'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}>
+                        {reuploadingIds.has(m.id) ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3" />
                         )}
-                        {total > 0 && (
-                          <span>{processed}/{total} páginas ({pct}%)</span>
+                        {reuploadingIds.has(m.id) ? 'Enviando...' : 'PDF'}
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          disabled={reuploadingIds.has(m.id)}
+                          onChange={(e) => {
+                            const f = e.target.files[0];
+                            if (f) handleSingleReupload(m.id, f);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    );
+  };
+
+  const renderFailedSection = () => {
+    if (loadingUnified || failedMaterials.length === 0) return null;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-6"
+      >
+        <button
+          onClick={() => setShowFailed(!showFailed)}
+          className="w-full flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <h3 className="font-semibold text-red-800">Processamento Falhou</h3>
+            <span className="text-xs px-2 py-0.5 bg-red-200 text-red-800 rounded-full">
+              {failedMaterials.length}
+            </span>
+          </div>
+          <ChevronDown className={`w-5 h-5 text-red-600 transition-transform ${showFailed ? 'rotate-180' : ''}`} />
+        </button>
+
+        <AnimatePresence>
+          {showFailed && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-2 p-4 bg-white border border-red-100 rounded-xl space-y-2">
+                {failedMaterials.map((m) => (
+                  <div key={m.id} className={`p-3 rounded-lg border ${
+                    m.has_success_duplicate ? 'bg-amber-50/50 border-amber-200' : 'bg-red-50/50 border-red-100'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <FileWarning className={`w-5 h-5 flex-shrink-0 ${m.has_success_duplicate ? 'text-amber-500' : 'text-red-500'}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-slate-800 truncate">{m.name}</p>
+                            {m.has_success_duplicate && (
+                              <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full whitespace-nowrap">
+                                <Copy className="w-3 h-3" />
+                                Duplicata — versão completa existe ({m.success_duplicate_blocks} blocos)
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                            {m.product_ticker && (
+                              <span className="text-primary font-medium">{m.product_ticker}</span>
+                            )}
+                            {m.blocks_count > 0 && (
+                              <span className="text-green-600">{m.blocks_count} blocos</span>
+                            )}
+                            {m.processing_error && (
+                              <span className="text-red-500 truncate max-w-[200px]" title={m.processing_error}>
+                                {m.processing_error}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {m.can_resume && !m.has_success_duplicate && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleResumeFromList(m.id)}
+                            className="bg-amber-600 hover:bg-amber-700"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Retomar
+                          </Button>
                         )}
-                        {material.blocks_count > 0 && (
-                          <span className="text-green-600">{material.blocks_count} blocos</span>
-                        )}
+                        <button
+                          onClick={() => handleDiscardPending(m.id, m.product_id)}
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
+                          title={m.has_success_duplicate ? 'Descartar duplicata' : 'Descartar'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {material.can_resume ? (
-                      <Button 
-                        size="sm"
-                        onClick={() => handleResumeFromList(material.id)}
-                        className="bg-amber-600 hover:bg-amber-700"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        Retomar
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-slate-400 mr-2">Requer re-upload</span>
-                    )}
-                    <button
-                      onClick={() => handleDiscardPending(material.id, material.product_id)}
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
-                      title="Descartar"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                {total > 0 && pct > 0 && pct < 100 && (
-                  <div className="mt-2 h-1.5 bg-amber-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-amber-500 rounded-full transition-all"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                )}
+                ))}
               </div>
-            );
-          })}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     );
   };
@@ -548,7 +938,8 @@ export function SmartUpload() {
       exit={{ opacity: 0, x: -20 }}
       className="space-y-6"
     >
-      {renderPendingSection()}
+      {renderMissingPdfSection()}
+      {renderFailedSection()}
 
       <div className="text-center mb-8">
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
