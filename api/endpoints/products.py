@@ -3322,7 +3322,7 @@ async def batch_upload(
     import json as json_lib
     import re as re_lib
 
-    if campaign_slug and material_type == "campanha":
+    if campaign_slug:
         if not re_lib.match(r'^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$', campaign_slug):
             raise HTTPException(status_code=400, detail="campaign_slug inválido. Use apenas letras minúsculas, números e hífens (3-64 caracteres).")
         if campaign_key_data:
@@ -3451,7 +3451,8 @@ async def batch_upload(
 
         campaign_structure_id = None
         campaign_error = None
-        if campaign_slug and material_type == "campanha":
+        is_campaign = campaign_slug and ("campanha" in parsed_categories or material_type == "campanha")
+        if is_campaign:
             from database.models import CampaignStructure
             existing_cs = db.query(CampaignStructure).filter(
                 CampaignStructure.campaign_slug == campaign_slug

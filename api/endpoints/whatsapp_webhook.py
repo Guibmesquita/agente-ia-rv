@@ -308,17 +308,34 @@ async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
 
     if not campaign_struct or not (campaign_struct and campaign_struct.diagram_filename):
         structures = get_all_structures()
+        lookup_slug = slug
+
         structure = None
         for s in structures:
-            if s["slug"] == slug:
+            if s["slug"] == lookup_slug:
                 structure = s
                 break
+
+        if not structure:
+            try:
+                from database.models import CampaignStructure as CS
+                expired_cs = db.query(CS).filter(CS.campaign_slug == slug).first()
+                if expired_cs and expired_cs.structure_type:
+                    fallback_type = expired_cs.structure_type
+                    print(f"[DIAGRAM] Slug '{slug}' expirado/inativo, tentando fallback via structure_type: {fallback_type}")
+                    for s in structures:
+                        if s["slug"] == fallback_type:
+                            structure = s
+                            lookup_slug = fallback_type
+                            break
+            except Exception as e:
+                print(f"[DIAGRAM] Erro no fallback de campanha expirada: {e}")
 
         if not structure:
             print(f"[DIAGRAM] Estrutura não encontrada para slug: {slug}")
             return False
 
-        diagram_path = os.path.join("static", "derivatives_diagrams", f"{slug}.png")
+        diagram_path = os.path.join("static", "derivatives_diagrams", f"{lookup_slug}.png")
         if not os.path.exists(diagram_path):
             print(f"[DIAGRAM] Arquivo de diagrama não encontrado: {diagram_path}")
             return False
@@ -326,8 +343,8 @@ async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
         from core.config import get_public_domain
         domain = get_public_domain()
 
-        diagram_url = f"https://{domain}/derivatives-diagrams/{slug}.png"
-        name = structure.get("name", slug)
+        diagram_url = f"https://{domain}/derivatives-diagrams/{lookup_slug}.png"
+        name = structure.get("name", lookup_slug)
         caption = f"📊 Diagrama de Payoff - {name}"
 
     print(f"[DIAGRAM] Enviando diagrama: {name} ({slug}) para {phone}")

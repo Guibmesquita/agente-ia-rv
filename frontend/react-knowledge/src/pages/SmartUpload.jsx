@@ -122,6 +122,7 @@ export function SmartUpload() {
   const [campaignStructureType, setCampaignStructureType] = useState('');
   const [campaignKeyData, setCampaignKeyData] = useState([]);
   const [campaignDiagramFile, setCampaignDiagramFile] = useState(null);
+  const [derivativeSlugs, setDerivativeSlugs] = useState([]);
 
   useEffect(() => {
     if (logRef.current) {
@@ -137,6 +138,17 @@ export function SmartUpload() {
       }).catch(() => {});
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (materialCategories.includes('campanha') && derivativeSlugs.length === 0) {
+      fetch('/api/campaigns/derivative-slugs', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+        .then(r => r.json())
+        .then(data => { if (data.slugs) setDerivativeSlugs(data.slugs); })
+        .catch(() => {});
+    }
+  }, [materialCategories]);
 
   useEffect(() => {
     loadQueueStatus();
@@ -1115,14 +1127,21 @@ export function SmartUpload() {
                            focus:outline-none focus:ring-2 focus:ring-amber-400/40"
               >
                 <option value="">Selecione...</option>
-                <option value="put-spread">Put Spread</option>
-                <option value="call-spread">Call Spread</option>
-                <option value="collar">Collar</option>
-                <option value="booster">Booster</option>
-                <option value="fence">Fence</option>
-                <option value="reversao">Reversão</option>
-                <option value="seagull">Seagull</option>
-                <option value="outro">Outro</option>
+                {derivativeSlugs.length > 0 ? (
+                  derivativeSlugs.map(s => (
+                    <option key={s.slug} value={s.slug}>{s.name}{s.tab ? ` (${s.tab})` : ''}</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="put-spread">Put Spread</option>
+                    <option value="call-spread">Call Spread</option>
+                    <option value="collar">Collar</option>
+                    <option value="booster">Booster</option>
+                    <option value="fence">Fence</option>
+                    <option value="seagull">Seagull</option>
+                    <option value="outro">Outro</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
