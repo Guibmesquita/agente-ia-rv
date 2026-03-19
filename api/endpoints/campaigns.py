@@ -489,6 +489,24 @@ async def upload_campaign_file(
             df = pd.read_excel(io.BytesIO(contents))
             columns = df.columns.tolist()
             rows = df.to_dict('records')
+            
+            import math
+            sanitized = []
+            for row in rows:
+                clean = {}
+                for k, v in row.items():
+                    try:
+                        if pd.isna(v):
+                            clean[k] = None
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                        clean[k] = None
+                    else:
+                        clean[k] = v
+                sanitized.append(clean)
+            rows = sanitized
         
         campaign = Campaign(
             name=campaign_name,
@@ -909,6 +927,7 @@ async def preview_campaign(
             
             extra_vars = {
                 "nome_assessor": nome_assessor,
+                "assessor": nome_assessor,
                 "primeiro_nome": primeiro_nome,
                 "nome": nome_assessor
             }
@@ -1312,6 +1331,7 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
         "equipe": str(assessor_data.get("equipe", "") or ""),
         "broker_responsavel": str(assessor_data.get("broker_responsavel", "") or ""),
         "nome_assessor": nome,
+        "assessor": nome,
         "assessor_id": str(assessor_data.get("codigo_ai", "") or ""),
     }
     
@@ -1520,6 +1540,7 @@ def build_structured_message(
         "codigo_ai": str(assessor_data.get("codigo_ai", "") or ""),
         "nome": str(assessor_data.get("nome", "") or ""),
         "nome_assessor": str(assessor_data.get("nome", "") or ""),
+        "assessor": str(assessor_data.get("nome", "") or ""),
         "email": str(assessor_data.get("email", "") or ""),
         "telefone_whatsapp": str(assessor_data.get("telefone_whatsapp", "") or ""),
         "telefone": str(assessor_data.get("telefone", "") or ""),
