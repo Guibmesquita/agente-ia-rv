@@ -2950,7 +2950,7 @@ Equipe de Gestao"></textarea>
         }
 
         async function openFailuresModal(id) {
-            document.getElementById('failuresModal').classList.add('show');
+            document.getElementById('failuresModal').classList.add('active');
             document.getElementById('failuresModalBody').innerHTML = '<div style="text-align: center; padding: 40px;">Carregando...</div>';
             
             try {
@@ -2998,7 +2998,7 @@ Equipe de Gestao"></textarea>
         }
 
         function closeFailuresModal() {
-            document.getElementById('failuresModal').classList.remove('show');
+            document.getElementById('failuresModal').classList.remove('active');
         }
 
         async function deleteCampaign(id) {

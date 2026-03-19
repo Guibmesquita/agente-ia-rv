@@ -31,6 +31,27 @@ def get_random_dispatch_delay() -> float:
     return random.uniform(DISPATCH_DELAY_MIN, DISPATCH_DELAY_MAX)
 
 
+def normalize_code(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if value == int(value):
+            return str(int(value))
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    s = str(value).strip()
+    if not s:
+        return ""
+    try:
+        num = float(s)
+        if num == int(num):
+            return str(int(num))
+    except (ValueError, TypeError):
+        pass
+    return s
+
+
 def format_cell_value(value) -> str:
     if value is None:
         return ""
@@ -1067,12 +1088,12 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
             codigo_ai_val = row.get(col_codigo_ai, "")
             if codigo_ai_val is None:
                 codigo_ai_val = ""
-            key = str(codigo_ai_val).strip()
+            key = normalize_code(codigo_ai_val)
         else:
             assessor_val = row.get(col_assessor, "")
             if assessor_val is None:
                 assessor_val = ""
-            key = str(assessor_val).strip()
+            key = normalize_code(assessor_val)
         
         if not key:
             print(f"[GROUPING] Row {idx}: No key found, skipping")
@@ -1081,6 +1102,12 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
         if key not in grouped:
             if use_codigo_ai_mode:
                 assessor = db.query(Assessor).filter(Assessor.codigo_ai == key).first()
+                if not assessor:
+                    stripped_key = re.sub(r'^[A-Za-z]+', '', key)
+                    if stripped_key and stripped_key != key:
+                        assessor = db.query(Assessor).filter(Assessor.codigo_ai == stripped_key).first()
+                        if assessor:
+                            print(f"[GROUPING] Found assessor by stripping prefix: {key} -> {stripped_key}")
             else:
                 assessor = None
                 email_from_sheet = ""
@@ -1163,7 +1190,7 @@ def group_recommendations_by_assessor(data: List[dict], mapping: dict, custom_ma
             client_val = row.get(col_client, "")
             if client_val is None:
                 client_val = ""
-            client_id = str(client_val).strip()
+            client_id = normalize_code(client_val)
             
             if not client_id:
                 client_id = "Sem ID"
