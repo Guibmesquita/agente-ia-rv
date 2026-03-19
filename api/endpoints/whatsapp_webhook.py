@@ -553,6 +553,11 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 db.commit()
             return
         
+        if conversation.ticket_status == TicketStatusV2.SOLVED.value:
+            conversation.ticket_status = None
+            db.commit()
+            print(f"[WEBHOOK] Ticket reaberto em process_text_message (era solved): {phone}")
+        
         assessor, is_known = identify_contact(db, phone)
         print(f"[WEBHOOK] Assessor identificado: {assessor.nome if assessor else 'Nenhum'}, conhecido: {is_known}")
         
