@@ -38,6 +38,8 @@ def format_cell_value(value) -> str:
         stripped = value.strip()
         if stripped.startswith("R$") or not stripped:
             return value
+        if stripped.startswith("0") and not stripped.startswith("0."):
+            return value
         try:
             num = float(stripped)
         except (ValueError, TypeError):
