@@ -525,16 +525,16 @@ async def cache_control_middleware(request: Request, call_next):
 async def log_all_requests(request: Request, call_next):
     import time, sys
     start = time.time()
-    sys.stderr.write(
+    sys.stdout.write(
         f"[ACCESS] {request.method} {request.url.path} "
-        f"from {request.client.host if request.client else 'unknown'} "
-        f"headers={dict(request.headers)}\n"
+        f"from {request.client.host if request.client else 'unknown'}\n"
     )
-    sys.stderr.flush()
+    sys.stdout.flush()
     response = await call_next(request)
     duration = (time.time() - start) * 1000
-    sys.stderr.write(f"[ACCESS] → {response.status_code} ({duration:.0f}ms)\n")
-    sys.stderr.flush()
+    output = sys.stderr if response.status_code >= 400 else sys.stdout
+    output.write(f"[ACCESS] → {response.status_code} ({duration:.0f}ms) {request.method} {request.url.path}\n")
+    output.flush()
     return response
 
 # Configura templates Jinja2 (auto_reload=True evita cache de templates)

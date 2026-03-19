@@ -872,16 +872,21 @@ async def preview_campaign(
             
             content_lines = []
             total_recs = 0
+            has_custom_template = bool(content_template and content_template.strip())
             for client_id, client_info in clients_data.items():
                 recommendations = client_info.get("recommendations", [])
                 if recommendations:
-                    content_lines.append(f"*Cliente: {client_id}*")
+                    if not has_custom_template:
+                        content_lines.append(f"*Cliente: {client_id}*")
                     for rec in recommendations:
                         line = replace_vars(content_template, rec)
                         line = replace_vars(line, assessor_data)
                         line = replace_vars(line, extra_vars)
                         if line.strip():
-                            content_lines.append(f"• {line}")
+                            if has_custom_template:
+                                content_lines.append(line)
+                            else:
+                                content_lines.append(f"• {line}")
                         total_recs += 1
                     content_lines.append("")
             
@@ -1349,12 +1354,14 @@ def build_clients_block(clients: dict, content_template: str = None) -> str:
         return "(Nenhuma recomendação encontrada)"
     
     lines = []
+    has_custom_template = bool(content_template and content_template.strip())
     
     for client_id, client_data in clients.items():
         if not client_id:
             client_id = "Sem ID"
         
-        lines.append(f"*Cliente: {client_id}*")
+        if not has_custom_template:
+            lines.append(f"*Cliente: {client_id}*")
         
         if isinstance(client_data, dict):
             recommendations = client_data.get("recommendations", [])
@@ -1362,10 +1369,10 @@ def build_clients_block(clients: dict, content_template: str = None) -> str:
             recommendations = client_data if isinstance(client_data, list) else []
         
         for rec in recommendations:
-            if content_template:
+            if has_custom_template:
                 line = replace_vars_in_text(content_template, rec)
                 if line.strip():
-                    lines.append(f"• {line}")
+                    lines.append(line)
             else:
                 ativo_saida = rec.get('ativo_saida', 'N/A')
                 valor_saida = rec.get('valor_saida', 'R$ 0,00')
@@ -1483,8 +1490,10 @@ def build_structured_message(
                 grouped[client_id] = []
             grouped[client_id].append(row)
         
+        has_custom_template = bool(content_template and content_template.strip())
         for client_id, client_rows in grouped.items():
-            content_lines.append(f"**Cliente: {client_id}**")
+            if not has_custom_template:
+                content_lines.append(f"**Cliente: {client_id}**")
             for row in client_rows:
                 row_vars = {**base_vars, **row}
                 line = replace_vars(content_template or "", row_vars)
