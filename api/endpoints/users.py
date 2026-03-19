@@ -12,6 +12,7 @@ import os
 import uuid
 import tempfile
 import re
+import secrets
 
 from database.database import get_db
 from database.models import User
@@ -430,8 +431,8 @@ async def confirm_users_import(
                 username = f"{base_username}_{counter}"
                 counter += 1
             
-            default_password = "Mudar@123"
-            hashed_password = get_password_hash(default_password)
+            random_password = secrets.token_urlsafe(32)
+            hashed_password = get_password_hash(random_password)
             
             new_user = User(
                 username=username,

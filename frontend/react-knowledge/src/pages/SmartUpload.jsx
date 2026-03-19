@@ -135,7 +135,7 @@ export function SmartUpload() {
     if (productId) {
       productsAPI.get(productId).then((product) => {
         setSelectedProduct(product);
-      }).catch(() => {});
+      }).catch((e) => { console.warn('[SmartUpload] Erro ao carregar produto:', e.message); });
     }
   }, [searchParams]);
 
@@ -146,7 +146,7 @@ export function SmartUpload() {
       })
         .then(r => r.json())
         .then(data => { if (data.slugs) setDerivativeSlugs(data.slugs); })
-        .catch(() => {});
+        .catch((e) => { console.warn('[SmartUpload] Erro ao carregar slugs:', e.message); });
     }
   }, [materialCategories]);
 

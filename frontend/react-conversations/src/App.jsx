@@ -766,7 +766,7 @@ function App() {
     const syncAndLoad = async () => {
       try {
         await fetch(`${API_BASE}/conversations/sync`, { method: 'POST', credentials: 'include' });
-      } catch {}
+      } catch (e) { console.warn('[Conversas] Sync falhou:', e.message); }
       fetchConversations(0, false);
       fetchFilterCounts();
     };
@@ -824,7 +824,7 @@ function App() {
           const data = await res.json();
           return { token: data.token, expiresIn: data.expires_in || 300 };
         }
-      } catch {}
+      } catch (e) { console.warn('[SSE] Erro ao obter token:', e.message); }
       return null;
     };
 
@@ -897,13 +897,13 @@ function App() {
                   const freshData = await resp.json();
                   setCurrentConversation(freshData);
                 }
-              } catch {}
+              } catch (e) { console.warn('[SSE] Erro ao atualizar conversa:', e.message); }
               setConversations(prev => prev.map(c => 
                 c.id === currentConversation.id ? { ...c, unread_count: 0 } : c
               ));
             }
           }
-        } catch {}
+        } catch (e) { console.warn('[SSE] Erro ao processar evento:', e.message); }
       };
       es.onerror = () => {
         es.close();
