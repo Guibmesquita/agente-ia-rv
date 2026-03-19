@@ -118,6 +118,10 @@ export function SmartUpload() {
   const [reuploadingIds, setReuploadingIds] = useState(new Set());
   const [showMissingPdf, setShowMissingPdf] = useState(false);
   const [showFailed, setShowFailed] = useState(false);
+  const [campaignSlug, setCampaignSlug] = useState('');
+  const [campaignStructureType, setCampaignStructureType] = useState('');
+  const [campaignKeyData, setCampaignKeyData] = useState([]);
+  const [campaignDiagramFile, setCampaignDiagramFile] = useState(null);
 
   useEffect(() => {
     if (logRef.current) {
@@ -422,6 +426,15 @@ export function SmartUpload() {
       if (validUntil) formData.append('valid_until', validUntil);
       if (selectedProduct) formData.append('product_id', selectedProduct.id.toString());
 
+      if (materialCategories.includes('campanha') && campaignSlug) {
+        formData.append('campaign_slug', campaignSlug);
+        if (campaignStructureType) formData.append('campaign_structure_type', campaignStructureType);
+        const kdObj = {};
+        campaignKeyData.forEach(({ key, value }) => { if (key.trim()) kdObj[key.trim()] = value; });
+        if (Object.keys(kdObj).length > 0) formData.append('campaign_key_data', JSON.stringify(kdObj));
+        if (campaignDiagramFile) formData.append('campaign_diagram', campaignDiagramFile);
+      }
+
       const response = await fetch('/api/products/batch-upload', {
         method: 'POST',
         body: formData,
@@ -446,6 +459,10 @@ export function SmartUpload() {
       setTags([]);
       setValidFrom('');
       setValidUntil('');
+      setCampaignSlug('');
+      setCampaignStructureType('');
+      setCampaignKeyData([]);
+      setCampaignDiagramFile(null);
       setStep(1);
       setUploading(false);
     } catch (err) {
@@ -1067,6 +1084,117 @@ export function SmartUpload() {
         value={materialCategories} 
         onChange={setMaterialCategories} 
       />
+
+      {materialCategories.includes('campanha') && (
+        <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-5 h-5 rounded bg-amber-500 flex items-center justify-center">
+              <span className="text-white text-xs font-bold">C</span>
+            </div>
+            <span className="text-sm font-semibold text-amber-800">Configuração de Campanha</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-amber-700 mb-1">Slug da Campanha *</label>
+              <input
+                type="text"
+                value={campaignSlug}
+                onChange={(e) => setCampaignSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                placeholder="put-spread-petr4"
+                className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm
+                           focus:outline-none focus:ring-2 focus:ring-amber-400/40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-amber-700 mb-1">Tipo de Estrutura</label>
+              <select
+                value={campaignStructureType}
+                onChange={(e) => setCampaignStructureType(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm
+                           focus:outline-none focus:ring-2 focus:ring-amber-400/40"
+              >
+                <option value="">Selecione...</option>
+                <option value="put-spread">Put Spread</option>
+                <option value="call-spread">Call Spread</option>
+                <option value="collar">Collar</option>
+                <option value="booster">Booster</option>
+                <option value="fence">Fence</option>
+                <option value="reversao">Reversão</option>
+                <option value="seagull">Seagull</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-amber-700 mb-1">Dados da Estrutura</label>
+            <div className="space-y-2">
+              {campaignKeyData.map((row, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={row.key}
+                    onChange={(e) => {
+                      const updated = [...campaignKeyData];
+                      updated[i] = { ...updated[i], key: e.target.value };
+                      setCampaignKeyData(updated);
+                    }}
+                    placeholder="Chave (ex: Strike)"
+                    className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-sm"
+                  />
+                  <input
+                    type="text"
+                    value={row.value}
+                    onChange={(e) => {
+                      const updated = [...campaignKeyData];
+                      updated[i] = { ...updated[i], value: e.target.value };
+                      setCampaignKeyData(updated);
+                    }}
+                    placeholder="Valor (ex: 100%)"
+                    className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCampaignKeyData(campaignKeyData.filter((_, j) => j !== i))}
+                    className="text-amber-400 hover:text-red-500 p-1"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setCampaignKeyData([...campaignKeyData, { key: '', value: '' }])}
+                className="text-xs text-amber-700 hover:text-amber-900 font-medium"
+              >
+                + Adicionar campo
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-amber-700 mb-1">Diagrama de Payoff (opcional)</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setCampaignDiagramFile(e.target.files[0] || null)}
+                className="text-xs text-amber-700 file:mr-2 file:py-1 file:px-3 file:rounded-lg
+                           file:border file:border-amber-300 file:bg-white file:text-sm file:text-amber-700
+                           file:cursor-pointer hover:file:bg-amber-100"
+              />
+              {campaignDiagramFile && (
+                <span className="text-xs text-green-600">{campaignDiagramFile.name}</span>
+              )}
+            </div>
+          </div>
+
+          <p className="text-xs text-amber-600">
+            Uma estrutura de campanha será criada automaticamente e injetada no prompt do agente durante o período de validade.
+          </p>
+        </div>
+      )}
 
       {files.length === 1 && (
         <div>

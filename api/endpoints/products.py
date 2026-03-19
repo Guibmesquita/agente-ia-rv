@@ -3307,6 +3307,10 @@ async def batch_upload(
     valid_from: str = Form(None),
     valid_until: str = Form(None),
     product_id: str = Form(None),
+    campaign_slug: str = Form(None),
+    campaign_structure_type: str = Form(None),
+    campaign_key_data: str = Form(None),
+    campaign_diagram: UploadFile = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -3316,6 +3320,23 @@ async def batch_upload(
     from services.upload_queue import upload_queue, UploadQueueItem
     from database.models import ProcessingStatus
     import json as json_lib
+    import re as re_lib
+
+    if campaign_slug and material_type == "campanha":
+        if not re_lib.match(r'^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$', campaign_slug):
+            raise HTTPException(status_code=400, detail="campaign_slug inválido. Use apenas letras minúsculas, números e hífens (3-64 caracteres).")
+        if campaign_key_data:
+            try:
+                kd_parsed = json_lib.loads(campaign_key_data)
+                if not isinstance(kd_parsed, dict):
+                    raise ValueError()
+            except (json_lib.JSONDecodeError, ValueError):
+                raise HTTPException(status_code=400, detail="campaign_key_data deve ser um JSON object válido.")
+        if campaign_diagram and campaign_diagram.filename:
+            allowed_ext = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+            ext_check = os.path.splitext(campaign_diagram.filename)[1].lower()
+            if ext_check not in allowed_ext:
+                raise HTTPException(status_code=400, detail=f"Tipo de arquivo do diagrama não suportado. Permitidos: {', '.join(allowed_ext)}")
 
     parsed_tags = []
     parsed_categories = []
@@ -3427,11 +3448,75 @@ async def batch_upload(
             selected_product_id=selected_product_id,
         )
         upload_queue.add(queue_item)
+
+        campaign_structure_id = None
+        campaign_error = None
+        if campaign_slug and material_type == "campanha":
+            from database.models import CampaignStructure
+            existing_cs = db.query(CampaignStructure).filter(
+                CampaignStructure.campaign_slug == campaign_slug
+            ).first()
+            if existing_cs:
+                existing_cs.material_id = material.id
+                if parsed_valid_from:
+                    existing_cs.valid_from = parsed_valid_from
+                if parsed_valid_until:
+                    existing_cs.valid_until = parsed_valid_until
+                db.commit()
+                campaign_structure_id = existing_cs.id
+                print(f"[CAMPAIGN] Estrutura existente relinked: {campaign_slug} (id={existing_cs.id}) → material {material.id}")
+            else:
+                try:
+                    product = db.query(Product).filter(Product.id == file_product_id).first()
+                    ticker = product.ticker if product else None
+
+                    cs = CampaignStructure(
+                        name=name,
+                        ticker=ticker,
+                        structure_type=campaign_structure_type or "outro",
+                        campaign_slug=campaign_slug,
+                        key_data=campaign_key_data if campaign_key_data else "{}",
+                        material_id=material.id,
+                        valid_from=parsed_valid_from,
+                        valid_until=parsed_valid_until,
+                        is_active=1,
+                        created_by=int(current_user.id),
+                    )
+
+                    if campaign_diagram and campaign_diagram.filename:
+                        allowed_ext = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+                        ext = os.path.splitext(campaign_diagram.filename)[1].lower()
+                        if ext not in allowed_ext:
+                            ext = ".png"
+                        diagram_name = f"{campaign_slug}{ext}"
+                        diagram_dir = os.path.join("static", "derivatives_diagrams")
+                        os.makedirs(diagram_dir, exist_ok=True)
+                        diagram_content = await campaign_diagram.read()
+                        max_diagram_size = 10 * 1024 * 1024
+                        if len(diagram_content) > max_diagram_size:
+                            campaign_error = "Diagrama excede 10MB"
+                        else:
+                            with open(os.path.join(diagram_dir, diagram_name), "wb") as df:
+                                df.write(diagram_content)
+                            cs.diagram_filename = diagram_name
+
+                    db.add(cs)
+                    db.commit()
+                    db.refresh(cs)
+                    campaign_structure_id = cs.id
+                    print(f"[CAMPAIGN] Estrutura de campanha criada: {campaign_slug} (id={cs.id})")
+                except Exception as e:
+                    db.rollback()
+                    campaign_error = f"Erro ao criar estrutura: {str(e)}"
+                    print(f"[CAMPAIGN] {campaign_error}")
+
         queued_items.append({
             "filename": file.filename,
             "upload_id": upload_id,
             "material_id": material.id,
-            "queued": True
+            "queued": True,
+            "campaign_structure_id": campaign_structure_id,
+            "campaign_error": campaign_error,
         })
 
     return {
