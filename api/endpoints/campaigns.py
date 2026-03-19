@@ -30,6 +30,29 @@ def get_random_dispatch_delay() -> float:
     """Retorna um delay aleatório entre 3 e 10 segundos para simular envio manual."""
     return random.uniform(DISPATCH_DELAY_MIN, DISPATCH_DELAY_MAX)
 
+
+def format_cell_value(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("R$") or not stripped:
+            return value
+        try:
+            num = float(stripped)
+        except (ValueError, TypeError):
+            return value
+        if num == int(num):
+            return str(int(num))
+        return f"{num:.2f}"
+    if isinstance(value, float):
+        if value == int(value):
+            return str(int(value))
+        return f"{value:.2f}"
+    if isinstance(value, int):
+        return str(value)
+    return str(value)
+
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
 
@@ -834,7 +857,7 @@ async def preview_campaign(
                     if isinstance(value, (dict, list)):
                         continue
                     norm_key = normalize_var_name(key)
-                    str_value = str(value) if value else ""
+                    str_value = format_cell_value(value)
                     
                     if norm_key in normalized_data:
                         existing = normalized_data[norm_key]
@@ -1275,13 +1298,13 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     if spreadsheet_data:
         print(f"[BUILD_MSG] Spreadsheet data keys: {list(spreadsheet_data.keys())}")
         for col_name, col_value in spreadsheet_data.items():
-            val_str = str(col_value) if col_value is not None else ""
+            val_str = format_cell_value(col_value)
             for pattern in [f"{{{{{col_name}}}}}", f"{{{{ {col_name} }}}}", f"{{{col_name}}}"]:
                 message = message.replace(pattern, val_str)
     
     custom_fields = assessor_data.get("custom_fields", {})
     for var_name, value in custom_fields.items():
-        val_str = str(value) if value else ""
+        val_str = format_cell_value(value)
         for pattern in [f"{{{{{var_name}}}}}", f"{{{{ {var_name} }}}}", f"{{{var_name}}}"]:
             message = message.replace(pattern, val_str)
     
@@ -1331,7 +1354,7 @@ def build_clients_block(clients: dict, content_template: str = None) -> str:
         for key, value in data.items():
             if isinstance(value, (dict, list)):
                 continue
-            str_value = str(value) if value is not None else ""
+            str_value = format_cell_value(value)
             norm_key = normalize_var_name(key)
             normalized_data[norm_key] = str_value
             normalized_data[str(key)] = str_value
@@ -1441,7 +1464,7 @@ def build_structured_message(
             if isinstance(value, (dict, list)):
                 continue
             norm_key = normalize_var_name(key)
-            str_value = str(value) if value is not None else ""
+            str_value = format_cell_value(value)
             
             if norm_key in normalized_data:
                 existing = normalized_data[norm_key]
@@ -2014,7 +2037,7 @@ def replace_variables_generic(text: str, variables: dict) -> str:
     
     normalized_vars = {}
     for key, value in variables.items():
-        str_value = str(value) if value is not None else ""
+        str_value = format_cell_value(value)
         normalized_vars[key] = str_value
         normalized_vars[normalize_var_name(key)] = str_value
     
@@ -2058,7 +2081,7 @@ def build_assessor_variables(assessor: dict) -> dict:
     print(f"[BUILD_VARS] nome value: {assessor.get('nome', 'NOT_FOUND')}")
     
     for key, value in assessor.items():
-        str_value = str(value) if value is not None else ""
+        str_value = format_cell_value(value)
         variables[key] = str_value
     
     nome = assessor.get("nome", "")
