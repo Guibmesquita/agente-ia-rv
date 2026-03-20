@@ -152,6 +152,15 @@ function ChatBubble({ message, contactName, onContextMenu }) {
   const hasError = message.ai_intent === 'error_suppressed';
   const [errorTooltipOpen, setErrorTooltipOpen] = useState(false);
 
+  const errorType = (() => {
+    if (!message.ai_response) return 'Erro desconhecido';
+    const raw = message.ai_response.toLowerCase();
+    if (raw.includes('quota') || raw.includes('429')) return 'OpenAI — cota esgotada (quota)';
+    if (raw.includes('timeout')) return 'OpenAI — timeout';
+    if (raw.includes('api')) return 'OpenAI — erro de API';
+    return 'Erro interno do bot';
+  })();
+
   const handleMenuClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -235,6 +244,15 @@ function ChatBubble({ message, contactName, onContextMenu }) {
                 </div>
                 <div className="p-4 space-y-3">
                   <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                      <AlertTriangle className="w-4 h-4 text-red-500" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Tipo do erro</p>
+                      <p className="text-sm text-gray-900 font-medium mt-0.5">{errorType}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
                       <Clock className="w-4 h-4 text-gray-500" />
                     </div>
@@ -245,7 +263,7 @@ function ChatBubble({ message, contactName, onContextMenu }) {
                   </div>
                   {message.ai_response && (
                     <div className="border-t border-gray-100 pt-3">
-                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Detalhe do erro</p>
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Mensagem do erro</p>
                       <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                         <p className="text-xs text-gray-700 font-mono leading-relaxed break-words">{message.ai_response}</p>
                       </div>
@@ -553,9 +571,12 @@ function App() {
       if (res.ok) {
         const data = await res.json();
         setBotHealth(prev => {
-          const prevHas = prev?.has_errors;
-          const newHas = data.has_errors;
-          if (prevHas !== newHas) setBannerDismissed(false);
+          const changed =
+            prev?.has_errors !== data.has_errors ||
+            prev?.error_count !== data.error_count ||
+            prev?.last_error_at !== data.last_error_at ||
+            prev?.last_error_type !== data.last_error_type;
+          if (changed) setBannerDismissed(false);
           return data;
         });
       }
