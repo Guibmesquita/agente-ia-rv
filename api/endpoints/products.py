@@ -2644,6 +2644,27 @@ async def get_processing_status(
     }
 
 
+def _restore_pdf_from_db(db, material_id: int) -> str:
+    """
+    Restaura o PDF do banco de dados (material_files) para o filesystem.
+    Retorna o caminho do arquivo restaurado ou None se não encontrado no banco.
+    """
+    from database.models import MaterialFile
+    import re as _re
+    mf = db.query(MaterialFile).filter(MaterialFile.material_id == material_id).first()
+    if not mf or not mf.file_data:
+        return None
+
+    restore_dir = os.path.join("uploads", "materials")
+    os.makedirs(restore_dir, exist_ok=True)
+    safe_filename = _re.sub(r'[^\w\-.]', '_', os.path.basename(mf.filename or f"material_{material_id}.pdf"))
+    restored_path = os.path.join(restore_dir, f"restored_{material_id}_{safe_filename}")
+    with open(restored_path, "wb") as f:
+        f.write(mf.file_data)
+    print(f"[RESTORE] PDF restaurado do banco para {restored_path} (material_id={material_id}, {mf.file_size} bytes)")
+    return restored_path
+
+
 @router.post("/materials/{material_id}/queue-resume")
 async def queue_resume_upload(
     material_id: int,
@@ -2677,7 +2698,11 @@ async def queue_resume_upload(
         file_path = material.file_path
 
     if not file_path:
-        raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado. Faça um novo upload.")
+        restored = _restore_pdf_from_db(db, material_id)
+        if restored:
+            file_path = restored
+        else:
+            raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado. Faça um novo upload.")
 
     if job and job.status == ProcessingJobStatus.COMPLETED.value:
         if job.last_processed_page and job.total_pages and job.last_processed_page >= job.total_pages:
@@ -2750,10 +2775,22 @@ async def resume_upload(
     start_from_zero = False
     
     if job:
-        if job.status not in [ProcessingJobStatus.PAUSED.value, ProcessingJobStatus.FAILED.value]:
+        if job.status == ProcessingJobStatus.PROCESSING.value:
+            from datetime import timedelta
+            stale_threshold = datetime.utcnow() - timedelta(minutes=30)
+            last_activity = (job.updated_at or job.created_at)
+            if last_activity:
+                last_activity_naive = last_activity.replace(tzinfo=None) if last_activity.tzinfo else last_activity
+                if last_activity_naive > stale_threshold:
+                    raise HTTPException(status_code=400, detail="Este documento está sendo processado no momento. Aguarde a conclusão.")
+            job.status = ProcessingJobStatus.FAILED.value
+            job.error_message = "Processamento interrompido (travado em processing)"
+            db.commit()
+            print(f"[RESUME] Job {job.id} (material {material_id}) transicionado de 'processing' para 'failed' (travado)")
+        elif job.status not in [ProcessingJobStatus.PAUSED.value, ProcessingJobStatus.FAILED.value]:
             raise HTTPException(status_code=400, detail=f"Job não pode ser retomado (status: {job.status})")
         
-        if os.path.exists(job.file_path):
+        if job.file_path and os.path.exists(job.file_path):
             file_path_to_use = job.file_path
         elif material.file_path and os.path.exists(material.file_path):
             file_path_to_use = material.file_path
@@ -2764,7 +2801,17 @@ async def resume_upload(
             start_from_zero = True
     
     if not file_path_to_use:
-        raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado. Faça um novo upload do documento.")
+        restored = _restore_pdf_from_db(db, material_id)
+        if restored:
+            file_path_to_use = restored
+            if job:
+                job.file_path = restored
+                db.commit()
+                start_from_zero = not (job.last_processed_page and job.last_processed_page > 0)
+            else:
+                start_from_zero = True
+        else:
+            raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado no servidor nem no banco de dados.")
     
     user_id = current_user.id
     

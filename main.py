@@ -119,6 +119,35 @@ async def run_init_background():
     except Exception as e:
         print(f"[INIT] Erro ao retomar uploads: {e}")
 
+    try:
+        _cleanup_stale_processing_jobs()
+    except Exception as e:
+        print(f"[INIT] Erro no cleanup de jobs travados: {e}")
+
+
+def _cleanup_stale_processing_jobs():
+    """Marca jobs travados em 'processing' (>30min sem update) como 'failed'."""
+    from database.database import SessionLocal
+    from database.models import DocumentProcessingJob, ProcessingJobStatus
+    from datetime import datetime, timedelta
+    from sqlalchemy import func as sql_func
+
+    db = SessionLocal()
+    try:
+        stale_cutoff = datetime.utcnow() - timedelta(minutes=30)
+        stale_jobs = db.query(DocumentProcessingJob).filter(
+            DocumentProcessingJob.status == ProcessingJobStatus.PROCESSING.value,
+            sql_func.coalesce(DocumentProcessingJob.updated_at, DocumentProcessingJob.created_at) < stale_cutoff
+        ).all()
+        if stale_jobs:
+            for j in stale_jobs:
+                j.status = ProcessingJobStatus.FAILED.value
+                j.error_message = "Processamento interrompido (cleanup automatico na inicializacao)"
+            db.commit()
+            print(f"[INIT] {len(stale_jobs)} jobs travados em 'processing' marcados como 'failed'")
+    finally:
+        db.close()
+
 
 def _apply_incremental_migrations():
     """
