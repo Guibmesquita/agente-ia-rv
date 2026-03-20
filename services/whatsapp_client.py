@@ -3,10 +3,16 @@ Cliente para a Z-API (WhatsApp API).
 Permite enviar e receber mensagens via WhatsApp.
 Documentação: https://developer.z-api.io/
 """
+import asyncio
 import httpx
 import os
+import uuid
+import logging
+from datetime import datetime
 from typing import Optional, Dict, Any
 from core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -89,8 +95,150 @@ class ZAPIClient:
             "zaap_id": raw_data.get("zaapId"),
             "message_id": raw_data.get("messageId", raw_data.get("id"))
         }
+
+    async def _send_with_retry(self, url: str, payload: dict, headers: dict, timeout: float = 30.0) -> dict:
+        """
+        Envia request POST com até 3 retentativas para falhas transitórias.
+        Total de 4 tentativas: 1 inicial + até 3 retries.
+        Retry em TimeoutException, ConnectError e status >= 500.
+        Status 4xx retorna imediatamente sem retry.
+        Backoff entre tentativas: [1s, 3s, 7s].
+        """
+        backoff_delays = [1, 3, 7]
+        last_error = None
+        max_retries = 3
+        total_attempts = 1 + max_retries
+
+        for attempt in range(total_attempts):
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, json=payload, headers=headers, timeout=timeout)
+
+                    try:
+                        raw_data = response.json() if response.content else {}
+                    except Exception:
+                        raw_data = {"error": f"Non-JSON response (HTTP {response.status_code})"}
+
+                    if response.status_code >= 500:
+                        last_error = self._parse_response(response, raw_data)
+                        if attempt < total_attempts - 1:
+                            delay = backoff_delays[attempt]
+                            logger.warning(f"[Z-API] Retry {attempt+1}/{max_retries} após HTTP {response.status_code}, aguardando {delay}s")
+                            await asyncio.sleep(delay)
+                            continue
+                        return last_error
+
+                    if response.status_code >= 400:
+                        result = self._parse_response(response, raw_data)
+                        logger.error(f"[Z-API] Erro 4xx (sem retry): HTTP {response.status_code} - {result.get('error')}")
+                        return result
+
+                    return self._parse_response(response, raw_data)
+
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                error_type = "Timeout" if isinstance(e, httpx.TimeoutException) else "ConnectError"
+                last_error = {
+                    "success": False,
+                    "error": f"{error_type}: {e}",
+                    "error_code": "TIMEOUT" if isinstance(e, httpx.TimeoutException) else "CONNECTION_ERROR"
+                }
+                if attempt < total_attempts - 1:
+                    delay = backoff_delays[attempt]
+                    logger.warning(f"[Z-API] Retry {attempt+1}/{max_retries} após {error_type}, aguardando {delay}s")
+                    await asyncio.sleep(delay)
+                    continue
+                return last_error
+            except httpx.HTTPError as e:
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "error_code": "HTTP_ERROR"
+                }
+
+        return last_error or {"success": False, "error": "Max retries exceeded", "error_code": "MAX_RETRIES"}
+
+    def _get_outbox_session(self):
+        from database.database import SessionLocal
+        return SessionLocal()
+
+    def _ensure_outbox(self, phone: str, message_type: str, dedupe_key: Optional[str] = None) -> tuple:
+        """
+        Verifica idempotência via tabela outbox_messages.
+        Retorna (dedupe_key, idempotent_response_or_None, outbox_record_or_None).
+        Se já existe registro SENT com essa chave, retorna resposta idempotente.
+        Usa INSERT com tratamento de IntegrityError para atomicidade.
+        """
+        from database.models import OutboxMessage, OutboxMessageStatus
+        from sqlalchemy.exc import IntegrityError
+        if not dedupe_key:
+            dedupe_key = str(uuid.uuid4())
+
+        db = self._get_outbox_session()
+        try:
+            outbox = OutboxMessage(
+                dedupe_key=dedupe_key,
+                phone=phone,
+                message_type=message_type,
+                status=OutboxMessageStatus.PENDING.value
+            )
+            db.add(outbox)
+            db.commit()
+            db.refresh(outbox)
+            return dedupe_key, None, outbox
+        except IntegrityError:
+            db.rollback()
+            existing = db.query(OutboxMessage).filter(OutboxMessage.dedupe_key == dedupe_key).first()
+            if existing and existing.status == OutboxMessageStatus.SENT.value:
+                return dedupe_key, {
+                    "success": True,
+                    "idempotent": True,
+                    "zaap_id": existing.zaap_id,
+                    "message_id": None,
+                    "raw_response": {"note": "Idempotent: message already sent"}
+                }, None
+            return dedupe_key, None, existing
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[Z-API] Outbox DB error (fail-closed): {e}")
+            return dedupe_key, {
+                "success": False,
+                "error": f"Outbox persistence failed: {e}",
+                "error_code": "OUTBOX_ERROR"
+            }, None
+        finally:
+            db.close()
+
+    def _mark_outbox_sent(self, dedupe_key: str, zaap_id: Optional[str] = None):
+        from database.models import OutboxMessage, OutboxMessageStatus
+        db = self._get_outbox_session()
+        try:
+            record = db.query(OutboxMessage).filter(OutboxMessage.dedupe_key == dedupe_key).first()
+            if record:
+                record.status = OutboxMessageStatus.SENT.value
+                record.zaap_id = zaap_id
+                record.sent_at = datetime.utcnow()
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[Z-API] Failed to mark outbox sent: {e}")
+        finally:
+            db.close()
+
+    def _mark_outbox_failed(self, dedupe_key: str):
+        from database.models import OutboxMessage, OutboxMessageStatus
+        db = self._get_outbox_session()
+        try:
+            record = db.query(OutboxMessage).filter(OutboxMessage.dedupe_key == dedupe_key).first()
+            if record:
+                record.status = OutboxMessageStatus.FAILED.value
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[Z-API] Failed to mark outbox failed: {e}")
+        finally:
+            db.close()
     
-    async def send_text(self, to: str, message: str, delay_message: int = 0, delay_typing: int = 0) -> dict:
+    async def send_text(self, to: str, message: str, delay_message: int = 0, delay_typing: int = 0, dedupe_key: Optional[str] = None) -> dict:
         """
         Envia uma mensagem de texto para um número de WhatsApp.
         
@@ -99,6 +247,7 @@ class ZAPIClient:
             message: Texto da mensagem a ser enviada
             delay_message: Delay entre mensagens em segundos (1-15)
             delay_typing: Tempo mostrando "Digitando..." em segundos (1-15)
+            dedupe_key: Chave de idempotência (opcional, gera uuid4 se não fornecido)
             
         Returns:
             Resposta da API Z-API com campos padronizados:
@@ -107,43 +256,28 @@ class ZAPIClient:
             - message_id: str (ID no WhatsApp)
             - error: str (se houver erro)
         """
+        normalized_phone = self._normalize_phone(to)
+        dedupe_key, idempotent_response, _ = self._ensure_outbox(normalized_phone, "text", dedupe_key)
+        if idempotent_response:
+            return idempotent_response
+
         url = f"{self._get_base_url()}/send-text"
-        
         payload = {
-            "phone": self._normalize_phone(to),
-            "message": message
+            "phone": normalized_phone,
+            "message": message,
+            "messageId": dedupe_key
         }
-        
         if delay_message > 0:
             payload["delayMessage"] = min(max(delay_message, 1), 15)
         if delay_typing > 0:
             payload["delayTyping"] = min(max(delay_typing, 1), 15)
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(url, json=payload, headers=self._get_headers(), timeout=30.0)
-                raw_data = response.json() if response.content else {}
-                return self._parse_response(response, raw_data)
-                
-            except httpx.TimeoutException:
-                return {
-                    "success": False,
-                    "error": "Timeout ao conectar com o servidor Z-API",
-                    "error_code": "TIMEOUT"
-                }
-            except httpx.ConnectError as e:
-                return {
-                    "success": False,
-                    "error": f"Não foi possível conectar ao servidor Z-API",
-                    "error_code": "CONNECTION_ERROR",
-                    "details": str(e)
-                }
-            except httpx.HTTPError as e:
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "error_code": "HTTP_ERROR"
-                }
+
+        result = await self._send_with_retry(url, payload, self._get_headers(), timeout=30.0)
+        if result.get("success"):
+            self._mark_outbox_sent(dedupe_key, result.get("zaap_id"))
+        else:
+            self._mark_outbox_failed(dedupe_key)
+        return result
     
     async def send_composing(self, to: str) -> dict:
         url = f"{self._get_base_url()}/send-action"
@@ -160,7 +294,7 @@ class ZAPIClient:
                 print(f"[Z-API] Erro ao enviar composing para {to}: {e}")
                 return {"success": False, "error": str(e)}
 
-    async def send_image(self, to: str, image_url: str, caption: str = "", view_once: bool = False) -> dict:
+    async def send_image(self, to: str, image_url: str, caption: str = "", view_once: bool = False, dedupe_key: Optional[str] = None) -> dict:
         """
         Envia uma imagem para um número de WhatsApp.
         
@@ -169,92 +303,90 @@ class ZAPIClient:
             image_url: URL da imagem ou Base64
             caption: Legenda da imagem (opcional)
             view_once: Se é visualização única
+            dedupe_key: Chave de idempotência (opcional)
         """
+        normalized_phone = self._normalize_phone(to)
+        dedupe_key, idempotent_response, _ = self._ensure_outbox(normalized_phone, "image", dedupe_key)
+        if idempotent_response:
+            return idempotent_response
+
         url = f"{self._get_base_url()}/send-image"
-        
         payload = {
-            "phone": self._normalize_phone(to),
+            "phone": normalized_phone,
             "image": image_url,
-            "viewOnce": view_once
+            "viewOnce": view_once,
+            "messageId": dedupe_key
         }
-        
         if caption:
             payload["caption"] = caption
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(url, json=payload, headers=self._get_headers(), timeout=60.0)
-                raw_data = response.json() if response.content else {}
-                return self._parse_response(response, raw_data)
-            except Exception as e:
-                return {"success": False, "error": str(e), "error_code": "EXCEPTION"}
+
+        result = await self._send_with_retry(url, payload, self._get_headers(), timeout=60.0)
+        if result.get("success"):
+            self._mark_outbox_sent(dedupe_key, result.get("zaap_id"))
+        else:
+            self._mark_outbox_failed(dedupe_key)
+        return result
     
-    async def send_video(self, to: str, video_url: str, caption: str = "", view_once: bool = False) -> dict:
+    async def send_video(self, to: str, video_url: str, caption: str = "", view_once: bool = False, dedupe_key: Optional[str] = None) -> dict:
         """
         Envia um vídeo para um número de WhatsApp.
-        
-        Args:
-            to: Número de telefone no formato internacional
-            video_url: URL do vídeo ou Base64
-            caption: Legenda do vídeo (opcional)
-            view_once: Se é visualização única
         """
+        normalized_phone = self._normalize_phone(to)
+        dedupe_key, idempotent_response, _ = self._ensure_outbox(normalized_phone, "video", dedupe_key)
+        if idempotent_response:
+            return idempotent_response
+
         url = f"{self._get_base_url()}/send-video"
-        
         payload = {
-            "phone": self._normalize_phone(to),
+            "phone": normalized_phone,
             "video": video_url,
-            "viewOnce": view_once
+            "viewOnce": view_once,
+            "messageId": dedupe_key
         }
-        
         if caption:
             payload["caption"] = caption
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(url, json=payload, headers=self._get_headers(), timeout=120.0)
-                raw_data = response.json() if response.content else {}
-                return self._parse_response(response, raw_data)
-            except Exception as e:
-                return {"success": False, "error": str(e), "error_code": "EXCEPTION"}
+
+        result = await self._send_with_retry(url, payload, self._get_headers(), timeout=120.0)
+        if result.get("success"):
+            self._mark_outbox_sent(dedupe_key, result.get("zaap_id"))
+        else:
+            self._mark_outbox_failed(dedupe_key)
+        return result
     
-    async def send_audio(self, to: str, audio_url: str, view_once: bool = False, waveform: bool = True) -> dict:
+    async def send_audio(self, to: str, audio_url: str, view_once: bool = False, waveform: bool = True, dedupe_key: Optional[str] = None) -> dict:
         """
         Envia um áudio para um número de WhatsApp.
-        
-        Args:
-            to: Número de telefone no formato internacional
-            audio_url: URL do áudio ou Base64
-            view_once: Se é visualização única
-            waveform: Se deve mostrar ondas sonoras
         """
+        normalized_phone = self._normalize_phone(to)
+        dedupe_key, idempotent_response, _ = self._ensure_outbox(normalized_phone, "audio", dedupe_key)
+        if idempotent_response:
+            return idempotent_response
+
         url = f"{self._get_base_url()}/send-audio"
-        
         payload = {
-            "phone": self._normalize_phone(to),
+            "phone": normalized_phone,
             "audio": audio_url,
             "viewOnce": view_once,
-            "waveform": waveform
+            "waveform": waveform,
+            "messageId": dedupe_key
         }
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(url, json=payload, headers=self._get_headers(), timeout=60.0)
-                raw_data = response.json() if response.content else {}
-                return self._parse_response(response, raw_data)
-            except Exception as e:
-                return {"success": False, "error": str(e), "error_code": "EXCEPTION"}
+
+        result = await self._send_with_retry(url, payload, self._get_headers(), timeout=60.0)
+        if result.get("success"):
+            self._mark_outbox_sent(dedupe_key, result.get("zaap_id"))
+        else:
+            self._mark_outbox_failed(dedupe_key)
+        return result
     
-    async def send_document(self, to: str, document_url: str, filename: str = "", caption: str = "") -> dict:
+    async def send_document(self, to: str, document_url: str, filename: str = "", caption: str = "", dedupe_key: Optional[str] = None) -> dict:
         """
         Envia um documento para um número de WhatsApp.
-        
-        Args:
-            to: Número de telefone no formato internacional
-            document_url: URL do documento ou Base64
-            filename: Nome do arquivo
-            caption: Descrição do documento (opcional)
         """
+        normalized_phone = self._normalize_phone(to)
+        dedupe_key, idempotent_response, _ = self._ensure_outbox(normalized_phone, "document", dedupe_key)
+        if idempotent_response:
+            return idempotent_response
+
         extension = "pdf"
         if filename:
             parts = filename.rsplit('.', 1)
@@ -262,26 +394,24 @@ class ZAPIClient:
                 extension = parts[1].lower()
         elif document_url and '.' in document_url:
             extension = document_url.rsplit('.', 1)[-1].lower().split('?')[0]
-        
+
         url = f"{self._get_base_url()}/send-document/{extension}"
-        
         payload = {
-            "phone": self._normalize_phone(to),
-            "document": document_url
+            "phone": normalized_phone,
+            "document": document_url,
+            "messageId": dedupe_key
         }
-        
         if filename:
             payload["fileName"] = filename
         if caption:
             payload["caption"] = caption
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(url, json=payload, headers=self._get_headers(), timeout=60.0)
-                raw_data = response.json() if response.content else {}
-                return self._parse_response(response, raw_data)
-            except Exception as e:
-                return {"success": False, "error": str(e), "error_code": "EXCEPTION"}
+
+        result = await self._send_with_retry(url, payload, self._get_headers(), timeout=60.0)
+        if result.get("success"):
+            self._mark_outbox_sent(dedupe_key, result.get("zaap_id"))
+        else:
+            self._mark_outbox_failed(dedupe_key)
+        return result
     
     async def send_file(self, to: str, file_url: str, file_type: str, caption: str = "", filename: str = "") -> dict:
         """

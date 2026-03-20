@@ -4,7 +4,7 @@ Processa mensagens de texto, áudio, imagem, vídeo e documentos.
 Registra todas as mensagens no banco de dados.
 Documentação: https://developer.z-api.io/webhooks/on-message-received
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List, Tuple
@@ -1185,6 +1185,7 @@ async def process_document_message(phone: str, media_url: str, filename: str, db
 
 @router.post("/zapi")
 async def zapi_webhook(
+    request: Request,
     payload: Dict[str, Any],
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
@@ -1196,6 +1197,13 @@ async def zapi_webhook(
     - DeliveryCallback: Confirmação de mensagens enviadas via API
     Documentação: https://developer.z-api.io/webhooks/on-message-received
     """
+    from core.config import get_settings as _get_settings
+    _settings = _get_settings()
+    expected_token = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
+    incoming_token = request.headers.get("client-token", "")
+    if not expected_token or incoming_token != expected_token:
+        raise HTTPException(status_code=401, detail="Invalid or missing Client-Token")
+
     event_type = payload.get("type", "")
     
     if event_type == "DeliveryCallback":

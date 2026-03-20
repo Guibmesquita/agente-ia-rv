@@ -160,6 +160,17 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_campaign_structures_slug ON campaign_structures(campaign_slug)",
         "CREATE INDEX IF NOT EXISTS ix_campaign_structures_ticker ON campaign_structures(ticker)",
         "CREATE INDEX IF NOT EXISTS ix_campaign_structures_name ON campaign_structures(name)",
+        """CREATE TABLE IF NOT EXISTS outbox_messages (
+            id SERIAL PRIMARY KEY,
+            dedupe_key VARCHAR(255) NOT NULL UNIQUE,
+            phone VARCHAR(50) NOT NULL,
+            message_type VARCHAR(20) NOT NULL,
+            status VARCHAR(10) NOT NULL DEFAULT 'PENDING',
+            zaap_id VARCHAR(255),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            sent_at TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_outbox_messages_dedupe_key ON outbox_messages(dedupe_key)",
     ]
     db = SessionLocal()
     try:

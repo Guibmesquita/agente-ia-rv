@@ -1285,8 +1285,26 @@ class DocumentEmbedding(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class OutboxMessageStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+
+
+class OutboxMessage(Base):
+    __tablename__ = "outbox_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dedupe_key = Column(String(255), unique=True, nullable=False, index=True)
+    phone = Column(String(50), nullable=False)
+    message_type = Column(String(20), nullable=False)
+    status = Column(String(10), default=OutboxMessageStatus.PENDING.value, nullable=False)
+    zaap_id = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class RevokedToken(Base):
-    """Tokens JWT revogados (blacklist). Permite invalidar tokens antes da expiração natural."""
     __tablename__ = "revoked_tokens"
 
     jti = Column(String(36), primary_key=True)
