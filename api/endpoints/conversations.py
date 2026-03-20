@@ -98,6 +98,7 @@ class MessageResponse(BaseModel):
     transcription: Optional[str] = None
     ai_response: Optional[str] = None
     ai_intent: Optional[str] = None
+    message_status: Optional[str] = None
     is_from_campaign: bool = False
     created_at: Optional[datetime] = None
 
@@ -760,6 +761,7 @@ async def get_conversation_messages(
             transcription=msg.transcription,
             ai_response=msg.ai_response,
             ai_intent=msg.ai_intent,
+            message_status=msg.message_status,
             is_from_campaign=msg.is_from_campaign or False,
             created_at=msg.created_at
         )

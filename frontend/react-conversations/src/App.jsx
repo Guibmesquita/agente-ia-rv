@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, User, Bot, Send, UserCheck, Loader2, MessageCircle, CheckCheck, MoreVertical, Copy, Reply, Trash2, Forward, X, Phone, AlertCircle, Clock, CheckCircle2, ArrowUpCircle, Filter, SlidersHorizontal, Calendar, Building2, Users, Tag, Info, XCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Search, Plus, User, Bot, Send, UserCheck, Loader2, MessageCircle, CheckCheck, Check, MoreVertical, Copy, Reply, Trash2, Forward, X, Phone, AlertCircle, Clock, CheckCircle2, ArrowUpCircle, Filter, SlidersHorizontal, Calendar, Building2, Users, Tag, Info, XCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, WifiOff, RefreshCw } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 const API_BASE = '/api';
@@ -143,6 +143,25 @@ function MessageContextMenu({ x, y, onClose, onCopy, onDelete }) {
   );
 }
 
+function MessageStatusIndicator({ status }) {
+  const config = {
+    PENDING: { icon: Clock, label: 'Pendente', className: 'opacity-60' },
+    SENT: { icon: Check, label: 'Enviada', className: 'opacity-75' },
+    RECEIVED: { icon: CheckCheck, label: 'Entregue', className: 'opacity-75' },
+    READ: { icon: CheckCheck, label: 'Lida', className: 'text-blue-300' },
+    PLAYED: { icon: CheckCheck, label: 'Reproduzida', className: 'text-blue-300' },
+    FAILED: { icon: AlertCircle, label: 'Falhou', className: 'text-red-300' },
+  };
+  const s = config[status] || config.SENT;
+  const Icon = s.icon;
+  return (
+    <div className={`flex items-center gap-1.5 text-xs ${s.className}`}>
+      <Icon className="w-4 h-4" />
+      <span>{s.label}</span>
+    </div>
+  );
+}
+
 function ChatBubble({ message, contactName, onContextMenu }) {
   const isOutbound = message.direction === 'outbound';
   const senderLabels = { bot: 'Agente IA', human: 'Operador' };
@@ -186,10 +205,7 @@ function ChatBubble({ message, contactName, onContextMenu }) {
             <span className="text-sm opacity-75">{time}</span>
           </div>
           <p className="text-sm py-2 whitespace-pre-wrap break-words">{content}</p>
-          <div className="flex items-center gap-1.5 text-xs opacity-75">
-            <CheckCheck className="w-4 h-4" />
-            <span>Enviada</span>
-          </div>
+          <MessageStatusIndicator status={message.message_status} />
         </div>
         <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
           message.sender_type === 'bot' ? 'bg-primary/10' : 'bg-emerald-100'
@@ -516,6 +532,69 @@ function BotErrorBanner({ botHealth, expanded, onToggleExpand, onDismiss }) {
   );
 }
 
+function ZapiWarningBanner({ zapiHealth, expanded, onToggleExpand, onDismiss }) {
+  const badStates = ['disconnected', 'error', 'timeout'];
+  if (!zapiHealth || !badStates.includes(zapiHealth.status)) return null;
+
+  const isDisconnected = zapiHealth.status === 'disconnected';
+  const label = isDisconnected ? 'Z-API: instância desconectada' : 'Z-API: conexão instável';
+  const subtitle = isDisconnected
+    ? 'Mensagens não estão sendo enviadas nem recebidas'
+    : 'Algumas mensagens podem não ser entregues · Reconectando...';
+
+  return (
+    <div className="flex-shrink-0 border-b border-amber-200">
+      <div className="bg-amber-50 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+              <WifiOff className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">{label}</p>
+              <p className="text-xs text-amber-600 mt-0.5">{subtitle}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleExpand}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors"
+            >
+              {expanded ? 'Menos' : 'Detalhes'}
+              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={onDismiss}
+              className="p-1.5 text-amber-400 hover:text-amber-600 hover:bg-amber-100 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        {expanded && (
+          <div className="mt-3 pt-3 border-t border-amber-200 space-y-2">
+            <div className="bg-white rounded-lg p-3 border border-amber-200">
+              {zapiHealth.checked_at && (
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-3.5 h-3.5 text-gray-400" />
+                  <span className="text-xs text-gray-500">Última verificação: {new Date(zapiHealth.checked_at).toLocaleString('pt-BR')}</span>
+                </div>
+              )}
+              <p className="text-xs text-gray-700 font-mono">
+                Status: {zapiHealth.status || 'desconhecido'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-amber-700">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Verificação automática a cada 5 minutos</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -549,6 +628,9 @@ function App() {
   const [botHealth, setBotHealth] = useState(null);
   const [bannerExpanded, setBannerExpanded] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [zapiHealth, setZapiHealth] = useState(null);
+  const [zapiExpanded, setZapiExpanded] = useState(false);
+  const [zapiDismissed, setZapiDismissed] = useState(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -590,6 +672,27 @@ function App() {
     const interval = setInterval(fetchBotHealth, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchBotHealth]);
+
+  const fetchZapiHealth = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/integrations/zapi/health`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setZapiHealth(prev => {
+          if (prev?.status !== data.status) setZapiDismissed(false);
+          return data;
+        });
+      }
+    } catch (err) {
+      console.warn('[ZapiHealth] Falha ao buscar status:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchZapiHealth();
+    const interval = setInterval(fetchZapiHealth, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchZapiHealth]);
 
   const fetchFilterCounts = useCallback(async () => {
     try {
@@ -1302,6 +1405,14 @@ function App() {
                   expanded={bannerExpanded}
                   onToggleExpand={() => setBannerExpanded(prev => !prev)}
                   onDismiss={() => setBannerDismissed(true)}
+                />
+              )}
+              {!zapiDismissed && (
+                <ZapiWarningBanner
+                  zapiHealth={zapiHealth}
+                  expanded={zapiExpanded}
+                  onToggleExpand={() => setZapiExpanded(prev => !prev)}
+                  onDismiss={() => setZapiDismissed(true)}
                 />
               )}
               <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-gray-200">

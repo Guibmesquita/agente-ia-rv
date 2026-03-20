@@ -193,6 +193,14 @@
 
   </nav>
 
+  <!-- Z-API Status -->
+  <div class="px-4 py-2 border-t border-gray-200">
+    <div id="zapi-status-indicator" class="flex items-center gap-2 px-3 py-2 rounded-lg">
+      <span id="zapi-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0"></span>
+      <span class="text-xs text-gray-500 sidebar-text" id="zapi-label">WhatsApp</span>
+    </div>
+  </div>
+
   <!-- Footer -->
   <div class="p-4 border-t border-gray-200">
     <a href="/logout" class="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
@@ -359,6 +367,38 @@
       }
     });
   }
+
+  // Z-API Health Polling
+  const zapiDot = document.getElementById('zapi-dot');
+  const zapiLabel = document.getElementById('zapi-label');
+
+  function updateZapiStatus(data) {
+    if (!zapiDot || !zapiLabel) return;
+    var st = data && data.status;
+    if (st === 'connected') {
+      zapiDot.className = 'w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0';
+      zapiLabel.textContent = 'WhatsApp conectado';
+      zapiLabel.className = 'text-xs text-green-600 sidebar-text';
+    } else if (st === 'disconnected' || st === 'error' || st === 'timeout') {
+      zapiDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0 animate-pulse';
+      zapiLabel.textContent = st === 'disconnected' ? 'WhatsApp desconectado' : 'WhatsApp com falha';
+      zapiLabel.className = 'text-xs text-red-600 sidebar-text';
+    } else {
+      zapiDot.className = 'w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0';
+      zapiLabel.textContent = 'WhatsApp';
+      zapiLabel.className = 'text-xs text-gray-500 sidebar-text';
+    }
+  }
+
+  function fetchZapiHealth() {
+    fetch('/api/integrations/zapi/health', { credentials: 'include' })
+      .then(function(res) { return res.ok ? res.json() : null; })
+      .then(function(data) { if (data) updateZapiStatus(data); })
+      .catch(function() {});
+  }
+
+  fetchZapiHealth();
+  setInterval(fetchZapiHealth, 60000);
 })();
 </script>
 
