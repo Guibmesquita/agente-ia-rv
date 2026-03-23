@@ -1836,27 +1836,27 @@ async def get_material_pdf(
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
     
-    if not material.source_file_path:
-        raise HTTPException(status_code=404, detail="PDF não disponível para este material")
-    
     import os
+    from fastapi.responses import FileResponse
     
-    ALLOWED_UPLOAD_DIR = os.path.abspath("uploads/materials")
-    file_path = os.path.abspath(material.source_file_path)
+    ALLOWED_UPLOAD_DIR = os.path.realpath("uploads/materials")
+    file_path = None
     
-    if not file_path.startswith(ALLOWED_UPLOAD_DIR):
-        raise HTTPException(status_code=403, detail="Acesso ao arquivo negado")
+    if material.source_file_path:
+        candidate = os.path.realpath(material.source_file_path)
+        if os.path.commonpath([candidate, ALLOWED_UPLOAD_DIR]) == ALLOWED_UPLOAD_DIR and os.path.isfile(candidate):
+            file_path = candidate
     
-    if not os.path.exists(file_path):
+    if not file_path:
         restored = _restore_pdf_from_db(db, material_id)
         if restored:
-            file_path = os.path.abspath(restored)
-            if not file_path.startswith(ALLOWED_UPLOAD_DIR):
-                raise HTTPException(status_code=403, detail="Acesso ao arquivo negado")
-        else:
-            raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado no disco nem no banco de dados")
+            candidate = os.path.realpath(restored)
+            if os.path.commonpath([candidate, ALLOWED_UPLOAD_DIR]) == ALLOWED_UPLOAD_DIR and os.path.isfile(candidate):
+                file_path = candidate
     
-    from fastapi.responses import FileResponse
+    if not file_path:
+        raise HTTPException(status_code=404, detail="PDF não encontrado no disco nem no banco de dados")
+    
     return FileResponse(
         file_path,
         media_type="application/pdf",
