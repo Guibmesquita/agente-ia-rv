@@ -581,6 +581,16 @@ class UploadQueue:
 
                 if processing_job:
                     start_page = processing_job.last_processed_page or 0
+
+                    has_blocks = db.query(ContentBlock).filter(
+                        ContentBlock.material_id == item.material_id
+                    ).count() > 0
+                    if not has_blocks or start_page >= (processing_job.total_pages or 0):
+                        start_page = 0
+                        processing_job.last_processed_page = 0
+                        processing_job.processed_pages = 0
+                        print(f"[UPLOAD_WORKER] Material {item.material_id}: 0 blocos ou start_page >= total_pages — reprocessando do zero")
+
                     processing_job.status = ProcessingJobStatus.PROCESSING.value
                     processing_job.retry_count = (processing_job.retry_count or 0) + 1
                     db.commit()
@@ -805,9 +815,9 @@ class UploadQueue:
                 })
 
             def page_completed_callback(page_num, total):
-                if processing_job.last_processed_page and processing_job.last_processed_page >= page_num + 1:
+                if processing_job.last_processed_page and processing_job.last_processed_page >= page_num:
                     return
-                processing_job.last_processed_page = page_num + 1
+                processing_job.last_processed_page = page_num
                 try:
                     db.commit()
                 except Exception:

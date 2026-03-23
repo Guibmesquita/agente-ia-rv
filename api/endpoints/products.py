@@ -2780,13 +2780,21 @@ async def batch_queue_resume(
                 errors.append({"material_id": material_id, "reason": "Arquivo PDF não encontrado"})
                 continue
 
+        has_blocks = db.query(ContentBlock).filter(ContentBlock.material_id == material_id).count() > 0
+
         if job and job.status == ProcessingJobStatus.COMPLETED.value:
-            if job.last_processed_page and job.total_pages and job.last_processed_page >= job.total_pages:
+            if has_blocks and job.last_processed_page and job.total_pages and job.last_processed_page >= job.total_pages:
                 skipped.append({"material_id": material_id, "reason": "Já processado completamente"})
                 continue
 
         existing_job_id = job.id if job else None
-        resume_from = job.last_processed_page if job and job.last_processed_page else 0
+        resume_from = 0
+        if job and job.last_processed_page and has_blocks:
+            resume_from = job.last_processed_page
+        elif job and not has_blocks:
+            job.last_processed_page = 0
+            job.processed_pages = 0
+            db.commit()
 
         upload_id = str(uuid.uuid4())
         queue_item = UploadQueueItem(
@@ -2863,15 +2871,23 @@ async def queue_resume_upload(
         else:
             raise HTTPException(status_code=404, detail="Arquivo PDF não encontrado. Faça um novo upload.")
 
+    has_blocks = db.query(ContentBlock).filter(ContentBlock.material_id == material_id).count() > 0
+
     if job and job.status == ProcessingJobStatus.COMPLETED.value:
-        if job.last_processed_page and job.total_pages and job.last_processed_page >= job.total_pages:
+        if has_blocks and job.last_processed_page and job.total_pages and job.last_processed_page >= job.total_pages:
             raise HTTPException(
                 status_code=400,
                 detail="Este material já foi processado completamente. Não é necessário retomar."
             )
 
     existing_job_id = job.id if job else None
-    resume_from = job.last_processed_page if job and job.last_processed_page else 0
+    resume_from = 0
+    if job and job.last_processed_page and has_blocks:
+        resume_from = job.last_processed_page
+    elif job and not has_blocks:
+        job.last_processed_page = 0
+        job.processed_pages = 0
+        db.commit()
 
     upload_id = str(uuid.uuid4())
     queue_item = UploadQueueItem(
