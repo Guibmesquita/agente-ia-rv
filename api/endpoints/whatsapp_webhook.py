@@ -1202,14 +1202,13 @@ async def zapi_webhook(
     """
     from core.config import get_settings as _get_settings
     _settings = _get_settings()
-    expected_token = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
-    incoming_token = request.headers.get("client-token", "")
-    print(f"[WEBHOOK-DEBUG] Headers recebidos: {dict(request.headers)}")
-    print(f"[WEBHOOK-DEBUG] expected_token (first 5): '{expected_token[:5] if expected_token else 'EMPTY'}', len={len(expected_token) if expected_token else 0}")
-    print(f"[WEBHOOK-DEBUG] incoming_token (first 5): '{incoming_token[:5] if incoming_token else 'EMPTY'}', len={len(incoming_token) if incoming_token else 0}")
-    print(f"[WEBHOOK-DEBUG] Match: {incoming_token == expected_token}, not_expected: {not expected_token}")
+    incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
+    expected_token = os.getenv("ZAPI_TOKEN", "") or _settings.ZAPI_TOKEN
     if not expected_token or incoming_token != expected_token:
-        raise HTTPException(status_code=401, detail="Invalid or missing Client-Token")
+        expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
+        if not expected_ct or incoming_token != expected_ct:
+            print(f"[WEBHOOK] Token mismatch - incoming (first 5): '{incoming_token[:5] if incoming_token else 'EMPTY'}'")
+            raise HTTPException(status_code=401, detail="Invalid or missing webhook token")
 
     event_type = payload.get("type", "")
     
