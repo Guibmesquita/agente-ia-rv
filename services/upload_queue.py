@@ -684,6 +684,27 @@ class UploadQueue:
                 mat.source_filename = mat.source_filename or item.filename
                 db.commit()
 
+                try:
+                    from database.models import MaterialFile as MF
+                    has_mf = db.query(MF).filter(MF.material_id == mat.id).first()
+                    if not has_mf and os.path.exists(item.file_path):
+                        with open(item.file_path, 'rb') as pdf_f:
+                            pdf_bytes = pdf_f.read()
+                        if pdf_bytes:
+                            new_mf = MF(
+                                material_id=mat.id,
+                                filename=item.filename or "documento.pdf",
+                                content_type="application/pdf",
+                                file_data=pdf_bytes,
+                                file_size=len(pdf_bytes),
+                            )
+                            db.add(new_mf)
+                            db.commit()
+                            print(f"[UPLOAD_WORKER] material_files populado antecipadamente para material_id={mat.id} ({len(pdf_bytes)} bytes)")
+                except Exception as mf_err:
+                    db.rollback()
+                    logger.warning(f"[UPLOAD_WORKER] Erro ao popular material_files antecipadamente: {mf_err}")
+
                 for page_num in range(1, total_pages + 1):
                     page_result = DocumentPageResult(
                         job_id=processing_job.id,

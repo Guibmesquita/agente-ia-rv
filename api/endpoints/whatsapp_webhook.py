@@ -419,10 +419,9 @@ async def _send_material_pdf(phone: str, material_id: str, db: Session) -> dict:
         product_name = product.name if product else material.name
 
         has_db_file = db.query(MaterialFile).filter(MaterialFile.material_id == int(material_id)).first() is not None
-        has_disk_file = material.source_file_path and os.path.exists(material.source_file_path)
 
-        if not has_db_file and not has_disk_file:
-            print(f"[MATERIAL] Material {material_id} ({product_name}) não possui arquivo PDF (nem no banco nem em disco)")
+        if not has_db_file:
+            print(f"[MATERIAL] Material {material_id} ({product_name}) não possui arquivo PDF em material_files")
             return {"success": False, "reason": "no_file", "material_name": product_name}
 
         from core.config import get_public_base_url
@@ -432,12 +431,7 @@ async def _send_material_pdf(phone: str, material_id: str, db: Session) -> dict:
             print(f"[MATERIAL] Erro: domínio público não configurado (APP_BASE_URL)")
             return {"success": False, "reason": "no_config", "material_name": product_name}
 
-        if has_db_file:
-            file_url = f"{base_url}/api/files/{material_id}/download"
-        else:
-            from core.config import get_public_domain
-            domain = get_public_domain()
-            file_url = f"https://{domain}/{material.source_file_path}"
+        file_url = f"{base_url}/api/files/{material_id}/download"
 
         filename = f"{product_name} - {material.material_type}.pdf"
         filename = re.sub(r'[^\w\s\-\.]', '', filename).strip()

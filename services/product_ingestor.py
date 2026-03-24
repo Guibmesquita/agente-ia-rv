@@ -16,8 +16,35 @@ from services.document_processor import get_document_processor
 from services.vector_store import get_vector_store
 from database.models import (
     Material, ContentBlock, BlockVersion, PendingReviewItem, IngestionLog,
-    ContentBlockType, ContentBlockStatus, ContentSourceType
+    ContentBlockType, ContentBlockStatus, ContentSourceType, MaterialFile
 )
+
+
+def _ensure_material_file(db: Session, material_id: int, pdf_path: str, filename: str = None):
+    """Garante que material_files tenha o PDF salvo (fonte única de verdade)."""
+    try:
+        existing = db.query(MaterialFile).filter(MaterialFile.material_id == material_id).first()
+        if existing:
+            return
+        if not os.path.exists(pdf_path):
+            return
+        with open(pdf_path, 'rb') as f:
+            pdf_content = f.read()
+        if not pdf_content:
+            return
+        new_file = MaterialFile(
+            material_id=material_id,
+            filename=filename or os.path.basename(pdf_path),
+            content_type="application/pdf",
+            file_data=pdf_content,
+            file_size=len(pdf_content),
+        )
+        db.add(new_file)
+        db.commit()
+        print(f"[INGESTOR] PDF salvo em material_files para material_id={material_id} ({len(pdf_content)} bytes)")
+    except Exception as e:
+        db.rollback()
+        print(f"[INGESTOR] Erro ao salvar PDF em material_files para material_id={material_id}: {e}")
 
 
 def compute_hash(content: str) -> str:
@@ -201,6 +228,7 @@ class ProductIngestor:
             material.source_file_path = pdf_path
             material.source_filename = os.path.basename(pdf_path)
             db.commit()
+            _ensure_material_file(db, material_id, pdf_path, material.source_filename)
         
         tables_count = sum(1 for p in processed.get("pages", []) 
                           if p.get("raw_data", {}).get("tables"))
@@ -416,6 +444,7 @@ class ProductIngestor:
             original_material.source_file_path = pdf_path
             original_material.source_filename = os.path.basename(pdf_path)
             db.commit()
+            _ensure_material_file(db, material_id, pdf_path, original_material.source_filename)
             
             from database.models import ContentBlock as CB
             blocks_in_original = db.query(CB).filter(CB.material_id == material_id).count()
@@ -701,6 +730,7 @@ class ProductIngestor:
                 original_material.tags = json.dumps(merged_tags)
             
             db.commit()
+            _ensure_material_file(db, material_id, pdf_path, original_material.source_filename)
             
             from database.models import ContentBlock as CB
             blocks_in_original = db.query(CB).filter(CB.material_id == material_id).count()

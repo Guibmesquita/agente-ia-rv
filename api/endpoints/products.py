@@ -1987,7 +1987,8 @@ async def list_pending_materials(
             } if job else None,
             "can_resume": m.processing_status in ['processing', 'failed'] and (
                 (m.source_file_path and os.path.exists(m.source_file_path)) or
-                (job and job.file_path and os.path.exists(job.file_path))
+                (job and job.file_path and os.path.exists(job.file_path)) or
+                db.query(MaterialFile).filter(MaterialFile.material_id == m.id).first() is not None
             )
         })
     
@@ -2083,7 +2084,8 @@ async def list_pending_unified(
             } if job else None
             base["can_resume"] = m.processing_status in ['processing', 'failed'] and (
                 (m.source_file_path and os.path.exists(m.source_file_path)) or
-                (job and job.file_path and os.path.exists(job.file_path))
+                (job and job.file_path and os.path.exists(job.file_path)) or
+                m.id in materials_with_file
             )
             failed_processing.append(base)
 
@@ -3877,3 +3879,67 @@ async def reassign_material_product(
     }
 
 
+@router.post("/admin/backfill-material-files")
+async def backfill_material_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Popula material_files para materiais que têm source_file_path mas não têm MaterialFile."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas admins podem executar backfill")
+
+    from sqlalchemy import and_
+
+    materials_without_mf = (
+        db.query(Material)
+        .outerjoin(MaterialFile, MaterialFile.material_id == Material.id)
+        .filter(
+            and_(
+                MaterialFile.id.is_(None),
+                Material.source_file_path.isnot(None),
+                Material.source_file_path != ""
+            )
+        )
+        .all()
+    )
+
+    backfilled = 0
+    skipped = 0
+    errors = []
+
+    for mat in materials_without_mf:
+        try:
+            if not mat.source_file_path or not os.path.exists(mat.source_file_path):
+                skipped += 1
+                continue
+
+            with open(mat.source_file_path, 'rb') as f:
+                pdf_content = f.read()
+
+            if not pdf_content:
+                skipped += 1
+                continue
+
+            new_file = MaterialFile(
+                material_id=mat.id,
+                filename=mat.source_filename or os.path.basename(mat.source_file_path),
+                content_type="application/pdf",
+                file_data=pdf_content,
+                file_size=len(pdf_content),
+            )
+            db.add(new_file)
+            db.commit()
+            backfilled += 1
+            print(f"[BACKFILL] material_files criado para material_id={mat.id} ({len(pdf_content)} bytes)")
+        except Exception as e:
+            db.rollback()
+            errors.append({"material_id": mat.id, "error": str(e)})
+            print(f"[BACKFILL] Erro para material_id={mat.id}: {e}")
+
+    return {
+        "success": True,
+        "backfilled": backfilled,
+        "skipped": skipped,
+        "errors": errors,
+        "total_candidates": len(materials_without_mf)
+    }
