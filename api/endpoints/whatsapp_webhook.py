@@ -1204,6 +1204,10 @@ async def zapi_webhook(
     _settings = _get_settings()
     expected_token = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
     incoming_token = request.headers.get("client-token", "")
+    print(f"[WEBHOOK-DEBUG] Headers recebidos: {dict(request.headers)}")
+    print(f"[WEBHOOK-DEBUG] expected_token (first 5): '{expected_token[:5] if expected_token else 'EMPTY'}', len={len(expected_token) if expected_token else 0}")
+    print(f"[WEBHOOK-DEBUG] incoming_token (first 5): '{incoming_token[:5] if incoming_token else 'EMPTY'}', len={len(incoming_token) if incoming_token else 0}")
+    print(f"[WEBHOOK-DEBUG] Match: {incoming_token == expected_token}, not_expected: {not expected_token}")
     if not expected_token or incoming_token != expected_token:
         raise HTTPException(status_code=401, detail="Invalid or missing Client-Token")
 
