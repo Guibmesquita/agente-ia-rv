@@ -885,25 +885,13 @@ class UploadQueue:
                     })
                     return
 
-                try:
-                    from database.models import MaterialFile
-                    existing_file = db.query(MaterialFile).filter(MaterialFile.material_id == item.material_id).first()
-                    if not existing_file and os.path.exists(item.file_path):
-                        with open(item.file_path, 'rb') as pdf_f:
-                            pdf_content = pdf_f.read()
-                        if pdf_content:
-                            new_file = MaterialFile(
-                                material_id=item.material_id,
-                                filename=item.filename or "documento.pdf",
-                                content_type="application/pdf",
-                                file_data=pdf_content,
-                                file_size=len(pdf_content),
-                            )
-                            db.add(new_file)
-                            db.commit()
-                            print(f"[UPLOAD_WORKER] PDF salvo em material_files para material_id={item.material_id} ({len(pdf_content)} bytes)")
-                except Exception as file_err:
-                    logger.warning(f"[UPLOAD_WORKER] Erro ao salvar PDF em material_files: {file_err}")
+                from services.product_ingestor import _ensure_material_file
+                _ensure_material_file(
+                    db=db,
+                    material_id=item.material_id,
+                    pdf_path=item.file_path,
+                    filename=item.filename or "documento.pdf"
+                )
 
                 if not mat.product:
                     auto_product = self._auto_create_product_from_material_name(db, mat, item)

@@ -3903,6 +3903,8 @@ async def backfill_material_files(
         .all()
     )
 
+    from services.product_ingestor import _ensure_material_file
+
     backfilled = 0
     skipped = 0
     errors = []
@@ -3913,26 +3915,14 @@ async def backfill_material_files(
                 skipped += 1
                 continue
 
-            with open(mat.source_file_path, 'rb') as f:
-                pdf_content = f.read()
-
-            if not pdf_content:
-                skipped += 1
-                continue
-
-            new_file = MaterialFile(
+            _ensure_material_file(
+                db=db,
                 material_id=mat.id,
-                filename=mat.source_filename or os.path.basename(mat.source_file_path),
-                content_type="application/pdf",
-                file_data=pdf_content,
-                file_size=len(pdf_content),
+                pdf_path=mat.source_file_path,
+                filename=mat.source_filename or os.path.basename(mat.source_file_path)
             )
-            db.add(new_file)
-            db.commit()
             backfilled += 1
-            print(f"[BACKFILL] material_files criado para material_id={mat.id} ({len(pdf_content)} bytes)")
         except Exception as e:
-            db.rollback()
             errors.append({"material_id": mat.id, "error": str(e)})
             print(f"[BACKFILL] Erro para material_id={mat.id}: {e}")
 

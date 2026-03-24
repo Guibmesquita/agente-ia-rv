@@ -21,30 +21,39 @@ from database.models import (
 
 
 def _ensure_material_file(db: Session, material_id: int, pdf_path: str, filename: str = None):
-    """Garante que material_files tenha o PDF salvo (fonte única de verdade)."""
+    """Garante que material_files tenha o PDF salvo (fonte única de verdade).
+    
+    Raises on failure so callers know persistence failed.
+    """
+    existing = db.query(MaterialFile).filter(MaterialFile.material_id == material_id).first()
+    if existing:
+        return
+
+    if not os.path.exists(pdf_path):
+        print(f"[INGESTOR] Arquivo não encontrado em disco para material_id={material_id}: {pdf_path}")
+        return
+
+    with open(pdf_path, 'rb') as f:
+        pdf_content = f.read()
+
+    if not pdf_content:
+        print(f"[INGESTOR] Arquivo vazio em disco para material_id={material_id}: {pdf_path}")
+        return
+
+    new_file = MaterialFile(
+        material_id=material_id,
+        filename=filename or os.path.basename(pdf_path),
+        content_type="application/pdf",
+        file_data=pdf_content,
+        file_size=len(pdf_content),
+    )
+    db.add(new_file)
     try:
-        existing = db.query(MaterialFile).filter(MaterialFile.material_id == material_id).first()
-        if existing:
-            return
-        if not os.path.exists(pdf_path):
-            return
-        with open(pdf_path, 'rb') as f:
-            pdf_content = f.read()
-        if not pdf_content:
-            return
-        new_file = MaterialFile(
-            material_id=material_id,
-            filename=filename or os.path.basename(pdf_path),
-            content_type="application/pdf",
-            file_data=pdf_content,
-            file_size=len(pdf_content),
-        )
-        db.add(new_file)
         db.commit()
-        print(f"[INGESTOR] PDF salvo em material_files para material_id={material_id} ({len(pdf_content)} bytes)")
     except Exception as e:
         db.rollback()
-        print(f"[INGESTOR] Erro ao salvar PDF em material_files para material_id={material_id}: {e}")
+        raise RuntimeError(f"Falha ao salvar PDF em material_files para material_id={material_id}: {e}") from e
+    print(f"[INGESTOR] PDF salvo em material_files para material_id={material_id} ({len(pdf_content)} bytes)")
 
 
 def compute_hash(content: str) -> str:
