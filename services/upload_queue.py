@@ -631,6 +631,12 @@ class UploadQueue:
                     logger.warning(f"[UPLOAD] Duplicata bloqueada: file_hash={file_hash[:12]}... material_id_existente={duplicate.id}")
                     try:
                         from database.models import MaterialFile
+                        db.query(DocumentPageResult).filter(
+                            DocumentPageResult.job_id.in_(
+                                db.query(DocumentProcessingJob.id).filter(DocumentProcessingJob.material_id == mat.id)
+                            )
+                        ).delete(synchronize_session=False)
+                        db.query(DocumentProcessingJob).filter(DocumentProcessingJob.material_id == mat.id).delete(synchronize_session=False)
                         db.query(MaterialFile).filter(MaterialFile.material_id == mat.id).delete()
                         db.delete(mat)
                         db.commit()

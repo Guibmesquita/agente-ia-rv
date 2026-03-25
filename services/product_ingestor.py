@@ -455,10 +455,16 @@ class ProductIngestor:
             db.commit()
             _ensure_material_file(db, material_id, pdf_path, original_material.source_filename)
             
-            from database.models import ContentBlock as CB
+            from database.models import ContentBlock as CB, DocumentProcessingJob, DocumentPageResult
             blocks_in_original = db.query(CB).filter(CB.material_id == material_id).count()
             
             if blocks_in_original == 0 and stats["products_matched"]:
+                db.query(DocumentPageResult).filter(
+                    DocumentPageResult.job_id.in_(
+                        db.query(DocumentProcessingJob.id).filter(DocumentProcessingJob.material_id == material_id)
+                    )
+                ).delete(synchronize_session=False)
+                db.query(DocumentProcessingJob).filter(DocumentProcessingJob.material_id == material_id).delete(synchronize_session=False)
                 db.delete(original_material)
                 db.commit()
                 print(f"[SMART_UPLOAD] Material placeholder {material_id} removido - todos os blocos foram redistribuídos")
@@ -741,10 +747,16 @@ class ProductIngestor:
             db.commit()
             _ensure_material_file(db, material_id, pdf_path, original_material.source_filename)
             
-            from database.models import ContentBlock as CB
+            from database.models import ContentBlock as CB, DocumentProcessingJob as DPJ2, DocumentPageResult as DPR2
             blocks_in_original = db.query(CB).filter(CB.material_id == material_id).count()
             
             if blocks_in_original == 0 and stats["products_matched"]:
+                db.query(DPR2).filter(
+                    DPR2.job_id.in_(
+                        db.query(DPJ2.id).filter(DPJ2.material_id == material_id)
+                    )
+                ).delete(synchronize_session=False)
+                db.query(DPJ2).filter(DPJ2.material_id == material_id).delete(synchronize_session=False)
                 db.delete(original_material)
                 db.commit()
                 log("Material placeholder removido - blocos redistribuídos para produtos identificados")

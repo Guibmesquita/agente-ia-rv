@@ -208,6 +208,32 @@ def _apply_incremental_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_outbox_messages_dedupe_key ON outbox_messages(dedupe_key)",
         "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS ai_error_detail TEXT",
+        """DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'document_processing_jobs_material_id_fkey'
+                AND confdeltype != 'c'
+            ) THEN
+                ALTER TABLE document_processing_jobs
+                    DROP CONSTRAINT document_processing_jobs_material_id_fkey,
+                    ADD CONSTRAINT document_processing_jobs_material_id_fkey
+                        FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE;
+            END IF;
+        END $$""",
+        """DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'document_page_results_job_id_fkey'
+                AND confdeltype != 'c'
+            ) THEN
+                ALTER TABLE document_page_results
+                    DROP CONSTRAINT document_page_results_job_id_fkey,
+                    ADD CONSTRAINT document_page_results_job_id_fkey
+                        FOREIGN KEY (job_id) REFERENCES document_processing_jobs(id) ON DELETE CASCADE;
+            END IF;
+        END $$""",
     ]
     db = SessionLocal()
     try:

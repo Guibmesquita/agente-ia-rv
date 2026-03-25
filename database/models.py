@@ -3,7 +3,7 @@ Modelos SQLAlchemy para o banco de dados.
 Define as tabelas User, Ticket, Interaction, TicketCategory e Integration.
 """
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float, Index, LargeBinary
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
 from database.database import Base
@@ -954,7 +954,7 @@ class DocumentProcessingJob(Base):
     __tablename__ = "document_processing_jobs"
     
     id = Column(Integer, primary_key=True, index=True)
-    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, index=True)
+    material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, index=True)
     file_path = Column(String(500), nullable=False)
     file_hash = Column(String(64), nullable=True)
     total_pages = Column(Integer, nullable=False, default=0)
@@ -968,7 +968,7 @@ class DocumentProcessingJob(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
-    material = relationship("Material", backref="processing_jobs")
+    material = relationship("Material", backref=backref("processing_jobs", cascade="all, delete-orphan", passive_deletes=True))
     page_results = relationship("DocumentPageResult", back_populates="job", cascade="all, delete-orphan", order_by="DocumentPageResult.page_number")
 
 
@@ -980,7 +980,7 @@ class DocumentPageResult(Base):
     __tablename__ = "document_page_results"
     
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("document_processing_jobs.id"), nullable=False, index=True)
+    job_id = Column(Integer, ForeignKey("document_processing_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     page_number = Column(Integer, nullable=False)
     status = Column(String(30), default=PageProcessingStatus.PENDING.value)
     content_type = Column(String(50), nullable=True)
