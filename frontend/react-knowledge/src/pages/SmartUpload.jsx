@@ -782,6 +782,11 @@ export function SmartUpload() {
                               </span>
                             )}
                           </div>
+                          {!m.can_resume && !m.has_success_duplicate && (
+                            <p className="text-xs text-amber-700 mt-1.5 leading-relaxed">
+                              O arquivo original não está mais disponível no servidor. Para reprocessar, exclua este item e envie o PDF novamente.
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
