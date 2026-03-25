@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
 import { FileUpload } from '../components/FileUpload';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 
 const CATEGORIES = [
   'Estratégias',
@@ -22,6 +23,7 @@ const CATEGORIES = [
 
 export function Documents() {
   const { addToast } = useToast();
+  const { confirmDialog, openConfirm } = useConfirmDialog();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -69,7 +71,13 @@ export function Documents() {
   };
 
   const handleDelete = async (docId) => {
-    if (!confirm('Tem certeza que deseja excluir este documento?')) return;
+    const confirmed = await openConfirm({
+      title: 'Excluir Documento',
+      message: 'Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.',
+      confirmText: 'Excluir',
+      type: 'danger',
+    });
+    if (!confirmed) return;
     try {
       await knowledgeAPI.delete(docId);
       addToast('Documento excluído!', 'success');
@@ -325,6 +333,7 @@ export function Documents() {
           </div>
         </form>
       </Modal>
+      {confirmDialog}
     </div>
   );
 }

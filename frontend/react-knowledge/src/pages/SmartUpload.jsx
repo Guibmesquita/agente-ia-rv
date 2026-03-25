@@ -8,6 +8,7 @@ import { ProductAutocomplete } from '../components/ProductAutocomplete';
 import { MaterialCategories } from '../components/MaterialCategories';
 import { StructuredTags } from '../components/StructuredTags';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import { useDropzone } from 'react-dropzone';
 
 function normalize(str) {
@@ -91,6 +92,7 @@ export function SmartUpload() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { addToast } = useToast();
+  const { confirmDialog, openConfirm } = useConfirmDialog();
   const logRef = useRef(null);
   
   const [step, setStep] = useState(1);
@@ -236,7 +238,13 @@ export function SmartUpload() {
   };
 
   const handleDiscardPending = async (materialId, productId) => {
-    if (!confirm('Deseja descartar este upload? O arquivo e os blocos serão removidos.')) return;
+    const confirmed = await openConfirm({
+      title: 'Descartar Upload',
+      message: 'Deseja descartar este upload? O arquivo e os blocos serão removidos.',
+      confirmText: 'Descartar',
+      type: 'danger',
+    });
+    if (!confirmed) return;
     
     try {
       const response = await fetch(`/api/products/${productId}/materials/${materialId}`, {
@@ -1345,6 +1353,7 @@ export function SmartUpload() {
           {renderQueueMonitor()}
         </motion.div>
       )}
+      {confirmDialog}
     </div>
   );
 }
