@@ -4028,7 +4028,7 @@ async def backfill_product_data(
                 results["details"].append(f"  → {updated.rowcount} embeddings atualizados com ticker={ticker_found}")
 
     materials_rascunho = db.query(Material).filter(
-        Material.publish_status.in_([None, 'rascunho'])
+        Material.publish_status.in_([None, 'rascunho', 'draft'])
     ).all()
 
     for mat in materials_rascunho:
@@ -4051,8 +4051,8 @@ async def backfill_product_data(
             if product:
                 updated = db.execute(text(
                     "UPDATE document_embeddings SET publish_status = 'publicado' "
-                    "WHERE material_id = :mid AND publish_status = 'rascunho'"
-                ), {"mid": mat.id})
+                    "WHERE material_id = :mid AND publish_status IN ('rascunho', 'draft')"
+                ), {"mid": str(mat.id)})
                 db.commit()
                 if updated.rowcount > 0:
                     results["embeddings_updated"] += updated.rowcount
