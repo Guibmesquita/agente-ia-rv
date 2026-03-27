@@ -1602,7 +1602,7 @@ Equipe de Gestao"></textarea>
                 });
                 const data = await response.json();
                 
-                if (data.status === 'connected' && data.can_send_messages) {
+                if (data.status === 'connected') {
                     dot.style.background = '#10b981';
                     text.textContent = 'WhatsApp Conectado';
                     badge.style.background = 'rgba(16, 185, 129, 0.1)';
