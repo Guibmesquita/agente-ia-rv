@@ -486,11 +486,36 @@ async def upload_campaign_file(
             rows = list(reader)
         else:
             import pandas as pd
+            import openpyxl
+            import math
+            
+            pct_columns = set()
+            try:
+                wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+                ws = wb.active
+                if ws:
+                    col_names = []
+                    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=False), None)
+                    if header_row:
+                        col_names = [cell.value for cell in header_row]
+                    for row_cells in ws.iter_rows(min_row=2, max_row=min(11, ws.max_row or 2), values_only=False):
+                        for cell in row_cells:
+                            fmt = cell.number_format or ""
+                            if "%" in fmt and cell.value is not None:
+                                col_idx = cell.column - 1
+                                if col_idx < len(col_names) and col_names[col_idx]:
+                                    pct_columns.add(str(col_names[col_idx]))
+                wb.close()
+            except Exception as e:
+                print(f"[UPLOAD] Warning: could not detect percentage columns: {e}")
+            
+            if pct_columns:
+                print(f"[UPLOAD] Detected percentage columns: {pct_columns}")
+            
             df = pd.read_excel(io.BytesIO(contents))
             columns = df.columns.tolist()
             rows = df.to_dict('records')
             
-            import math
             sanitized = []
             for row in rows:
                 clean = {}
@@ -503,6 +528,12 @@ async def upload_campaign_file(
                         pass
                     if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
                         clean[k] = None
+                    elif str(k) in pct_columns and isinstance(v, (int, float)):
+                        pct_val = v * 100
+                        if pct_val == int(pct_val):
+                            clean[k] = f"{int(pct_val)}%"
+                        else:
+                            clean[k] = f"{pct_val:.2f}%"
                     else:
                         clean[k] = v
                 sanitized.append(clean)
@@ -857,8 +888,10 @@ async def preview_campaign(
     messages = []
     first_example = None
     
+    is_grouped = bool(campaign.group_by_client)
+    
     for idx, (assessor_id, assessor_data) in enumerate(grouped.items()):
-        message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
+        message = build_message(template_content, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
         messages.append({
             "assessor_id": assessor_id,
             "assessor_name": assessor_data.get("nome_assessor", ""),
@@ -937,23 +970,24 @@ async def preview_campaign(
             
             content_lines = []
             total_recs = 0
-            has_custom_template = bool(content_template and content_template.strip())
+            is_grouped = bool(campaign.group_by_client)
             for client_id, client_info in clients_data.items():
                 recommendations = client_info.get("recommendations", [])
                 if recommendations:
-                    if not has_custom_template:
-                        content_lines.append(f"*Cliente: {client_id}*")
+                    if is_grouped:
+                        content_lines.append(f"Cliente {client_id}")
                     for rec in recommendations:
                         line = replace_vars(content_template, rec)
                         line = replace_vars(line, assessor_data)
                         line = replace_vars(line, extra_vars)
                         if line.strip():
-                            if has_custom_template:
-                                content_lines.append(line)
+                            if is_grouped:
+                                content_lines.append(f"- {line}")
                             else:
-                                content_lines.append(f"• {line}")
+                                content_lines.append(line)
                         total_recs += 1
-                    content_lines.append("")
+                    if is_grouped:
+                        content_lines.append("")
             
             footer_rendered = replace_vars(footer_template, assessor_data)
             footer_rendered = replace_vars(footer_rendered, extra_vars)
@@ -1293,20 +1327,13 @@ def format_currency(value) -> str:
         return str(value) if value else "R$ 0,00"
 
 
-def build_message(template_content: str, assessor_data: dict, custom_mapping: dict, content_template: str = None) -> str:
+def build_message(template_content: str, assessor_data: dict, custom_mapping: dict, content_template: str = None, group_by_client: bool = False) -> str:
     """
     Constrói a mensagem final substituindo as variáveis do template.
     
-    Variáveis suportadas:
-    - Variáveis da base interna: {{codigo_ai}}, {{nome}}, {{email}}, {{telefone_whatsapp}}, 
-      {{unidade}}, {{equipe}}, {{broker_responsavel}}
-    - Variáveis da planilha importada: qualquer coluna detectada
-    - Campos customizados definidos no mapeamento
-    - {{data_atual}} - Data atual (DD/MM/YYYY)
-    
     Args:
         content_template: Template para cada linha de recomendação (bloco repetível).
-                         Se fornecido, cada recomendação será processada com este template.
+        group_by_client: Se True, adiciona cabeçalho de cliente no bloco lista_clientes.
     """
     if not template_content:
         template_content = DEFAULT_TEMPLATE_CONTENT
@@ -1359,7 +1386,7 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     
     clients = assessor_data.get("clients", {})
     if clients:
-        clients_block = build_clients_block(clients, content_template)
+        clients_block = build_clients_block(clients, content_template, group_by_client=group_by_client)
         for pattern in ["{{lista_clientes}}", "{{ lista_clientes }}", "{lista_clientes}"]:
             message = message.replace(pattern, clients_block)
     
@@ -1370,19 +1397,12 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
     return message
 
 
-def build_clients_block(clients: dict, content_template: str = None) -> str:
+def build_clients_block(clients: dict, content_template: str = None, group_by_client: bool = True) -> str:
     """
-    Constrói o bloco de texto com as recomendações agrupadas por cliente.
+    Constrói o bloco de texto com as recomendações por cliente.
     
-    Se content_template for fornecido, usa esse template para cada recomendação,
-    substituindo todas as variáveis disponíveis. Caso contrário, usa formato padrão.
-    
-    Formato padrão:
-    **Cliente: 12345**
-    • Saia de R$ 10.000 em PETR4 e compre R$ 10.000 em VALE3.
-    
-    **Cliente: 67890**
-    • Saia de R$ 20.000 em ITSA4 e compre R$ 20.000 em WEGE3.
+    Se group_by_client for True, adiciona cabeçalho "Cliente X" antes de cada grupo.
+    Se group_by_client for False, trata como linhas individuais sem cabeçalho de cliente.
     """
     import unicodedata
     
@@ -1432,8 +1452,8 @@ def build_clients_block(clients: dict, content_template: str = None) -> str:
         if not client_id:
             client_id = "Sem ID"
         
-        if not has_custom_template:
-            lines.append(f"*Cliente: {client_id}*")
+        if group_by_client:
+            lines.append(f"Cliente {client_id}")
         
         if isinstance(client_data, dict):
             recommendations = client_data.get("recommendations", [])
@@ -1444,14 +1464,17 @@ def build_clients_block(clients: dict, content_template: str = None) -> str:
             if has_custom_template:
                 line = replace_vars_in_text(content_template, rec)
                 if line.strip():
-                    lines.append(line)
+                    if group_by_client:
+                        lines.append(f"- {line}")
+                    else:
+                        lines.append(line)
             else:
                 ativo_saida = rec.get('ativo_saida', 'N/A')
                 valor_saida = rec.get('valor_saida', 'R$ 0,00')
                 ativo_compra = rec.get('ativo_compra', 'N/A')
                 valor_compra = rec.get('valor_compra', 'R$ 0,00')
                 
-                line = f"• Saia de {valor_saida} em {ativo_saida} e compre {valor_compra} em {ativo_compra}."
+                line = f"- Saia de {valor_saida} em {ativo_saida} e compre {valor_compra} em {ativo_compra}."
                 lines.append(line)
         
         lines.append("")
@@ -1563,15 +1586,13 @@ def build_structured_message(
                 grouped[client_id] = []
             grouped[client_id].append(row)
         
-        has_custom_template = bool(content_template and content_template.strip())
         for client_id, client_rows in grouped.items():
-            if not has_custom_template:
-                content_lines.append(f"**Cliente: {client_id}**")
+            content_lines.append(f"Cliente {client_id}")
             for row in client_rows:
                 row_vars = {**base_vars, **row}
                 line = replace_vars(content_template or "", row_vars)
                 if line.strip():
-                    content_lines.append(line)
+                    content_lines.append(f"- {line}")
             content_lines.append("")
     else:
         for row in data_rows:
@@ -1683,8 +1704,9 @@ async def dispatch_campaign(
     failed_count = 0
     content_line_template = campaign.message_content_template or ""
     
+    is_grouped = bool(campaign.group_by_client)
     for assessor_id, assessor_data in grouped.items():
-        message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
+        message = build_message(template_content, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
         phone = assessor_data.get("telefone", "")
         
         dispatch = CampaignDispatch(
@@ -1851,6 +1873,7 @@ async def dispatch_campaign_stream(
     attachment_filename = campaign.attachment_filename
     
     content_line_template = campaign.message_content_template or ""
+    is_grouped = bool(campaign.group_by_client)
     
     async def generate_events():
         from services.whatsapp_client import zapi_client
@@ -1884,9 +1907,9 @@ async def dispatch_campaign_stream(
                         wrapper_parts.append(footer_template.strip())
                     
                     wrapper_template = "\n\n".join(wrapper_parts)
-                    message = build_message(wrapper_template, assessor_data, custom_mapping, content_line_template)
+                    message = build_message(wrapper_template, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
                 else:
-                    message = build_message(template_content, assessor_data, custom_mapping, content_line_template)
+                    message = build_message(template_content, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
                 
                 phone = assessor_data.get("telefone", "")
                 assessor_name = assessor_data.get("nome_assessor", "")
@@ -2935,7 +2958,7 @@ async def debug_campaign(
     sample_message = ""
     if grouped:
         first_key = list(grouped.keys())[0]
-        sample_message = build_message(template_content, grouped[first_key], custom_mapping, content_line_template)
+        sample_message = build_message(template_content, grouped[first_key], custom_mapping, content_line_template, group_by_client=bool(campaign.group_by_client))
     
     return {
         "campaign_id": campaign_id,
