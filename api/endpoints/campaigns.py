@@ -1477,7 +1477,8 @@ def build_clients_block(clients: dict, content_template: str = None, group_by_cl
                 line = f"- Saia de {valor_saida} em {ativo_saida} e compre {valor_compra} em {ativo_compra}."
                 lines.append(line)
         
-        lines.append("")
+        if group_by_client:
+            lines.append("")
     
     result = "\n".join(lines).strip()
     print(f"[BUILD_CLIENTS] Generated block with {len(lines)} lines for {len(clients)} clients")
