@@ -131,7 +131,8 @@ class EntityResolver:
     """
 
     AMBIGUOUS_TERMS = {
-        'xp', 'cdi', 'ibov', 'selic', 'ipca', 'igpm', 'igp-m',
+        'xp', 'cdi', 'ibov', 'ibovespa', 'selic', 'ipca', 'igpm', 'igp-m',
+        'ifix', 'dolar', 'dólar', 'dollar', 's&p', 's&p500', 'sp500',
         'di', 'pre', 'pos', 'coe', 'lci', 'lca', 'cdb', 'cri', 'cra',
         'fii', 'fidc', 'fiagro', 'etf', 'bdr',
     }

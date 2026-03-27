@@ -1644,13 +1644,15 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
             product_name = metadata.get("product_name", "")
             material_type = metadata.get("material_type", "")
 
-            header = f"[{title}]"
+            material_name = metadata.get("material_name", "") or title
+            header = f"[Documento: {material_name}]"
             if material_id:
                 header += f" (material_id: {material_id})"
             if product_name:
                 header += f" | Produto: {product_name}"
             if material_type:
                 header += f" | Tipo: {material_type}"
+            header += f"\n⚠️ Ao citar dados deste documento, inclua: (Fonte: {material_name})"
 
             context_parts.append(f"{header}\n{content}")
 
@@ -1714,9 +1716,11 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                 )
                 content = doc.get("content", "")[:500]
                 material_type = metadata.get("material_type", "")
-                section += f"[{title}]"
+                material_name = metadata.get("material_name", "") or title
+                section += f"[Documento: {material_name}]"
                 if material_type:
                     section += f" [{material_type}]"
+                section += f"\n⚠️ Ao citar dados: (Fonte: {material_name})"
                 section += f"\n{content}\n\n"
             sections.append(section)
 

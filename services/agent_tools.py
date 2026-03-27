@@ -15,10 +15,11 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
         "name": "search_knowledge_base",
         "description": (
             "Busca na base de conhecimento interna da SVN sobre produtos financeiros "
-            "(fundos, COEs, derivativos, FIIs, materiais de research). Use quando o assessor "
-            "perguntar sobre produtos específicos, características de fundos, estratégias, "
-            "rentabilidade, composição, gestoras, ou qualquer informação que possa estar nos "
-            "materiais cadastrados. Retorna trechos relevantes dos documentos internos."
+            "(fundos, COEs, derivativos, FIIs, materiais de research). Use para dados ESTRATÉGICOS: "
+            "preço-alvo, recomendação de compra/venda, racional de investimento, tese, análise "
+            "fundamentalista, estratégias, diferenciais, riscos, campanhas. "
+            "Ao citar dados desta tool, SEMPRE inclua o nome do documento como fonte. "
+            "Para cotações e dados ao vivo, use search_web ou lookup_fii_public."
         ),
         "parameters": {
             "type": "object",
@@ -42,11 +43,13 @@ TOOL_SEARCH_WEB = {
     "function": {
         "name": "search_web",
         "description": (
-            "Busca na web por informações de mercado em tempo real: cotações atuais, notícias "
-            "recentes, eventos corporativos, resultados trimestrais, dados macroeconômicos "
-            "(Selic, IPCA, IGPM, dólar, IFIX, IBOV). Use quando o assessor perguntar sobre "
-            "preços atuais, últimas notícias, eventos recentes, ou dados que mudam frequentemente "
-            "e não estariam na base interna."
+            "Busca na web por informações de mercado em tempo real: cotações atuais, preço, "
+            "abertura, fechamento, variação, D/Y ao vivo, P/VP, volume, notícias recentes, "
+            "eventos corporativos, resultados trimestrais, dados macroeconômicos "
+            "(Selic, IPCA, IGPM, dólar, IFIX, IBOV). "
+            "Use PROATIVAMENTE para qualquer pergunta sobre preços, cotações, indicadores ao vivo "
+            "ou índices de mercado. NÃO peça permissão ao usuário — busque automaticamente. "
+            "Para dados estratégicos (tese, racional, recomendação), use search_knowledge_base."
         ),
         "parameters": {
             "type": "object",
@@ -302,14 +305,17 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         if pid:
             seen_product_ids.add(int(pid))
 
+        material_name = meta.get("material_name", "") or meta.get("document_title", "Documento")
         results.append({
             "title": meta.get("document_title", "Documento"),
+            "material_name": material_name,
             "product": meta.get("product_name", ""),
             "ticker": meta.get("products", ""),
             "content": content[:800],
             "score": round(r.composite_score, 3) if hasattr(r, 'composite_score') else None,
             "material_id": meta.get("material_id"),
             "block_type": meta.get("block_type", ""),
+            "source_note": f"Ao citar dados deste resultado, inclua: (Fonte: {material_name})",
         })
 
     if db and seen_product_ids:
@@ -362,11 +368,18 @@ async def _execute_search_web(args: dict, db=None) -> Dict[str, Any]:
 
     formatted_results = []
     for r in result["results"][:5]:
+        source_name = r.get("url", "")
+        try:
+            from urllib.parse import urlparse
+            source_name = urlparse(r.get("url", "")).netloc or r.get("url", "")
+        except Exception:
+            pass
         formatted_results.append({
             "title": r.get("title", ""),
             "content": r.get("content", "")[:500],
             "url": r.get("url", ""),
             "published_date": r.get("published_date", ""),
+            "source_note": f"Ao citar dados deste resultado, inclua: (Fonte: {source_name})",
         })
 
     return {"results": formatted_results, "count": len(formatted_results)}
@@ -394,7 +407,8 @@ async def _execute_lookup_fii(args: dict) -> Dict[str, Any]:
         "ticker": ticker,
         "data": fii_info,
         "source": "FundsExplorer",
-        "note": "Dados públicos — este fundo pode NÃO estar na base oficial de recomendações da SVN."
+        "note": "Dados públicos — este fundo pode NÃO estar na base oficial de recomendações da SVN.",
+        "source_note": "Ao citar dados deste resultado, inclua: (Fonte: FundsExplorer)",
     }
 
 

@@ -30,6 +30,8 @@ class WebSearchService:
             "br.investing.com",
             "moneytimes.com.br",
             "suno.com.br",
+            "google.com",
+            "finance.yahoo.com",
         ]
     
     def is_configured(self) -> bool:
