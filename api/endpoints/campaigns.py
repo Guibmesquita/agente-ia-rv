@@ -1335,6 +1335,15 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
         content_template: Template para cada linha de recomendação (bloco repetível).
         group_by_client: Se True, adiciona cabeçalho de cliente no bloco lista_clientes.
     """
+    import unicodedata
+
+    def normalize_var_name(name: str) -> str:
+        if not name:
+            return ""
+        normalized = unicodedata.normalize('NFKD', str(name))
+        ascii_text = normalized.encode('ASCII', 'ignore').decode('ASCII')
+        return ascii_text.lower().replace(' ', '_').replace('-', '_')
+
     if not template_content:
         template_content = DEFAULT_TEMPLATE_CONTENT
     
@@ -1377,6 +1386,10 @@ def build_message(template_content: str, assessor_data: dict, custom_mapping: di
             val_str = format_cell_value(col_value)
             for pattern in [f"{{{{{col_name}}}}}", f"{{{{ {col_name} }}}}", f"{{{col_name}}}"]:
                 message = message.replace(pattern, val_str)
+            norm_name = normalize_var_name(col_name)
+            if norm_name != col_name:
+                for pattern in [f"{{{{{norm_name}}}}}", f"{{{{ {norm_name} }}}}", f"{{{norm_name}}}"]:
+                    message = message.replace(pattern, val_str)
     
     custom_fields = assessor_data.get("custom_fields", {})
     for var_name, value in custom_fields.items():

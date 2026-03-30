@@ -1467,6 +1467,12 @@ Equipe de Gestao"></textarea>
             'observacoes': 'Observacoes'
         };
         
+        function normalizeVarName(name) {
+            if (!name) return '';
+            var normalized = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+            return normalized.toLowerCase().replace(/ /g, '_').replace(/-/g, '_');
+        }
+
         function getVariableLabel(varName) {
             return variableLabels[varName.toLowerCase()] || varName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         }
@@ -2124,10 +2130,10 @@ Equipe de Gestao"></textarea>
             
             if (uploadedColumns.length > 0) {
                 section.style.display = 'block';
-                availableVariables = uploadedColumns.map(col => col.toLowerCase().replace(/\s+/g, '_'));
+                availableVariables = uploadedColumns.map(col => normalizeVarName(col));
                 
                 container.innerHTML = uploadedColumns.map(col => {
-                    const varName = col.toLowerCase().replace(/\s+/g, '_');
+                    const varName = normalizeVarName(col);
                     return '<span class="variable-tag planilha" data-action="insertVariableLegacy" data-var="' + varName + '">' + '{' + '{' + varName + '}' + '}' + '</span>';
                 }).join('');
                 
