@@ -987,6 +987,40 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 except:
                     pass
         
+        visual_blocks = context.get("visual_blocks") if context else None
+        if visual_blocks and response_sent_successfully:
+            try:
+                from services.visual_decision import select_best_visual_block
+                from services.visual_extractor import get_visual_base64
+                best_visual = select_best_visual_block(visual_blocks, normalized_message)
+                if best_visual and best_visual.get("block_id"):
+                    visual_result = get_visual_base64(best_visual["block_id"], db)
+                    if visual_result:
+                        import asyncio as _asyncio
+                        await _asyncio.sleep(0.3)
+                        caption_parts = []
+                        if best_visual.get("visual_description"):
+                            caption_parts.append(best_visual["visual_description"][:200])
+                        if best_visual.get("material_name"):
+                            caption_parts.append(f"Fonte: {best_visual['material_name']}")
+                        if best_visual.get("source_page"):
+                            caption_parts.append(f"Página {best_visual['source_page']}")
+                        caption = " | ".join(caption_parts) if caption_parts else "Referência visual"
+
+                        visual_send = await zapi_client.send_image(
+                            phone,
+                            visual_result["base64"],
+                            caption
+                        )
+                        if visual_send.get("success"):
+                            print(f"[WEBHOOK] Visual reference enviada: block_id={best_visual['block_id']}, "
+                                  f"fallback={visual_result['used_fallback']}, cache={visual_result['from_cache']}, "
+                                  f"size={visual_result['size_bytes']}B")
+                        else:
+                            print(f"[WEBHOOK] Falha ao enviar visual reference: {visual_send}")
+            except Exception as vis_err:
+                print(f"[WEBHOOK] Erro ao enviar referência visual: {vis_err}")
+
         if not response_sent_successfully and not material_ids_from_ai and not diagram_slugs_from_ai:
             response_was_empty = not response or len(response.strip()) < 20
             if response_was_empty:

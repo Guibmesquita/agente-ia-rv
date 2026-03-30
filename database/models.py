@@ -897,6 +897,7 @@ class ContentBlock(Base):
     semantic_tags = Column(Text, default="[]")  # JSON array de tags
     order = Column(Integer, default=0)
     current_version = Column(Integer, default=1)
+    visual_description = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -906,6 +907,7 @@ class ContentBlock(Base):
     creator = relationship("User", foreign_keys=[created_by])
     editor = relationship("User", foreign_keys=[updated_by])
     versions = relationship("BlockVersion", back_populates="block", cascade="all, delete-orphan", order_by="BlockVersion.version.desc()")
+    visual_cache = relationship("VisualCache", back_populates="content_block", uselist=False, cascade="all, delete-orphan")
 
 
 class BlockVersion(Base):
@@ -1284,6 +1286,21 @@ class DocumentEmbedding(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class VisualCache(Base):
+    __tablename__ = "visual_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_block_id = Column(Integer, ForeignKey("content_blocks.id"), unique=True, nullable=False, index=True)
+    image_data = Column(LargeBinary, nullable=False)
+    mime_type = Column(String(50), nullable=False, default="image/png")
+    bbox = Column(Text, nullable=True)
+    used_fallback = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_accessed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    content_block = relationship("ContentBlock", back_populates="visual_cache")
 
 
 class OutboxMessageStatus(str, enum.Enum):

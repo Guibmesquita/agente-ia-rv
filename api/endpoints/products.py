@@ -4061,3 +4061,27 @@ async def backfill_product_data(
           f"Embeddings: {results['embeddings_updated']}")
 
     return {"success": True, **results}
+
+
+@router.get("/visual-cache/{block_id}/image")
+async def get_visual_cache_image(
+    block_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    from database.models import VisualCache
+    from fastapi.responses import Response
+    from datetime import datetime, timezone
+
+    cached = db.query(VisualCache).filter(VisualCache.content_block_id == block_id).first()
+    if not cached:
+        raise HTTPException(status_code=404, detail="Visual cache not found for this block")
+
+    cached.last_accessed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return Response(
+        content=cached.image_data,
+        media_type=cached.mime_type,
+        headers={"Cache-Control": "public, max-age=3600"}
+    )

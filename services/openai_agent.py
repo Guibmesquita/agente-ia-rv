@@ -2779,6 +2779,7 @@ INSTRUÇÕES IMPORTANTES:
 
         tool_definitions = ALL_TOOLS_V2 if allow_tools else None
         tool_calls_log = []
+        search_results_for_visual = []
         iterations = 0
 
         for iteration in range(MAX_ITERATIONS):
@@ -2878,6 +2879,7 @@ INSTRUÇÕES IMPORTANTES:
                         "iterations": iterations,
                         "elapsed_ms": elapsed_ms,
                         "pipeline": "v2",
+                        "visual_blocks": search_results_for_visual if search_results_for_visual else None,
                     },
                 )
 
@@ -2959,6 +2961,14 @@ INSTRUÇÕES IMPORTANTES:
                     }
                 )
 
+                if tc_name == "search_knowledge_base" and isinstance(result, dict):
+                    seen_visual_ids = {b.get("block_id") for b in search_results_for_visual}
+                    for sr in result.get("results", []):
+                        bid = sr.get("block_id")
+                        if sr.get("block_type") == "grafico" and bid and bid not in seen_visual_ids:
+                            search_results_for_visual.append(sr)
+                            seen_visual_ids.add(bid)
+
         elapsed_ms = int((time.time() - start_time) * 1000)
         print(f"[V2] MAX_ITERATIONS atingido ({MAX_ITERATIONS}) — {elapsed_ms}ms total")
 
@@ -3015,6 +3025,7 @@ INSTRUÇÕES IMPORTANTES:
                 "elapsed_ms": elapsed_ms,
                 "pipeline": "v2",
                 "max_iterations_reached": True,
+                "visual_blocks": search_results_for_visual if search_results_for_visual else None,
             },
         )
 

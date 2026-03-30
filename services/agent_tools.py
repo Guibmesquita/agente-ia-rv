@@ -306,6 +306,23 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             seen_product_ids.add(int(pid))
 
         material_name = meta.get("material_name", "") or meta.get("document_title", "Documento")
+
+        block_id_raw = meta.get("block_id")
+        int_block_id = None
+        visual_desc = None
+        source_page = None
+        if block_id_raw and db:
+            try:
+                int_bid = int(str(block_id_raw).split("_")[-1]) if "_" in str(block_id_raw) else int(block_id_raw)
+                int_block_id = int_bid
+                from database.models import ContentBlock as CB2
+                cb_row = db.query(CB2.source_page, CB2.visual_description).filter(CB2.id == int_bid).first()
+                if cb_row:
+                    source_page = cb_row.source_page
+                    visual_desc = cb_row.visual_description
+            except Exception:
+                pass
+
         results.append({
             "title": meta.get("document_title", "Documento"),
             "material_name": material_name,
@@ -314,7 +331,10 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             "content": content[:800],
             "score": round(r.composite_score, 3) if hasattr(r, 'composite_score') else None,
             "material_id": meta.get("material_id"),
+            "block_id": int_block_id,
             "block_type": meta.get("block_type", ""),
+            "source_page": source_page,
+            "visual_description": visual_desc,
             "source_note": f"Ao citar dados deste resultado, inclua: (Fonte: {material_name})",
         })
 

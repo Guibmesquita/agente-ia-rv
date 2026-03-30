@@ -44,6 +44,8 @@ class TestMessageResponse(BaseModel):
     pipeline: Optional[str] = None
     iterations: Optional[int] = None
     elapsed_ms: Optional[int] = None
+    visual_image: Optional[str] = None
+    visual_caption: Optional[str] = None
 
 
 class ConversationMessage(BaseModel):
@@ -209,6 +211,31 @@ async def test_agent_message(
     identified = session.get("identified_assessor")
     intent_from_context = context.get("intent") if context else None
 
+    visual_image_b64 = None
+    visual_caption_str = None
+    visual_blocks = context.get("visual_blocks") if context else None
+    if visual_blocks:
+        try:
+            from services.visual_decision import select_best_visual_block
+            from services.visual_extractor import get_visual_base64
+            best_visual = select_best_visual_block(visual_blocks, message)
+            if best_visual and best_visual.get("block_id"):
+                visual_result = get_visual_base64(best_visual["block_id"], db)
+                if visual_result:
+                    visual_image_b64 = visual_result["base64"]
+                    caption_parts = []
+                    if best_visual.get("visual_description"):
+                        caption_parts.append(best_visual["visual_description"][:200])
+                    if best_visual.get("material_name"):
+                        caption_parts.append(f"Fonte: {best_visual['material_name']}")
+                    if best_visual.get("source_page"):
+                        caption_parts.append(f"Página {best_visual['source_page']}")
+                    visual_caption_str = " | ".join(caption_parts) if caption_parts else "Referência visual"
+                    print(f"[AGENT_TEST] Visual reference: block_id={best_visual['block_id']}, "
+                          f"fallback={visual_result['used_fallback']}, size={visual_result['size_bytes']}B")
+        except Exception as vis_err:
+            print(f"[AGENT_TEST] Erro ao gerar referência visual: {vis_err}")
+
     return TestMessageResponse(
         response=response,
         should_create_ticket=should_create_ticket,
@@ -225,6 +252,8 @@ async def test_agent_message(
         pipeline=context.get("pipeline") if context else None,
         iterations=context.get("iterations") if context else None,
         elapsed_ms=context.get("elapsed_ms") if context else None,
+        visual_image=visual_image_b64,
+        visual_caption=visual_caption_str,
     )
 
 
