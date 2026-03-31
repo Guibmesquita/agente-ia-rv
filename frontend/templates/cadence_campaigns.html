@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campanhas de Cadência — SteVaN</title>
+    <link rel="stylesheet" href="/static/global.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --green: #1D9E75;
+            --grey: #888780;
+            --amber: #EF9F27;
+            --blue: #378ADD;
+            --bg: #f8f8f8;
+            --card-border: #e5e5e5;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #1a1a1a; }
+        .page-container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+        h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 24px; }
+
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+        .kpi-card {
+            background: #fff; border: 1px solid var(--card-border); border-radius: 12px;
+            padding: 16px 20px; text-align: center;
+        }
+        .kpi-card .kpi-value { font-size: 2rem; font-weight: 700; color: var(--green); }
+        .kpi-card .kpi-label { font-size: 0.82rem; color: #666; margin-top: 4px; }
+
+        .campaign-list { display: flex; flex-direction: column; gap: 16px; }
+
+        .campaign-card {
+            background: #fff; border: 1px solid var(--card-border); border-radius: 12px;
+            padding: 16px 20px; cursor: pointer; transition: box-shadow 0.15s;
+        }
+        .campaign-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+
+        .campaign-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .campaign-name { font-size: 1.05rem; font-weight: 600; flex: 1; }
+        .badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .badge-firing { background: #e6f7f1; color: var(--green); }
+        .badge-done { background: #f0f0ef; color: var(--grey); }
+        .badge-paused { background: #fef3e0; color: var(--amber); }
+        .badge-scheduled { background: #e8f2fc; color: var(--blue); }
+
+        .progress-bar-container {
+            width: 100%; height: 8px; background: #eee; border-radius: 4px; margin-bottom: 8px;
+            overflow: hidden;
+        }
+        .progress-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+        .progress-bar-fill.firing { background: var(--green); }
+        .progress-bar-fill.done { background: var(--grey); }
+        .progress-bar-fill.paused { background: var(--amber); }
+        .progress-bar-fill.scheduled { background: var(--blue); }
+
+        .campaign-progress-pct { font-size: 0.85rem; font-weight: 700; color: var(--green); margin-bottom: 6px; }
+
+        .campaign-metrics {
+            display: flex; gap: 20px; font-size: 0.82rem; color: #555; flex-wrap: wrap;
+        }
+        .campaign-metrics span { white-space: nowrap; }
+        .campaign-metrics .metric-label { color: #999; }
+
+        .campaign-details {
+            display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;
+        }
+        .campaign-details.open { display: block; }
+
+        .detail-row {
+            display: flex; align-items: center; gap: 16px; font-size: 0.82rem; color: #555;
+            margin-bottom: 12px; flex-wrap: wrap;
+        }
+        .detail-row .detail-item { white-space: nowrap; }
+
+        .chart-container { width: 100%; max-width: 600px; height: 200px; margin: 12px 0; }
+
+        .alert-box {
+            padding: 10px 14px; border-radius: 8px; font-size: 0.82rem;
+            margin-bottom: 12px;
+        }
+        .alert-box.info { background: #e8f2fc; color: var(--blue); }
+        .alert-box.success { background: #e6f7f1; color: var(--green); }
+        .alert-box.warn { background: #fef3e0; color: var(--amber); }
+
+        .btn {
+            display: inline-block; padding: 8px 18px; border-radius: 8px;
+            border: none; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-pause { background: var(--amber); color: #fff; }
+        .btn-resume { background: var(--green); color: #fff; }
+        .btn-delete { background: #e74c3c; color: #fff; margin-left: 8px; }
+
+        .create-section {
+            margin-bottom: 28px; background: #fff; border: 1px solid var(--card-border);
+            border-radius: 12px; padding: 20px;
+        }
+        .create-section h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.78rem; color: #666; font-weight: 500; }
+        .form-group input, .form-group textarea {
+            padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 0.88rem; font-family: inherit;
+        }
+        .form-group textarea { min-height: 80px; resize: vertical; }
+        .contacts-area { margin-bottom: 16px; }
+        .contacts-area label { font-size: 0.82rem; color: #666; font-weight: 500; display: block; margin-bottom: 6px; }
+        .contacts-area textarea {
+            width: 100%; min-height: 100px; padding: 10px 12px;
+            border: 1px solid #ddd; border-radius: 8px; font-size: 0.82rem;
+            font-family: 'Courier New', monospace; resize: vertical;
+        }
+        .contacts-help { font-size: 0.72rem; color: #999; margin-top: 4px; }
+        .btn-create { background: var(--green); color: #fff; padding: 10px 28px; font-size: 0.9rem; }
+
+        .empty-state { text-align: center; padding: 48px 20px; color: #999; }
+        .empty-state p { font-size: 0.95rem; }
+
+        .toast {
+            position: fixed; bottom: 24px; right: 24px; padding: 12px 20px;
+            border-radius: 10px; color: #fff; font-size: 0.85rem; font-weight: 500;
+            z-index: 1000; opacity: 0; transition: opacity 0.3s;
+        }
+        .toast.show { opacity: 1; }
+        .toast.success { background: var(--green); }
+        .toast.error { background: #e74c3c; }
+
+        @media (max-width: 768px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .form-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <h1>Campanhas de Cadência</h1>
+
+        <div class="kpi-grid" id="kpi-grid">
+            <div class="kpi-card"><div class="kpi-value" id="kpi-active">0</div><div class="kpi-label">Campanhas ativas</div></div>
+            <div class="kpi-card"><div class="kpi-value" id="kpi-sent-today">0</div><div class="kpi-label">Enviados hoje</div></div>
+            <div class="kpi-card"><div class="kpi-value" id="kpi-pending">0</div><div class="kpi-label">Total pendente</div></div>
+            <div class="kpi-card"><div class="kpi-value" id="kpi-response-rate">0%</div><div class="kpi-label">Taxa de resposta média</div></div>
+        </div>
+
+        <div class="create-section">
+            <h2>Nova Campanha</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nome da campanha</label>
+                    <input type="text" id="campaign-name" placeholder="Ex: Campanha BTLG11 Março">
+                </div>
+                <div class="form-group">
+                    <label>Prazo (dias úteis)</label>
+                    <input type="number" id="campaign-deadline" value="5" min="1" max="30">
+                </div>
+                <div class="form-group">
+                    <label>Limite diário</label>
+                    <input type="number" id="campaign-limit" value="50" min="1" max="200">
+                </div>
+            </div>
+            <div class="contacts-area">
+                <label>Contatos (um por linha: telefone | nome | mensagem)</label>
+                <textarea id="contacts-input" placeholder="5511999999999 | João Silva | Olá João, temos uma oportunidade...&#10;5511888888888 | Maria Santos | Olá Maria, gostaríamos de..."></textarea>
+                <div class="contacts-help">Formato: telefone | nome | mensagem personalizada (separados por |)</div>
+            </div>
+            <button class="btn btn-create" data-action="create-campaign">Criar Campanha</button>
+        </div>
+
+        <div id="campaign-list" class="campaign-list">
+            <div class="empty-state"><p>Carregando campanhas...</p></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API = '/api/cadence-campaigns';
+        let campaigns = [];
+        let charts = {};
+
+        function showToast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + type + ' show';
+            setTimeout(() => t.classList.remove('show'), 3500);
+        }
+
+        function getStatusBadge(status) {
+            const map = {
+                firing: { cls: 'badge-firing', text: 'Disparando' },
+                done: { cls: 'badge-done', text: 'Concluída' },
+                paused: { cls: 'badge-paused', text: 'Pausada' },
+                scheduled: { cls: 'badge-scheduled', text: 'Agendada' },
+            };
+            const s = map[status] || { cls: 'badge-scheduled', text: status };
+            return '<span class="badge ' + s.cls + '">' + s.text + '</span>';
+        }
+
+        function getTodaySent(c) {
+            const today = new Date().toISOString().slice(0, 10);
+            const log = (c.daily_log || []).find(d => d.date === today);
+            return log ? log.sent : 0;
+        }
+
+        function getTodayStr() { return new Date().toISOString().slice(0, 10); }
+
+        function updateKPIs() {
+            const active = campaigns.filter(c => c.status === 'firing');
+            document.getElementById('kpi-active').textContent = active.length;
+
+            const today = getTodayStr();
+            let sentToday = 0;
+            active.forEach(c => { sentToday += getTodaySent(c); });
+            document.getElementById('kpi-sent-today').textContent = sentToday;
+
+            let totalPending = 0;
+            active.forEach(c => { totalPending += c.pending || 0; });
+            document.getElementById('kpi-pending').textContent = totalPending;
+
+            let totalRate = 0;
+            if (active.length > 0) {
+                active.forEach(c => { totalRate += c.response_rate || 0; });
+                totalRate = (totalRate / active.length).toFixed(1);
+            }
+            document.getElementById('kpi-response-rate').textContent = totalRate + '%';
+        }
+
+        function renderCampaigns() {
+            const container = document.getElementById('campaign-list');
+            if (!campaigns.length) {
+                container.innerHTML = '<div class="empty-state"><p>Nenhuma campanha encontrada. Crie uma acima.</p></div>';
+                return;
+            }
+            container.innerHTML = campaigns.map(c => {
+                const pct = c.total_contacts > 0 ? Math.round(c.sent / c.total_contacts * 100) : 0;
+                const todaySent = getTodaySent(c);
+                const todayRemaining = Math.max(0, (c.daily_limit || 50) - todaySent);
+                const statusAlert = c.status === 'firing'
+                    ? '<div class="alert-box info">Disparando — ' + todaySent + ' enviados hoje, ' + todayRemaining + ' restantes no limite diário</div>'
+                    : c.status === 'done'
+                        ? '<div class="alert-box success">Campanha concluída</div>'
+                        : c.status === 'paused'
+                            ? '<div class="alert-box warn">Campanha pausada — disparos interrompidos</div>'
+                            : '';
+
+                const actionBtn = c.status === 'firing'
+                    ? '<button class="btn btn-pause" data-action="pause" data-id="' + c.id + '">Pausar</button>'
+                    : c.status === 'paused'
+                        ? '<button class="btn btn-resume" data-action="resume" data-id="' + c.id + '">Retomar</button>'
+                        : '';
+                const deleteBtn = c.status !== 'firing'
+                    ? '<button class="btn btn-delete" data-action="delete-campaign" data-id="' + c.id + '">Excluir</button>'
+                    : '';
+
+                return '<div class="campaign-card" data-action="toggle-details" data-target="details-' + c.id + '">' +
+                    '<div class="campaign-header">' +
+                        '<span class="campaign-name">' + (c.name || 'Sem nome') + '</span>' +
+                        getStatusBadge(c.status) +
+                    '</div>' +
+                    '<div class="progress-bar-container"><div class="progress-bar-fill ' + c.status + '" style="width:' + pct + '%"></div></div>' +
+                    '<div class="campaign-progress-pct">' + pct + '% concluído</div>' +
+                    '<div class="campaign-metrics">' +
+                        '<span><span class="metric-label">Enviados:</span> ' + c.sent + '</span>' +
+                        '<span><span class="metric-label">Pendentes:</span> ' + c.pending + '</span>' +
+                        '<span><span class="metric-label">Responderam:</span> ' + c.responded + '</span>' +
+                        '<span><span class="metric-label">Taxa:</span> ' + c.response_rate + '%</span>' +
+                        '<span><span class="metric-label">Falhas:</span> ' + c.failed + '</span>' +
+                    '</div>' +
+                    '<div class="campaign-details" id="details-' + c.id + '">' +
+                        statusAlert +
+                        '<div class="detail-row">' +
+                            '<span class="detail-item">Início: ' + (c.start_date ? c.start_date.slice(0,10) : '—') + '</span>' +
+                            '<span class="detail-item">Limite diário: ' + c.daily_limit + '</span>' +
+                            '<span class="detail-item">Prazo: ' + c.deadline_days + ' dias úteis</span>' +
+                            (c.end_date ? '<span class="detail-item">Concluída: ' + c.end_date.slice(0,10) + '</span>' : '') +
+                        '</div>' +
+                        '<div class="chart-container"><canvas id="chart-' + c.id + '"></canvas></div>' +
+                        '<div style="margin-top:12px">' + actionBtn + deleteBtn + '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+
+            campaigns.forEach(c => renderChart(c));
+        }
+
+        function renderChart(c) {
+            const canvas = document.getElementById('chart-' + c.id);
+            if (!canvas || !c.daily_log || c.daily_log.length === 0) return;
+
+            if (charts[c.id]) { charts[c.id].destroy(); }
+
+            const today = getTodayStr();
+            const labels = c.daily_log.map(d => d.date ? d.date.slice(5) : '');
+            const sentData = c.daily_log.map(d => d.sent || 0);
+            const respondedData = c.daily_log.map(d => d.responded || 0);
+            const bgColors = c.daily_log.map(d => d.date === today ? '#1D9E75' : '#1D9E7580');
+
+            charts[c.id] = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Enviados', data: sentData, backgroundColor: bgColors, borderRadius: 4 },
+                        { label: 'Responderam', data: respondedData, backgroundColor: '#378ADD80', borderRadius: 4 },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 5, font: { size: 11 } } },
+                        x: { ticks: { font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        async function fetchCampaigns() {
+            try {
+                const res = await fetch(API);
+                if (!res.ok) throw new Error('Erro ' + res.status);
+                campaigns = await res.json();
+                updateKPIs();
+                renderCampaigns();
+            } catch (e) {
+                console.error('Erro ao carregar campanhas:', e);
+            }
+        }
+
+        function parseContacts(text) {
+            return text.trim().split('\n').filter(l => l.trim()).map(line => {
+                const parts = line.split('|').map(p => p.trim());
+                if (parts.length < 3) return null;
+                return { phone: parts[0], name: parts[1], message: parts[2] };
+            }).filter(Boolean);
+        }
+
+        async function createCampaign() {
+            const name = document.getElementById('campaign-name').value.trim();
+            const deadline = parseInt(document.getElementById('campaign-deadline').value) || 5;
+            const limit = parseInt(document.getElementById('campaign-limit').value) || 50;
+            const contactsText = document.getElementById('contacts-input').value;
+
+            if (!name) { showToast('Informe o nome da campanha', 'error'); return; }
+            const contacts = parseContacts(contactsText);
+            if (!contacts.length) { showToast('Informe ao menos um contato válido (telefone | nome | mensagem)', 'error'); return; }
+
+            try {
+                const res = await fetch(API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, deadline_days: deadline, daily_limit: limit, contacts })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao criar');
+
+                showToast('Campanha criada com sucesso!', 'success');
+                if (data.alerta) { setTimeout(() => showToast(data.alerta, 'error'), 4000); }
+
+                document.getElementById('campaign-name').value = '';
+                document.getElementById('contacts-input').value = '';
+                fetchCampaigns();
+            } catch (e) {
+                showToast('Erro: ' + e.message, 'error');
+            }
+        }
+
+        async function togglePauseResume(id, action) {
+            try {
+                const res = await fetch(API + '/' + id + '/' + action, { method: 'PATCH' });
+                if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+                showToast(action === 'pause' ? 'Campanha pausada' : 'Campanha retomada', 'success');
+                fetchCampaigns();
+            } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+        }
+
+        async function deleteCampaign(id) {
+            if (!confirm('Tem certeza que deseja excluir esta campanha?')) return;
+            try {
+                const res = await fetch(API + '/' + id, { method: 'DELETE' });
+                if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+                showToast('Campanha excluída', 'success');
+                fetchCampaigns();
+            } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+        }
+
+        document.addEventListener('click', function(e) {
+            const el = e.target.closest('[data-action]');
+            if (!el) return;
+            const action = el.dataset.action;
+            if (action === 'create-campaign') { e.preventDefault(); createCampaign(); }
+            else if (action === 'toggle-details') {
+                const target = document.getElementById(el.dataset.target);
+                if (target) target.classList.toggle('open');
+            }
+            else if (action === 'pause') { e.stopPropagation(); togglePauseResume(el.dataset.id, 'pause'); }
+            else if (action === 'resume') { e.stopPropagation(); togglePauseResume(el.dataset.id, 'resume'); }
+            else if (action === 'delete-campaign') { e.stopPropagation(); deleteCampaign(el.dataset.id); }
+        });
+
+        fetchCampaigns();
+        setInterval(fetchCampaigns, 60000);
+    </script>
+</body>
+</html>

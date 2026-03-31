@@ -518,6 +518,12 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     
     print(f"[WEBHOOK] Iniciando process_text_message para {phone}: {message[:50]}...")
     
+    try:
+        from services.cadence_controller import track_campaign_response
+        track_campaign_response(phone, db)
+    except Exception as track_err:
+        print(f"[WEBHOOK] Erro ao rastrear resposta de campanha: {track_err}")
+    
     response_sent_successfully = False
     
     try:

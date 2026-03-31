@@ -1322,6 +1322,57 @@ class OutboxMessage(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class CadenceCampaign(Base):
+    __tablename__ = "cadence_campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    status = Column(String(20), default="scheduled")
+    total_contacts = Column(Integer, default=0)
+    daily_limit = Column(Integer, default=50)
+    deadline_days = Column(Integer, default=5)
+    start_date = Column(DateTime(timezone=True), nullable=True)
+    end_date = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    contacts = relationship("CadenceCampaignContact", back_populates="campaign", cascade="all, delete-orphan")
+    daily_logs = relationship("CampaignDailyLog", back_populates="campaign", cascade="all, delete-orphan")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class CadenceCampaignContact(Base):
+    __tablename__ = "cadence_campaign_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("cadence_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    phone = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=True)
+    custom_message = Column(Text, nullable=False)
+    status = Column(String(20), default="pending", index=True)
+    priority = Column(Integer, default=3)
+    scheduled_for = Column(DateTime(timezone=True), nullable=True, index=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    delivered = Column(Boolean, default=False)
+    responded_at = Column(DateTime(timezone=True), nullable=True)
+    retry_count = Column(Integer, default=0)
+
+    campaign = relationship("CadenceCampaign", back_populates="contacts")
+
+
+class CampaignDailyLog(Base):
+    __tablename__ = "campaign_daily_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("cadence_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    log_date = Column(DateTime(timezone=True), nullable=False)
+    sent_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    responded_count = Column(Integer, default=0)
+
+    campaign = relationship("CadenceCampaign", back_populates="daily_logs")
+
+
 class RevokedToken(Base):
     __tablename__ = "revoked_tokens"
 

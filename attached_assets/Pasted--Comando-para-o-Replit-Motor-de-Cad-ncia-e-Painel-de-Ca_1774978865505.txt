@@ -1,0 +1,292 @@
+# Comando para o Replit — Motor de Cadência e Painel de Campanhas
+
+---
+
+## PASSO 0 — Leia o projeto antes de escrever qualquer código
+
+Antes de criar ou modificar qualquer arquivo, faça o seguinte:
+
+1. Liste todos os arquivos do projeto com suas extensões e tamanhos
+2. Identifique: linguagem principal, framework web (se houver), banco de dados em uso, e onde fica a lógica de disparo atual
+3. Localize o arquivo ou função responsável por enviar mensagens via ZAPI
+4. Localize onde os contatos/assessores são carregados antes do envio
+5. Verifique se já existe algum mecanismo de agendamento (cron, loop, scheduler)
+6. Identifique o banco de dados ou mecanismo de persistência em uso
+
+Documente o que encontrou antes de continuar. Só então prossiga com as implementações abaixo.
+
+---
+
+## PASSO 1 — Banco de dados: tabelas de campanhas e rastreamento
+
+Usando o mesmo banco de dados já em uso no projeto, crie as seguintes estruturas.
+Se o banco for relacional (PostgreSQL, SQLite, MySQL), use SQL. Se for NoSQL, adapte para o formato equivalente.
+
+### Tabela `campaigns`
+
+```
+id                  identificador único (uuid ou autoincrement)
+name                nome da campanha (texto)
+status              enum: 'scheduled' | 'firing' | 'paused' | 'done'
+total_contacts      inteiro — total de contatos na fila
+daily_limit         inteiro — máximo de envios proativos por dia (padrão: 50)
+deadline_days       inteiro — prazo em dias úteis para concluir
+start_date          data de início
+end_date            data de conclusão (null enquanto não concluída)
+created_at          timestamp de criação
+```
+
+### Tabela `campaign_contacts`
+
+```
+id                  identificador único
+campaign_id         referência à tabela campaigns
+phone               número do contato
+name                nome do assessor
+custom_message      texto da mensagem personalizada para esse contato
+status              enum: 'pending' | 'sent' | 'failed' | 'responded'
+priority            inteiro: 1 = tem histórico recente, 2 = tem histórico antigo, 3 = sem histórico
+scheduled_for       timestamp de quando deve ser enviado (calculado pelo planejador)
+sent_at             timestamp real do envio (null até enviar)
+delivered           booleano — confirmação de entrega da ZAPI
+responded_at        timestamp da primeira resposta recebida (null até responder)
+retry_count         inteiro — número de tentativas (padrão 0)
+```
+
+### Tabela `campaign_daily_log`
+
+```
+id                  identificador único
+campaign_id         referência à tabela campaigns
+log_date            data (apenas data, sem hora)
+sent_count          quantos foram enviados nesse dia
+failed_count        quantos falharam nesse dia
+responded_count     quantos responderam nesse dia
+```
+
+---
+
+## PASSO 2 — Módulo de planejamento de cadência
+
+Crie um novo arquivo chamado `campaign_planner` (extensão conforme linguagem do projeto).
+
+Este módulo deve conter as seguintes funções. Adapte a sintaxe para a linguagem identificada no Passo 0.
+
+### Função `calculate_daily_plan(total_contacts, deadline_days, daily_limit=50)`
+
+Recebe o total de contatos, o prazo em dias úteis e o limite diário.
+
+Lógica:
+- Calcule `envios_por_dia = ceil(total_contacts / deadline_days)`
+- Se `envios_por_dia > daily_limit`: não rejeite — apenas registre um alerta com a mensagem: `"Atenção: volume diário necessário ({envios_por_dia}) ultrapassa o limite seguro de {daily_limit}. Considere estender o prazo para {ceil(total_contacts / daily_limit)} dias."`
+- Retorne: `{ envios_por_dia, dias_necessarios, alerta (string ou null) }`
+
+### Função `assign_scheduled_times(campaign_id)`
+
+Para uma campanha recém-criada ou retomada, distribui os timestamps de envio de cada contato pendente.
+
+Lógica:
+- Janela de trabalho: 09h00 às 18h00
+- Intervalo mínimo entre dois envios consecutivos: 8 minutos
+- Intervalo máximo entre dois envios: 25 minutos
+- A cada bloco de 10 a 12 envios, inserir uma pausa de 15 a 30 minutos (sortear o valor exato)
+- Bloco do almoço (12h00 às 13h30): agendar no máximo 2 envios nesse período
+- Distribuir os contatos ao longo dos dias do prazo respeitando o `daily_limit`
+- Prioridade de ordenação da fila: `priority ASC` (1 primeiro), depois `RANDOM()` dentro de cada grupo de prioridade
+- Persista os timestamps calculados no campo `scheduled_for` de cada registro em `campaign_contacts`
+
+### Função `prioritize_contacts(campaign_id)`
+
+Antes de distribuir os horários, classifique os contatos da campanha:
+- Prioridade 1: contato tem mensagens recebidas nos últimos 2 dias (consulte o histórico de conversas do sistema atual)
+- Prioridade 2: contato tem qualquer histórico de conversa anterior
+- Prioridade 3: contato sem histórico nenhum — limitar a no máximo 15 desse grupo por dia
+
+Atualize o campo `priority` em `campaign_contacts` conforme essa lógica.
+
+---
+
+## PASSO 3 — Módulo de execução de cadência
+
+Crie um novo arquivo chamado `cadence_controller` (extensão conforme linguagem do projeto).
+
+Este módulo substitui a lógica do script único de disparo atual. **Não delete o script original — apenas desative sua chamada direta e substitua pelo novo fluxo descrito abaixo.**
+
+### Função `run_cadence_tick()`
+
+Essa função deve ser chamada em loop contínuo enquanto o agente estiver ativo (use o mesmo mecanismo de loop já existente no projeto — não crie um processo paralelo desnecessário).
+
+Lógica a cada tick:
+
+```
+1. Verificar se estamos dentro da janela de trabalho (09h00–18h00 do dia atual)
+   - Se não: não fazer nada nesse tick
+
+2. Buscar o próximo contato pendente de todas as campanhas com status 'firing'
+   onde: status = 'pending' AND scheduled_for <= agora
+   ordenado por: scheduled_for ASC (mais antigo primeiro)
+
+3. Se não há contato elegível: aguardar e retornar
+
+4. Verificar limite diário:
+   - Consultar campaign_daily_log para a campanha do contato e o dia atual
+   - Se sent_count >= daily_limit da campanha: pular para a próxima campanha
+
+5. Verificar intervalo desde o último envio da sessão:
+   - Se o último envio foi há menos de 8 minutos: aguardar
+
+6. Chamar a função de envio já existente no projeto (a que usa a ZAPI)
+   - Passar o número e a mensagem personalizada do registro
+
+7. Registrar resultado:
+   - Sucesso: atualizar status='sent', sent_at=agora, delivered=true em campaign_contacts
+             incrementar sent_count em campaign_daily_log
+   - Falha:   incrementar retry_count; se retry_count >= 3, marcar status='failed'
+             incrementar failed_count em campaign_daily_log
+
+8. Verificar saúde do número:
+   - Se houver 2 falhas consecutivas de entrega em menos de 10 minutos:
+     pausar todos os disparos por 20 minutos e registrar alerta no log
+
+9. Verificar se a campanha foi concluída:
+   - Se não há mais contatos com status='pending' ou status='sent' (sem entrega confirmada):
+     atualizar campaigns SET status='done', end_date=hoje
+```
+
+### Integração com respostas recebidas
+
+No ponto do código atual onde o agente processa uma mensagem recebida de um assessor, adicione após o processamento da resposta:
+
+```
+- Buscar em campaign_contacts pelo número do remetente onde status='sent'
+- Se encontrado: atualizar responded_at=agora
+- Incrementar responded_count em campaign_daily_log para o dia atual
+```
+
+---
+
+## PASSO 4 — API de dados para o painel
+
+Se o projeto já tem um servidor web (Flask, FastAPI, Express ou similar), adicione as seguintes rotas. Se não há servidor web, crie um servidor mínimo apenas para servir essas rotas e o painel.
+
+### `GET /api/campaigns`
+
+Retorna lista de todas as campanhas com métricas agregadas:
+
+```json
+[
+  {
+    "id": "...",
+    "name": "...",
+    "status": "firing",
+    "total_contacts": 220,
+    "sent": 127,
+    "pending": 91,
+    "failed": 2,
+    "responded": 48,
+    "response_rate": 37.8,
+    "daily_limit": 50,
+    "start_date": "2025-03-24",
+    "end_date": null,
+    "deadline_days": 5,
+    "daily_log": [
+      { "date": "2025-03-24", "sent": 40, "failed": 0, "responded": 14 },
+      { "date": "2025-03-25", "sent": 42, "failed": 1, "responded": 18 }
+    ]
+  }
+]
+```
+
+### `GET /api/campaigns/<id>`
+
+Retorna os mesmos dados de uma campanha específica, mais a lista completa de contatos com status individual.
+
+### `POST /api/campaigns`
+
+Cria uma nova campanha. Corpo esperado:
+
+```json
+{
+  "name": "Nome da campanha",
+  "deadline_days": 4,
+  "daily_limit": 50,
+  "contacts": [
+    { "phone": "5511999999999", "name": "Nome Assessor", "message": "Mensagem personalizada..." }
+  ]
+}
+```
+
+Ao receber esse payload:
+1. Criar registro em `campaigns` com status `'scheduled'`
+2. Inserir todos os contatos em `campaign_contacts` com status `'pending'`
+3. Chamar `prioritize_contacts(campaign_id)`
+4. Chamar `assign_scheduled_times(campaign_id)`
+5. Atualizar status da campanha para `'firing'`
+6. Retornar o objeto da campanha criada com o alerta de volume (se houver)
+
+### `PATCH /api/campaigns/<id>/pause`
+
+Atualiza `campaigns SET status='paused'` para a campanha informada.
+
+### `PATCH /api/campaigns/<id>/resume`
+
+Atualiza `campaigns SET status='firing'`, recalcula `assign_scheduled_times` apenas para os contatos ainda `'pending'`.
+
+---
+
+## PASSO 5 — Painel de acompanhamento visual
+
+Crie um arquivo `campaign_dashboard.html` servido pela rota `GET /campanhas` do servidor.
+
+O painel deve ser uma página HTML única (sem framework externo além de Chart.js) com as seguintes seções:
+
+### Cabeçalho — métricas globais (4 cards)
+- Campanhas ativas (status = 'firing')
+- Enviados hoje (soma de sent_count do dia atual em todas as campanhas ativas)
+- Total pendente (soma de contatos com status='pending' em campanhas ativas)
+- Taxa de resposta média (responded / sent × 100, média entre campanhas ativas)
+
+### Lista de campanhas
+
+Para cada campanha, exibir um card com:
+- Nome da campanha
+- Badge de status: `Disparando` (verde) | `Concluída` (cinza) | `Pausada` (âmbar) | `Agendada` (azul)
+- Barra de progresso horizontal (sent / total × 100%)
+- Percentual concluído em destaque
+- Linha de métricas: Enviados · Pendentes · Responderam · Taxa de resposta
+- Ao clicar no card, expandir e mostrar:
+  - Gráfico de barras verticais com envios por dia (usando Chart.js)
+  - Dia atual destacado com cor mais forte
+  - Linha com: Data de início · Limite diário · Previsão de conclusão
+  - Alerta de status em tempo real (ex: "Disparando — 45 enviados hoje, 5 restantes")
+  - Botão "Pausar" (se status = 'firing') ou "Retomar" (se status = 'paused')
+
+### Atualização automática
+
+A página deve chamar `GET /api/campaigns` a cada 60 segundos e atualizar os dados sem recarregar a página inteira (use `fetch` + atualização do DOM).
+
+### Estilos
+
+Use apenas CSS puro, sem frameworks. A paleta deve ser:
+- Verde `#1D9E75` para campanhas ativas e barras de progresso em andamento
+- Cinza `#888780` para campanhas concluídas
+- Âmbar `#EF9F27` para campanhas pausadas
+- Azul `#378ADD` para campanhas agendadas
+- Fundo geral: branco ou cinza muito claro
+- Tipografia: system-ui ou sans-serif nativa
+- Cards com borda `1px solid #e5e5e5`, border-radius `12px`, padding `16px 20px`
+
+---
+
+## PASSO 6 — Verificação final
+
+Após implementar tudo, faça as seguintes verificações antes de confirmar que está pronto:
+
+1. O script de disparo original ainda existe e apenas não é mais chamado diretamente — confirme
+2. A função de envio via ZAPI é a mesma de antes — apenas é chamada de dentro do `cadence_controller` agora
+3. Criar uma campanha de teste com 5 contatos e prazo de 1 dia — verificar se os `scheduled_for` são distribuídos corretamente dentro de 09h–18h com intervalos de no mínimo 8 minutos
+4. Confirmar que `GET /api/campaigns` retorna JSON válido
+5. Confirmar que o painel em `/campanhas` carrega sem erros de console
+6. Confirmar que pausar e retomar uma campanha altera o status corretamente e o `cadence_controller` para de enviar durante a pausa
+
+Relate o que foi criado, o que foi modificado e se houve algum ponto de adaptação necessário por conta da estrutura existente.

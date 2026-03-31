@@ -41,6 +41,10 @@ async def lifespan(app: FastAPI):
     openai_health_task = asyncio.create_task(_openai_health_loop())
     background_tasks.append(openai_health_task)
 
+    from services.cadence_controller import cadence_loop
+    cadence_task = asyncio.create_task(cadence_loop())
+    background_tasks.append(cadence_task)
+
     yield
     
     for task in background_tasks:
@@ -57,16 +61,16 @@ async def run_init_background():
         from api.endpoints import (
             auth, users, tickets, whatsapp_webhook, integrations, agent_config,
             assessores, campaigns, knowledge, agent_test, conversations, products,
-            files, insights, search, trusted_sources, costs, health
+            files, insights, search, trusted_sources, costs, health, cadence_campaigns
         )
         return (auth, users, tickets, whatsapp_webhook, integrations, agent_config,
                 assessores, campaigns, knowledge, agent_test, conversations, products,
-                files, insights, search, trusted_sources, costs, health)
+                files, insights, search, trusted_sources, costs, health, cadence_campaigns)
 
     try:
         (auth, users, tickets, whatsapp_webhook, integrations, agent_config,
          assessores, campaigns, knowledge, agent_test, conversations, products,
-         files, insights, search, trusted_sources, costs, health) = await asyncio.to_thread(_import_endpoint_modules)
+         files, insights, search, trusted_sources, costs, health, cadence_campaigns) = await asyncio.to_thread(_import_endpoint_modules)
         app.include_router(auth.router)
         app.include_router(users.router)
         app.include_router(tickets.router)
@@ -87,6 +91,7 @@ async def run_init_background():
         app.include_router(trusted_sources.router)
         app.include_router(costs.router)
         app.include_router(health.router)
+        app.include_router(cadence_campaigns.router)
         print("[INIT] Routers registrados com sucesso.")
     except Exception as e:
         print(f"[INIT] Erro ao registrar routers: {e}")
@@ -208,6 +213,44 @@ def _apply_incremental_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_outbox_messages_dedupe_key ON outbox_messages(dedupe_key)",
         "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS ai_error_detail TEXT",
+        """CREATE TABLE IF NOT EXISTS cadence_campaigns (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            status VARCHAR(20) DEFAULT 'scheduled',
+            total_contacts INTEGER DEFAULT 0,
+            daily_limit INTEGER DEFAULT 50,
+            deadline_days INTEGER DEFAULT 5,
+            start_date TIMESTAMPTZ,
+            end_date TIMESTAMPTZ,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS cadence_campaign_contacts (
+            id SERIAL PRIMARY KEY,
+            campaign_id INTEGER NOT NULL REFERENCES cadence_campaigns(id) ON DELETE CASCADE,
+            phone VARCHAR(50) NOT NULL,
+            name VARCHAR(255),
+            custom_message TEXT NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending',
+            priority INTEGER DEFAULT 3,
+            scheduled_for TIMESTAMPTZ,
+            sent_at TIMESTAMPTZ,
+            delivered BOOLEAN DEFAULT FALSE,
+            responded_at TIMESTAMPTZ,
+            retry_count INTEGER DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_cc_campaign_id ON cadence_campaign_contacts(campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_cc_status ON cadence_campaign_contacts(status)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_cc_scheduled ON cadence_campaign_contacts(scheduled_for)",
+        """CREATE TABLE IF NOT EXISTS campaign_daily_log (
+            id SERIAL PRIMARY KEY,
+            campaign_id INTEGER NOT NULL REFERENCES cadence_campaigns(id) ON DELETE CASCADE,
+            log_date TIMESTAMPTZ NOT NULL,
+            sent_count INTEGER DEFAULT 0,
+            failed_count INTEGER DEFAULT 0,
+            responded_count INTEGER DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_campaign_daily_log_campaign ON campaign_daily_log(campaign_id)",
         """DO $$
         BEGIN
             IF EXISTS (
@@ -1086,6 +1129,21 @@ async def campanhas_page(request: Request):
         return RedirectResponse(url="/login?error=permission")
     
     return templates.TemplateResponse("campanhas.html", {"request": request, "user_role": user_role})
+
+
+@app.get("/cadence-campaigns", response_class=HTMLResponse)
+async def cadence_campaigns_page(request: Request):
+    from core.security import decode_token
+    token = request.cookies.get("access_token")
+    if not token:
+        return RedirectResponse(url="/login")
+    payload = decode_token(token)
+    if not payload:
+        return RedirectResponse(url="/login")
+    user_role = payload.get("role")
+    if user_role not in ["admin", "gestao_rv"]:
+        return RedirectResponse(url="/login?error=permission")
+    return templates.TemplateResponse("cadence_campaigns.html", {"request": request, "user_role": user_role})
 
 
 @app.get("/estruturas-campanha", response_class=HTMLResponse)
