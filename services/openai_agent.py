@@ -2784,12 +2784,21 @@ INSTRUÇÕES IMPORTANTES:
 
         if db and allow_tools:
             try:
+                import re
                 from services.visual_decision import VISUAL_TRIGGERS, CONCEPTUAL_BLOCKERS
                 query_lower = user_message.lower().strip()
                 has_blocker = any(b in query_lower for b in CONCEPTUAL_BLOCKERS)
                 has_trigger = any(t in query_lower for t in VISUAL_TRIGGERS)
-                if has_trigger and not has_blocker:
-                    print(f"[V2_VISUAL_PREFETCH] Visual triggers detected, running proactive search...")
+                _ticker_re = re.compile(r'\b[A-Z]{4}[0-9]{1,2}\b', re.IGNORECASE)
+                has_identifiable = bool(_ticker_re.search(user_message))
+                if not has_trigger:
+                    print(f"[V2_VISUAL_PREFETCH] Skipped — no visual trigger detected")
+                elif has_blocker:
+                    print(f"[V2_VISUAL_PREFETCH] Skipped — conceptual blocker detected")
+                elif not has_identifiable:
+                    print(f"[V2_VISUAL_PREFETCH] Skipped — no identifiable ticker/product in query")
+                else:
+                    print(f"[V2_VISUAL_PREFETCH] Visual triggers detected + ticker found, running proactive search...")
                     prefetch_result = await execute_tool_call_direct(
                         "search_knowledge_base",
                         {"query": user_message},
@@ -2811,8 +2820,6 @@ INSTRUÇÕES IMPORTANTES:
                             print(f"[V2_VISUAL_PREFETCH] Proactive search returned no graphic blocks")
                     else:
                         print(f"[V2_VISUAL_PREFETCH] Proactive search returned non-dict result")
-                elif has_blocker:
-                    print(f"[V2_VISUAL_PREFETCH] Skipped — conceptual blocker detected")
             except Exception as prefetch_err:
                 print(f"[V2_VISUAL_PREFETCH] Error in proactive search: {prefetch_err}")
 
