@@ -1233,7 +1233,7 @@ class CostTracking(Base):
     cost_brl = Column(Float, default=0.0)
     exchange_rate = Column(Float, default=5.5)
     context = Column(String(200), nullable=True)
-    conversation_id = Column(Integer, nullable=True)
+    conversation_id = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 

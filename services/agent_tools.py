@@ -354,9 +354,41 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         except Exception:
             pass
 
+    visual_candidates = []
+    if db:
+        try:
+            seen_material_ids = {r.get("material_id") for r in results if r.get("material_id")}
+            seen_block_ids = {r.get("block_id") for r in results if r.get("block_id")}
+            if seen_material_ids:
+                from database.models import ContentBlock as CB3, Material as Mat3
+                graphic_blocks = (
+                    db.query(CB3.id, CB3.source_page, CB3.visual_description, CB3.material_id, Mat3.name.label("mat_name"))
+                    .join(Mat3, Mat3.id == CB3.material_id)
+                    .filter(CB3.material_id.in_([int(mid) for mid in seen_material_ids if mid]))
+                    .filter(CB3.block_type == "grafico")
+                    .filter(CB3.id.notin_(list(seen_block_ids) if seen_block_ids else [0]))
+                    .all()
+                )
+                for gb in graphic_blocks:
+                    visual_candidates.append({
+                        "block_id": gb.id,
+                        "block_type": "grafico",
+                        "source_page": gb.source_page,
+                        "visual_description": gb.visual_description,
+                        "material_name": gb.mat_name,
+                        "material_id": gb.material_id,
+                        "score": 0,
+                    })
+                if visual_candidates:
+                    print(f"[VISUAL_ENRICH] Found {len(visual_candidates)} graphic blocks from materials {list(seen_material_ids)}")
+        except Exception as ve:
+            print(f"[VISUAL_ENRICH] Error enriching visual candidates: {ve}")
+
     response = {"results": results, "count": len(results)}
     if materials_with_pdf:
         response["materials_with_pdf"] = list(materials_with_pdf)
+    if visual_candidates:
+        response["visual_candidates"] = visual_candidates
 
     return response
 

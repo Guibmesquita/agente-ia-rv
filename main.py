@@ -211,6 +211,17 @@ def _apply_incremental_migrations():
         """DO $$
         BEGIN
             IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'cost_tracking'
+                AND column_name = 'conversation_id'
+                AND data_type = 'integer'
+            ) THEN
+                ALTER TABLE cost_tracking ALTER COLUMN conversation_id TYPE VARCHAR(100) USING conversation_id::VARCHAR;
+            END IF;
+        END $$""",
+        """DO $$
+        BEGIN
+            IF EXISTS (
                 SELECT 1 FROM pg_constraint
                 WHERE conname = 'document_processing_jobs_material_id_fkey'
                 AND confdeltype != 'c'

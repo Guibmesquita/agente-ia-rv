@@ -42,6 +42,15 @@ def should_send_visual(block_metadata: dict, query: str) -> bool:
     return False
 
 
+def _query_relevance_score(visual_desc: str, query: str) -> float:
+    if not visual_desc:
+        return 0.0
+    query_words = set(query.lower().split())
+    desc_lower = visual_desc.lower()
+    matches = sum(1 for w in query_words if w in desc_lower and len(w) > 2)
+    return matches / max(len(query_words), 1)
+
+
 def select_best_visual_block(visual_blocks: list, query: str) -> Optional[dict]:
     if not visual_blocks:
         return None
@@ -50,7 +59,13 @@ def select_best_visual_block(visual_blocks: list, query: str) -> Optional[dict]:
     if not eligible:
         return None
 
-    eligible.sort(key=lambda b: b.get("score") or 0, reverse=True)
+    for b in eligible:
+        search_score = b.get("score") or 0
+        relevance = _query_relevance_score(b.get("visual_description", ""), query)
+        b["_combined_score"] = search_score + relevance
+
+    eligible.sort(key=lambda b: b.get("_combined_score", 0), reverse=True)
     selected = eligible[0]
-    logger.info(f"Selected visual block {selected.get('block_id')} (score={selected.get('score')})")
+    logger.info(f"Selected visual block {selected.get('block_id')} "
+                f"(search_score={selected.get('score')}, combined={selected.get('_combined_score', 0):.3f})")
     return selected

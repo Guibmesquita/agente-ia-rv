@@ -988,12 +988,18 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     pass
         
         visual_blocks = context.get("visual_blocks") if context else None
+        print(f"[WEBHOOK] Visual blocks from context: {len(visual_blocks) if visual_blocks else 0}")
         if visual_blocks and response_sent_successfully:
             try:
-                from services.visual_decision import select_best_visual_block
+                from services.visual_decision import select_best_visual_block, should_send_visual
                 from services.visual_extractor import get_visual_base64
+                for vb in visual_blocks:
+                    trigger_match = should_send_visual(vb, normalized_message)
+                    print(f"[WEBHOOK] Visual candidate block_id={vb.get('block_id')}, "
+                          f"type={vb.get('block_type')}, trigger_match={trigger_match}")
                 best_visual = select_best_visual_block(visual_blocks, normalized_message)
                 if best_visual and best_visual.get("block_id"):
+                    print(f"[WEBHOOK] Selected visual block_id={best_visual['block_id']}, extracting image...")
                     visual_result = get_visual_base64(best_visual["block_id"], db)
                     if visual_result:
                         import asyncio as _asyncio
@@ -1018,6 +1024,10 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                                   f"size={visual_result['size_bytes']}B")
                         else:
                             print(f"[WEBHOOK] Falha ao enviar visual reference: {visual_send}")
+                    else:
+                        print(f"[WEBHOOK] Visual extraction returned None for block_id={best_visual['block_id']}")
+                else:
+                    print(f"[WEBHOOK] No visual block selected (triggers not matched or no eligible blocks)")
             except Exception as vis_err:
                 print(f"[WEBHOOK] Erro ao enviar referência visual: {vis_err}")
 

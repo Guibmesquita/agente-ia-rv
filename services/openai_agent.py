@@ -2968,6 +2968,13 @@ INSTRUÇÕES IMPORTANTES:
                         if sr.get("block_type") == "grafico" and bid and bid not in seen_visual_ids:
                             search_results_for_visual.append(sr)
                             seen_visual_ids.add(bid)
+                    for vc in result.get("visual_candidates", []):
+                        vc_bid = vc.get("block_id")
+                        if vc_bid and vc_bid not in seen_visual_ids:
+                            search_results_for_visual.append(vc)
+                            seen_visual_ids.add(vc_bid)
+                    if search_results_for_visual:
+                        print(f"[V2_VISUAL] {len(search_results_for_visual)} visual candidate(s) accumulated")
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         print(f"[V2] MAX_ITERATIONS atingido ({MAX_ITERATIONS}) — {elapsed_ms}ms total")

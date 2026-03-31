@@ -140,7 +140,7 @@ def extract_visual(content_block_id: int, db: Session) -> dict | None:
 
     return {
         "image_bytes": image_bytes,
-        "mime_type": "image/png",
+        "mime_type": mime,
         "used_fallback": used_fallback,
         "bbox": bbox,
         "from_cache": False

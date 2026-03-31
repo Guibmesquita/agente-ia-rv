@@ -45,7 +45,7 @@ class CostTracker:
         total_tokens: int,
         operation: str = 'chat_completion',
         context: Optional[str] = None,
-        conversation_id: Optional[int] = None
+        conversation_id: Optional[str] = None
     ):
         """Registra custo de uma chamada chat completion OpenAI."""
         pricing = OPENAI_PRICING.get(model, OPENAI_PRICING.get('gpt-4o-mini'))
@@ -96,7 +96,7 @@ class CostTracker:
         self,
         duration_seconds: float,
         context: Optional[str] = None,
-        conversation_id: Optional[int] = None
+        conversation_id: Optional[str] = None
     ):
         """Registra custo de uma transcrição Whisper."""
         duration_minutes = duration_seconds / 60.0
