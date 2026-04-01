@@ -3147,9 +3147,21 @@ async def dispatch_campaign_cadence(
         if not assessor_list:
             raise HTTPException(status_code=400, detail="Nenhum assessor encontrado nos dados da campanha")
 
+        base_header = header_template
+        base_content = content_template
+        base_footer = footer_template
+
+        if not base_header and not base_content and not base_footer:
+            if campaign.custom_template_content:
+                base_content = str(campaign.custom_template_content)
+            elif campaign.template_id:
+                tmpl = db.query(MessageTemplate).filter(MessageTemplate.id == campaign.template_id).first()
+                if tmpl:
+                    base_content = str(tmpl.content)
+            else:
+                base_content = "Ola, {{nome_assessor}}!"
+
         dispatches_data = []
-        content_line_template = campaign.message_content_template or ""
-        is_grouped = bool(campaign.group_by_client)
 
         for assessor in assessor_list:
             assessor_name = assessor.get("nome", "")
@@ -3157,13 +3169,13 @@ async def dispatch_campaign_cadence(
             variables = build_assessor_variables(assessor)
 
             message_parts = []
-            header_rendered = replace_variables_generic(header_template, variables)
+            header_rendered = replace_variables_generic(base_header, variables)
             if header_rendered.strip():
                 message_parts.append(header_rendered.strip())
-            content_rendered = replace_variables_generic(content_template, variables)
+            content_rendered = replace_variables_generic(base_content, variables)
             if content_rendered.strip():
                 message_parts.append(content_rendered.strip())
-            footer_rendered = replace_variables_generic(footer_template, variables)
+            footer_rendered = replace_variables_generic(base_footer, variables)
             if footer_rendered.strip():
                 message_parts.append(footer_rendered.strip())
             message = "\n\n".join(message_parts)
@@ -3253,6 +3265,10 @@ async def dispatch_campaign_cadence(
                 d["priority"] = 3
         else:
             d["priority"] = 3
+
+    dispatches_data = [d for d in dispatches_data if d.get("message_content", "").strip()]
+    if not dispatches_data:
+        raise HTTPException(status_code=400, detail="Nenhum dispatch com conteudo valido. Verifique o template da campanha.")
 
     dispatches_data.sort(key=lambda x: x.get("priority", 3))
 
