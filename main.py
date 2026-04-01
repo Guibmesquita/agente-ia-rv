@@ -291,11 +291,13 @@ def _apply_incremental_migrations():
         """DO $$
         DECLARE
             dup RECORD;
-            msg_count INTEGER;
+            moved_msgs INTEGER;
+            moved_tickets INTEGER;
+            moved_history INTEGER;
             total_cleaned INTEGER := 0;
         BEGIN
             FOR dup IN
-                SELECT c1.id AS dup_id, c2.id AS real_id
+                SELECT c1.id AS dup_id, c1.phone AS dup_phone, c2.id AS real_id, c2.phone AS real_phone
                 FROM conversations c1
                 JOIN conversations c2 ON c2.chat_lid = c1.phone || '@lid'
                 WHERE c1.id != c2.id
@@ -303,7 +305,7 @@ def _apply_incremental_migrations():
                   AND c2.chat_lid IS NOT NULL
                   AND length(regexp_replace(c1.phone, '[^0-9]', '', 'g')) > 13
                 UNION
-                SELECT c1.id AS dup_id, c2.id AS real_id
+                SELECT c1.id AS dup_id, c1.phone AS dup_phone, c2.id AS real_id, c2.phone AS real_phone
                 FROM conversations c1
                 JOIN conversations c2 ON c2.chat_lid = c1.phone
                 WHERE c1.id != c2.id
@@ -312,15 +314,20 @@ def _apply_incremental_migrations():
             LOOP
                 UPDATE whatsapp_messages SET conversation_id = dup.real_id
                 WHERE conversation_id = dup.dup_id;
+                GET DIAGNOSTICS moved_msgs = ROW_COUNT;
                 UPDATE conversation_tickets SET conversation_id = dup.real_id
                 WHERE conversation_id = dup.dup_id;
+                GET DIAGNOSTICS moved_tickets = ROW_COUNT;
                 UPDATE ticket_history SET conversation_id = dup.real_id
                 WHERE conversation_id = dup.dup_id;
+                GET DIAGNOSTICS moved_history = ROW_COUNT;
+                RAISE NOTICE 'LID cleanup: dup_id=% (phone=%) → real_id=% (phone=%): msgs=%, tickets=%, history=%',
+                    dup.dup_id, dup.dup_phone, dup.real_id, dup.real_phone, moved_msgs, moved_tickets, moved_history;
                 DELETE FROM conversations WHERE id = dup.dup_id;
                 total_cleaned := total_cleaned + 1;
             END LOOP;
             IF total_cleaned > 0 THEN
-                RAISE NOTICE 'LID cleanup: consolidated % duplicate conversations', total_cleaned;
+                RAISE NOTICE 'LID cleanup: consolidated % duplicate conversations total', total_cleaned;
             END IF;
         END $$""",
     ]
