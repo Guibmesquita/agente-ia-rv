@@ -140,7 +140,10 @@ def get_or_create_conversation(
             ).first()
     
     if not conv and lid_from_phone:
-        conv = db.query(Conversation).filter(Conversation.phone == phone).first()
+        normalized_lid = phone.replace("@lid", "")
+        conv = db.query(Conversation).filter(Conversation.lid == normalized_lid).first()
+        if not conv:
+            conv = db.query(Conversation).filter(Conversation.lid == phone).first()
     
     from services.conversation_flow import identify_contact
     
@@ -1459,7 +1462,10 @@ async def zapi_webhook(
                 Conversation.chat_lid == phone
             ).first()
     if not conversation and phone_is_lid_precheck:
-        conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
+        normalized_lid = phone.replace("@lid", "")
+        conversation = db.query(Conversation).filter(Conversation.lid == normalized_lid).first()
+        if not conversation:
+            conversation = db.query(Conversation).filter(Conversation.lid == phone).first()
     
     is_human_active = conversation and conversation.ticket_status == TicketStatusV2.OPEN.value
     
