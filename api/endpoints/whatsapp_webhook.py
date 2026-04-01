@@ -88,6 +88,23 @@ def get_message_type_zapi(payload: Dict[str, Any]) -> str:
     return MessageType.TEXT.value
 
 
+def _is_lid_not_phone(value: str) -> bool:
+    """
+    Detecta se um valor é um LID (Linked Identity) da Z-API, não um telefone real.
+    LIDs são numéricos longos (>14 dígitos) sem formato de telefone brasileiro.
+    Telefones BR: 55 + DDD(2) + número(8-9) = 12-13 dígitos.
+    Também detecta valores com sufixo @lid.
+    """
+    if not value:
+        return False
+    if "@lid" in value:
+        return True
+    clean = ''.join(filter(str.isdigit, value))
+    if len(clean) > 13:
+        return True
+    return False
+
+
 def get_or_create_conversation(
     db: Session, 
     phone: str, 
@@ -98,21 +115,38 @@ def get_or_create_conversation(
 ) -> Conversation:
     """
     Obtém ou cria uma conversa.
-    Busca primeiro por LID, depois por phone (seguindo recomendação Z-API).
+    Busca por: 1) sender_lid, 2) phone, 3) chat_lid match (LID-aware), 4) cria nova.
+    Quando o phone recebido é um LID (não telefone real), busca por chat_lid correspondente.
     """
     conv = None
+    phone_is_lid = _is_lid_not_phone(phone) if phone else False
+    real_phone = None if phone_is_lid else phone
+    lid_from_phone = phone if phone_is_lid else None
     
     if sender_lid:
         conv = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
     
+    if not conv and real_phone:
+        conv = db.query(Conversation).filter(Conversation.phone == real_phone).first()
+    
     if not conv and phone:
+        clean_val = phone.replace("@lid", "")
+        conv = db.query(Conversation).filter(
+            Conversation.chat_lid == clean_val + "@lid"
+        ).first()
+        if not conv:
+            conv = db.query(Conversation).filter(
+                Conversation.chat_lid == phone
+            ).first()
+    
+    if not conv and lid_from_phone:
         conv = db.query(Conversation).filter(Conversation.phone == phone).first()
     
     from services.conversation_flow import identify_contact
     
     assessor = None
-    if phone:
-        assessor, _ = identify_contact(db, phone)
+    if real_phone:
+        assessor, _ = identify_contact(db, real_phone)
     
     if not conv:
         from database.models import ConversationState
@@ -120,22 +154,23 @@ def get_or_create_conversation(
         initial_state = ConversationState.READY.value if assessor else ConversationState.IDENTIFICATION_PENDING.value
         
         conv = Conversation(
-            phone=phone if phone else None,
-            lid=sender_lid,
+            phone=real_phone,
+            lid=sender_lid or lid_from_phone,
             chat_lid=chat_lid,
             contact_name=assessor.nome if assessor else None,
             assessor_id=assessor.id if assessor else None,
             status=ConversationStatus.BOT_ACTIVE.value,
             conversation_state=initial_state,
-            lid_source="webhook" if sender_lid else None,
-            lid_collected_at=datetime.utcnow() if sender_lid else None,
-            # V2 Ticket: bot ativo = T0, sem ticket_status (só recebe NEW quando escalado)
+            lid_source="webhook" if (sender_lid or lid_from_phone) else None,
+            lid_collected_at=datetime.utcnow() if (sender_lid or lid_from_phone) else None,
             escalation_level=EscalationLevel.T0_BOT.value,
             ticket_status=None
         )
         db.add(conv)
         db.commit()
         db.refresh(conv)
+        if phone_is_lid:
+            print(f"[CONV] Nova conversa criada com LID (sem phone real): lid={lid_from_phone}")
     else:
         updated = False
         if sender_lid and not conv.lid:
@@ -143,11 +178,16 @@ def get_or_create_conversation(
             conv.lid_source = "webhook"
             conv.lid_collected_at = datetime.utcnow()
             updated = True
+        if lid_from_phone and not conv.lid:
+            conv.lid = lid_from_phone
+            conv.lid_source = "webhook_phone_as_lid"
+            conv.lid_collected_at = datetime.utcnow()
+            updated = True
         if chat_lid and not conv.chat_lid:
             conv.chat_lid = chat_lid
             updated = True
-        if phone and not conv.phone:
-            conv.phone = phone
+        if real_phone and not conv.phone:
+            conv.phone = real_phone
             updated = True
         if assessor and not conv.assessor_id:
             conv.assessor_id = assessor.id
@@ -158,6 +198,8 @@ def get_or_create_conversation(
             updated = True
         if updated:
             db.commit()
+        if phone_is_lid:
+            print(f"[CONV] Conversa existente encontrada via LID match: conv_id={conv.id}, phone={conv.phone}")
     
     return conv
 
@@ -219,8 +261,9 @@ def save_message_zapi(
     if not message_status:
         message_status = MessageStatus.RECEIVED.value if direction == MessageDirection.INBOUND.value else MessageStatus.SENT.value
     
+    phone_is_lid = _is_lid_not_phone(clean_phone)
     effective_chat_id = clean_phone if clean_phone else (chat_lid or sender_lid or "unknown")
-    effective_phone = clean_phone if clean_phone else None
+    effective_phone = (conversation.phone or clean_phone) if not phone_is_lid else (conversation.phone or None)
     
     message = WhatsAppMessage(
         message_id=message_id,
@@ -1401,13 +1444,23 @@ async def zapi_webhook(
             return {"status": "ignored", "reason": "duplicate message - already processed"}
     
     conversation = None
+    phone_is_lid_precheck = _is_lid_not_phone(phone) if phone else False
     if sender_lid:
         conversation = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
+    if not conversation and phone and not phone_is_lid_precheck:
+        conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
     if not conversation and phone:
+        clean_val = phone.replace("@lid", "")
+        conversation = db.query(Conversation).filter(
+            Conversation.chat_lid == clean_val + "@lid"
+        ).first()
+        if not conversation:
+            conversation = db.query(Conversation).filter(
+                Conversation.chat_lid == phone
+            ).first()
+    if not conversation and phone_is_lid_precheck:
         conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
     
-    # Bot NÃO responde apenas quando ticket_status = 'open' (atendimento humano ativo)
-    # Em qualquer outro status (None, new, solved, closed), o bot responde normalmente
     is_human_active = conversation and conversation.ticket_status == TicketStatusV2.OPEN.value
     
     message_type = get_message_type_zapi(payload)
