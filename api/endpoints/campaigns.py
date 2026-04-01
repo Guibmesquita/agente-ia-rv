@@ -2536,7 +2536,7 @@ async def list_campaigns(
             "source": "unified",
         })
 
-    legacy_campaigns = db.query(CadenceCampaign).order_by(CadenceCampaign.created_at.desc()).all()
+    legacy_campaigns = db.query(CadenceCampaign).order_by(CadenceCampaign.created_at.desc()).limit(50).all()
     for lc in legacy_campaigns:
         sent_count = db.query(sql_func.count(CadenceCampaignContact.id)).filter(
             CadenceCampaignContact.campaign_id == lc.id,
@@ -3222,19 +3222,15 @@ async def dispatch_campaign_cadence(
                 "message_content": message,
             })
 
-    total = len(dispatches_data)
-    if total == 0:
+    if not dispatches_data:
         raise HTTPException(status_code=400, detail="Nenhum destinatário encontrado")
 
     daily_limit = data.daily_limit
     deadline_days = data.deadline_days
-    plan = calculate_daily_plan(total, deadline_days, daily_limit)
 
     tz = ZoneInfo("America/Sao_Paulo")
     now = datetime.now(tz)
     today = now.date()
-    business_days = _get_business_days(today, deadline_days)
-    daily_cap = min(daily_limit, math.ceil(total / len(business_days))) if business_days else daily_limit
 
     from database.models import Conversation, WhatsAppMessage
     from datetime import timedelta
@@ -3271,6 +3267,11 @@ async def dispatch_campaign_cadence(
         raise HTTPException(status_code=400, detail="Nenhum dispatch com conteudo valido. Verifique o template da campanha.")
 
     dispatches_data.sort(key=lambda x: x.get("priority", 3))
+
+    total = len(dispatches_data)
+    plan = calculate_daily_plan(total, deadline_days, daily_limit)
+    business_days = _get_business_days(today, deadline_days)
+    daily_cap = min(daily_limit, math.ceil(total / len(business_days))) if business_days else daily_limit
 
     p3_daily_limit = 15
     dispatch_idx = 0
