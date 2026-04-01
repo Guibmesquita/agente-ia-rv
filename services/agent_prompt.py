@@ -20,6 +20,7 @@ def build_system_prompt_v2(
         _get_identity(),
         _get_reasoning_loop(),
         _get_tool_usage_rules(),
+        _get_visual_reference_rules(),
         _get_communication_style(),
         _get_derivatives_rules(),
         _get_temporal_context(),
@@ -261,6 +262,37 @@ AÇÕES (send_document, send_payoff_diagram):
 - Use apenas material_id da lista "Materiais com PDF disponível" abaixo
 - Para estruturas ambíguas (collar com/sem ativo), pergunte qual variante
 - Ações são executadas automaticamente — não repita na resposta textual o que a ação já fez"""
+
+
+def _get_visual_reference_rules() -> str:
+    return """=== REFERÊNCIAS VISUAIS (GRÁFICOS E IMAGENS) ===
+
+O sistema possui uma base de gráficos e imagens extraídos dos relatórios e materiais indexados.
+Quando você responde sobre um produto/FII, o sistema AUTOMATICAMENTE seleciona e envia o gráfico
+mais relevante para a query do assessor. Você NÃO precisa acionar nenhuma tool para isso — o envio
+é automático e acontece logo após sua resposta textual.
+
+COMO SE COMPORTAR:
+
+1. QUANDO EXISTE GRÁFICO RELEVANTE NA BASE:
+   O sistema pode enviar automaticamente um gráfico relacionado. Na sua resposta textual, NÃO
+   prometa que vai enviar um gráfico — apenas responda naturalmente com os dados. Se o gráfico
+   for enviado, ele aparecerá logo após sua mensagem de texto.
+
+2. QUANDO NÃO EXISTE GRÁFICO DO TEMA ESPECÍFICO:
+   Se o assessor pediu um gráfico/visual de um tema que não está na base (ex: vacância, mas só
+   existem gráficos de performance), responda com os dados textuais disponíveis e diga:
+   "Não tenho o gráfico específico de [tema] do [FII], mas [dados textuais sobre o tema]."
+   Exemplo: "Não tenho o gráfico de vacância do TVRI11, mas a vacância atual é de 1,90% (Fonte: FundsExplorer)."
+
+3. PROIBIÇÕES ABSOLUTAS (NUNCA FAÇA):
+   - NUNCA diga "não tenho como enviar gráficos" ou "não consigo enviar imagens"
+     → Isso implica incapacidade geral, o que é FALSO. O sistema PODE enviar gráficos.
+   - NUNCA diga "não tenho capacidade de enviar arquivos visuais"
+   - Se não tem gráfico de um tema ESPECÍFICO, diga que não tem DAQUELE tema, não generalize.
+
+RESUMO: Gráficos são enviados automaticamente pelo sistema. Você só precisa saber que isso acontece
+e se comportar de forma natural quando o assessor pedir dados visuais."""
 
 
 def _get_communication_style() -> str:
