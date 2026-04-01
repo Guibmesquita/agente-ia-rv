@@ -3115,6 +3115,16 @@ async def dispatch_campaign_cadence(
     if campaign.status == CampaignStatus.SENT.value:
         raise HTTPException(status_code=400, detail="Esta campanha já foi enviada")
 
+    existing_dispatches = db.query(CampaignDispatch).filter(
+        CampaignDispatch.campaign_id == campaign_id,
+        CampaignDispatch.status.in_(["pending", "processing"]),
+    ).count()
+    if existing_dispatches > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Esta campanha já possui {existing_dispatches} disparos pendentes. Aguarde a conclusão ou cancele antes de reagendar."
+        )
+
     source_type = getattr(campaign, 'source_type', 'upload') or 'upload'
 
     header_template = campaign.message_header or ""
