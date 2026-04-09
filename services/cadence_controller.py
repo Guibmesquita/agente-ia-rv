@@ -457,7 +457,7 @@ def track_campaign_response(phone: str, db):
 
         db.commit()
         print(f"[CADENCE] Resposta registrada de {phone} para campanha legada {contact.campaign_id}")
-        return
+        return True
 
     dispatch = (
         db.query(CampaignDispatch)
@@ -474,3 +474,6 @@ def track_campaign_response(phone: str, db):
         dispatch.status = "responded"
         db.commit()
         print(f"[CADENCE] Resposta registrada de {phone} para campanha unificada {dispatch.campaign_id}")
+        return True
+
+    return False

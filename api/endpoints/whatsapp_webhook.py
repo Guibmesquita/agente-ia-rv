@@ -585,9 +585,12 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     
     print(f"[WEBHOOK] Iniciando process_text_message para {phone}: {message[:50]}...")
     
+    is_campaign_response = False
     try:
         from services.cadence_controller import track_campaign_response
-        track_campaign_response(phone, db)
+        is_campaign_response = track_campaign_response(phone, db) or False
+        if is_campaign_response:
+            print(f"[WEBHOOK] Mensagem identificada como resposta a campanha de {phone}")
     except Exception as track_err:
         print(f"[WEBHOOK] Erro ao rastrear resposta de campanha: {track_err}")
     
@@ -770,6 +773,18 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             }
         
         history_with_summary = build_context_with_summary(history, conversation, None)
+
+        if is_campaign_response:
+            history_with_summary = list(history_with_summary) if history_with_summary else []
+            history_with_summary.append({
+                "role": "system",
+                "content": (
+                    "[CONTEXTO DE CAMPANHA] O assessor está respondendo a uma campanha enviada recentemente. "
+                    "Se a mensagem for apenas uma saudação, agradecimento ou confirmação simples (ex: 'boa tarde', 'ok', 'obrigado'), "
+                    "responda com algo breve e acolhedor como 'Boa tarde! Estamos à disposição. Qualquer dúvida, é só chamar!' "
+                    "Não use a frase 'Como posso te ajudar hoje?'. Aguarde uma dúvida ou pergunta real para usar as ferramentas."
+                )
+            })
         
         print(f"[WEBHOOK] Chamando Pipeline V2 (agentic RAG)...")
         response, should_create_ticket, context = await openai_agent.generate_response_v2(

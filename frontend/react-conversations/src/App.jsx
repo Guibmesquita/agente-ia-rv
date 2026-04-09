@@ -167,7 +167,15 @@ function ChatBubble({ message, contactName, onContextMenu }) {
   const senderLabels = { bot: 'Agente IA', human: 'Operador' };
   const senderName = isOutbound ? senderLabels[message.sender_type] || 'Sistema' : contactName || 'Contato';
   const time = formatTime(message.created_at);
-  const content = message.body || message.transcription || '[Mídia]';
+  const mediaTypeLabels = { image: '📷 Imagem', audio: '🎤 Áudio', video: '🎥 Vídeo', document: '📄 Documento', sticker: '😊 Sticker' };
+  const isMediaType = message.message_type && mediaTypeLabels[message.message_type];
+  const content = message.body && message.body.trim()
+    ? message.body
+    : message.transcription && message.transcription.trim()
+      ? message.transcription
+      : isMediaType
+        ? (mediaTypeLabels[message.message_type] + (message.media_filename ? `: ${message.media_filename}` : ''))
+        : '[Mídia]';
   const hasError = message.ai_intent === 'error_suppressed';
   const [errorTooltipOpen, setErrorTooltipOpen] = useState(false);
 
@@ -237,6 +245,16 @@ function ChatBubble({ message, contactName, onContextMenu }) {
             <span className="text-sm text-gray-500">{time}</span>
           </div>
           <p className="text-sm py-2 text-gray-900 whitespace-pre-wrap break-words">{content}</p>
+          {isMediaType && !message.body && !message.transcription && message.media_url && (
+            <a
+              href={message.media_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:underline mt-1"
+            >
+              Abrir mídia ↗
+            </a>
+          )}
         </div>
         {hasError && (
           <div className="relative mt-1.5">

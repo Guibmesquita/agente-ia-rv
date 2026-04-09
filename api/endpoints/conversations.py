@@ -102,6 +102,9 @@ class MessageResponse(BaseModel):
     message_status: Optional[str] = None
     is_from_campaign: bool = False
     created_at: Optional[datetime] = None
+    media_url: Optional[str] = None
+    media_filename: Optional[str] = None
+    media_mimetype: Optional[str] = None
 
     class Config:
         from_attributes = True
