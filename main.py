@@ -1187,19 +1187,9 @@ async def cadence_campaigns_redirect(request: Request):
     return RedirectResponse(url="/campanhas")
 
 
-@app.get("/estruturas-campanha", response_class=HTMLResponse)
-async def estruturas_campanha_page(request: Request):
-    from core.security import decode_token
-    token = request.cookies.get("access_token")
-    if not token:
-        return RedirectResponse(url="/login")
-    payload = decode_token(token)
-    if not payload:
-        return RedirectResponse(url="/login")
-    user_role = payload.get("role")
-    if user_role not in ["admin", "gestao_rv"]:
-        return RedirectResponse(url="/login?error=permission")
-    return templates.TemplateResponse("estruturas_campanha.html", {"request": request, "user_role": user_role})
+@app.get("/estruturas-campanha")
+async def estruturas_campanha_redirect():
+    return RedirectResponse(url="/campanhas?tab=estruturas", status_code=301)
 
 
 @app.get("/teste-agente", response_class=HTMLResponse)

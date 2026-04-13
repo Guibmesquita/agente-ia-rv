@@ -847,6 +847,15 @@
                     </div>
                 </div>
 
+                <!-- Abas da página -->
+                <div style="display:flex;border-bottom:2px solid var(--border-color);margin-bottom:24px;">
+                    <button id="struct-tab-btn-campanhas" onclick="switchPageTab('campanhas')" style="padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--primary-color);border:none;border-bottom:2px solid var(--primary-color);background:transparent;cursor:pointer;margin-bottom:-2px;">Campanhas</button>
+                    <button id="struct-tab-btn-estruturas" onclick="switchPageTab('estruturas')" style="padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--text-secondary);border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;margin-bottom:-2px;">Estruturas</button>
+                </div>
+
+                <!-- Aba: Campanhas -->
+                <div id="tab-campanhas">
+
                 <div class="wizard-container">
                     <div class="wizard-steps">
                         <div class="wizard-step active" data-step="1">
@@ -1345,6 +1354,38 @@ Equipe de Gestao"></textarea>
                         </div>
                     </div>
                 </div>
+                </div><!-- /tab-campanhas -->
+
+                <!-- Aba: Estruturas de Campanha -->
+                <div id="tab-estruturas" style="display:none;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                        <div>
+                            <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary);margin:0;">Estruturas de Campanha</h2>
+                            <p style="color:var(--text-secondary);margin-top:4px;font-size:0.875rem;">Gerencie estruturas de derivativos com validade temporal e diagramas de payoff</p>
+                        </div>
+                        <button onclick="structOpenCreateModal()" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--primary-color);color:white;border:none;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Nova Estrutura
+                        </button>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:16px;">
+                        <button onclick="structSetFilter('all')" id="struct-filter-all" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#dbeafe;color:#1d4ed8;border:none;cursor:pointer;">Todas</button>
+                        <button onclick="structSetFilter('active')" id="struct-filter-active" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#f3f4f6;color:#4b5563;border:none;cursor:pointer;">Ativas</button>
+                        <button onclick="structSetFilter('expired')" id="struct-filter-expired" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#f3f4f6;color:#4b5563;border:none;cursor:pointer;">Expiradas</button>
+                    </div>
+                    <div id="struct-loading" style="text-align:center;padding:48px;">
+                        <div style="display:inline-block;width:32px;height:32px;border:4px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite;"></div>
+                        <p style="margin-top:12px;color:var(--text-secondary);">Carregando estruturas...</p>
+                    </div>
+                    <div id="struct-empty" style="display:none;text-align:center;padding:64px;">
+                        <svg width="64" height="64" style="color:#d1d5db;margin:0 auto 16px;display:block;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                        </svg>
+                        <h3 style="font-size:1.125rem;font-weight:500;color:#4b5563;margin-bottom:4px;">Nenhuma estrutura cadastrada</h3>
+                        <p style="color:#9ca3af;">Clique em "Nova Estrutura" para criar a primeira</p>
+                    </div>
+                    <div id="struct-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;"></div>
+                </div><!-- /tab-estruturas -->
             </div>
         </main>
     </div>
@@ -1468,6 +1509,102 @@ Equipe de Gestao"></textarea>
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                     Salvar Template
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Nova / Editar Estrutura -->
+    <div id="struct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:white;border-radius:16px;box-shadow:0 25px 50px rgba(0,0,0,0.25);width:100%;max-width:520px;margin:16px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e5e7eb;">
+                <h2 id="struct-modal-title" style="font-size:1.125rem;font-weight:600;color:#111827;margin:0;">Nova Estrutura</h2>
+                <button onclick="structCloseModal()" style="color:#9ca3af;background:none;border:none;cursor:pointer;padding:4px;">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form id="struct-form" style="padding:20px 24px;">
+                <input type="hidden" id="struct-form-id" value="">
+                <div style="margin-bottom:16px;">
+                    <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Nome *</label>
+                    <input type="text" id="struct-form-name" required style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;box-sizing:border-box;" placeholder="Put Spread PETR4">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Ticker</label>
+                        <input type="text" id="struct-form-ticker" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;text-transform:uppercase;box-sizing:border-box;" placeholder="PETR4">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Tipo de Estrutura *</label>
+                        <select id="struct-form-type" required style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;box-sizing:border-box;">
+                            <option value="">Selecione...</option>
+                            <option value="put-spread">Put Spread</option>
+                            <option value="call-spread">Call Spread</option>
+                            <option value="collar">Collar</option>
+                            <option value="booster">Booster</option>
+                            <option value="fence">Fence</option>
+                            <option value="reversao">Reversão</option>
+                            <option value="seagull">Seagull</option>
+                            <option value="outro">Outro</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Slug da Campanha *</label>
+                    <input type="text" id="struct-form-slug" required style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;box-sizing:border-box;" placeholder="put-spread-petr4">
+                    <p style="font-size:0.75rem;color:#9ca3af;margin-top:4px;">Identificador único. Ex: put-spread-petr4</p>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Válido de</label>
+                        <input type="date" id="struct-form-valid-from" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Válido até</label>
+                        <input type="date" id="struct-form-valid-until" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:8px;">Dados da Estrutura</label>
+                    <div id="struct-key-data-container" style="display:flex;flex-direction:column;gap:8px;"></div>
+                    <button type="button" onclick="structAddKeyDataRow()" style="margin-top:8px;font-size:0.875rem;color:#2563eb;background:none;border:none;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:4px;">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Adicionar campo
+                    </button>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Diagrama de Payoff</label>
+                    <div id="struct-diagram-upload-area" onclick="document.getElementById('struct-form-diagram-file').click()" style="border:2px dashed #d1d5db;border-radius:8px;padding:16px;text-align:center;cursor:pointer;">
+                        <input type="file" id="struct-form-diagram-file" accept="image/*" style="display:none;" onchange="structHandleDiagramSelect(event)">
+                        <div id="struct-diagram-preview" style="display:none;">
+                            <img id="struct-diagram-preview-img" style="max-height:128px;margin:0 auto;border-radius:4px;display:block;" alt="Preview">
+                            <p id="struct-diagram-preview-name" style="font-size:0.75rem;color:#6b7280;margin-top:8px;"></p>
+                        </div>
+                        <div id="struct-diagram-placeholder">
+                            <svg width="32" height="32" style="color:#d1d5db;margin:0 auto 8px;display:block;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            <p style="font-size:0.875rem;color:#6b7280;">Clique para enviar imagem do diagrama</p>
+                        </div>
+                    </div>
+                    <p id="struct-diagram-existing" style="font-size:0.75rem;color:#16a34a;margin-top:4px;display:none;"></p>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:12px;padding-top:16px;border-top:1px solid #e5e7eb;">
+                    <button type="button" onclick="structCloseModal()" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:#374151;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cancelar</button>
+                    <button type="submit" id="struct-form-submit-btn" style="padding:8px 20px;font-size:0.875rem;font-weight:500;color:white;background:#2563eb;border:none;border-radius:8px;cursor:pointer;">Criar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Confirmar Desativação de Estrutura -->
+    <div id="struct-delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1100;align-items:center;justify-content:center;">
+        <div style="background:white;border-radius:16px;box-shadow:0 25px 50px rgba(0,0,0,0.25);width:100%;max-width:360px;margin:16px;padding:24px;text-align:center;">
+            <div style="width:48px;height:48px;margin:0 auto 16px;border-radius:50%;background:#fee2e2;display:flex;align-items:center;justify-content:center;">
+                <svg width="24" height="24" fill="none" stroke="#dc2626" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+            </div>
+            <h3 style="font-size:1.125rem;font-weight:600;color:#111827;margin-bottom:8px;">Desativar Estrutura?</h3>
+            <p style="font-size:0.875rem;color:#6b7280;margin-bottom:24px;">A estrutura será desativada e não aparecerá mais no prompt do agente.</p>
+            <div style="display:flex;gap:12px;justify-content:center;">
+                <button onclick="structCloseDeleteModal()" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:#374151;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cancelar</button>
+                <button id="struct-confirm-delete-btn" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:white;background:#dc2626;border:none;border-radius:8px;cursor:pointer;">Desativar</button>
             </div>
         </div>
     </div>
@@ -3723,6 +3860,343 @@ Equipe de Gestao"></textarea>
             if (e.target.closest('input[type="checkbox"]')) return;
             toggleAssessorSelection(parseInt(row.dataset.id));
         });
+        // ===== ESTRUTURAS DE CAMPANHA =====
+        (function() {
+            let structAllStructures = [];
+            let structCurrentFilter = 'all';
+            let structEditingId = null;
+            let structPendingDeleteId = null;
+            let structSelectedDiagramFile = null;
+
+            async function structApiFetch(url, options = {}) {
+                const resp = await fetch(url, {
+                    ...options,
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Erro ' + resp.status);
+                }
+                return resp.json();
+            }
+
+            window.structLoadStructures = async function() {
+                try {
+                    document.getElementById('struct-loading').style.display = 'block';
+                    document.getElementById('struct-empty').style.display = 'none';
+                    document.getElementById('struct-grid').style.display = 'none';
+                    const data = await structApiFetch('/api/campaigns/structures');
+                    structAllStructures = data.structures || [];
+                    structRenderStructures();
+                } catch (e) {
+                    showToast('error', 'Erro ao carregar estruturas: ' + e.message);
+                }
+            };
+
+            function structGetStatusInfo(s) {
+                const now = new Date();
+                const from = s.valid_from ? new Date(s.valid_from) : null;
+                const until = s.valid_until ? new Date(s.valid_until) : null;
+                if (!s.is_active) return { label: 'Inativa', color: 'gray' };
+                if (until && until < now) return { label: 'Expirada', color: 'red' };
+                if (from && from > now) return { label: 'Agendada', color: 'yellow' };
+                return { label: 'Ativa', color: 'green' };
+            }
+
+            function structMatchesFilter(s) {
+                if (structCurrentFilter === 'all') return true;
+                const status = structGetStatusInfo(s);
+                if (structCurrentFilter === 'active') return status.label === 'Ativa' || status.label === 'Agendada';
+                if (structCurrentFilter === 'expired') return status.label === 'Expirada' || status.label === 'Inativa';
+                return true;
+            }
+
+            function structRenderStructures() {
+                const grid = document.getElementById('struct-grid');
+                const empty = document.getElementById('struct-empty');
+                const loading = document.getElementById('struct-loading');
+                loading.style.display = 'none';
+                const filtered = structAllStructures.filter(structMatchesFilter);
+                if (filtered.length === 0) {
+                    empty.style.display = 'block';
+                    grid.style.display = 'none';
+                    return;
+                }
+                empty.style.display = 'none';
+                grid.style.display = 'grid';
+                const colorMap = {
+                    green: 'background:#dcfce7;color:#15803d',
+                    red: 'background:#fee2e2;color:#dc2626',
+                    yellow: 'background:#fef9c3;color:#ca8a04',
+                    gray: 'background:#f3f4f6;color:#6b7280'
+                };
+                grid.innerHTML = filtered.map(s => {
+                    const status = structGetStatusInfo(s);
+                    const keyData = s.key_data || {};
+                    const keyEntries = Object.entries(keyData);
+                    return `
+                        <div style="background:white;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+                            <div style="padding:20px;">
+                                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
+                                    <div style="flex:1;min-width:0;">
+                                        <h3 style="font-weight:600;color:#111827;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name}</h3>
+                                        <p style="font-size:0.75rem;color:#9ca3af;margin-top:2px;font-family:monospace;">${s.campaign_slug}</p>
+                                    </div>
+                                    <span style="margin-left:8px;padding:4px 10px;border-radius:9999px;font-size:0.75rem;font-weight:500;${colorMap[status.color] || colorMap.gray}">${status.label}</span>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                                    ${s.ticker ? `<span style="padding:2px 8px;background:#eff6ff;color:#1d4ed8;border-radius:4px;font-size:0.75rem;font-weight:600;">${s.ticker}</span>` : ''}
+                                    <span style="font-size:0.75rem;color:#6b7280;">${structFormatType(s.structure_type)}</span>
+                                </div>
+                                ${keyEntries.length > 0 ? `
+                                <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;">
+                                    ${keyEntries.slice(0, 4).map(([k, v]) => `
+                                        <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:2px;">
+                                            <span style="color:#6b7280;">${k}</span>
+                                            <span style="font-weight:500;color:#374151;">${v}</span>
+                                        </div>
+                                    `).join('')}
+                                    ${keyEntries.length > 4 ? `<p style="font-size:0.75rem;color:#9ca3af;text-align:center;margin:4px 0 0;">+${keyEntries.length - 4} campos</p>` : ''}
+                                </div>` : ''}
+                                <div style="display:flex;align-items:center;gap:16px;font-size:0.75rem;color:#9ca3af;">
+                                    ${s.valid_from ? `<span>De: ${structFormatDate(s.valid_from)}</span>` : ''}
+                                    ${s.valid_until ? `<span>Até: ${structFormatDate(s.valid_until)}</span>` : ''}
+                                    ${s.diagram_filename ? `<span style="color:#16a34a;">✓ Diagrama</span>` : ''}
+                                </div>
+                            </div>
+                            <div style="border-top:1px solid #f3f4f6;padding:12px 20px;display:flex;justify-content:flex-end;gap:8px;">
+                                ${s.diagram_filename ? `<button onclick="structViewDiagram('${s.diagram_filename}')" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Ver Diagrama</button>` : ''}
+                                <button onclick="structOpenEditModal(${s.id})" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Editar</button>
+                                <button onclick="structConfirmDelete(${s.id})" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Desativar</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function structFormatType(t) {
+                const map = { 'put-spread':'Put Spread','call-spread':'Call Spread','collar':'Collar','booster':'Booster','fence':'Fence','reversao':'Reversão','seagull':'Seagull','outro':'Outro' };
+                return map[t] || t;
+            }
+
+            function structFormatDate(iso) {
+                if (!iso) return '';
+                return new Date(iso).toLocaleDateString('pt-BR');
+            }
+
+            window.structSetFilter = function(f) {
+                structCurrentFilter = f;
+                ['all','active','expired'].forEach(k => {
+                    const btn = document.getElementById('struct-filter-' + k);
+                    if (!btn) return;
+                    btn.style.background = k === f ? '#dbeafe' : '#f3f4f6';
+                    btn.style.color = k === f ? '#1d4ed8' : '#4b5563';
+                });
+                structRenderStructures();
+            };
+
+            window.structOpenCreateModal = function() {
+                structEditingId = null;
+                structSelectedDiagramFile = null;
+                document.getElementById('struct-modal-title').textContent = 'Nova Estrutura';
+                document.getElementById('struct-form-submit-btn').textContent = 'Criar';
+                document.getElementById('struct-form-id').value = '';
+                document.getElementById('struct-form-name').value = '';
+                document.getElementById('struct-form-ticker').value = '';
+                document.getElementById('struct-form-type').value = '';
+                document.getElementById('struct-form-slug').value = '';
+                document.getElementById('struct-form-valid-from').value = '';
+                document.getElementById('struct-form-valid-until').value = '';
+                document.getElementById('struct-form-diagram-file').value = '';
+                document.getElementById('struct-diagram-preview').style.display = 'none';
+                document.getElementById('struct-diagram-placeholder').style.display = 'block';
+                document.getElementById('struct-diagram-existing').style.display = 'none';
+                document.getElementById('struct-key-data-container').innerHTML = '';
+                document.getElementById('struct-modal').style.display = 'flex';
+            };
+
+            window.structOpenEditModal = async function(id) {
+                try {
+                    const s = await structApiFetch('/api/campaigns/structures/' + id);
+                    structEditingId = id;
+                    structSelectedDiagramFile = null;
+                    document.getElementById('struct-modal-title').textContent = 'Editar Estrutura';
+                    document.getElementById('struct-form-submit-btn').textContent = 'Salvar';
+                    document.getElementById('struct-form-id').value = id;
+                    document.getElementById('struct-form-name').value = s.name || '';
+                    document.getElementById('struct-form-ticker').value = s.ticker || '';
+                    document.getElementById('struct-form-type').value = s.structure_type || '';
+                    document.getElementById('struct-form-slug').value = s.campaign_slug || '';
+                    document.getElementById('struct-form-valid-from').value = s.valid_from ? s.valid_from.split('T')[0] : '';
+                    document.getElementById('struct-form-valid-until').value = s.valid_until ? s.valid_until.split('T')[0] : '';
+                    document.getElementById('struct-form-diagram-file').value = '';
+                    document.getElementById('struct-diagram-preview').style.display = 'none';
+                    document.getElementById('struct-diagram-placeholder').style.display = 'block';
+                    const existingLabel = document.getElementById('struct-diagram-existing');
+                    if (s.diagram_filename) {
+                        existingLabel.textContent = 'Diagrama atual: ' + s.diagram_filename;
+                        existingLabel.style.display = 'block';
+                    } else {
+                        existingLabel.style.display = 'none';
+                    }
+                    const container = document.getElementById('struct-key-data-container');
+                    container.innerHTML = '';
+                    const keyData = s.key_data || {};
+                    Object.entries(keyData).forEach(function(entry) { structAddKeyDataRow(entry[0], entry[1]); });
+                    document.getElementById('struct-modal').style.display = 'flex';
+                } catch (e) {
+                    showToast('error', 'Erro ao carregar estrutura: ' + e.message);
+                }
+            };
+
+            window.structAddKeyDataRow = function(key, value) {
+                const container = document.getElementById('struct-key-data-container');
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:8px;align-items:center;';
+                row.innerHTML = '<input type="text" style="flex:1;padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;" placeholder="Chave" value="' + (key || '') + '">'
+                    + '<input type="text" style="flex:1;padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;" placeholder="Valor" value="' + (value || '') + '">'
+                    + '<button type="button" onclick="this.parentElement.remove()" style="color:#9ca3af;background:none;border:none;cursor:pointer;padding:4px;">'
+                    + '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
+                container.appendChild(row);
+            };
+
+            window.structHandleDiagramSelect = function(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                structSelectedDiagramFile = file;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('struct-diagram-preview-img').src = e.target.result;
+                    document.getElementById('struct-diagram-preview-name').textContent = file.name;
+                    document.getElementById('struct-diagram-preview').style.display = 'block';
+                    document.getElementById('struct-diagram-placeholder').style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            };
+
+            window.structViewDiagram = function(filename) {
+                const url = '/static/derivatives_diagrams/' + filename;
+                const win = window.open('', '_blank', 'width=700,height=500');
+                win.document.write('<html><head><title>Diagrama</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#111;"><img src="' + url + '" style="max-width:100%;max-height:100vh;"></body></html>');
+            };
+
+            window.structCloseModal = function() {
+                document.getElementById('struct-modal').style.display = 'none';
+            };
+
+            window.structConfirmDelete = function(id) {
+                structPendingDeleteId = id;
+                document.getElementById('struct-delete-modal').style.display = 'flex';
+            };
+
+            window.structCloseDeleteModal = function() {
+                document.getElementById('struct-delete-modal').style.display = 'none';
+                structPendingDeleteId = null;
+            };
+
+            document.getElementById('struct-confirm-delete-btn').addEventListener('click', async function() {
+                if (!structPendingDeleteId) return;
+                try {
+                    await structApiFetch('/api/campaigns/structures/' + structPendingDeleteId, { method: 'DELETE' });
+                    showToast('success', 'Estrutura desativada com sucesso');
+                    structCloseDeleteModal();
+                    structAllStructures = [];
+                    await structLoadStructures();
+                } catch (e) {
+                    showToast('error', 'Erro: ' + e.message);
+                }
+            });
+
+            function structCollectKeyData() {
+                const rows = document.querySelectorAll('#struct-key-data-container > div');
+                const data = {};
+                rows.forEach(function(row) {
+                    const inputs = row.querySelectorAll('input');
+                    const key = inputs[0] ? inputs[0].value.trim() : '';
+                    const val = inputs[1] ? inputs[1].value.trim() : '';
+                    if (key) data[key] = val;
+                });
+                return Object.keys(data).length > 0 ? data : null;
+            }
+
+            document.getElementById('struct-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const btn = document.getElementById('struct-form-submit-btn');
+                btn.disabled = true;
+                btn.textContent = structEditingId ? 'Salvando...' : 'Criando...';
+                try {
+                    const payload = {
+                        name: document.getElementById('struct-form-name').value.trim(),
+                        ticker: document.getElementById('struct-form-ticker').value.trim().toUpperCase() || null,
+                        structure_type: document.getElementById('struct-form-type').value,
+                        campaign_slug: document.getElementById('struct-form-slug').value.trim(),
+                        key_data: structCollectKeyData(),
+                        valid_from: document.getElementById('struct-form-valid-from').value || null,
+                        valid_until: document.getElementById('struct-form-valid-until').value || null,
+                    };
+                    let structureId;
+                    if (structEditingId) {
+                        await structApiFetch('/api/campaigns/structures/' + structEditingId, { method: 'PUT', body: JSON.stringify(payload) });
+                        structureId = structEditingId;
+                        showToast('success', 'Estrutura atualizada com sucesso');
+                    } else {
+                        const result = await structApiFetch('/api/campaigns/structures', { method: 'POST', body: JSON.stringify(payload) });
+                        structureId = result.structure.id;
+                        showToast('success', 'Estrutura criada com sucesso');
+                    }
+                    if (structSelectedDiagramFile && structureId) {
+                        const formData = new FormData();
+                        formData.append('file', structSelectedDiagramFile);
+                        const diagramResp = await fetch('/api/campaigns/structures/' + structureId + '/diagram', { method: 'POST', credentials: 'include', body: formData });
+                        if (!diagramResp.ok) showToast('warning', 'Estrutura salva, mas erro ao enviar diagrama');
+                    }
+                    structCloseModal();
+                    structAllStructures = [];
+                    await structLoadStructures();
+                } catch (e) {
+                    showToast('error', 'Erro: ' + e.message);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = structEditingId ? 'Salvar' : 'Criar';
+                }
+            });
+
+            document.getElementById('struct-form-name').addEventListener('input', function() {
+                if (!structEditingId) {
+                    const slug = this.value.trim().toLowerCase()
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                    document.getElementById('struct-form-slug').value = slug;
+                }
+            });
+        })();
+
+        // ===== TROCA DE ABAS =====
+        window.switchPageTab = function(tab) {
+            const campTab = document.getElementById('tab-campanhas');
+            const struTab = document.getElementById('tab-estruturas');
+            const btnCamp = document.getElementById('struct-tab-btn-campanhas');
+            const btnStru = document.getElementById('struct-tab-btn-estruturas');
+            const activeStyle = 'padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--primary-color);border:none;border-bottom:2px solid var(--primary-color);background:transparent;cursor:pointer;margin-bottom:-2px;';
+            const inactiveStyle = 'padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--text-secondary);border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;margin-bottom:-2px;';
+            if (campTab) campTab.style.display = tab === 'campanhas' ? '' : 'none';
+            if (struTab) struTab.style.display = tab === 'estruturas' ? '' : 'none';
+            if (btnCamp) btnCamp.style.cssText = tab === 'campanhas' ? activeStyle : inactiveStyle;
+            if (btnStru) btnStru.style.cssText = tab === 'estruturas' ? activeStyle : inactiveStyle;
+            history.replaceState(null, '', '/campanhas' + (tab !== 'campanhas' ? '?tab=' + tab : ''));
+            if (tab === 'estruturas') {
+                structLoadStructures();
+            }
+        };
+
+        // Inicializar aba a partir da URL
+        (function() {
+            const urlTab = new URLSearchParams(window.location.search).get('tab') || 'campanhas';
+            if (urlTab !== 'campanhas') {
+                switchPageTab(urlTab);
+            }
+        })();
     </script>
 </body>
 </html>
