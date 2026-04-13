@@ -802,6 +802,46 @@ async def delete_material(
     return {"success": True}
 
 
+class MaterialTypeUpdate(BaseModel):
+    material_type: str
+
+
+@router.patch("/materials/{material_id}/type")
+async def update_material_type(
+    material_id: int,
+    data: MaterialTypeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Atualiza o tipo (categoria) de um material sem reprocessar embeddings."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    valid_types = [t.value for t in MaterialType]
+    if data.material_type not in valid_types:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tipo de material inválido: '{data.material_type}'. Valores aceitos: {', '.join(valid_types)}"
+        )
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    old_type = material.material_type
+    material.material_type = data.material_type
+    db.commit()
+    db.refresh(material)
+
+    print(f"[MATERIAL_TYPE] material_id={material_id} '{old_type}' → '{data.material_type}' por {current_user.username}")
+    return {
+        "success": True,
+        "material_id": material_id,
+        "material_type": material.material_type,
+        "name": material.name,
+    }
+
+
 # ==================== Content Blocks Endpoints ====================
 
 @router.post("/{product_id}/materials/{material_id}/blocks")

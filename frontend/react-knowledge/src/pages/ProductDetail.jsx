@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   ArrowLeft, FileText, MessageSquare, Edit, Trash2, Plus,
   Upload, ChevronDown, ChevronRight, Clock, Check, AlertTriangle,
-  RefreshCw, History, Send, Table2, CheckSquare, Square,
+  RefreshCw, History, Send, Table2, CheckSquare, Square, Pencil, X,
 } from 'lucide-react';
 import { productsAPI, materialsAPI, blocksAPI, scriptsAPI } from '../services/api';
 import { Button } from '../components/Button';
@@ -85,6 +85,24 @@ function ContentDisplay({ content, blockType }) {
   );
 }
 
+const MATERIAL_TYPE_OPTIONS = [
+  { value: 'comite',          label: 'Comitê' },
+  { value: 'research',        label: 'Research' },
+  { value: 'one_page',        label: 'One Page' },
+  { value: 'apresentacao',    label: 'Apresentação' },
+  { value: 'campanha',        label: 'Campanha' },
+  { value: 'treinamento',     label: 'Treinamento' },
+  { value: 'faq',             label: 'FAQ' },
+  { value: 'regulatorio',     label: 'Regulatório' },
+  { value: 'script',          label: 'Script' },
+  { value: 'outro',           label: 'Outro' },
+];
+
+function getMaterialTypeLabel(value) {
+  const opt = MATERIAL_TYPE_OPTIONS.find(o => o.value === value);
+  return opt ? opt.label : value || '—';
+}
+
 function getMaterialStatus(material) {
   const now = new Date();
   
@@ -106,6 +124,9 @@ function MaterialSection({ material, productId, onRefresh }) {
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [selectedBlocks, setSelectedBlocks] = useState(new Set());
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [editingType, setEditingType] = useState(false);
+  const [selectedType, setSelectedType] = useState(material.material_type || '');
+  const [savingType, setSavingType] = useState(false);
   const { addToast } = useToast();
   
   const materialStatus = getMaterialStatus(material);
@@ -217,6 +238,31 @@ function MaterialSection({ material, productId, onRefresh }) {
     }
   };
 
+  const handleSaveType = async (e) => {
+    e.stopPropagation();
+    if (selectedType === material.material_type) {
+      setEditingType(false);
+      return;
+    }
+    setSavingType(true);
+    try {
+      await materialsAPI.updateType(material.id, selectedType);
+      addToast('Tipo de material atualizado!', 'success');
+      setEditingType(false);
+      onRefresh();
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+      setSelectedType(material.material_type || '');
+    }
+    setSavingType(false);
+  };
+
+  const handleCancelTypeEdit = (e) => {
+    e.stopPropagation();
+    setSelectedType(material.material_type || '');
+    setEditingType(false);
+  };
+
   return (
     <div className="border border-border rounded-card overflow-hidden">
       <button
@@ -239,6 +285,55 @@ function MaterialSection({ material, productId, onRefresh }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {editingType ? (
+            <div
+              className="flex items-center gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <select
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="text-xs px-2 py-1 border border-border rounded bg-background text-foreground"
+                disabled={savingType}
+                autoFocus
+              >
+                {MATERIAL_TYPE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={handleSaveType}
+                disabled={savingType}
+                className="p-1 rounded bg-primary text-white hover:bg-primary/90 disabled:opacity-50"
+                title="Salvar"
+              >
+                <Check className="w-3 h-3" />
+              </button>
+              <button
+                onClick={handleCancelTypeEdit}
+                className="p-1 rounded hover:bg-border text-muted hover:text-foreground"
+                title="Cancelar"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <div
+              className="flex items-center gap-1 group"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span className="text-xs px-2 py-0.5 bg-muted/10 text-muted rounded font-medium">
+                {getMaterialTypeLabel(material.material_type)}
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelectedType(material.material_type || ''); setEditingType(true); }}
+                className="p-1 rounded text-muted hover:text-foreground hover:bg-border opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Editar tipo"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            </div>
+          )}
           <StatusBadge status={materialStatus} />
           {material.valid_until && (
             <span className="text-xs text-muted">

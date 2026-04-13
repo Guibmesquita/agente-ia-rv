@@ -94,6 +94,12 @@ export const materialsAPI = {
       method: 'POST',
     }),
 
+  updateType: (materialId, materialType) =>
+    fetchAPI(`/products/materials/${materialId}/type`, {
+      method: 'PATCH',
+      body: JSON.stringify({ material_type: materialType }),
+    }),
+
   uploadWithoutProduct: (file, materialData) => {
     const formData = new FormData();
     formData.append('file', file);
