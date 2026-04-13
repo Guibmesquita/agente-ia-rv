@@ -4,7 +4,7 @@ import { FileText, Calendar, MoreVertical, RefreshCw, Trash2, Pencil, X } from '
 import { StatusBadge } from './StatusBadge';
 import { productsAPI, materialsAPI } from '../services/api';
 import { useToast } from './Toast';
-import { MATERIAL_TYPE_OPTIONS, getMaterialTypeLabel } from '../lib/materialTypes';
+import { MATERIAL_TYPE_OPTIONS } from '../lib/materialTypes';
 
 function getProductStatus(product) {
   if (product.status === 'archived') return 'archived';
