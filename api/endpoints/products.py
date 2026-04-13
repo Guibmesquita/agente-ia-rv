@@ -2153,7 +2153,7 @@ async def dismiss_pdf_pending(
     material.pdf_whatsapp_dismissed = True
     db.commit()
 
-    return {"ok": True, "material_id": material_id}
+    return {"ok": True}
 
 
 @router.post("/{product_id}/materials/{material_id}/upload")
