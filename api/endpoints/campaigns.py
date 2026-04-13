@@ -2852,7 +2852,8 @@ async def get_campaign(
                 "assessor_phone": d.assessor_phone,
                 "status": d.status,
                 "error_message": d.error_message,
-                "sent_at": d.sent_at.isoformat() if d.sent_at else None
+                "sent_at": d.sent_at.isoformat() if d.sent_at else None,
+                "message_content": d.message_content if d.message_content else None
             }
             for d in dispatches
         ]

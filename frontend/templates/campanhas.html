@@ -3360,6 +3360,24 @@ Equipe de Gestao"></textarea>
                     </div>
                 `;
                 
+                const firstSent = successDispatches.length > 0 ? successDispatches[0] : null;
+                if (firstSent && firstSent.message_content) {
+                    const escapedMsg = firstSent.message_content
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                    html += `
+                        <h4 style="margin-bottom: 12px; color: #374151;">Exemplo de Mensagem Enviada</h4>
+                        <div class="preview-card" style="margin-bottom: 24px;">
+                            <div class="preview-card-header">
+                                <h4>${firstSent.assessor_name || firstSent.assessor_id}</h4>
+                                <span class="preview-badge">Enviada</span>
+                            </div>
+                            <div class="preview-message">${escapedMsg}</div>
+                        </div>
+                    `;
+                }
+
                 if (failedDispatches.length > 0) {
                     html += `
                         <h4 style="margin-bottom: 12px; color: #dc2626;">Falhas no Envio (${failedDispatches.length})</h4>
