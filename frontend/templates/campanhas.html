@@ -849,8 +849,8 @@
 
                 <!-- Abas da página -->
                 <div style="display:flex;border-bottom:2px solid var(--border-color);margin-bottom:24px;">
-                    <button id="struct-tab-btn-campanhas" onclick="switchPageTab('campanhas')" style="padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--primary-color);border:none;border-bottom:2px solid var(--primary-color);background:transparent;cursor:pointer;margin-bottom:-2px;">Campanhas</button>
-                    <button id="struct-tab-btn-estruturas" onclick="switchPageTab('estruturas')" style="padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--text-secondary);border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;margin-bottom:-2px;">Estruturas</button>
+                    <button id="struct-tab-btn-campanhas" data-action="switchTab" data-tab="campanhas" style="padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--primary-color);border:none;border-bottom:2px solid var(--primary-color);background:transparent;cursor:pointer;margin-bottom:-2px;">Campanhas</button>
+                    <button id="struct-tab-btn-estruturas" data-action="switchTab" data-tab="estruturas" style="padding:10px 20px;font-size:0.875rem;font-weight:600;color:var(--text-secondary);border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;margin-bottom:-2px;">Estruturas</button>
                 </div>
 
                 <!-- Aba: Campanhas -->
@@ -1363,15 +1363,15 @@ Equipe de Gestao"></textarea>
                             <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary);margin:0;">Estruturas de Campanha</h2>
                             <p style="color:var(--text-secondary);margin-top:4px;font-size:0.875rem;">Gerencie estruturas de derivativos com validade temporal e diagramas de payoff</p>
                         </div>
-                        <button onclick="structOpenCreateModal()" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--primary-color);color:white;border:none;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;">
+                        <button data-action="structCreate" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--primary-color);color:white;border:none;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;">
                             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                             Nova Estrutura
                         </button>
                     </div>
                     <div style="display:flex;gap:8px;margin-bottom:16px;">
-                        <button onclick="structSetFilter('all')" id="struct-filter-all" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#dbeafe;color:#1d4ed8;border:none;cursor:pointer;">Todas</button>
-                        <button onclick="structSetFilter('active')" id="struct-filter-active" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#f3f4f6;color:#4b5563;border:none;cursor:pointer;">Ativas</button>
-                        <button onclick="structSetFilter('expired')" id="struct-filter-expired" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#f3f4f6;color:#4b5563;border:none;cursor:pointer;">Expiradas</button>
+                        <button data-action="structFilter" data-filter="all" id="struct-filter-all" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#dbeafe;color:#1d4ed8;border:none;cursor:pointer;">Todas</button>
+                        <button data-action="structFilter" data-filter="active" id="struct-filter-active" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#f3f4f6;color:#4b5563;border:none;cursor:pointer;">Ativas</button>
+                        <button data-action="structFilter" data-filter="expired" id="struct-filter-expired" style="padding:8px 16px;border-radius:8px;font-size:0.875rem;font-weight:500;background:#f3f4f6;color:#4b5563;border:none;cursor:pointer;">Expiradas</button>
                     </div>
                     <div id="struct-loading" style="text-align:center;padding:48px;">
                         <div style="display:inline-block;width:32px;height:32px;border:4px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite;"></div>
@@ -1391,7 +1391,7 @@ Equipe de Gestao"></textarea>
     </div>
 
     <!-- Modal de Resumo da Campanha -->
-    <div class="modal-overlay" id="campaignSummaryModal" style="display: none;">
+    <div class="modal-overlay" id="campaignSummaryModal">
         <div class="modal" style="max-width: 800px;">
             <div class="modal-header">
                 <h3>Resumo da Campanha</h3>
@@ -1518,7 +1518,7 @@ Equipe de Gestao"></textarea>
         <div style="background:white;border-radius:16px;box-shadow:0 25px 50px rgba(0,0,0,0.25);width:100%;max-width:520px;margin:16px;max-height:90vh;overflow-y:auto;">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e5e7eb;">
                 <h2 id="struct-modal-title" style="font-size:1.125rem;font-weight:600;color:#111827;margin:0;">Nova Estrutura</h2>
-                <button onclick="structCloseModal()" style="color:#9ca3af;background:none;border:none;cursor:pointer;padding:4px;">
+                <button data-action="structCloseModal" style="color:#9ca3af;background:none;border:none;cursor:pointer;padding:4px;">
                     <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
@@ -1566,15 +1566,15 @@ Equipe de Gestao"></textarea>
                 <div style="margin-bottom:16px;">
                     <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:8px;">Dados da Estrutura</label>
                     <div id="struct-key-data-container" style="display:flex;flex-direction:column;gap:8px;"></div>
-                    <button type="button" onclick="structAddKeyDataRow()" style="margin-top:8px;font-size:0.875rem;color:#2563eb;background:none;border:none;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:4px;">
+                    <button type="button" data-action="structAddKeyRow" style="margin-top:8px;font-size:0.875rem;color:#2563eb;background:none;border:none;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:4px;">
                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         Adicionar campo
                     </button>
                 </div>
                 <div style="margin-bottom:16px;">
                     <label style="display:block;font-size:0.875rem;font-weight:500;color:#374151;margin-bottom:4px;">Diagrama de Payoff</label>
-                    <div id="struct-diagram-upload-area" onclick="document.getElementById('struct-form-diagram-file').click()" style="border:2px dashed #d1d5db;border-radius:8px;padding:16px;text-align:center;cursor:pointer;">
-                        <input type="file" id="struct-form-diagram-file" accept="image/*" style="display:none;" onchange="structHandleDiagramSelect(event)">
+                    <div id="struct-diagram-upload-area" data-action="structClickDiagramInput" style="border:2px dashed #d1d5db;border-radius:8px;padding:16px;text-align:center;cursor:pointer;">
+                        <input type="file" id="struct-form-diagram-file" accept="image/*" style="display:none;">
                         <div id="struct-diagram-preview" style="display:none;">
                             <img id="struct-diagram-preview-img" style="max-height:128px;margin:0 auto;border-radius:4px;display:block;" alt="Preview">
                             <p id="struct-diagram-preview-name" style="font-size:0.75rem;color:#6b7280;margin-top:8px;"></p>
@@ -1587,7 +1587,7 @@ Equipe de Gestao"></textarea>
                     <p id="struct-diagram-existing" style="font-size:0.75rem;color:#16a34a;margin-top:4px;display:none;"></p>
                 </div>
                 <div style="display:flex;justify-content:flex-end;gap:12px;padding-top:16px;border-top:1px solid #e5e7eb;">
-                    <button type="button" onclick="structCloseModal()" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:#374151;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cancelar</button>
+                    <button type="button" data-action="structCloseModal" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:#374151;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cancelar</button>
                     <button type="submit" id="struct-form-submit-btn" style="padding:8px 20px;font-size:0.875rem;font-weight:500;color:white;background:#2563eb;border:none;border-radius:8px;cursor:pointer;">Criar</button>
                 </div>
             </form>
@@ -1603,7 +1603,7 @@ Equipe de Gestao"></textarea>
             <h3 style="font-size:1.125rem;font-weight:600;color:#111827;margin-bottom:8px;">Desativar Estrutura?</h3>
             <p style="font-size:0.875rem;color:#6b7280;margin-bottom:24px;">A estrutura será desativada e não aparecerá mais no prompt do agente.</p>
             <div style="display:flex;gap:12px;justify-content:center;">
-                <button onclick="structCloseDeleteModal()" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:#374151;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cancelar</button>
+                <button data-action="structCloseDeleteModal" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:#374151;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cancelar</button>
                 <button id="struct-confirm-delete-btn" style="padding:8px 16px;font-size:0.875rem;font-weight:500;color:white;background:#dc2626;border:none;border-radius:8px;cursor:pointer;">Desativar</button>
             </div>
         </div>
@@ -3327,7 +3327,7 @@ Equipe de Gestao"></textarea>
         }
 
         async function openCampaignSummary(id) {
-            document.getElementById('campaignSummaryModal').style.display = 'flex';
+            document.getElementById('campaignSummaryModal').classList.add('active');
             document.getElementById('summaryModalBody').innerHTML = '<div style="text-align: center; padding: 40px;">Carregando...</div>';
             
             try {
@@ -3394,7 +3394,7 @@ Equipe de Gestao"></textarea>
         }
 
         function closeSummaryModal() {
-            document.getElementById('campaignSummaryModal').style.display = 'none';
+            document.getElementById('campaignSummaryModal').classList.remove('active');
         }
 
         async function openFailuresModal(id) {
@@ -3830,6 +3830,28 @@ Equipe de Gestao"></textarea>
                 updateCustomField(parseInt(actionEl.dataset.index), 'variable', actionEl.value);
             } else if (action === 'removeCustomField') {
                 removeCustomField(parseInt(actionEl.dataset.index));
+            } else if (action === 'switchTab') {
+                switchPageTab(actionEl.dataset.tab);
+            } else if (action === 'structCreate') {
+                structOpenCreateModal();
+            } else if (action === 'structFilter') {
+                structSetFilter(actionEl.dataset.filter);
+            } else if (action === 'structCloseModal') {
+                structCloseModal();
+            } else if (action === 'structCloseDeleteModal') {
+                structCloseDeleteModal();
+            } else if (action === 'structAddKeyRow') {
+                structAddKeyDataRow();
+            } else if (action === 'structClickDiagramInput') {
+                document.getElementById('struct-form-diagram-file').click();
+            } else if (action === 'structViewDiagram') {
+                structViewDiagram(actionEl.dataset.filename);
+            } else if (action === 'structEditModal') {
+                structOpenEditModal(parseInt(actionEl.dataset.id));
+            } else if (action === 'structConfirmDelete') {
+                structConfirmDelete(parseInt(actionEl.dataset.id));
+            } else if (action === 'structRemoveKeyRow') {
+                actionEl.parentElement.remove();
             }
         });
 
@@ -3966,9 +3988,9 @@ Equipe de Gestao"></textarea>
                                 </div>
                             </div>
                             <div style="border-top:1px solid #f3f4f6;padding:12px 20px;display:flex;justify-content:flex-end;gap:8px;">
-                                ${s.diagram_filename ? `<button onclick="structViewDiagram('${s.diagram_filename}')" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Ver Diagrama</button>` : ''}
-                                <button onclick="structOpenEditModal(${s.id})" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Editar</button>
-                                <button onclick="structConfirmDelete(${s.id})" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Desativar</button>
+                                ${s.diagram_filename ? `<button data-action="structViewDiagram" data-filename="${s.diagram_filename}" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Ver Diagrama</button>` : ''}
+                                <button data-action="structEditModal" data-id="${s.id}" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Editar</button>
+                                <button data-action="structConfirmDelete" data-id="${s.id}" style="font-size:0.75rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Desativar</button>
                             </div>
                         </div>
                     `;
@@ -4056,7 +4078,7 @@ Equipe de Gestao"></textarea>
                 row.style.cssText = 'display:flex;gap:8px;align-items:center;';
                 row.innerHTML = '<input type="text" style="flex:1;padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;" placeholder="Chave" value="' + (key || '') + '">'
                     + '<input type="text" style="flex:1;padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.875rem;" placeholder="Valor" value="' + (value || '') + '">'
-                    + '<button type="button" onclick="this.parentElement.remove()" style="color:#9ca3af;background:none;border:none;cursor:pointer;padding:4px;">'
+                    + '<button type="button" data-action="structRemoveKeyRow" style="color:#9ca3af;background:none;border:none;cursor:pointer;padding:4px;">'
                     + '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
                 container.appendChild(row);
             };
@@ -4169,6 +4191,10 @@ Equipe de Gestao"></textarea>
                         .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
                     document.getElementById('struct-form-slug').value = slug;
                 }
+            });
+
+            document.getElementById('struct-form-diagram-file').addEventListener('change', function(e) {
+                structHandleDiagramSelect(e);
             });
         })();
 
