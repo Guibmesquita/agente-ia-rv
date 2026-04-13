@@ -145,7 +145,7 @@ def normalize_phone(phone: str) -> str:
     return digits
 
 
-@router.get("/", response_model=List[ConversationResponse])
+@router.get("/")
 async def list_conversations(
     search: Optional[str] = Query(None, description="Buscar por número ou nome"),
     status: Optional[str] = Query(None, description="Filtrar por status legado"),
@@ -220,6 +220,7 @@ async def list_conversations(
         if start_date:
             query = query.filter(Conversation.last_message_at >= start_date)
     
+    total = query.count()
     conversations = query.order_by(desc(Conversation.last_message_at)).offset(actual_offset).limit(limit).all()
     
     result = []
@@ -255,7 +256,7 @@ async def list_conversations(
             reopened_count=conv.reopened_count or 0
         ))
     
-    return result
+    return {"items": result, "total": total, "offset": actual_offset, "limit": limit}
 
 
 # ==================== ROTAS ESTÁTICAS (devem vir ANTES de rotas com {conversation_id}) ====================

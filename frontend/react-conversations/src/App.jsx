@@ -675,6 +675,7 @@ function App() {
   const messagesContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
   const shouldScrollRef = useRef(true);
+  const sentinelRef = useRef(null);
   const PAGE_SIZE = 20;
   
   const showToast = useCallback((message, type = 'info') => {
@@ -791,7 +792,7 @@ function App() {
       }
       const data = await res.json();
       const items = Array.isArray(data) ? data : (data.items || []);
-      const total = Array.isArray(data) ? data.length : (data.total || items.length);
+      const total = Array.isArray(data) ? null : (data.total ?? null);
       
       const sortedItems = [...items].sort((a, b) => {
         const dateA = new Date(a.last_message_at || a.updated_at || 0);
@@ -801,10 +802,15 @@ function App() {
       
       setConversations(prev => {
         const newList = append ? [...prev, ...sortedItems] : sortedItems;
-        setHasMore(newList.length < total);
+        if (total !== null) {
+          setHasMore(offset + items.length < total);
+          setTotalCount(total);
+        } else {
+          setHasMore(items.length === PAGE_SIZE);
+          setTotalCount(prev => append ? Math.max(prev, newList.length) : newList.length);
+        }
         return newList;
       });
-      setTotalCount(total);
     } catch (err) {
       console.error('Erro ao carregar conversas:', err);
     } finally {
@@ -929,13 +935,33 @@ function App() {
     }
   };
 
-  const loadMoreConversations = () => {
+  const loadMoreConversations = useCallback(() => {
     if (hasMore && !isLoading) {
       const nextPage = page + 1;
       setPage(nextPage);
       fetchConversations(nextPage, true);
     }
-  };
+  }, [hasMore, isLoading, page, fetchConversations]);
+
+  const handleSSEUpdate = useCallback(async (conversationId) => {
+    try {
+      const resp = await fetch(`${API_BASE}/conversations/${conversationId}`, { credentials: 'include' });
+      if (!resp.ok) return;
+      const freshConv = await resp.json();
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === conversationId);
+        if (idx !== -1) {
+          const updated = prev.map(c => c.id === conversationId ? { ...c, ...freshConv } : c);
+          return [...updated].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+        } else {
+          setTotalCount(t => t + 1);
+          return [freshConv, ...prev];
+        }
+      });
+    } catch (e) {
+      console.warn('[SSE] Erro ao atualizar conversa in-place:', e.message);
+    }
+  }, []);
 
   const sendMessage = async () => {
     if (!messageInput.trim() || !currentConversation) return;
@@ -1070,9 +1096,10 @@ function App() {
       const listRes = await fetch(`${API_BASE}/conversations/?limit=${PAGE_SIZE}&offset=0`, { credentials: 'include' });
       const listData = await listRes.json();
       const items = Array.isArray(listData) ? listData : (listData.items || []);
+      const total = listData.total ?? items.length;
       setConversations(items);
-      setTotalCount(Array.isArray(listData) ? items.length : (listData.total || 0));
-      setHasMore(items.length < (Array.isArray(listData) ? items.length : (listData.total || 0)));
+      setTotalCount(total);
+      setHasMore(items.length < total);
       setPage(0);
       
       if (result.conversation_id) {
@@ -1141,6 +1168,21 @@ function App() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, ticketFilter, advancedFilters]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreConversations();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMoreConversations]);
 
   useEffect(() => {
     if (messages.length > 0 && shouldScrollRef.current) {
@@ -1233,8 +1275,11 @@ function App() {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'new_message' || data.type === 'conversation_updated') {
-            await fetchConversations(0, false);
-            if (currentConversation && data.data?.conversation_id === currentConversation.id) {
+            const convId = data.data?.conversation_id;
+            if (convId) {
+              await handleSSEUpdate(convId);
+            }
+            if (currentConversation && convId === currentConversation.id) {
               await fetchMessages(currentConversation.id, false);
               try {
                 const resp = await fetch(`${API_BASE}/conversations/${currentConversation.id}`, { credentials: 'include' });
@@ -1266,7 +1311,7 @@ function App() {
       if (tokenRefreshTimeout) clearTimeout(tokenRefreshTimeout);
       if (fallbackPollingTimeout) clearTimeout(fallbackPollingTimeout);
     };
-  }, [currentConversation, fetchConversations]);
+  }, [currentConversation, fetchConversations, handleSSEUpdate]);
 
   const contactName = currentConversation?.assessor_name || currentConversation?.contact_name || 'Contato';
 
@@ -1422,6 +1467,16 @@ function App() {
             )}
           </div>
 
+          {totalCount > 0 && (
+            <div className="px-4 py-1.5 border-b border-gray-100 bg-gray-50">
+              <p className="text-xs text-gray-400">
+                {conversations.length < totalCount
+                  ? `${conversations.length} de ${totalCount} conversas`
+                  : `${totalCount} conversa${totalCount !== 1 ? 's' : ''}`}
+              </p>
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto min-h-0">
             {isLoading && conversations.length === 0 ? (
               <div className="flex justify-center items-center h-32">
@@ -1443,14 +1498,13 @@ function App() {
                   />
                 ))}
                 {hasMore && (
-                  <div className="p-4">
-                    <button
-                      onClick={loadMoreConversations}
-                      disabled={isLoading}
-                      className="w-full py-3 text-sm text-primary hover:bg-primary/5 rounded-lg font-medium transition-colors disabled:opacity-50"
-                    >
-                      {isLoading ? 'Carregando...' : 'Carregar mais'}
-                    </button>
+                  <div ref={sentinelRef} className="flex justify-center items-center py-4">
+                    {isLoading && (
+                      <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                    )}
+                    {!isLoading && (
+                      <span className="text-xs text-gray-400">Carregando mais...</span>
+                    )}
                   </div>
                 )}
               </>
