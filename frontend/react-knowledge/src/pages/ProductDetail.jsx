@@ -14,6 +14,7 @@ import { InlineEdit } from '../components/InlineEdit';
 import { Modal } from '../components/Modal';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { useToast } from '../components/Toast';
+import { MATERIAL_TYPE_OPTIONS, getMaterialTypeLabel } from '../lib/materialTypes';
 
 function convertTableToTopics(content) {
   if (!content) return null;
@@ -85,23 +86,6 @@ function ContentDisplay({ content, blockType }) {
   );
 }
 
-const MATERIAL_TYPE_OPTIONS = [
-  { value: 'comite',          label: 'Comitê' },
-  { value: 'research',        label: 'Research' },
-  { value: 'one_page',        label: 'One Page' },
-  { value: 'apresentacao',    label: 'Apresentação' },
-  { value: 'campanha',        label: 'Campanha' },
-  { value: 'treinamento',     label: 'Treinamento' },
-  { value: 'faq',             label: 'FAQ' },
-  { value: 'regulatorio',     label: 'Regulatório' },
-  { value: 'script',          label: 'Script' },
-  { value: 'outro',           label: 'Outro' },
-];
-
-function getMaterialTypeLabel(value) {
-  const opt = MATERIAL_TYPE_OPTIONS.find(o => o.value === value);
-  return opt ? opt.label : value || '—';
-}
 
 function getMaterialStatus(material) {
   const now = new Date();
