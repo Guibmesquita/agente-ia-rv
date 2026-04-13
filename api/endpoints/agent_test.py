@@ -121,6 +121,19 @@ async def test_agent_message(
     if session.get("last_session_summary"):
         history_for_ai = [{"role": "system", "content": f"[Contexto da sessão anterior]: {session['last_session_summary']}"}] + history_for_ai
 
+    from services.query_rewriter import rewrite_query as _test_rewrite_query
+    _test_rewrite_result = None
+    try:
+        _test_rw_history = [m for m in history_for_ai if m.get("role") in ("user", "assistant")][-10:]
+        _test_rewrite_result = await _test_rewrite_query(
+            message=message,
+            history=_test_rw_history,
+            client=openai_agent.client,
+            timeout_seconds=3.0,
+        )
+    except Exception as _rw_err:
+        print(f"[AGENT_TEST] QueryRewriter falhou (não-bloqueante): {_rw_err}")
+
     try:
         response, should_create_ticket, context = await openai_agent.generate_response_v2(
             user_message=message,
@@ -130,6 +143,7 @@ async def test_agent_message(
             db=db,
             conversation_id=f"test_{user_id}",
             allow_tools=True,
+            rewrite_result=_test_rewrite_result,
         )
 
         if context and context.get("identified_assessor"):

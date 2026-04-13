@@ -2688,6 +2688,7 @@ INSTRUÇÕES IMPORTANTES:
         db=None,
         conversation_id: Optional[str] = None,
         allow_tools: bool = True,
+        rewrite_result=None,
     ) -> Tuple[str, bool, dict]:
         """
         Pipeline V2: GPT decide, depois age (agentic RAG com tool-calling).
@@ -2703,6 +2704,7 @@ INSTRUÇÕES IMPORTANTES:
             db: Sessão do banco de dados (para queries de materiais, etc)
             conversation_id: ID da conversa para logs
             allow_tools: Se deve permitir tool calling
+            rewrite_result: QueryRewriteResult pré-computado (para state block), opcional
 
         Returns:
             Tuple (response, should_create_ticket, context_info)
@@ -2765,27 +2767,11 @@ INSTRUÇÕES IMPORTANTES:
             active_campaigns=active_campaigns,
         )
 
-        from services.query_rewriter import rewrite_query
         from services.conversation_memory import build_conversation_state_block, build_context_dedup_instruction
-
-        _rewrite_result = None
-        try:
-            _rewrite_history = [
-                m for m in (conversation_history or [])
-                if m.get("role") in ("user", "assistant")
-            ][-10:]
-            _rewrite_result = await rewrite_query(
-                message=user_message,
-                history=_rewrite_history,
-                client=self.client,
-                timeout_seconds=3.0,
-            )
-        except Exception as _rw_err:
-            print(f"[V2] QueryRewriter falhou (não-bloqueante): {_rw_err}")
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        state_block = build_conversation_state_block(conversation_history or [], rewrite_result=_rewrite_result)
+        state_block = build_conversation_state_block(conversation_history or [], rewrite_result=rewrite_result)
         if state_block:
             messages.append({"role": "system", "content": state_block})
 

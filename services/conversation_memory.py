@@ -480,7 +480,7 @@ def build_conversation_state_block(
 
     lines = ["=== ESTADO DA CONVERSA (USE PARA CALIBRAR SUA RESPOSTA) ==="]
 
-    if session_summary and not topic_switch:
+    if session_summary:
         lines.append(f"• Sessão anterior (resumo): {session_summary}")
 
     if result_parts_text:

@@ -772,7 +772,21 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 "broker": assessor.broker_responsavel
             }
         
-        history_with_summary = build_context_with_summary(history, conversation, None)
+        from services.query_rewriter import rewrite_query as _rewrite_query
+
+        _webhook_rewrite_result = None
+        try:
+            _rw_history = [m for m in history if m.get("role") in ("user", "assistant")][-10:]
+            _webhook_rewrite_result = await _rewrite_query(
+                message=normalized_message,
+                history=_rw_history,
+                client=openai_agent.client,
+                timeout_seconds=3.0,
+            )
+        except Exception as _rw_err:
+            print(f"[WEBHOOK] QueryRewriter falhou (não-bloqueante): {_rw_err}")
+
+        history_with_summary = build_context_with_summary(history, conversation, _webhook_rewrite_result)
 
         if is_campaign_response:
             history_with_summary = list(history_with_summary) if history_with_summary else []
@@ -795,6 +809,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             db=db,
             conversation_id=str(conversation.id) if conversation else None,
             allow_tools=True,
+            rewrite_result=_webhook_rewrite_result,
         )
         print(f"[WEBHOOK] V2 Resposta gerada: {response[:100] if response else 'VAZIA'} | iterations={context.get('iterations')} elapsed={context.get('elapsed_ms')}ms")
         
