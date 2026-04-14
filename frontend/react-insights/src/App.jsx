@@ -150,6 +150,11 @@ function App() {
     value: categoriesData.data[index],
   })) || [];
 
+  const resolutionChartFormatted = resolutionData?.labels?.map((label, index) => ({
+    label: label,
+    value: resolutionData.data[index],
+  })) || [];
+
   const productsChartFormatted = productsData?.labels?.map((label, index) => ({
     label: label,
     value: productsData.data[index],
@@ -272,11 +277,16 @@ function App() {
                 />
               </div>
 
-              <div className="mt-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
                 <CategoryRadialChart
                   title="Categorias de Dúvidas"
                   data={categoriesChartFormatted}
                   tooltip="Distribuição das conversas por tipo de assunto. Volumes absolutos de cada categoria."
+                />
+                <CategoryRadialChart
+                  title="IA vs Humanos"
+                  data={resolutionChartFormatted}
+                  tooltip="Distribuição das janelas de 12h entre resolvidas pela IA e com intervenção humana."
                 />
               </div>
             </>
