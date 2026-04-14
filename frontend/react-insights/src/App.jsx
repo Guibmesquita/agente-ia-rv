@@ -20,18 +20,10 @@ import Sidebar from './components/Sidebar';
 import KPICard from './components/KPICard';
 import ChartCard from './components/ChartCard';
 import FilterBar from './components/FilterBar';
-import UnitsBarChart from './components/UnitsBarChart';
-import AssessorsBarChart from './components/AssessorsBarChart';
 import ProductsImageChart from './components/ProductsImageChart';
-import ComplexityChart from './components/ComplexityChart';
 import CampaignsSummary from './components/CampaignsSummary';
 import CategoryRadialChart from './components/CategoryRadialChart';
 import AnimatedGauge from './components/AnimatedGauge';
-import FeedbacksList from './components/FeedbacksList';
-import TicketStatusDonut from './components/TicketStatusDonut';
-import TimeGauges from './components/TimeGauges';
-import EscalationCategories from './components/EscalationCategories';
-import TimeSavedCard from './components/TimeSavedCard';
 
 ChartJS.register(
   CategoryScale,
@@ -57,11 +49,6 @@ function App() {
   const [categoriesData, setCategoriesData] = useState(null);
   const [productsData, setProductsData] = useState(null);
   const [resolutionData, setResolutionData] = useState(null);
-  const [topUnits, setTopUnits] = useState([]);
-  const [topAssessors, setTopAssessors] = useState([]);
-  const [ticketsByUnit, setTicketsByUnit] = useState([]);
-  const [ticketData, setTicketData] = useState(null);
-  const [feedbacks, setFeedbacks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -101,32 +88,22 @@ function App() {
     const qs = buildQueryString();
 
     try {
-      const [metricsRes, activityRes, categoriesRes, productsRes, resolutionRes, unitsRes, assessorsRes, ticketsByUnitRes, ticketsRes, feedbacksRes] = await Promise.all([
+      const [metricsRes, activityRes, categoriesRes, productsRes, resolutionRes] = await Promise.all([
         fetch(`${API_BASE}/api/insights/metrics?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/activity?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/categories?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/products?${qs}`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/insights/resolution?${qs}`, { credentials: 'include' }),
-        fetch(`${API_BASE}/api/insights/top-units?${qs}`, { credentials: 'include' }),
-        fetch(`${API_BASE}/api/insights/top-assessors?${qs}`, { credentials: 'include' }),
-        fetch(`${API_BASE}/api/insights/tickets-by-unit?${qs}`, { credentials: 'include' }),
-        fetch(`${API_BASE}/api/insights/tickets?${qs}`, { credentials: 'include' }),
-        fetch(`${API_BASE}/api/insights/feedbacks?${qs}`, { credentials: 'include' }),
       ]);
 
       if (!metricsRes.ok) throw new Error('Falha ao carregar metricas');
 
-      const [metricsData, activity, categories, products, resolution, units, assessors, ticketsByUnitData, ticketsData, feedbacksData] = await Promise.all([
+      const [metricsData, activity, categories, products, resolution] = await Promise.all([
         metricsRes.json(),
         activityRes.json(),
         categoriesRes.json(),
         productsRes.json(),
         resolutionRes.json(),
-        unitsRes.json(),
-        assessorsRes.ok ? assessorsRes.json() : [],
-        ticketsByUnitRes.ok ? ticketsByUnitRes.json() : [],
-        ticketsRes.ok ? ticketsRes.json() : null,
-        feedbacksRes.ok ? feedbacksRes.json() : [],
       ]);
 
       setMetrics(metricsData);
@@ -134,11 +111,6 @@ function App() {
       setCategoriesData(categories);
       setProductsData(products);
       setResolutionData(resolution);
-      setTopUnits(units);
-      setTopAssessors(assessors);
-      setTicketsByUnit(ticketsByUnitData);
-      setTicketData(ticketsData);
-      setFeedbacks(feedbacksData);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err.message);
@@ -176,11 +148,6 @@ function App() {
   const categoriesChartFormatted = categoriesData?.labels?.map((label, index) => ({
     label: label,
     value: categoriesData.data[index],
-  })) || [];
-
-  const resolutionChartFormatted = resolutionData?.labels?.map((label, index) => ({
-    label: label,
-    value: resolutionData.data[index],
   })) || [];
 
   const productsChartFormatted = productsData?.labels?.map((label, index) => ({
@@ -232,9 +199,9 @@ function App() {
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <KPICard
-                  title="Total de Interações"
+                  title="Conversas (jan. 12h)"
                   value={metrics?.total_interactions?.toLocaleString('pt-BR') || '0'}
-                  tooltip="Número total de conversas iniciadas com o agente IA no período selecionado."
+                  tooltip="Total de janelas de 12 horas com atividade de mensagens no período selecionado."
                   icon={
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -292,15 +259,6 @@ function App() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                <UnitsBarChart data={topUnits} />
-                <AssessorsBarChart data={topAssessors} />
-              </div>
-
-              <div className="mt-6">
-                <ComplexityChart data={ticketsByUnit} />
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
                 <ProductsImageChart
                   data={productsChartFormatted}
                   title="Produtos em Alta"
@@ -309,8 +267,8 @@ function App() {
                 <AnimatedGauge
                   title="Taxa de Resolução IA"
                   percentage={metrics?.ai_resolution_rate || 0}
-                  label={`Conversas resolvidas pela IA (${metrics?.escalated_count || 0} escalados)`}
-                  tooltip="Proporção de conversas resolvidas pela IA versus as que necessitaram intervenção humana."
+                  label="Janelas de 12h sem intervenção humana"
+                  tooltip="Proporção de janelas de 12h resolvidas pela IA versus as que tiveram intervenção humana."
                 />
               </div>
 
@@ -320,34 +278,6 @@ function App() {
                   data={categoriesChartFormatted}
                   tooltip="Distribuição das conversas por tipo de assunto. Volumes absolutos de cada categoria."
                 />
-              </div>
-
-              {/* Seção de Gestão de Chamados */}
-              <div className="mt-10">
-                <h2 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2">
-                  <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                  Gestão de Chamados
-                </h2>
-                
-                <div className="space-y-6">
-                  <TicketStatusDonut data={ticketData} />
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <TimeGauges
-                      avgResponseTime={ticketData?.summary?.avg_response_time_minutes}
-                      avgResolutionTime={ticketData?.summary?.avg_resolution_time_minutes}
-                    />
-                    <TimeSavedCard botMetrics={ticketData?.bot_metrics} />
-                  </div>
-                  
-                  <EscalationCategories data={ticketData?.by_category} />
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <FeedbacksList feedbacks={feedbacks} />
               </div>
             </>
           )}

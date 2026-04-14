@@ -13,7 +13,7 @@ from database.database import get_db
 from database.models import (
     ConversationInsight, Assessor, Campaign, CampaignDispatch,
     Ticket, User, UserRole, Conversation, TicketStatusV2, EscalationLevel,
-    ConversationTicket
+    ConversationTicket, WhatsAppMessage, SenderType
 )
 from api.endpoints.auth import get_current_user
 
@@ -78,8 +78,8 @@ async def get_metrics(
     if equipe:
         query = query.filter(ConversationInsight.equipe == equipe)
     
-    total_interactions = query.count()
-    
+    WINDOW_SECS = 43200  # 12 horas
+
     assessor_identity = func.coalesce(
         ConversationInsight.assessor_phone,
         func.cast(ConversationInsight.assessor_id, String)
@@ -98,28 +98,58 @@ async def get_metrics(
         *([ConversationInsight.broker_responsavel == broker] if broker else []),
         *([ConversationInsight.equipe == equipe] if equipe else []),
     ).scalar() or 0
-    
-    resolved_by_ai = query.filter(
-        ConversationInsight.resolved_by_ai == True,
-        ConversationInsight.escalated_to_human == False
-    ).count()
-    
-    ai_resolution_rate = (resolved_by_ai / total_interactions * 100) if total_interactions > 0 else 0
-    
-    escalated_count = query.filter(
-        ConversationInsight.escalated_to_human == True
-    ).count()
-    
-    tickets_created = query.filter(
-        ConversationInsight.ticket_created == True
-    ).count()
-    
+
+    window_col = func.floor(
+        func.extract('epoch', WhatsAppMessage.created_at) / WINDOW_SECS
+    )
+    has_human_col = func.max(
+        case(
+            (WhatsAppMessage.sender_type == SenderType.HUMAN.value, 1),
+            else_=0
+        )
+    )
+
+    win_q = db.query(
+        WhatsAppMessage.conversation_id,
+        window_col.label('wid'),
+        has_human_col.label('has_human')
+    ).filter(
+        WhatsAppMessage.created_at >= date_start,
+        WhatsAppMessage.created_at <= date_end,
+        WhatsAppMessage.conversation_id.isnot(None)
+    )
+
+    if any([macro_area, unidade, broker, equipe]):
+        win_q = win_q.join(
+            Conversation, WhatsAppMessage.conversation_id == Conversation.id
+        ).join(
+            Assessor, Conversation.assessor_id == Assessor.id
+        )
+        if macro_area:
+            win_q = win_q.filter(Assessor.macro_area == macro_area)
+        if unidade:
+            win_q = win_q.filter(Assessor.unidade == unidade)
+        if broker:
+            win_q = win_q.filter(Assessor.broker_responsavel == broker)
+        if equipe:
+            win_q = win_q.filter(Assessor.equipe == equipe)
+
+    win_q = win_q.group_by(WhatsAppMessage.conversation_id, window_col)
+    win_sq = win_q.subquery()
+
+    total_windows = db.query(func.count()).select_from(win_sq).scalar() or 0
+    human_windows = db.query(func.count()).select_from(win_sq).filter(
+        win_sq.c.has_human == 1
+    ).scalar() or 0
+    ai_windows = total_windows - human_windows
+    ai_resolution_rate = (ai_windows / total_windows * 100) if total_windows > 0 else 0
+
     campaign_query = db.query(Campaign).filter(
         Campaign.created_at >= date_start,
         Campaign.created_at <= date_end
     )
     total_campaigns = campaign_query.count()
-    
+
     dispatch_query = db.query(CampaignDispatch).join(Campaign).filter(
         Campaign.created_at >= date_start,
         Campaign.created_at <= date_end,
@@ -128,13 +158,11 @@ async def get_metrics(
     total_assessors_reached = dispatch_query.with_entities(
         func.count(distinct(CampaignDispatch.assessor_id))
     ).scalar() or 0
-    
+
     return {
-        "total_interactions": total_interactions,
+        "total_interactions": total_windows,
         "active_assessors": active_assessors,
         "ai_resolution_rate": round(ai_resolution_rate, 1),
-        "escalated_count": escalated_count,
-        "tickets_created": tickets_created,
         "total_campaigns": total_campaigns,
         "total_assessors_reached": total_assessors_reached
     }
@@ -283,33 +311,57 @@ async def get_resolution_chart(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_gestao_or_admin)
 ):
-    """Retorna proporção IA vs Humanos."""
+    """Retorna proporção IA vs Humanos baseada em janelas de 12h de mensagens reais."""
     date_start, date_end = parse_date_filter(period, start_date, end_date)
-    
-    query = db.query(ConversationInsight).filter(
-        ConversationInsight.created_at >= date_start,
-        ConversationInsight.created_at <= date_end
+    WINDOW_SECS = 43200
+
+    window_col = func.floor(
+        func.extract('epoch', WhatsAppMessage.created_at) / WINDOW_SECS
     )
-    
-    if macro_area:
-        query = query.filter(ConversationInsight.macro_area == macro_area)
-    if unidade:
-        query = query.filter(ConversationInsight.unidade == unidade)
-    if broker:
-        query = query.filter(ConversationInsight.broker_responsavel == broker)
-    if equipe:
-        query = query.filter(ConversationInsight.equipe == equipe)
-    
-    total = query.count()
-    resolved_ai = query.filter(
-        ConversationInsight.resolved_by_ai == True,
-        ConversationInsight.escalated_to_human == False
-    ).count()
-    escalated = query.filter(ConversationInsight.escalated_to_human == True).count()
-    
+    has_human_col = func.max(
+        case(
+            (WhatsAppMessage.sender_type == SenderType.HUMAN.value, 1),
+            else_=0
+        )
+    )
+
+    win_q = db.query(
+        WhatsAppMessage.conversation_id,
+        window_col.label('wid'),
+        has_human_col.label('has_human')
+    ).filter(
+        WhatsAppMessage.created_at >= date_start,
+        WhatsAppMessage.created_at <= date_end,
+        WhatsAppMessage.conversation_id.isnot(None)
+    )
+
+    if any([macro_area, unidade, broker, equipe]):
+        win_q = win_q.join(
+            Conversation, WhatsAppMessage.conversation_id == Conversation.id
+        ).join(
+            Assessor, Conversation.assessor_id == Assessor.id
+        )
+        if macro_area:
+            win_q = win_q.filter(Assessor.macro_area == macro_area)
+        if unidade:
+            win_q = win_q.filter(Assessor.unidade == unidade)
+        if broker:
+            win_q = win_q.filter(Assessor.broker_responsavel == broker)
+        if equipe:
+            win_q = win_q.filter(Assessor.equipe == equipe)
+
+    win_q = win_q.group_by(WhatsAppMessage.conversation_id, window_col)
+    win_sq = win_q.subquery()
+
+    total_windows = db.query(func.count()).select_from(win_sq).scalar() or 0
+    human_windows = db.query(func.count()).select_from(win_sq).filter(
+        win_sq.c.has_human == 1
+    ).scalar() or 0
+    ai_windows = total_windows - human_windows
+
     return {
-        "labels": ["Resolvido pela IA", "Escalado para Humano"],
-        "data": [resolved_ai, escalated]
+        "labels": ["Resolvido pela IA", "Intervenção Humana"],
+        "data": [ai_windows, human_windows]
     }
 
 
