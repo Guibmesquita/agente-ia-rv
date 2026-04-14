@@ -128,49 +128,6 @@ async def run_init_background():
     except Exception as e:
         print(f"[INIT] Erro no cleanup de jobs travados: {e}")
 
-    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"):
-        try:
-            _purge_fictitious_data_if_needed()
-        except Exception as e:
-            print(f"[INIT] Erro no purge de dados fictícios: {e}")
-
-
-def _purge_fictitious_data_if_needed():
-    """
-    Remove dados fictícios (assessor_id > 22) criados pelo seed script.
-    Roda apenas em produção (Railway). Idempotente — se não houver dados fictícios,
-    não faz nada. Garante que cada deploy inicie com dados limpos.
-    """
-    from database.database import SessionLocal
-    from database.models import Conversation, ConversationInsight, ConversationTicket, Assessor
-    from sqlalchemy import func as sql_func, text as sql_text
-
-    db = SessionLocal()
-    try:
-        fictitious_count = db.query(sql_func.count(Conversation.id)).filter(
-            Conversation.assessor_id > 22
-        ).scalar() or 0
-
-        if fictitious_count == 0:
-            print("[INIT] Purge: nenhum dado fictício encontrado — banco já está limpo.")
-            return
-
-        print(f"[INIT] Purge: encontradas {fictitious_count} conversas fictícias (assessor_id > 22). Iniciando limpeza...")
-
-        subq = "SELECT id FROM conversations WHERE assessor_id > 22"
-        db.execute(sql_text(f"DELETE FROM conversation_insights WHERE conversation_id::integer IN ({subq})"))
-        db.execute(sql_text(f"DELETE FROM ticket_history WHERE conversation_id IN ({subq})"))
-        db.execute(sql_text(f"DELETE FROM whatsapp_messages WHERE conversation_id IN ({subq})"))
-        db.execute(sql_text("UPDATE conversations SET active_ticket_id = NULL WHERE assessor_id > 22"))
-        db.execute(sql_text(f"DELETE FROM conversation_tickets WHERE conversation_id IN ({subq})"))
-        db.execute(sql_text("DELETE FROM conversations WHERE assessor_id > 22"))
-        db.execute(sql_text("DELETE FROM assessores WHERE id > 22"))
-        db.commit()
-
-        print(f"[INIT] Purge concluído: {fictitious_count} conversas fictícias e dados relacionados removidos.")
-    finally:
-        db.close()
-
 
 def _cleanup_stale_processing_jobs():
     """Marca jobs travados em 'processing' (>30min sem update) como 'failed'."""
