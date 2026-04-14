@@ -4,7 +4,7 @@ Métricas e gráficos para gestão de Renda Variável.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct, case, and_, extract, text
+from sqlalchemy import func, distinct, case, and_, or_, extract, text, String
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 import json
@@ -80,12 +80,19 @@ async def get_metrics(
     
     total_interactions = query.count()
     
+    assessor_identity = func.coalesce(
+        ConversationInsight.assessor_phone,
+        func.cast(ConversationInsight.assessor_id, String)
+    )
     active_assessors = db.query(
-        func.count(distinct(ConversationInsight.assessor_phone))
+        func.count(distinct(assessor_identity))
     ).filter(
         ConversationInsight.created_at >= date_start,
         ConversationInsight.created_at <= date_end,
-        ConversationInsight.assessor_phone.isnot(None),
+        or_(
+            ConversationInsight.assessor_phone.isnot(None),
+            ConversationInsight.assessor_id.isnot(None),
+        ),
         *([ConversationInsight.macro_area == macro_area] if macro_area else []),
         *([ConversationInsight.unidade == unidade] if unidade else []),
         *([ConversationInsight.broker_responsavel == broker] if broker else []),
@@ -352,12 +359,25 @@ async def get_top_assessors(
     """Retorna Top 10 Assessores mais ativos."""
     date_start, date_end = parse_date_filter(period, start_date, end_date)
     
+    identity_expr = func.coalesce(
+        ConversationInsight.assessor_phone,
+        func.cast(ConversationInsight.assessor_id, String)
+    )
+    display_name_expr = func.coalesce(
+        ConversationInsight.assessor_name,
+        ConversationInsight.assessor_phone,
+        func.cast(ConversationInsight.assessor_id, String)
+    )
+
     base_filters = [
         ConversationInsight.created_at >= date_start,
         ConversationInsight.created_at <= date_end,
-        ConversationInsight.assessor_phone.isnot(None),
+        or_(
+            ConversationInsight.assessor_phone.isnot(None),
+            ConversationInsight.assessor_id.isnot(None),
+        ),
     ]
-    
+
     if macro_area:
         base_filters.append(ConversationInsight.macro_area == macro_area)
     if unidade:
@@ -365,31 +385,45 @@ async def get_top_assessors(
     if broker:
         base_filters.append(ConversationInsight.broker_responsavel == broker)
 
-    display_name = func.coalesce(
-        ConversationInsight.assessor_name,
-        ConversationInsight.assessor_phone
-    ).label('display_name')
-
-    count_query = db.query(
-        display_name,
-        ConversationInsight.unidade,
+    top_rows = db.query(
+        identity_expr.label('identity'),
+        func.max(display_name_expr).label('display_name'),
         func.count(ConversationInsight.id).label('total_count')
     ).filter(*base_filters).group_by(
-        func.coalesce(ConversationInsight.assessor_name, ConversationInsight.assessor_phone),
-        ConversationInsight.unidade
-    ).order_by(func.count(ConversationInsight.id).desc()).limit(10)
+        identity_expr
+    ).order_by(func.count(ConversationInsight.id).desc()).limit(10).all()
 
-    top_assessors = count_query.all()
-
-    if not top_assessors:
+    if not top_rows:
         return []
 
+    identities = [r.identity for r in top_rows if r.identity]
+
+    unidade_rows = db.query(
+        identity_expr.label('identity'),
+        ConversationInsight.unidade,
+        func.count(ConversationInsight.id).label('cnt')
+    ).filter(
+        *base_filters,
+        identity_expr.in_(identities),
+        ConversationInsight.unidade.isnot(None),
+    ).group_by(
+        identity_expr,
+        ConversationInsight.unidade
+    ).all()
+
+    best_unidade: dict = {}
+    for row in unidade_rows:
+        key = row.identity
+        if key not in best_unidade or row.cnt > best_unidade[key][1]:
+            best_unidade[key] = (row.unidade, row.cnt)
+
     output = []
-    for r in top_assessors:
+    for r in top_rows:
         if r.total_count > 0:
+            unidade_val = best_unidade.get(r.identity, (None, 0))[0] if r.identity else None
             output.append({
                 "nome": r.display_name,
-                "unidade": r.unidade,
+                "unidade": unidade_val or "Sem unidade",
                 "count": r.total_count
             })
 
