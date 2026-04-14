@@ -4,7 +4,7 @@ Métricas e gráficos para gestão de Renda Variável.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct, case, and_, extract
+from sqlalchemy import func, distinct, case, and_, extract, text
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 import json
@@ -727,63 +727,34 @@ async def get_ticket_metrics(
         "daily_volume": [{"date": str(d[0]), "count": d[1]} for d in daily_volume]
     }
     
-    has_real_data = (total_tickets > 0 or bot_resolved_count > 0) and (avg_response_time > 0 or avg_resolution_time > 0 or len(by_category) > 0)
-    
-    if not has_real_data:
-        today = datetime.now(timezone.utc).date()
-        result = {
-            "summary": {
-                "total_tickets": 35,
-                "new": 8,
-                "open": 12,
-                "solved": 15,
-                "resolution_rate": 42.9,
-                "avg_response_time_minutes": 4.7,
-                "avg_resolution_time_minutes": 28.3
-            },
-            "bot_metrics": {
-                "bot_resolved_count": 156,
-                "bot_resolution_rate": 76.8,
-                "avg_time_saved_minutes": 12.5,
-                "total_conversations": 203
-            },
-            "by_status": [
-                {"status": "solved", "count": 15},
-                {"status": "open", "count": 12},
-                {"status": "new", "count": 8}
-            ],
-            "by_unidade": [
-                {"unidade": "São Paulo", "count": 18},
-                {"unidade": "Rio de Janeiro", "count": 12},
-                {"unidade": "Belo Horizonte", "count": 9},
-                {"unidade": "Curitiba", "count": 5},
-                {"unidade": "Porto Alegre", "count": 3}
-            ],
-            "by_broker": [
-                {"broker": "Carlos Silva", "count": 15},
-                {"broker": "Maria Santos", "count": 12},
-                {"broker": "João Oliveira", "count": 10},
-                {"broker": "Ana Costa", "count": 6},
-                {"broker": "Pedro Lima", "count": 4}
-            ],
-            "by_category": [
-                {"category": "info_not_found", "count": 14},
-                {"category": "technical_complexity", "count": 11},
-                {"category": "explicit_human_request", "count": 8},
-                {"category": "commercial_request", "count": 6},
-                {"category": "out_of_scope", "count": 4},
-                {"category": "investment_decision", "count": 3},
-                {"category": "other", "count": 1}
-            ],
-            "daily_volume": [
-                {"date": str(today - timedelta(days=6)), "count": 5},
-                {"date": str(today - timedelta(days=5)), "count": 8},
-                {"date": str(today - timedelta(days=4)), "count": 6},
-                {"date": str(today - timedelta(days=3)), "count": 9},
-                {"date": str(today - timedelta(days=2)), "count": 7},
-                {"date": str(today - timedelta(days=1)), "count": 6},
-                {"date": str(today), "count": 6}
-            ]
-        }
-    
     return result
+
+
+@router.post("/admin/purge-fictitious")
+async def purge_fictitious_insights(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_gestao_or_admin)
+):
+    """
+    Remove registros fictícios de conversation_insights.
+    Critério: conversas vinculadas a assessor_id > 22 (usuários não existentes).
+    Retorna o número de registros deletados e o total restante.
+    """
+    count_before = db.query(func.count(ConversationInsight.id)).scalar() or 0
+
+    db.execute(text("""
+        DELETE FROM conversation_insights
+        WHERE conversation_id::integer IN (
+            SELECT id FROM conversations WHERE assessor_id > 22
+        )
+    """))
+    db.commit()
+
+    count_after = db.query(func.count(ConversationInsight.id)).scalar() or 0
+    deleted = count_before - count_after
+
+    return {
+        "deleted": deleted,
+        "remaining": count_after,
+        "message": f"{deleted} registros fictícios removidos. {count_after} registros reais preservados."
+    }
