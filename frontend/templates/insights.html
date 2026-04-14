@@ -592,6 +592,17 @@
             color: var(--text-secondary);
         }
 
+        .empty-chart-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 120px;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-style: italic;
+        }
+
         .loading-spinner {
             display: inline-block;
             width: 24px;
@@ -915,6 +926,29 @@
             palette: ['#8b4513', '#dc7f37', '#6b8e23', '#b8860b', '#cd853f', '#556b2f', '#d2691e', '#8fbc8f', '#a0522d', '#9acd32']
         };
 
+        function setChartEmpty(canvasId, message) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            canvas.style.display = 'none';
+            let el = document.getElementById(canvasId + '-empty');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = canvasId + '-empty';
+                el.className = 'empty-chart-state';
+                canvas.parentNode.insertBefore(el, canvas.nextSibling);
+            }
+            el.textContent = message || 'Sem dados no período';
+            el.style.display = 'flex';
+        }
+
+        function clearChartEmpty(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            canvas.style.display = 'block';
+            const el = document.getElementById(canvasId + '-empty');
+            if (el) el.style.display = 'none';
+        }
+
         function logout() {
             fetch('/api/auth/logout', { method: 'POST' })
                 .then(() => window.location.href = '/login')
@@ -1058,6 +1092,12 @@
                 
                 const data = await response.json();
                 
+                if (!data.labels || data.labels.length === 0) {
+                    setChartEmpty('activityChart', 'Sem interações no período');
+                    return;
+                }
+                clearChartEmpty('activityChart');
+
                 const ctx = document.getElementById('activityChart').getContext('2d');
                 
                 if (activityChart) activityChart.destroy();
@@ -1106,6 +1146,12 @@
                 
                 const data = await response.json();
                 
+                if (!data.labels || data.labels.length === 0) {
+                    setChartEmpty('categoriesChart', 'Sem categorias no período');
+                    return;
+                }
+                clearChartEmpty('categoriesChart');
+
                 const ctx = document.getElementById('categoriesChart').getContext('2d');
                 
                 if (categoriesChart) categoriesChart.destroy();
@@ -1144,6 +1190,12 @@
                 
                 const data = await response.json();
                 
+                if (!data.labels || data.labels.length === 0) {
+                    setChartEmpty('productsChart', 'Nenhum produto mencionado no período');
+                    return;
+                }
+                clearChartEmpty('productsChart');
+
                 const ctx = document.getElementById('productsChart').getContext('2d');
                 
                 if (productsChart) productsChart.destroy();
@@ -1184,6 +1236,13 @@
                 if (!response.ok) throw new Error('Erro ao carregar resolução');
                 
                 const data = await response.json();
+
+                const hasResolutionData = data.data && data.data.some(v => v > 0);
+                if (!hasResolutionData) {
+                    setChartEmpty('resolutionChart', 'Sem dados de resolução no período');
+                    return;
+                }
+                clearChartEmpty('resolutionChart');
                 
                 const ctx = document.getElementById('resolutionChart').getContext('2d');
                 
@@ -1273,6 +1332,12 @@
                 if (!response.ok) throw new Error('Erro ao carregar mapa de complexidade');
                 
                 const data = await response.json();
+
+                if (!data.labels || data.labels.length === 0) {
+                    setChartEmpty('complexityChart', 'Sem escaladas por unidade no período');
+                    return;
+                }
+                clearChartEmpty('complexityChart');
                 
                 const ctx = document.getElementById('complexityChart').getContext('2d');
                 
@@ -1375,6 +1440,12 @@
         }
 
         function renderTicketStatusDonut(byStatus) {
+            if (!byStatus || byStatus.length === 0 || byStatus.every(s => s.count === 0)) {
+                setChartEmpty('ticketStatusDonut', 'Sem chamados no período');
+                return;
+            }
+            clearChartEmpty('ticketStatusDonut');
+
             const ctx = document.getElementById('ticketStatusDonut').getContext('2d');
             
             if (ticketStatusDonutChart) ticketStatusDonutChart.destroy();
@@ -1453,6 +1524,12 @@
         }
 
         function renderEscalationCategories(byCategory) {
+            if (!byCategory || byCategory.length === 0) {
+                setChartEmpty('escalationCategoriesChart', 'Sem escaladas categorizadas no período');
+                return;
+            }
+            clearChartEmpty('escalationCategoriesChart');
+
             const ctx = document.getElementById('escalationCategoriesChart').getContext('2d');
             
             if (escalationCategoriesChart) escalationCategoriesChart.destroy();
