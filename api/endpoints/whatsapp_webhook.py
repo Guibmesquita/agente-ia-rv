@@ -1376,6 +1376,9 @@ async def zapi_webhook(
     
     from_me = payload.get("fromMe", False)
     phone = payload.get("phone", "")
+    # Normaliza sufixos do WhatsApp (@c.us, @s.whatsapp.net) sem afetar LIDs (@lid)
+    if phone and "@" in phone and "@lid" not in phone:
+        phone = ''.join(filter(str.isdigit, phone))
     message_id = payload.get("messageId", "")
     is_group = payload.get("isGroup", False)
     sender_name = payload.get("senderName") or payload.get("chatName")
