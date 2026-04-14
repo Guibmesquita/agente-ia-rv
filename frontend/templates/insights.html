@@ -642,44 +642,7 @@
                         <h1 class="page-title">Insights</h1>
                         <p class="page-subtitle">Dashboard de métricas e análises de desempenho</p>
                     </div>
-                    {% if user_role == 'admin' %}
-                    <button id="btnAdminPurge" data-action="open-purge-modal"
-                        style="display:flex;align-items:center;gap:8px;padding:10px 18px;
-                               background:#8b4513;color:#fff;border:none;border-radius:10px;
-                               font-size:0.85rem;font-weight:600;cursor:pointer;">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                        </svg>
-                        Limpar dados fictícios
-                    </button>
-                    {% endif %}
                 </div>
-
-                {% if user_role == 'admin' %}
-                <div id="purgeModal" style="display:none;position:fixed;inset:0;z-index:9999;
-                     background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
-                    <div style="background:#fff;border-radius:16px;padding:32px;max-width:440px;width:90%;
-                                box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-                        <h3 style="margin:0 0 12px;font-size:1.1rem;font-weight:700;color:#1a1a2e;">Limpar dados fictícios</h3>
-                        <p style="margin:0 0 24px;color:#666;font-size:0.9rem;line-height:1.5;">
-                            Esta ação remove <strong>permanentemente</strong> todos os registros gerados pelo seed script
-                            (assessor_id &gt; 22): insights, tickets, conversas e assessores fictícios.<br><br>
-                            Esta operação é <strong>irreversível</strong>. Confirmar?
-                        </p>
-                        <div style="display:flex;gap:12px;justify-content:flex-end;">
-                            <button id="btnPurgeCancel" data-action="close-purge-modal"
-                                style="padding:10px 20px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:0.9rem;">
-                                Cancelar
-                            </button>
-                            <button id="btnPurgeConfirm" data-action="confirm-purge"
-                                style="padding:10px 20px;border:none;border-radius:8px;background:#8b4513;color:#fff;cursor:pointer;font-size:0.9rem;font-weight:600;">
-                                Confirmar limpeza
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
 
                 <div class="filters-container">
                     <div class="filters-row">
@@ -1582,40 +1545,6 @@
             document.getElementById('btnApplyFilters').addEventListener('click', function() { loadDashboard(); });
             document.getElementById('feedbacksHeader').addEventListener('click', function() { toggleFeedbacks(); });
 
-            document.addEventListener('click', function(e) {
-                var action = e.target.closest('[data-action]');
-                if (!action) return;
-                var act = action.getAttribute('data-action');
-                var modal = document.getElementById('purgeModal');
-                if (act === 'open-purge-modal' && modal) {
-                    modal.style.display = 'flex';
-                } else if (act === 'close-purge-modal' && modal) {
-                    modal.style.display = 'none';
-                } else if (act === 'confirm-purge') {
-                    var confirmBtn = document.getElementById('btnPurgeConfirm');
-                    confirmBtn.textContent = 'Limpando...';
-                    confirmBtn.disabled = true;
-                    fetch('/api/insights/admin/purge-fictitious', {method: 'POST', credentials: 'include'})
-                        .then(function(r) { return r.json(); })
-                        .then(function(data) {
-                            if (modal) modal.style.display = 'none';
-                            if (typeof addToast === 'function') {
-                                addToast(data.message || 'Limpeza concluída.', 'success');
-                            } else {
-                                alert(data.message || 'Limpeza concluída.');
-                            }
-                            setTimeout(function() { loadDashboard(); }, 800);
-                        })
-                        .catch(function(err) {
-                            if (modal) modal.style.display = 'none';
-                            alert('Erro ao executar limpeza: ' + err.message);
-                        })
-                        .finally(function() {
-                            confirmBtn.textContent = 'Confirmar limpeza';
-                            confirmBtn.disabled = false;
-                        });
-                }
-            });
         });
     </script>
 </body>

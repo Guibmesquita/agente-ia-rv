@@ -30,16 +30,6 @@ def require_gestao_or_admin(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-def require_admin_only(current_user: User = Depends(get_current_user)):
-    """Verifica se o usuário é exclusivamente admin (para ações destrutivas)."""
-    if current_user.role != UserRole.ADMIN.value:
-        raise HTTPException(
-            status_code=403,
-            detail="Acesso restrito a administradores"
-        )
-    return current_user
-
-
 def parse_date_filter(period: str, start_date: Optional[str], end_date: Optional[str]):
     """Converte filtro de período em datas."""
     now = datetime.utcnow()
@@ -739,71 +729,3 @@ async def get_ticket_metrics(
     }
     
     return result
-
-
-@router.post("/admin/purge-fictitious")
-async def purge_fictitious_insights(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_only)
-):
-    """
-    Remove todos os dados fictícios gerados pelo seed script.
-    Critério: assessor_id > 22 (IDs acima dos usuários reais cadastrados).
-    Apaga em ordem FK-safe:
-      1. conversation_insights
-      2. ticket_history
-      3. whatsapp_messages
-      4. Zera active_ticket_id nas conversas fictícias
-      5. conversation_tickets
-      6. conversations
-      7. assessores (tabela correta com 'e')
-    """
-    subq = "SELECT id FROM conversations WHERE assessor_id > 22"
-
-    insights_before = db.query(func.count(ConversationInsight.id)).scalar() or 0
-    db.execute(text(f"DELETE FROM conversation_insights WHERE conversation_id::integer IN ({subq})"))
-    insights_after = db.query(func.count(ConversationInsight.id)).scalar() or 0
-
-    th_result = db.execute(text(f"DELETE FROM ticket_history WHERE conversation_id IN ({subq})"))
-    ticket_history_deleted = th_result.rowcount if hasattr(th_result, 'rowcount') else 0
-
-    wm_result = db.execute(text(f"DELETE FROM whatsapp_messages WHERE conversation_id IN ({subq})"))
-    whatsapp_messages_deleted = wm_result.rowcount if hasattr(wm_result, 'rowcount') else 0
-
-    tickets_before = db.query(func.count(ConversationTicket.id)).scalar() or 0
-    db.execute(text("UPDATE conversations SET active_ticket_id = NULL WHERE assessor_id > 22"))
-    db.execute(text(f"DELETE FROM conversation_tickets WHERE conversation_id IN ({subq})"))
-    tickets_after = db.query(func.count(ConversationTicket.id)).scalar() or 0
-
-    convs_before = db.query(
-        func.count(Conversation.id)
-    ).filter(Conversation.assessor_id > 22).scalar() or 0
-    db.execute(text("DELETE FROM conversations WHERE assessor_id > 22"))
-
-    assessors_before = db.query(
-        func.count(Assessor.id)
-    ).filter(Assessor.id > 22).scalar() or 0
-    db.execute(text("DELETE FROM assessores WHERE id > 22"))
-
-    db.commit()
-
-    insights_deleted = insights_before - insights_after
-    tickets_deleted = tickets_before - tickets_after
-
-    return {
-        "insights_deleted": insights_deleted,
-        "ticket_history_deleted": ticket_history_deleted,
-        "whatsapp_messages_deleted": whatsapp_messages_deleted,
-        "tickets_deleted": tickets_deleted,
-        "conversations_deleted": convs_before,
-        "assessors_deleted": assessors_before,
-        "insights_remaining": insights_after,
-        "tickets_remaining": tickets_after,
-        "message": (
-            f"Limpeza concluída: {insights_deleted} insights, "
-            f"{ticket_history_deleted} histórico de tickets, "
-            f"{whatsapp_messages_deleted} mensagens WhatsApp, "
-            f"{tickets_deleted} tickets, "
-            f"{convs_before} conversas e {assessors_before} assessores fictícios removidos."
-        )
-    }
