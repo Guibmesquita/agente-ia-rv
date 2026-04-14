@@ -272,8 +272,8 @@ function App() {
                 <AnimatedGauge
                   title="Taxa de Resolução IA"
                   percentage={metrics?.ai_resolution_rate || 0}
-                  label="Janelas de 12h sem intervenção humana"
-                  tooltip="Proporção de janelas de 12h resolvidas pela IA versus as que tiveram intervenção humana."
+                  label="Conversas sem interações humanas"
+                  tooltip="Proporção de conversas resolvidas pela IA versus as que tiveram intervenção humana."
                 />
               </div>
 
