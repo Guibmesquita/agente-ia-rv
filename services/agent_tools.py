@@ -343,9 +343,18 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         material_type = meta.get("material_type", "")
         comite_tag = "[COMITÊ]" if material_type == "comite" else "[NÃO-COMITÊ]"
         if comite_tag == "[COMITÊ]":
-            source_note = f"Ao citar dados deste resultado, inclua: (Fonte: {material_name}). Este material é uma recomendação formal do Comitê de Investimentos da SVN — use framing de recomendação oficial."
+            source_note = (
+                f"TAG: [COMITÊ] | Ao citar, inclua: (Fonte: {material_name}). "
+                f"Este material é uma recomendação formal do Comitê de Investimentos da SVN — "
+                f"use framing de recomendação oficial na resposta."
+            )
         else:
-            source_note = f"Ao citar dados deste resultado, inclua: (Fonte: {material_name}). Este material é INFORMATIVO, não é uma recomendação formal da SVN — ao responder sobre recomendação, deixe claro que o ativo não está no Comitê ativo da SVN."
+            source_note = (
+                f"TAG: [NÃO-COMITÊ] | Ao citar, inclua: (Fonte: {material_name}). "
+                f"Este material é INFORMATIVO — NÃO é uma recomendação formal da SVN. "
+                f"Você pode informar e analisar o ativo, mas se perguntado sobre recomendação, "
+                f"esclareça que este ativo não está no Comitê ativo da SVN e sugira consultar o broker."
+            )
 
         results.append({
             "title": meta.get("document_title", "Documento"),
