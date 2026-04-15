@@ -1467,8 +1467,13 @@ class VectorStore:
             now = datetime.utcnow()
             from sqlalchemy import or_
             
-            vigent_materials = db.query(Material).filter(
-                Material.material_type == 'comite',
+            vigent_materials = db.query(Material).join(Product).filter(
+                or_(
+                    Material.material_type == 'comite',
+                    Product.categories.like('%"Comitê"%'),
+                    Product.categories.like('%"comite"%'),
+                    Product.categories.like('%"Comite"%'),
+                ),
                 Material.publish_status == MaterialStatus.PUBLISHED.value,
                 or_(
                     Material.valid_until.is_(None),

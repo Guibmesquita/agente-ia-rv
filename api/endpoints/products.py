@@ -218,11 +218,25 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ==================== Schemas ====================
 
+PREDEFINED_PRODUCT_CATEGORIES = [
+    "FII",
+    "FII de Papel",
+    "FII de CRI",
+    "Ação",
+    "COE",
+    "Derivativo",
+    "Fundo Multimercado",
+    "Renda Fixa",
+    "Comitê",
+]
+
+
 class ProductCreate(BaseModel):
     name: str
     ticker: Optional[str] = None
     manager: Optional[str] = None
     category: Optional[str] = None
+    categories: Optional[List[str]] = None
     description: Optional[str] = None
 
 
@@ -231,6 +245,7 @@ class ProductUpdate(BaseModel):
     ticker: Optional[str] = None
     manager: Optional[str] = None
     category: Optional[str] = None
+    categories: Optional[List[str]] = None
     status: Optional[str] = None
     description: Optional[str] = None
 
@@ -349,6 +364,7 @@ async def list_products(
             "ticker": p.ticker,
             "manager": p.manager,
             "category": p.category,
+            "categories": p.get_categories(),
             "status": p.status,
             "description": p.description,
             "materials_count": materials_count,
@@ -366,9 +382,15 @@ async def list_categories(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Lista categorias únicas de produtos."""
-    categories = db.query(Product.category).distinct().filter(Product.category.isnot(None)).all()
-    return {"categories": [c[0] for c in categories if c[0]]}
+    """Lista categorias únicas de produtos (pré-definidas + valores existentes no banco)."""
+    import json as json_lib
+    db_cats = db.query(Product.category).distinct().filter(Product.category.isnot(None)).all()
+    db_cat_set = {c[0] for c in db_cats if c[0]}
+    all_cats = list(PREDEFINED_PRODUCT_CATEGORIES)
+    for c in sorted(db_cat_set):
+        if c not in all_cats:
+            all_cats.append(c)
+    return {"categories": all_cats}
 
 
 @router.get("/expiring")
@@ -431,7 +453,9 @@ async def create_product(
         description=data.description,
         created_by=current_user.id
     )
-    
+    cats = data.categories if data.categories is not None else ([data.category] if data.category else [])
+    product.set_categories(cats)
+
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -501,6 +525,7 @@ async def get_product(
         "ticker": product.ticker,
         "manager": product.manager,
         "category": product.category,
+        "categories": product.get_categories(),
         "status": product.status,
         "description": product.description,
         "materials": materials,
@@ -531,7 +556,9 @@ async def update_product(
         product.ticker = data.ticker
     if data.manager is not None:
         product.manager = data.manager
-    if data.category is not None:
+    if data.categories is not None:
+        product.set_categories(data.categories)
+    elif data.category is not None:
         product.category = data.category
     if data.status is not None:
         product.status = data.status

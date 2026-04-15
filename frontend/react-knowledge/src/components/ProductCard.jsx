@@ -82,7 +82,7 @@ function EditCategoryModal({ product, onClose }) {
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div>
-            <p className="text-xs text-muted font-medium uppercase tracking-wide mb-0.5">Editar Categoria</p>
+            <p className="text-xs text-muted font-medium uppercase tracking-wide mb-0.5">Configurar Tipo de Material</p>
             <h3 className="font-semibold text-foreground text-base leading-tight">{product.name}</h3>
           </div>
           <button
@@ -243,7 +243,7 @@ export function ProductCard({ product, onClick, onReindex, onDelete, isReindexin
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-gray-50 transition-colors"
                     >
                       <Pencil className="w-4 h-4 text-muted" />
-                      Editar Categoria
+                      Tipo do Material
                     </button>
                     {onReindex && (
                       <button

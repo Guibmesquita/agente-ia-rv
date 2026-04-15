@@ -339,6 +339,10 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_campaign_dispatches_status ON campaign_dispatches(status)",
         "CREATE INDEX IF NOT EXISTS ix_campaign_dispatches_scheduled ON campaign_dispatches(scheduled_for)",
         "ALTER TABLE materials ADD COLUMN IF NOT EXISTS pdf_whatsapp_dismissed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS categories TEXT DEFAULT '[]'",
+        """UPDATE products SET categories = json_build_array(category)::text
+           WHERE category IS NOT NULL AND category != ''
+             AND (categories IS NULL OR categories = '[]')""",
         """UPDATE whatsapp_messages
            SET conversation_id = c.id
            FROM conversations c

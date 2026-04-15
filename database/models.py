@@ -799,6 +799,7 @@ class Product(Base):
     ticker = Column(String(50), nullable=True, index=True)
     manager = Column(String(255), nullable=True)  # Gestora/Corretora
     category = Column(String(100), nullable=True, index=True)
+    categories = Column(Text, default="[]")
     status = Column(String(20), default=ProductStatus.ACTIVE.value)
     description = Column(Text, nullable=True)
     name_aliases = Column(Text, default="[]")
@@ -828,6 +829,20 @@ class Product(Base):
             self.name_aliases = json.dumps(aliases, ensure_ascii=False)
             return True
         return False
+
+    def get_categories(self):
+        import json
+        try:
+            return json.loads(self.categories or "[]")
+        except (json.JSONDecodeError, TypeError):
+            if self.category:
+                return [self.category]
+            return []
+
+    def set_categories(self, cats: list):
+        import json
+        self.categories = json.dumps(cats, ensure_ascii=False)
+        self.category = cats[0] if cats else None
 
 
 class Material(Base):

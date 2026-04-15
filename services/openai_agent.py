@@ -1659,7 +1659,8 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
             material_type = metadata.get("material_type", "")
 
             material_name = metadata.get("material_name", "") or title
-            comite_tag = "[COMITÊ]" if material_type == "comite" else "[NÃO-COMITÊ]"
+            is_comite_doc = material_type == "comite" or metadata.get("is_comite", False)
+            comite_tag = "[COMITÊ]" if is_comite_doc else "[NÃO-COMITÊ]"
             header = f"{comite_tag} [Documento: {material_name}]"
             if material_id:
                 header += f" (material_id: {material_id})"

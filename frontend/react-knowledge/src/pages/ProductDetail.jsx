@@ -15,6 +15,7 @@ import { Modal } from '../components/Modal';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { useToast } from '../components/Toast';
 import { MATERIAL_TYPE_OPTIONS, getMaterialTypeLabel } from '../lib/materialTypes';
+import { ProductCategories } from '../components/ProductCategories';
 
 function convertTableToTopics(content) {
   if (!content) return null;
@@ -694,11 +695,13 @@ export function ProductDetail() {
               onSave={(v) => handleUpdateProduct('ticker', v)}
               placeholder="Ex: XPTO11"
             />
-            <InlineEdit
-              label="Categoria"
-              value={product.category}
-              onSave={(v) => handleUpdateProduct('category', v)}
-            />
+            <div>
+              <ProductCategories
+                label="Categorias do Produto"
+                value={product.categories || (product.category ? [product.category] : [])}
+                onChange={(cats) => handleUpdateProduct('categories', cats)}
+              />
+            </div>
             <InlineEdit
               label="Gestor"
               value={product.manager}

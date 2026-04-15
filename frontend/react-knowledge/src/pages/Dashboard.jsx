@@ -10,6 +10,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { GlobalSearchResults } from '../components/GlobalSearchResults';
+import { ProductCategories } from '../components/ProductCategories';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export function Dashboard() {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: '', ticker: '', category: '' });
+  const [newProduct, setNewProduct] = useState({ name: '', ticker: '', categories: [] });
   const [creating, setCreating] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -166,7 +167,7 @@ export function Dashboard() {
       const created = await productsAPI.create(newProduct);
       addToast('Produto criado com sucesso!', 'success');
       setShowNewModal(false);
-      setNewProduct({ name: '', ticker: '', category: '' });
+      setNewProduct({ name: '', ticker: '', categories: [] });
       navigate(`/product/${created.id}`);
     } catch (err) {
       addToast(`Erro: ${err.message}`, 'error');
@@ -321,20 +322,10 @@ export function Dashboard() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Categoria
-            </label>
-            <select
-              value={newProduct.category}
-              onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
-              className="w-full px-3 py-2 bg-card border border-border rounded-input
-                        text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="">Selecione...</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+            <ProductCategories
+              value={newProduct.categories}
+              onChange={(cats) => setNewProduct({ ...newProduct, categories: cats })}
+            />
           </div>
 
           <div className="flex gap-3 pt-4">

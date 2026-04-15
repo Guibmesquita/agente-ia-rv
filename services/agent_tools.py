@@ -341,7 +341,8 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
                 pass
 
         material_type = meta.get("material_type", "")
-        comite_tag = "[COMITÊ]" if material_type == "comite" else "[NÃO-COMITÊ]"
+        is_comite_doc = material_type == "comite" or meta.get("is_comite", False)
+        comite_tag = "[COMITÊ]" if is_comite_doc else "[NÃO-COMITÊ]"
         if comite_tag == "[COMITÊ]":
             source_note = (
                 f"TAG: [COMITÊ] | Ao citar, inclua: (Fonte: {material_name}). "
