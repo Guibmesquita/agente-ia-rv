@@ -2331,19 +2331,42 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                     print(
                         f"[OpenAI] Nenhum produto vigente encontrado - Stevan informará ao assessor"
                     )
-                    context_documents.insert(
-                        0,
-                        {
-                            "content": (
-                                "⚠️ AVISO DE SISTEMA [COMITÊ-VAZIO]: Não há nenhum produto com categoria Comitê "
-                                "vigente na base de conhecimento neste momento. É PROIBIDO inventar, sugerir ou "
-                                "apresentar qualquer ativo como recomendação formal da SVN. Informe ao assessor que "
-                                "não há recomendações do Comitê disponíveis e sugira consultar o broker responsável."
-                            ),
-                            "metadata": {"material_type": "system_warning", "title": "AVISO-COMITÊ-VAZIO"},
-                            "source": "system",
-                        },
-                    )
+                    # Verificar se o comitê tem entradas formais (recommendation_entries)
+                    # para evitar contradição com o system prompt que pode já listar produtos
+                    _committee_ids_v1 = vs.get_active_committee_product_ids()
+                    if _committee_ids_v1:
+                        # Comitê ativo, mas sem documentos publicados — não emitir COMITÊ-VAZIO
+                        print(
+                            f"[OpenAI] Comitê tem {len(_committee_ids_v1)} produto(s) formal(is) "
+                            f"mas sem documentos publicados — usando contexto do system prompt"
+                        )
+                        context_documents.insert(
+                            0,
+                            {
+                                "content": (
+                                    "ℹ️ AVISO DE SISTEMA [COMITÊ-SEM-DOCS]: O Comitê SVN tem recomendações formais ativas "
+                                    "(listadas no seu contexto de sistema), mas não há documentos de análise publicados "
+                                    "para esses ativos na base de conhecimento neste momento. Use as informações do comitê "
+                                    "disponíveis no sistema e complemente com dados de mercado (search_web/lookup_fii_public)."
+                                ),
+                                "metadata": {"material_type": "system_info", "title": "AVISO-COMITÊ-SEM-DOCS"},
+                                "source": "system",
+                            },
+                        )
+                    else:
+                        context_documents.insert(
+                            0,
+                            {
+                                "content": (
+                                    "⚠️ AVISO DE SISTEMA [COMITÊ-VAZIO]: Não há nenhum produto com categoria Comitê "
+                                    "vigente na base de conhecimento neste momento. É PROIBIDO inventar, sugerir ou "
+                                    "apresentar qualquer ativo como recomendação formal da SVN. Informe ao assessor que "
+                                    "não há recomendações do Comitê disponíveis e sugira consultar o broker responsável."
+                                ),
+                                "metadata": {"material_type": "system_warning", "title": "AVISO-COMITÊ-VAZIO"},
+                                "source": "system",
+                            },
+                        )
                 extracted_products = [
                     p for p in extracted_products if p.upper() != "COMITE"
                 ]
