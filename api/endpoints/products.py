@@ -384,8 +384,18 @@ async def list_categories(
 ):
     """Lista categorias únicas de produtos (pré-definidas + valores existentes no banco)."""
     import json as json_lib
-    db_cats = db.query(Product.category).distinct().filter(Product.category.isnot(None)).all()
-    db_cat_set = {c[0] for c in db_cats if c[0]}
+    db_cat_set = set()
+    all_products = db.query(Product.category, Product.categories).all()
+    for row in all_products:
+        if row.category:
+            db_cat_set.add(row.category)
+        if row.categories:
+            try:
+                for c in json_lib.loads(row.categories):
+                    if c:
+                        db_cat_set.add(c)
+            except Exception:
+                pass
     all_cats = list(PREDEFINED_PRODUCT_CATEGORIES)
     for c in sorted(db_cat_set):
         if c not in all_cats:
@@ -2410,7 +2420,6 @@ async def smart_upload_stream(
     description: str = Form(None),
     valid_from: str = Form(None),
     valid_until: str = Form(None),
-    material_categories: str = Form("[]"),
     tags: str = Form("[]"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -2473,15 +2482,10 @@ async def smart_upload_stream(
     import json as json_lib
     
     parsed_tags = []
-    parsed_categories = []
     try:
         parsed_tags = json_lib.loads(tags) if tags else []
     except:
         parsed_tags = []
-    try:
-        parsed_categories = json_lib.loads(material_categories) if material_categories else []
-    except:
-        parsed_categories = []
     
     material = Material(
         product_id=temp_product2.id,
@@ -2491,7 +2495,6 @@ async def smart_upload_stream(
         valid_from=parsed_valid_from,
         valid_until=parsed_valid_until,
         tags=json_lib.dumps(parsed_tags),
-        material_categories=json_lib.dumps(parsed_categories),
         publish_status="rascunho",
         file_hash=file_hash
     )
@@ -3654,7 +3657,6 @@ async def batch_upload(
     request: Request,
     files: list[UploadFile] = File(...),
     material_type: str = Form("outro"),
-    material_categories: str = Form("[]"),
     tags: str = Form("[]"),
     valid_from: str = Form(None),
     valid_until: str = Form(None),
@@ -3691,15 +3693,10 @@ async def batch_upload(
                 raise HTTPException(status_code=400, detail=f"Tipo de arquivo do diagrama não suportado. Permitidos: {', '.join(allowed_ext)}")
 
     parsed_tags = []
-    parsed_categories = []
     try:
         parsed_tags = json_lib.loads(tags) if tags else []
     except Exception:
         parsed_tags = []
-    try:
-        parsed_categories = json_lib.loads(material_categories) if material_categories else []
-    except Exception:
-        parsed_categories = []
 
     parsed_valid_from = None
     parsed_valid_until = None
@@ -3768,7 +3765,6 @@ async def batch_upload(
             valid_from=parsed_valid_from,
             valid_until=parsed_valid_until,
             tags=json_lib.dumps(parsed_tags),
-            material_categories=json_lib.dumps(parsed_categories),
             publish_status="rascunho",
             processing_status=ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, 'PENDING') else "pending",
             file_hash=file_hash
@@ -3793,7 +3789,7 @@ async def batch_upload(
             name=name,
             user_id=current_user.id,
             material_type=material_type,
-            categories=parsed_categories,
+            categories=[],
             tags=parsed_tags,
             valid_from=parsed_valid_from,
             valid_until=parsed_valid_until,
@@ -3803,7 +3799,7 @@ async def batch_upload(
 
         campaign_structure_id = None
         campaign_error = None
-        is_campaign = campaign_slug and ("campanha" in parsed_categories or material_type == "campanha")
+        is_campaign = campaign_slug and material_type == "campanha"
         if is_campaign:
             from database.models import CampaignStructure
             existing_cs = db.query(CampaignStructure).filter(

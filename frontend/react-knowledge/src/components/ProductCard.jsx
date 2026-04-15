@@ -270,7 +270,21 @@ export function ProductCard({ product, onClick, onReindex, onDelete, isReindexin
           </div>
         </div>
 
-        <p className="text-sm text-muted mb-3">{product.category || 'Sem categoria'}</p>
+        {(product.categories && product.categories.length > 0) ? (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {product.categories.map((cat) => (
+              <span key={cat}
+                className={`px-2 py-0.5 text-xs font-medium rounded-full border
+                  ${cat === 'Comitê'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-muted/20 text-muted border-border'}`}>
+                {cat}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted mb-3">{product.category || 'Sem categoria'}</p>
+        )}
 
         {product.ticker && (
           <div className="flex flex-wrap gap-1.5 mb-3">

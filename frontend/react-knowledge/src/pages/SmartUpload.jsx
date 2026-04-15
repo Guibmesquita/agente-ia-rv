@@ -5,7 +5,6 @@ import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info, AlertCircle,
 import { materialsAPI, productsAPI } from '../services/api';
 import { Button } from '../components/Button';
 import { ProductAutocomplete } from '../components/ProductAutocomplete';
-import { MaterialCategories } from '../components/MaterialCategories';
 import { StructuredTags } from '../components/StructuredTags';
 import { useToast } from '../components/Toast';
 import { useConfirmDialog } from '../components/ConfirmDialog';
@@ -97,7 +96,7 @@ export function SmartUpload() {
   
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState([]);
-  const [materialCategories, setMaterialCategories] = useState([]);
+  const [materialType, setMaterialType] = useState('');
   const [validFrom, setValidFrom] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [tags, setTags] = useState([]);
@@ -143,7 +142,7 @@ export function SmartUpload() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (materialCategories.includes('campanha') && derivativeSlugs.length === 0) {
+    if (materialType === 'campanha' && derivativeSlugs.length === 0) {
       fetch('/api/campaigns/derivative-slugs', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       })
@@ -151,7 +150,7 @@ export function SmartUpload() {
         .then(data => { if (data.slugs) setDerivativeSlugs(data.slugs); })
         .catch((e) => { console.warn('[SmartUpload] Erro ao carregar slugs:', e.message); });
     }
-  }, [materialCategories]);
+  }, [materialType]);
 
   useEffect(() => {
     loadQueueStatus();
@@ -454,8 +453,8 @@ export function SmartUpload() {
   };
 
   const handleUpload = async () => {
-    if (!files.length || materialCategories.length === 0) {
-      addToast('Selecione pelo menos um arquivo e uma categoria', 'warning');
+    if (!files.length || !materialType) {
+      addToast('Selecione pelo menos um arquivo e um tipo de material', 'warning');
       return;
     }
 
@@ -466,13 +465,13 @@ export function SmartUpload() {
       for (const file of files) {
         formData.append('files', file);
       }
-      formData.append('material_type', materialCategories[0] || 'outro');
+      formData.append('material_type', materialType || 'outro');
       formData.append('tags', JSON.stringify(tags));
       if (validFrom) formData.append('valid_from', validFrom);
       if (validUntil) formData.append('valid_until', validUntil);
       if (selectedProduct) formData.append('product_id', selectedProduct.id.toString());
 
-      if (materialCategories.includes('campanha') && campaignSlug) {
+      if (materialType === 'campanha' && campaignSlug) {
         formData.append('campaign_slug', campaignSlug);
         if (campaignStructureType) formData.append('campaign_structure_type', campaignStructureType);
         const kdObj = {};
@@ -501,7 +500,7 @@ export function SmartUpload() {
 
       setFiles([]);
       setSelectedProduct(null);
-      setMaterialCategories([]);
+      setMaterialType('');
       setTags([]);
       setValidFrom('');
       setValidUntil('');
@@ -1144,12 +1143,31 @@ export function SmartUpload() {
         </button>
       </div>
 
-      <MaterialCategories 
-        value={materialCategories} 
-        onChange={setMaterialCategories} 
-      />
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-foreground">
+          Tipo do Material
+        </label>
+        <select
+          value={materialType}
+          onChange={(e) => setMaterialType(e.target.value)}
+          className="w-full px-3 py-2 bg-card border border-border rounded-lg text-foreground
+                     focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+        >
+          <option value="">Selecione o tipo...</option>
+          <option value="comite">Comitê</option>
+          <option value="research">Research</option>
+          <option value="one_page">One-Page</option>
+          <option value="apresentacao">Apresentação</option>
+          <option value="taxas">Taxas</option>
+          <option value="campanha">Campanha</option>
+          <option value="treinamento">Treinamento</option>
+          <option value="faq">FAQ</option>
+          <option value="regulatorio">Regulatório</option>
+          <option value="script">Script</option>
+        </select>
+      </div>
 
-      {materialCategories.includes('campanha') && (
+      {materialType === 'campanha' && (
         <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <div className="flex items-center gap-2 mb-1">
             <div className="w-5 h-5 rounded bg-amber-500 flex items-center justify-center">
@@ -1339,7 +1357,7 @@ export function SmartUpload() {
         </Button>
         <Button 
           onClick={handleUpload} 
-          disabled={materialCategories.length === 0}
+          disabled={!materialType}
           className="flex-1"
         >
           <Sparkles className="w-4 h-4" />
