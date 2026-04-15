@@ -104,7 +104,6 @@ def find_or_create_product_from_name(db: Session, material_name: str, gestora: s
             name=product_name,
             ticker=ticker,
             manager=gestora,
-            category="fii",
             status="ativo",
             description=f"Produto criado automaticamente a partir de upload de documento ({document_type or 'N/A'})",
         )

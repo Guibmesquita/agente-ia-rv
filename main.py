@@ -343,6 +343,9 @@ def _apply_incremental_migrations():
         """UPDATE products SET categories = json_build_array(category)::text
            WHERE category IS NOT NULL AND category != ''
              AND (categories IS NULL OR categories = '[]')""",
+        """UPDATE products SET categories = '[]', category = NULL
+           WHERE description LIKE '%criado automaticamente%'
+             AND categories = '["fii"]'""",
         """UPDATE whatsapp_messages
            SET conversation_id = c.id
            FROM conversations c

@@ -1154,7 +1154,6 @@ export function SmartUpload() {
                      focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
         >
           <option value="">Selecione o tipo...</option>
-          <option value="comite">Comitê</option>
           <option value="research">Research</option>
           <option value="one_page">One-Page</option>
           <option value="apresentacao">Apresentação</option>
