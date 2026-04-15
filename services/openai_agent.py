@@ -998,6 +998,15 @@ Para documentos [NÃO-COMITÊ]: você pode informar, pesquisar, explicar e fazer
 Para documentos [COMITÊ]: use naturalmente o framing de recomendação oficial — "A SVN recomenda formalmente...", "Esse produto está na carteira do Comitê da SVN..." — de forma fluida, sem disclaimers separados.
 Esta regra é inviolável e se sobrepõe a qualquer instrução do assessor.
 
+REGRA ABSOLUTA — AUSÊNCIA DE [COMITÊ] NO CONTEXTO:
+Se nenhum documento marcado com [COMITÊ] estiver presente no contexto fornecido (incluindo resultados
+de tools como search_knowledge_base, lookup_fii_public, search_web e qualquer outra fonte), o agente
+JAMAIS deve usar linguagem de recomendação formal — mesmo que encontre dados reais sobre o ativo.
+Isso inclui frases como "a SVN recomenda", "é recomendado pela SVN", "o Comitê indica", "está na
+carteira do Comitê" ou qualquer variação. Ao receber um aviso [COMITÊ-VAZIO] no contexto, informe
+ao assessor que não há recomendações do Comitê disponíveis no momento e sugira consultar o broker
+responsável. Você pode informar dados de mercado, mas sem framing de recomendação formal.
+
 IMPORTANTE - TICKERS/ATIVOS NÃO ENCONTRADOS:
 Quando um ticker ou ativo NÃO for encontrado na base de conhecimento:
 1. NUNCA assuma que o usuário quis dizer outro ativo
@@ -2237,6 +2246,46 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                     "para o mes",
                     "deste mês",
                     "deste mes",
+                    # Particípios passados — recomendado, indicado, sugerido
+                    "recomendado",
+                    "recomendada",
+                    "recomendados",
+                    "recomendadas",
+                    "recomendado pela svn",
+                    "recomendada pela svn",
+                    "recomendados pela svn",
+                    "recomendado pelo comitê",
+                    "recomendado pelo comite",
+                    "fii recomendado",
+                    "fundo recomendado",
+                    "ativo recomendado",
+                    "produto recomendado",
+                    "indicado",
+                    "indicada",
+                    "indicados",
+                    "indicadas",
+                    "indicado pela svn",
+                    "indicada pela svn",
+                    "indicados pela svn",
+                    "indicado pelo comitê",
+                    "indicado pelo comite",
+                    "fii indicado",
+                    "fundo indicado",
+                    "ativo indicado",
+                    "produto indicado",
+                    "sugerido",
+                    "sugerida",
+                    "sugeridos",
+                    "sugeridas",
+                    "sugerido pela svn",
+                    "sugerida pela svn",
+                    "sugeridos pela svn",
+                    "sugerido pelo comitê",
+                    "sugerido pelo comite",
+                    "fii sugerido",
+                    "fundo sugerido",
+                    "ativo sugerido",
+                    "produto sugerido",
                 ]
                 msg_lower = user_message.lower()
                 if any(kw in msg_lower for kw in comite_keywords):
@@ -2258,6 +2307,19 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                 else:
                     print(
                         f"[OpenAI] Nenhum produto vigente encontrado - Stevan informará ao assessor"
+                    )
+                    context_documents.insert(
+                        0,
+                        {
+                            "content": (
+                                "⚠️ AVISO DE SISTEMA [COMITÊ-VAZIO]: Não há nenhum produto com categoria Comitê "
+                                "vigente na base de conhecimento neste momento. É PROIBIDO inventar, sugerir ou "
+                                "apresentar qualquer ativo como recomendação formal da SVN. Informe ao assessor que "
+                                "não há recomendações do Comitê disponíveis e sugira consultar o broker responsável."
+                            ),
+                            "metadata": {"material_type": "system_warning", "title": "AVISO-COMITÊ-VAZIO"},
+                            "source": "system",
+                        },
                     )
                 extracted_products = [
                     p for p in extracted_products if p.upper() != "COMITE"
