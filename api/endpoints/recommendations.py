@@ -199,19 +199,22 @@ async def update_recommendation(
     if not entry:
         raise HTTPException(status_code=404, detail="Entrada não encontrada")
 
-    if data.rating is not None:
-        if data.rating not in VALID_RATINGS:
+    # Usar model_fields_set para distinguir "campo ausente" de "campo explicitamente nulo"
+    explicitly_set = data.model_fields_set if hasattr(data, "model_fields_set") else set(data.dict(exclude_unset=True).keys())
+
+    if "rating" in explicitly_set:
+        if data.rating is not None and data.rating not in VALID_RATINGS:
             raise HTTPException(status_code=422, detail=f"Rating inválido. Use um de: {VALID_RATINGS}")
         entry.rating = data.rating
-    if data.target_price is not None:
+    if "target_price" in explicitly_set:
         entry.target_price = data.target_price
-    if data.rationale is not None:
+    if "rationale" in explicitly_set:
         entry.rationale = data.rationale
-    if data.valid_until is not None:
+    if "valid_until" in explicitly_set:
         entry.valid_until = data.valid_until
-    if data.notes is not None:
+    if "notes" in explicitly_set:
         entry.notes = data.notes
-    if data.is_active is not None:
+    if "is_active" in explicitly_set:
         entry.is_active = data.is_active
 
     product = db.query(Product).filter(Product.id == entry.product_id).first()

@@ -301,6 +301,15 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     materials_with_pdf = set()
     seen_product_ids = set()
 
+    # Carregar product_ids do comitê ativo (recommendation_entries) para marcação universal
+    _committee_product_ids: set = set()
+    try:
+        from services.vector_store import get_vector_store as _get_vs_tools
+        _vs_tools = _get_vs_tools()
+        _committee_product_ids = set(_vs_tools.get_active_committee_product_ids())
+    except Exception as _e_com:
+        pass
+
     for r in raw_results:
         meta = r.metadata
         content = r.content
@@ -341,7 +350,10 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
                 pass
 
         material_type = meta.get("material_type", "")
-        is_comite_doc = material_type == "comite" or meta.get("is_comite", False)
+        # Marcação universal: material_type='comite' OU produto presente em recommendation_entries
+        _doc_pid = meta.get("product_id")
+        _in_committee_entries = bool(_doc_pid and int(_doc_pid) in _committee_product_ids)
+        is_comite_doc = material_type == "comite" or meta.get("is_comite", False) or _in_committee_entries
         comite_tag = "[COMITÊ]" if is_comite_doc else "[NÃO-COMITÊ]"
         if comite_tag == "[COMITÊ]":
             source_note = (
