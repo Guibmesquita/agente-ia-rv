@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = 12_000    # chars por chunk
 CHUNK_OVERLAP = 1_500  # chars de sobreposição entre chunks
 
-# ── Padrão de ticker brasileiro/ação ──────────────────────────────────────────
-TICKER_PATTERN = re.compile(r'\b([A-Z]{4}\d{1,2})\b')
+# ── Padrão de ticker brasileiro/ação (case-insensitive, normalizado em seguida) ──
+TICKER_PATTERN = re.compile(r'\b([A-Za-z]{4}\d{1,2})\b')
 
 # ── Prompt do sistema — versão ampliada ───────────────────────────────────────
 EXTRACT_SYSTEM_PROMPT = """Você é um analista sênior especializado em extrair recomendações de investimento de relatórios financeiros brasileiros do mercado de capitais.
@@ -145,10 +145,12 @@ def _split_into_chunks(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = C
 def _scan_tickers_in_db(db: Session, text: str) -> Dict[str, Any]:
     """
     Varredura regex no texto completo para identificar tickers que existem no banco.
+    Normaliza todos os matches para MAIÚSCULAS antes da consulta (suporta OCR misto).
     Retorna dict {ticker_upper: product} para uso como hint e lookup.
     """
     from database.models import Product
 
+    # Normaliza para maiúsculas para lidar com OCR que retorna "mxrf11" ou "Mxrf11"
     raw_tickers = set(t.upper() for t in TICKER_PATTERN.findall(text))
     if not raw_tickers:
         return {}
@@ -161,13 +163,18 @@ def _scan_tickers_in_db(db: Session, text: str) -> Dict[str, Any]:
     return {p.ticker.upper(): p for p in products if p.ticker}
 
 
-def _call_gpt_for_chunk(client, chunk_text: str, ticker_hint: str) -> List[Dict]:
+def _call_gpt_for_chunk(client, chunk_text: str, ticker_hint: str) -> tuple[List[Dict], bool]:
     """
-    Envia um chunk de texto ao GPT-4o e retorna a lista bruta de recomendações extraídas.
+    Envia um chunk de texto ao GPT-4o e retorna (lista_de_recomendações, sucesso).
+    Retorna ([], False) em caso de erro, para que o chamador possa contabilizar falhas.
     """
     user_content = ""
     if ticker_hint:
-        user_content += f"ATENÇÃO — Os seguintes tickers foram identificados neste documento E existem em nossa base de dados. Certifique-se de extrair a recomendação de CADA UM deles se estiverem neste trecho:\n{ticker_hint}\n\n"
+        user_content += (
+            "ATENÇÃO — Os seguintes tickers foram identificados neste documento E existem "
+            "em nossa base de dados. Certifique-se de extrair a recomendação de CADA UM "
+            f"deles se estiverem neste trecho:\n{ticker_hint}\n\n"
+        )
     user_content += f"Trecho do documento:\n\n{chunk_text}"
 
     try:
@@ -183,13 +190,13 @@ def _call_gpt_for_chunk(client, chunk_text: str, ticker_hint: str) -> List[Dict]
         )
         raw = response.choices[0].message.content
         parsed = json.loads(raw)
-        return parsed.get("recommendations", [])
+        return parsed.get("recommendations", []), True
     except json.JSONDecodeError as e:
         logger.warning(f"[committee_importer] Chunk retornou JSON inválido: {e}")
-        return []
+        return [], False
     except Exception as e:
         logger.error(f"[committee_importer] Erro GPT no chunk: {e}")
-        return []
+        return [], False
 
 
 def _merge_raw_recommendations(raw_list: List[Dict]) -> List[Dict]:
@@ -336,11 +343,26 @@ def extract_committee_from_material(db: Session, material_id: int) -> list:
     client = OpenAI(api_key=api_key)
 
     all_raw: List[Dict] = []
+    failed_chunks = 0
+
     for idx, chunk in enumerate(chunks):
         logger.info(f"[committee_importer] Processando chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)")
-        raw = _call_gpt_for_chunk(client, chunk, ticker_hint)
-        logger.info(f"[committee_importer] Chunk {idx + 1}: {len(raw)} item(s) extraído(s)")
-        all_raw.extend(raw)
+        raw, ok = _call_gpt_for_chunk(client, chunk, ticker_hint)
+        if ok:
+            logger.info(f"[committee_importer] Chunk {idx + 1}: {len(raw)} item(s) extraído(s)")
+            all_raw.extend(raw)
+        else:
+            failed_chunks += 1
+            logger.warning(f"[committee_importer] Chunk {idx + 1} falhou (total de falhas: {failed_chunks}/{len(chunks)})")
+
+    if failed_chunks == len(chunks):
+        raise RuntimeError(
+            f"Todos os {len(chunks)} chunks falharam ao chamar o GPT. Verifique a chave de API e os logs."
+        )
+    if failed_chunks > 0:
+        logger.warning(
+            f"[committee_importer] {failed_chunks}/{len(chunks)} chunk(s) falharam — resultado pode estar incompleto"
+        )
 
     # ── Agregação e deduplicação ──────────────────────────────────────────────
     merged = _merge_raw_recommendations(all_raw)
