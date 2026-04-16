@@ -639,13 +639,70 @@ async def list_available_materials(
     return [_material_committee_dict(m, db) for m in materials]
 
 
+async def _analyze_products_for_material(db: Session, material: Material) -> list:
+    """
+    Analisa os produtos de um material usando ContentBlocks indexados ou PDF como fallback.
+    Retorna lista no formato do _match_products_to_db (com product_id, exists_in_db etc.).
+    Faz cache do resultado em material.ai_product_analysis.
+    """
+    import json as _json
+    import os as _os
+
+    if material.ai_product_analysis:
+        try:
+            cached = _json.loads(material.ai_product_analysis)
+            if isinstance(cached, list) and cached:
+                logger.info(f"[COMITÊ] Usando cache ai_product_analysis para material {material.id}")
+                return cached
+        except Exception:
+            pass
+
+    from database.models import ContentBlock, Product, MaterialProductLink
+    from api.endpoints.products import _identify_products_with_ai, _match_products_to_db
+
+    text = ""
+    blocks = db.query(ContentBlock).filter(
+        ContentBlock.material_id == material.id
+    ).order_by(ContentBlock.order, ContentBlock.id).all()
+
+    if blocks:
+        from services.committee_importer import _extract_text_from_blocks
+        text = _extract_text_from_blocks(blocks)
+        logger.info(f"[COMITÊ] Extraindo produtos de {len(blocks)} ContentBlocks ({len(text)} chars)")
+
+    if not text.strip():
+        from database.models import MaterialFile
+        mat_file = db.query(MaterialFile).filter(
+            MaterialFile.material_id == material.id
+        ).first()
+        if mat_file and mat_file.content:
+            from api.endpoints.products import _extract_pdf_text_for_analysis
+            text = _extract_pdf_text_for_analysis(bytes(mat_file.content))
+            logger.info(f"[COMITÊ] Extraindo produtos do PDF ({len(text)} chars)")
+
+    if not text.strip():
+        logger.warning(f"[COMITÊ] Material {material.id} sem conteúdo para análise de produtos")
+        return []
+
+    ai_products = await _identify_products_with_ai(text, material.name or "")
+    identified = _match_products_to_db(db, ai_products)
+
+    material.ai_product_analysis = _json.dumps(identified, ensure_ascii=False)
+
+    return identified
+
+
 @router.post("/committee-materials/{material_id}/activate", status_code=200)
 async def activate_committee_material(
     material_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Ativa um material como Comitê Ativo e sincroniza categorias dos produtos derivados."""
+    """
+    Ativa um material como Comitê Ativo e sincroniza categorias dos produtos derivados.
+    Se o material não tiver vínculos de produto além do primário, analisa automaticamente
+    os produtos do documento e retorna suggested_products para confirmação.
+    """
     if current_user.role not in ["admin", "gestao_rv"]:
         raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
 
@@ -665,6 +722,22 @@ async def activate_committee_material(
 
     db.commit()
 
+    junction_links = db.query(MaterialProductLink).filter(
+        MaterialProductLink.material_id == material_id
+    ).count()
+    has_links = junction_links > 0 or bool(material.product_id)
+
+    suggested_products = []
+    if not has_links:
+        try:
+            suggested_products = await _analyze_products_for_material(db, material)
+            db.commit()
+            logger.info(
+                f"[COMITÊ] {len(suggested_products)} produto(s) sugerido(s) para material {material_id}"
+            )
+        except Exception as e:
+            logger.warning(f"[COMITÊ] Falha na análise automática de produtos: {e}")
+
     logger.info(
         f"[COMITÊ] Material '{material.name}' (id={material.id}) ativado como Comitê Ativo "
         f"por {current_user.email} — {len(derived)} produto(s) derivado(s)"
@@ -672,6 +745,120 @@ async def activate_committee_material(
     return {
         "success": True,
         "message": f"Material ativado no Comitê com {len(derived)} produto(s) derivado(s)",
+        "material": _material_committee_dict(material, db),
+        "suggested_products": suggested_products,
+        "has_product_links": has_links,
+    }
+
+
+@router.post("/committee-materials/{material_id}/link-products", status_code=200)
+async def link_committee_products(
+    material_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Vincula produtos confirmados a um material do Comitê Ativo.
+    Body: { confirmed_products: [{product_id, name, ticker, product_type, gestora}] }
+    Cria produtos novos quando necessário e gera MaterialProductLink.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    body = await request.json()
+    confirmed_products = body.get("confirmed_products", [])
+
+    import json as _json_links
+
+    linked_ids = set()
+    for cp in confirmed_products:
+        pid = cp.get("product_id")
+
+        if not pid:
+            ticker = (cp.get("ticker") or "").strip().upper() or None
+            name = (cp.get("name") or "").strip() or None
+            if not ticker and not name:
+                continue
+
+            existing = None
+            if ticker:
+                existing = db.query(Product).filter(
+                    Product.ticker == ticker,
+                    Product.status == "ativo",
+                ).first()
+            if not existing and name:
+                existing = db.query(Product).filter(
+                    Product.name.ilike(f"%{name}%"),
+                    Product.status == "ativo",
+                ).first()
+
+            if existing:
+                pid = existing.id
+            else:
+                product_type = (cp.get("product_type") or "").strip() or None
+                gestora = (cp.get("gestora") or "").strip() or None
+                category_map = {
+                    "FII": "fii", "FIA": "fundo_acoes", "ETF": "etf",
+                    "BDR": "bdr", "Ação": "acao", "Acao": "acao",
+                    "CRI": "renda_fixa", "CRA": "renda_fixa",
+                    "Debênture": "renda_fixa", "Debenture": "renda_fixa",
+                    "Fundo Multimercado": "multimercado",
+                    "Fundo de Renda Fixa": "renda_fixa",
+                }
+                category = category_map.get(product_type, "") if product_type else ""
+                new_p = Product(
+                    name=name or ticker,
+                    ticker=ticker,
+                    manager=gestora,
+                    categories=_json_links.dumps([category] if category else []),
+                    description=f"Criado automaticamente via Comitê. Tipo: {product_type or 'não identificado'}.",
+                    status="ativo",
+                )
+                db.add(new_p)
+                db.flush()
+                pid = new_p.id
+                logger.info(f"[COMITÊ] Produto criado: {name or ticker} (ticker={ticker})")
+
+        if pid:
+            linked_ids.add(pid)
+
+    if not material.product_id and linked_ids:
+        material.product_id = next(iter(linked_ids))
+
+    for pid in linked_ids:
+        if pid == material.product_id:
+            continue
+        existing_link = db.query(MaterialProductLink).filter(
+            MaterialProductLink.material_id == material_id,
+            MaterialProductLink.product_id == pid,
+        ).first()
+        if not existing_link:
+            db.add(MaterialProductLink(
+                material_id=material_id,
+                product_id=pid,
+                excluded_from_committee=False,
+            ))
+
+    db.flush()
+
+    all_derived = _get_material_derived_products(db, material)
+    for product in all_derived:
+        _sync_product_categories(db, product)
+
+    db.commit()
+
+    logger.info(
+        f"[COMITÊ] {len(linked_ids)} produto(s) vinculado(s) ao material '{material.name}' "
+        f"(id={material_id}) por {current_user.email}"
+    )
+    return {
+        "success": True,
+        "message": f"{len(linked_ids)} produto(s) vinculado(s) ao material",
         "material": _material_committee_dict(material, db),
     }
 
@@ -851,6 +1038,17 @@ async def deactivate_committee_material_alias(
 ):
     """Alias para POST /api/recommendations/committee-materials/{id}/deactivate."""
     return await deactivate_committee_material(material_id=material_id, db=db, current_user=current_user)
+
+
+@materials_router.post("/{material_id}/committee/link-products", status_code=200)
+async def link_committee_products_alias(
+    material_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alias para POST /api/recommendations/committee-materials/{id}/link-products."""
+    return await link_committee_products(material_id=material_id, request=request, db=db, current_user=current_user)
 
 
 # ── Página do painel ──────────────────────────────────────────────────────────

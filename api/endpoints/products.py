@@ -3935,47 +3935,115 @@ async def batch_upload(
     }
 
 
-def _extract_pdf_text_for_analysis(file_content: bytes, max_pages: int = 5) -> str:
-    """Extrai texto das primeiras páginas de um PDF para análise rápida de produtos."""
+def _extract_pdf_text_for_analysis(file_content: bytes, max_pages: int = None) -> str:
+    """
+    Extrai texto de um PDF para análise de produtos.
+    Estratégia em camadas:
+    - Lê TODAS as páginas com get_text('dict') para capturar texto e tabelas
+    - Aplica sampling inteligente (30% início / 40% meio / 30% fim) para PDFs longos
+    - Limite de ~20.000 chars para respeitar janela do GPT
+    """
+    MAX_CHARS = 20_000
     try:
         import fitz
         doc = fitz.open(stream=file_content, filetype="pdf")
-        pages_to_read = min(max_pages, len(doc))
+        total = len(doc)
+        if total == 0:
+            doc.close()
+            return ""
+
+        def _page_to_text(page) -> str:
+            blocks = page.get_text("dict").get("blocks", [])
+            lines = []
+            for b in blocks:
+                btype = b.get("type", 0)
+                if btype == 0:
+                    for line in b.get("lines", []):
+                        span_text = " ".join(s.get("text", "") for s in line.get("spans", []))
+                        if span_text.strip():
+                            lines.append(span_text.strip())
+                elif btype == 1:
+                    pass
+            return "\n".join(lines)
+
+        if total <= 20:
+            indices = list(range(total))
+        else:
+            n_start = max(1, round(total * 0.30))
+            n_mid = max(1, round(total * 0.40))
+            n_end = max(1, round(total * 0.30))
+            mid_start = n_start
+            mid_end = total - n_end
+            mid_step = max(1, (mid_end - mid_start) // n_mid)
+            indices = (
+                list(range(0, n_start))
+                + list(range(mid_start, mid_end, mid_step))[:n_mid]
+                + list(range(total - n_end, total))
+            )
+            seen = set()
+            deduped = []
+            for i in indices:
+                if i not in seen:
+                    seen.add(i)
+                    deduped.append(i)
+            indices = deduped
+
         texts = []
-        for i in range(pages_to_read):
+        for i in indices:
             page = doc[i]
-            texts.append(page.get_text("text"))
+            texts.append(_page_to_text(page))
+
         doc.close()
-        combined = "\n".join(texts)
-        return combined[:8000]
+        combined = "\n\n".join(t for t in texts if t.strip())
+        return combined[:MAX_CHARS]
     except Exception as e:
         print(f"[PRE_ANALYZE] Erro ao extrair texto do PDF: {e}")
         return ""
 
 
 async def _identify_products_with_ai(text: str, filename: str) -> list:
-    """Usa GPT-4o-mini para identificar produtos/tickers em texto de documento financeiro."""
+    """
+    Usa GPT-4o para identificar produtos/tickers em texto de documento financeiro brasileiro.
+    Retorna lista com ticker, name, product_type, gestora, cnpj para cada produto.
+    """
     if not text.strip():
         return []
     try:
         from openai import OpenAI
         import os as _os
         client = OpenAI(api_key=_os.environ.get("OPENAI_API_KEY"))
-        prompt = (
-            "Você é um especialista em identificar produtos financeiros brasileiros em documentos.\n"
-            "Analise o texto abaixo de um documento financeiro e identifique TODOS os fundos, ações, FIIs, ETFs e estruturas "
-            "mencionados explicitamente.\n\n"
-            "Para cada produto encontrado, inclua:\n"
-            "- ticker: código do ativo (ex: XPML11, PETR4, BOVA11). Se não houver ticker claro, use null.\n"
-            "- name: nome completo do fundo/produto.\n\n"
-            'Responda APENAS com JSON no formato: {"products": [{"ticker": "XPML11", "name": "XP Malls FII"}, ...]}\n\n'
-            f"Documento: {filename}\n\nTexto:\n{text[:6000]}"
+        system_prompt = (
+            "Você é um analista sênior especializado em identificar produtos financeiros brasileiros em documentos.\n\n"
+            "PADRÕES DE TICKER NO BRASIL:\n"
+            "- Ações ON/PN: 4 letras + 1 dígito (ex: PETR3, VALE5, ITSA4)\n"
+            "- Ações UNIT: 4 letras + 11 (ex: SANB11, CSAN11)\n"
+            "- FIIs: 4 letras + 11 (ex: MXRF11, HGLG11, XPML11, VISC11)\n"
+            "- ETFs: 4 letras + 11 (ex: BOVA11, IVVB11, SMAL11)\n"
+            "- BDRs: 4 letras + 34 ou 35 (ex: AAPL34, MSFT34)\n"
+            "- Estruturas: tickers de ações-base podem aparecer em POPs e Collars\n\n"
+            "TIPOS DE INSTRUMENTO:\n"
+            "FII, FIA, FIC-FIA, FIDC, CRI, CRA, Debênture, ETF, BDR, Ação, Fundo Multimercado, "
+            "Fundo de Renda Fixa, POP, Collar, COE, LCI, LCA\n\n"
+            "REGRAS CRÍTICAS:\n"
+            "1. NÃO omita produtos que aparecem apenas em tabelas, notas de rodapé ou listas compactas.\n"
+            "2. Inclua TODOS os tickers visíveis, mesmo que apareçam uma única vez.\n"
+            "3. Se o mesmo produto aparecer com ticker e nome, unifique em uma entrada.\n"
+            "4. Para fundos sem ticker explícito, use null — mas inclua o nome.\n"
+            "5. Infira o tipo (FII, Ação, ETF etc.) a partir do ticker ou do contexto.\n"
+            "6. Se a gestora ou CNPJ estiver mencionado próximo ao produto, capture-os.\n\n"
+            "Responda APENAS com JSON válido, sem texto adicional.\n"
+            'Formato: {"products": [{"ticker": "MXRF11", "name": "Maxi Renda FII", '
+            '"product_type": "FII", "gestora": "XP Asset", "cnpj": null}, ...]}'
         )
+        user_msg = f"Documento: {filename}\n\nTexto do documento:\n{text}"
         resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
             temperature=0,
-            max_tokens=800,
+            max_tokens=2000,
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
@@ -3993,30 +4061,82 @@ async def _identify_products_with_ai(text: str, filename: str) -> list:
 
 
 def _match_products_to_db(db: Session, ai_products: list) -> list:
-    """Tenta encontrar cada produto identificado pela IA na base de dados."""
-    from services.document_metadata_extractor import normalize_text
+    """
+    Tenta encontrar cada produto identificado pela IA na base de dados.
+    Estratégia em cascata:
+    1. Ticker exato (maiúsculas)
+    2. Ticker ILIKE (case-insensitive, cobre variações de OCR)
+    3. Ticker sem sufixo numérico (prefixo de 4 letras, ILIKE)
+    4. Nome ILIKE (%nome%)
+    Retorna match_confidence: 'exact' | 'ilike' | 'prefix' | 'name' | None
+    """
     result = []
+    seen_pairs = set()
+
     for ap in ai_products:
         ticker = (ap.get("ticker") or "").strip().upper() or None
         name = (ap.get("name") or "").strip() or None
+        product_type = (ap.get("product_type") or "").strip() or None
+        gestora = (ap.get("gestora") or "").strip() or None
+        cnpj = (ap.get("cnpj") or "").strip() or None
+
         if not ticker and not name:
             continue
 
+        pair_key = (ticker, (name or "").lower())
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+
         matched_product = None
+        match_confidence = None
+
         if ticker:
-            matched_product = db.query(Product).filter(Product.ticker == ticker).first()
-        if not matched_product and name:
-            norm_name = normalize_text(name)
-            for p in db.query(Product).filter(Product.name.isnot(None)).limit(500).all():
-                if normalize_text(p.name) == norm_name:
+            p = db.query(Product).filter(
+                Product.ticker == ticker,
+                Product.status == "ativo",
+            ).first()
+            if p:
+                matched_product = p
+                match_confidence = "exact"
+
+            if not matched_product:
+                p = db.query(Product).filter(
+                    Product.ticker.ilike(ticker),
+                    Product.status == "ativo",
+                ).first()
+                if p:
                     matched_product = p
-                    break
+                    match_confidence = "ilike"
+
+            if not matched_product and len(ticker) >= 4:
+                ticker_prefix = ticker[:4]
+                p = db.query(Product).filter(
+                    Product.ticker.ilike(f"{ticker_prefix}%"),
+                    Product.status == "ativo",
+                ).first()
+                if p:
+                    matched_product = p
+                    match_confidence = "prefix"
+
+        if not matched_product and name and len(name.strip()) >= 3:
+            p = db.query(Product).filter(
+                Product.name.ilike(f"%{name.strip()}%"),
+                Product.status == "ativo",
+            ).first()
+            if p:
+                matched_product = p
+                match_confidence = "name"
 
         result.append({
             "ticker": ticker,
             "name": name or (matched_product.name if matched_product else ticker),
+            "product_type": product_type,
+            "gestora": gestora,
+            "cnpj": cnpj,
             "product_id": matched_product.id if matched_product else None,
             "exists_in_db": matched_product is not None,
+            "match_confidence": match_confidence,
             "selected": True,
         })
     return result
@@ -4242,10 +4362,49 @@ async def link_products_and_queue(
             name = (cp.get("name") or "").strip() or None
             if not ticker and not name:
                 continue
-            search_key = name or ticker
-            new_p = find_or_create_product_from_name(db, search_key)
-            if new_p:
+
+            existing = None
+            if ticker:
+                existing = db.query(Product).filter(
+                    Product.ticker == ticker,
+                    Product.status == "ativo",
+                ).first()
+            if not existing and name:
+                existing = db.query(Product).filter(
+                    Product.name.ilike(f"%{name}%"),
+                    Product.status == "ativo",
+                ).first()
+
+            if existing:
+                pid = existing.id
+            else:
+                product_type = (cp.get("product_type") or "").strip() or None
+                gestora = (cp.get("gestora") or "").strip() or None
+
+                category_map = {
+                    "FII": "fii", "FIA": "fundo_acoes", "ETF": "etf",
+                    "BDR": "bdr", "Ação": "acao", "Acao": "acao",
+                    "CRI": "renda_fixa", "CRA": "renda_fixa",
+                    "Debênture": "renda_fixa", "Debenture": "renda_fixa",
+                    "Fundo Multimercado": "multimercado",
+                    "Fundo de Renda Fixa": "renda_fixa",
+                }
+                category = category_map.get(product_type, "") if product_type else ""
+
+                import json as _json_inner
+                new_p = Product(
+                    name=name or ticker,
+                    ticker=ticker,
+                    manager=gestora,
+                    categories=_json_inner.dumps([category] if category else []),
+                    description=f"Criado automaticamente via SmartUpload. Tipo: {product_type or 'não identificado'}.",
+                    status="ativo",
+                )
+                db.add(new_p)
+                db.flush()
                 pid = new_p.id
+                print(f"[LINK_QUEUE] Produto criado: {name or ticker} (ticker={ticker}, tipo={product_type})")
+
         if pid:
             created_products.append(pid)
 

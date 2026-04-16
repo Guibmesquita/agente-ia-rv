@@ -254,6 +254,38 @@
     </div>
 </div>
 
+<!-- Modal: Produtos Sugeridos pela IA ao Ativar Material -->
+<div id="modal-suggest-products" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+            <div>
+                <h2 class="text-lg font-bold text-gray-900">Produtos Identificados pela IA</h2>
+                <p class="text-sm text-gray-500 mt-0.5">A IA identificou os produtos abaixo no documento. Selecione os que deseja vincular ao material.</p>
+            </div>
+            <button id="btn-close-suggest-products" class="text-gray-400 hover:text-gray-600 p-1 rounded">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto min-h-0 p-6">
+            <div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 text-sm text-blue-800">
+                <strong>Dica:</strong> Clique nos chips para selecionar ou deselecionar produtos.
+                Itens com <span class="text-green-600 font-medium">✓ Cadastrado</span> já existem na base de dados.
+                Itens com <span class="text-orange-500 font-medium">+ Novo</span> serão criados automaticamente.
+            </div>
+            <div id="suggest-products-list" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div class="p-5 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+            <button id="btn-skip-suggest-products" class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Pular — vincular depois</button>
+            <div class="flex gap-2">
+                <button id="btn-confirm-suggest-products" class="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm hover:bg-green-700 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Confirmar Produtos
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Importar do Material -->
 <div id="modal-import" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
@@ -664,10 +696,29 @@
     });
 
     // Close modals on backdrop click
-    ['modal-add', 'modal-edit', 'modal-remove', 'modal-import', 'modal-activate-material'].forEach(function(id) {
-        document.getElementById(id).addEventListener('click', function(e) {
+    ['modal-add', 'modal-edit', 'modal-remove', 'modal-import', 'modal-activate-material', 'modal-suggest-products'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('click', function(e) {
             if (e.target === this) closeModal(id);
         });
+    });
+
+    // Suggest products modal listeners
+    document.getElementById('btn-close-suggest-products').addEventListener('click', function() { closeModal('modal-suggest-products'); });
+    document.getElementById('btn-skip-suggest-products').addEventListener('click', function() {
+        closeModal('modal-suggest-products');
+        if (window.showToast) window.showToast('Material ativado no Comitê sem produtos vinculados', 'success');
+        loadCommitteeMats();
+    });
+    document.getElementById('btn-confirm-suggest-products').addEventListener('click', confirmSuggestProducts);
+
+    document.getElementById('suggest-products-list').addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-action="toggle-suggest"]');
+        if (!btn) return;
+        var idx = parseInt(btn.dataset.idx);
+        if (isNaN(idx)) return;
+        suggestProducts[idx].selected = !suggestProducts[idx].selected;
+        renderSuggestProducts();
     });
 
     // ── Materiais do Comitê Ativo ──────────────────────────────────────────────
@@ -962,6 +1013,9 @@
             });
     }
 
+    var suggestMaterialId = null;
+    var suggestProducts = [];
+
     function confirmActivateMaterial() {
         if (!activateSelectedId) return;
         var btn = document.getElementById('btn-confirm-activate-material');
@@ -978,15 +1032,89 @@
         })
         .then(function(data) {
             closeModal('modal-activate-material');
+            var matId = activateSelectedId;
             activateSelectedId = null;
             activateSelectedName = null;
-            if (window.showToast) window.showToast(data.message || 'Material ativado no Comitê', 'success');
-            loadCommitteeMats();
+            if (data.suggested_products && data.suggested_products.length > 0 && !data.has_product_links) {
+                openSuggestProductsModal(matId, data.suggested_products);
+            } else {
+                if (window.showToast) window.showToast(data.message || 'Material ativado no Comitê', 'success');
+                loadCommitteeMats();
+            }
         })
         .catch(function(err) { alert(err.message); })
         .finally(function() {
             btn.disabled = false;
             btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Ativar no Comitê';
+        });
+    }
+
+    function openSuggestProductsModal(materialId, products) {
+        suggestMaterialId = materialId;
+        suggestProducts = products.map(function(p) { return Object.assign({}, p, { selected: p.selected !== false }); });
+        renderSuggestProducts();
+        openModal('modal-suggest-products');
+    }
+
+    function renderSuggestProducts() {
+        var list = document.getElementById('suggest-products-list');
+        if (!suggestProducts.length) {
+            list.innerHTML = '<p class="text-sm text-gray-400">Nenhum produto identificado no documento.</p>';
+            return;
+        }
+        list.innerHTML = suggestProducts.map(function(p, i) {
+            var label = p.ticker ? p.ticker : '';
+            var name = p.name || '';
+            var displayText = label ? label + ' — ' + name : name;
+            var confidenceBadge = '';
+            if (p.match_confidence === 'exact') {
+                confidenceBadge = '<span class="ml-1 text-xs text-green-600 font-medium">✓ Cadastrado</span>';
+            } else if (p.match_confidence === 'ilike' || p.match_confidence === 'prefix') {
+                confidenceBadge = '<span class="ml-1 text-xs text-blue-500 font-medium">≈ Cadastrado</span>';
+            } else if (p.match_confidence === 'name') {
+                confidenceBadge = '<span class="ml-1 text-xs text-blue-400 font-medium">≈ Nome</span>';
+            } else {
+                confidenceBadge = '<span class="ml-1 text-xs text-orange-500 font-medium">+ Novo</span>';
+            }
+            var typeText = p.product_type ? '<span class="text-xs text-gray-400 ml-1">(' + p.product_type + ')</span>' : '';
+            var selected = p.selected;
+            var cls = selected
+                ? 'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer border-2 border-green-500 bg-green-50 text-green-800 select-none'
+                : 'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer border-2 border-gray-200 bg-white text-gray-500 select-none';
+            return '<button class="' + cls + '" data-action="toggle-suggest" data-idx="' + i + '">' +
+                escapeHtml(displayText) + typeText + confidenceBadge + '</button>';
+        }).join(' ');
+    }
+
+    function confirmSuggestProducts() {
+        var confirmed = suggestProducts.filter(function(p) { return p.selected; });
+        if (!confirmed.length) {
+            if (window.showToast) window.showToast('Selecione pelo menos um produto', 'warning');
+            return;
+        }
+        var btn = document.getElementById('btn-confirm-suggest-products');
+        btn.disabled = true;
+        btn.textContent = 'Vinculando...';
+
+        fetch('/api/recommendations/committee-materials/' + suggestMaterialId + '/link-products', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmed_products: confirmed }),
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Erro ao vincular'); });
+            return r.json();
+        })
+        .then(function(data) {
+            closeModal('modal-suggest-products');
+            if (window.showToast) window.showToast(data.message || 'Produtos vinculados com sucesso', 'success');
+            loadCommitteeMats();
+        })
+        .catch(function(err) { alert(err.message); })
+        .finally(function() {
+            btn.disabled = false;
+            btn.textContent = 'Confirmar Produtos';
         });
     }
 
