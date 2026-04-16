@@ -475,6 +475,8 @@ async def sync_chats_from_zapi(
         
         existing = db.query(Conversation).filter(Conversation.phone == phone).first()
         
+        phone_for_assessor = phone if "@lid" not in phone else None
+
         if existing:
             if chat.get("name") and not existing.contact_name:
                 existing.contact_name = chat.get("name")
@@ -488,13 +490,19 @@ async def sync_chats_from_zapi(
                         existing.last_message_at = last_msg_dt
                 except (ValueError, TypeError):
                     pass
+            # Reidentificar assessor se ainda não associado
+            if not existing.assessor_id and phone_for_assessor:
+                from services.conversation_flow import identify_contact
+                reassessor, _ = identify_contact(db, phone_for_assessor)
+                if reassessor:
+                    existing.assessor_id = reassessor.id
+                    if not existing.contact_name:
+                        existing.contact_name = reassessor.nome
         else:
-            phone_for_assessor = phone if "@lid" not in phone else None
             assessor = None
             if phone_for_assessor:
-                assessor = db.query(Assessor).filter(
-                    Assessor.telefone_whatsapp.contains(phone_for_assessor)
-                ).first()
+                from services.conversation_flow import identify_contact
+                assessor, _ = identify_contact(db, phone_for_assessor)
             
             last_msg_at = None
             if chat.get("lastMessageTime"):
@@ -1838,4 +1846,51 @@ async def deduplicate_conversations(
         "merges": len(merged_groups),
         "detail": merged_groups,
         "message": f"{len(merged_groups)} conversa(s) duplicada(s) fundida(s) com sucesso." if merged_groups else "Nenhuma conversa duplicada encontrada."
+    }
+
+
+@router.post("/admin/backfill-assessors")
+async def backfill_assessors(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Percorre todas as conversas sem assessor associado e tenta identificar o assessor
+    pelo número de telefone usando normalização flexível (variantes com/sem +55, nono dígito).
+    Restrito a administradores e gestão RV.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar esta ação")
+
+    from services.conversation_flow import identify_contact
+
+    unmatched = db.query(Conversation).filter(
+        Conversation.assessor_id.is_(None),
+        Conversation.phone.isnot(None),
+        Conversation.phone != ""
+    ).all()
+
+    fixed = 0
+    for conv in unmatched:
+        try:
+            assessor, found = identify_contact(db, conv.phone)
+            if found and assessor:
+                conv.assessor_id = assessor.id
+                if not conv.contact_name or conv.contact_name == "Desconhecido":
+                    conv.contact_name = assessor.nome
+                fixed += 1
+        except Exception:
+            continue
+
+    db.commit()
+
+    return {
+        "success": True,
+        "fixed": fixed,
+        "total_checked": len(unmatched),
+        "message": (
+            f"{fixed} conversa(s) associada(s) ao assessor correto."
+            if fixed > 0
+            else "Nenhuma conversa nova pôde ser associada a um assessor."
+        )
     }

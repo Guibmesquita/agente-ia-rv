@@ -673,6 +673,7 @@ function App() {
   const [zapiDismissed, setZapiDismissed] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const [isReidentifying, setIsReidentifying] = useState(false);
   const userRole = typeof window !== 'undefined' ? (window.USER_ROLE || '') : '';
   const canAdmin = userRole === 'admin' || userRole === 'gestao_rv';
   const messagesEndRef = useRef(null);
@@ -906,6 +907,31 @@ function App() {
       setToast({ message: 'Erro ao conectar ao servidor.', type: 'error' });
     } finally {
       setIsDeduplicating(false);
+    }
+  };
+
+  const reidentificarAssessores = async () => {
+    setIsReidentifying(true);
+    try {
+      const res = await fetch(`${API_BASE}/conversations/admin/backfill-assessors`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.status === 403) {
+        setToast({ message: 'Acesso restrito: apenas administradores podem executar esta ação.', type: 'error' });
+      } else if (res.ok) {
+        setToast({ message: data.message, type: data.fixed > 0 ? 'success' : 'info' });
+        if (data.fixed > 0) {
+          fetchConversations(0, false);
+        }
+      } else {
+        setToast({ message: data.detail || 'Erro ao reidentificar assessores.', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Erro ao conectar ao servidor.', type: 'error' });
+    } finally {
+      setIsReidentifying(false);
     }
   };
 
@@ -1404,15 +1430,26 @@ function App() {
             {isSyncingHistory ? 'Sincronizando...' : 'Sincronizar Histórico'}
           </button>
           {canAdmin && (
-            <button
-              onClick={deduplicarConversas}
-              disabled={isDeduplicating}
-              title="Funde conversas duplicadas do mesmo número de telefone em formatos diferentes"
-              className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isDeduplicating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
-              {isDeduplicating ? 'Processando...' : 'Deduplicar Conversas'}
-            </button>
+            <>
+              <button
+                onClick={reidentificarAssessores}
+                disabled={isReidentifying}
+                title="Associa conversas 'Desconhecido' ao assessor correto usando normalização de telefone"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isReidentifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
+                {isReidentifying ? 'Processando...' : 'Reidentificar Assessores'}
+              </button>
+              <button
+                onClick={deduplicarConversas}
+                disabled={isDeduplicating}
+                title="Funde conversas duplicadas do mesmo número de telefone em formatos diferentes"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isDeduplicating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                {isDeduplicating ? 'Processando...' : 'Deduplicar Conversas'}
+              </button>
+            </>
           )}
           <button
             onClick={() => setShowNewModal(true)}
