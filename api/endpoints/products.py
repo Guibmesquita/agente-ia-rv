@@ -4052,21 +4052,40 @@ async def _identify_products_with_ai(text: str, filename: str) -> list:
             "- Ações UNIT: 4 letras + 11 (ex: SANB11, CSAN11)\n"
             "- FIIs: 4 letras + 11 (ex: MXRF11, HGLG11, XPML11, VISC11)\n"
             "- ETFs: 4 letras + 11 (ex: BOVA11, IVVB11, SMAL11)\n"
-            "- BDRs: 4 letras + 34 ou 35 (ex: AAPL34, MSFT34)\n"
-            "- Estruturas: tickers de ações-base podem aparecer em POPs e Collars\n\n"
-            "TIPOS DE INSTRUMENTO:\n"
-            "FII, FIA, FIC-FIA, FIDC, CRI, CRA, Debênture, ETF, BDR, Ação, Fundo Multimercado, "
-            "Fundo de Renda Fixa, POP, Collar, COE, LCI, LCA\n\n"
-            "REGRAS CRÍTICAS:\n"
+            "- BDRs: 4 letras + 34 ou 35 (ex: AAPL34, MSFT34)\n\n"
+            "TIPOS DE INSTRUMENTO VÁLIDOS (use exatamente um destes em product_type):\n"
+            "FII, FIA, FIC-FIA, FIDC, CRI, CRA, Debênture, ETF, BDR, Ação, "
+            "Fundo Multimercado, Fundo de Renda Fixa, POP, Collar, COE, LCI, LCA, Estruturada\n\n"
+            "REGRA FUNDAMENTAL — PRODUTOS ESTRUTURADOS (CRÍTICO):\n"
+            "Quando o documento descreve uma OPERAÇÃO ESTRUTURADA (POP, Collar, COE, Fence, "
+            "Reverse Convertible, Knock-out, etc.) sobre um ativo-base, o PRODUTO em si é a "
+            "ESTRUTURA, NÃO o ativo subjacente. Sinais inequívocos de operação estruturada no texto:\n"
+            "  • Termos: 'POP', 'Collar', 'Fence', 'COE', 'estrutura', 'estrutura sobre', 'operação estruturada'\n"
+            "  • Termos de opções: 'Compra Put', 'Vende Call', 'strike', 'vencimento', 'protected option'\n"
+            "  • Padrões de payoff: 'capital protegido', 'piso de retorno', 'teto de retorno',\n"
+            "    'ganho mínimo X% / ganho máximo Y%', 'parâmetro de ganho'\n"
+            "Quando QUALQUER um desses sinais estiver presente:\n"
+            "  - product_type DEVE ser 'POP', 'Collar', 'COE' ou 'Estruturada' (NUNCA 'Ação'/'ETF'/'FII')\n"
+            "  - ticker DEVE refletir a estrutura (ex: 'POP_BEEF3_DEZ28', 'COLLAR_WEGE3_SET29');\n"
+            "    se não houver ticker oficial da estrutura, gere um identificador no padrão\n"
+            "    '<TIPO>_<UNDERLYING>_<MMMAA>' usando o vencimento se disponível\n"
+            "  - name DEVE descrever a estrutura (ex: 'POP sobre BEEF3', 'Collar sobre WEGE3')\n"
+            "  - underlying_ticker DEVE conter o ticker do ativo-base (ex: 'BEEF3', 'WEGE3')\n"
+            "  - NUNCA emita uma entrada separada só para o ativo-base quando ele aparecer\n"
+            "    apenas como subjacente de uma estrutura — a estrutura É o produto identificado\n\n"
+            "REGRAS GERAIS:\n"
             "1. NÃO omita produtos que aparecem apenas em tabelas, notas de rodapé ou listas compactas.\n"
-            "2. Inclua TODOS os tickers visíveis, mesmo que apareçam uma única vez.\n"
+            "2. Inclua TODOS os produtos visíveis, mesmo que apareçam uma única vez.\n"
             "3. Se o mesmo produto aparecer com ticker e nome, unifique em uma entrada.\n"
-            "4. Para fundos sem ticker explícito, use null — mas inclua o nome.\n"
-            "5. Infira o tipo (FII, Ação, ETF etc.) a partir do ticker ou do contexto.\n"
-            "6. Se a gestora ou CNPJ estiver mencionado próximo ao produto, capture-os.\n\n"
+            "4. Para fundos sem ticker explícito, use null em ticker — mas inclua o nome.\n"
+            "5. Para ações/ETFs/FIIs/BDRs SEM contexto de estrutura, infira o tipo pelo padrão do ticker.\n"
+            "6. Se a gestora ou CNPJ estiver mencionado próximo ao produto, capture-os.\n"
+            "7. underlying_ticker só é preenchido para estruturas; deixe null para outros tipos.\n\n"
             "Responda APENAS com JSON válido, sem texto adicional.\n"
             'Formato: {"products": [{"ticker": "MXRF11", "name": "Maxi Renda FII", '
-            '"product_type": "FII", "gestora": "XP Asset", "cnpj": null}, ...]}'
+            '"product_type": "FII", "gestora": "XP Asset", "cnpj": null, "underlying_ticker": null}, '
+            '{"ticker": "POP_BEEF3_DEZ28", "name": "POP sobre BEEF3", "product_type": "POP", '
+            '"gestora": null, "cnpj": null, "underlying_ticker": "BEEF3"}, ...]}'
         )
         user_msg = f"Documento: {filename}\n\nTexto do documento:\n{text}"
         resp = client.chat.completions.create(
@@ -4112,6 +4131,7 @@ def _match_products_to_db(db: Session, ai_products: list) -> list:
         product_type = (ap.get("product_type") or "").strip() or None
         gestora = (ap.get("gestora") or "").strip() or None
         cnpj = (ap.get("cnpj") or "").strip() or None
+        underlying_ticker = (ap.get("underlying_ticker") or "").strip().upper() or None
 
         if not ticker and not name:
             continue
@@ -4188,6 +4208,7 @@ def _match_products_to_db(db: Session, ai_products: list) -> list:
             "product_type": product_type,
             "gestora": gestora,
             "cnpj": cnpj,
+            "underlying_ticker": underlying_ticker,
             "product_id": matched_product.id if matched_product else None,
             "exists_in_db": matched_product is not None,
             "match_confidence": match_confidence,
@@ -4426,15 +4447,31 @@ async def _detect_material_nature(text: str) -> str:
         return "outro"
 
 
-def _merge_key_info_into_product(db: Session, product: "Product", extracted_info: dict) -> bool:
+def _merge_key_info_into_product(
+    db: Session,
+    product: "Product",
+    extracted_info: dict,
+    material_id: Optional[int] = None,
+) -> bool:
     """
-    Faz MERGE (preserva valores existentes) entre key_info do produto e info extraída.
-    Só preenche campos que estejam ausentes/None/vazios em key_info atual.
+    Faz MERGE ACUMULATIVO entre key_info do produto e info extraída.
+
+    Estratégia "soma" (não destrutiva):
+      - Listas (additional_highlights): união case-insensitive sem duplicar.
+      - Campos textuais (investment_thesis, main_risk, etc.): preserva o
+        valor PRIMÁRIO existente; se um valor diferente chegar, registra-o
+        em `key_info["key_info_history"]` com tag de origem
+        ({field, value, material_id, extracted_at}). Quando o campo
+        primário está vazio, adota diretamente o novo valor.
+      - Campos de identidade (cnpj, underlying_ticker): se vazios, preenche;
+        se conflitarem, sobrescreve e emite warning no log.
+
     Retorna True se algo foi alterado.
     """
     if not product or not isinstance(extracted_info, dict):
         return False
     import json as _json
+    from datetime import datetime as _dt
     try:
         current = _json.loads(product.key_info) if product.key_info else {}
         if not isinstance(current, dict):
@@ -4442,20 +4479,99 @@ def _merge_key_info_into_product(db: Session, product: "Product", extracted_info
     except Exception:
         current = {}
 
+    history = current.get("key_info_history")
+    if not isinstance(history, list):
+        history = []
+
     changed = False
-    mergeable_fields = [
+    text_fields = [
         "investment_thesis", "expected_return", "investment_term", "main_risk",
         "issuer_or_manager", "rating", "minimum_investment", "liquidity",
-        "additional_highlights", "cnpj",
     ]
-    for field in mergeable_fields:
+    list_fields = ["additional_highlights"]
+    identity_fields = ["cnpj", "underlying_ticker"]
+    now_iso = _dt.utcnow().isoformat() + "Z"
+
+    def _push_history(field: str, value):
+        history.append({
+            "field": field,
+            "value": value,
+            "material_id": material_id,
+            "extracted_at": now_iso,
+        })
+
+    for field in text_fields:
         new_val = extracted_info.get(field)
         if new_val in (None, "", [], {}):
             continue
+        if not isinstance(new_val, str):
+            new_val = str(new_val)
+        new_val = new_val.strip()
+        if not new_val:
+            continue
+        cur_val = current.get(field)
+        cur_str = (cur_val or "").strip() if isinstance(cur_val, str) else ""
+        if not cur_str:
+            current[field] = new_val
+            changed = True
+        elif cur_str != new_val:
+            already_in_history = any(
+                isinstance(h, dict)
+                and h.get("field") == field
+                and (h.get("value") or "").strip() == new_val
+                for h in history
+            )
+            if not already_in_history:
+                _push_history(field, new_val)
+                changed = True
+
+    for field in list_fields:
+        new_val = extracted_info.get(field)
+        if not isinstance(new_val, list) or not new_val:
+            continue
+        cur_val = current.get(field)
+        if not isinstance(cur_val, list):
+            cur_val = []
+        seen = {(item or "").strip().lower() for item in cur_val if isinstance(item, str)}
+        merged = list(cur_val)
+        added_any = False
+        for item in new_val:
+            if not isinstance(item, str):
+                continue
+            key = item.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            merged.append(item.strip())
+            added_any = True
+        if added_any:
+            current[field] = merged
+            changed = True
+
+    for field in identity_fields:
+        new_val = extracted_info.get(field)
+        if new_val in (None, "", [], {}):
+            continue
+        if isinstance(new_val, str):
+            new_val = new_val.strip()
+            if not new_val:
+                continue
         cur_val = current.get(field)
         if cur_val in (None, "", [], {}):
             current[field] = new_val
             changed = True
+        elif isinstance(cur_val, str) and isinstance(new_val, str) and cur_val.strip() != new_val.strip():
+            print(
+                f"[KEY_INFO][CONFLITO] Produto id={product.id} ticker={product.ticker} "
+                f"campo de identidade '{field}' conflito: '{cur_val}' → '{new_val}' "
+                f"(material_id={material_id}). Sobrescrevendo."
+            )
+            _push_history(field, cur_val)
+            current[field] = new_val
+            changed = True
+
+    if history:
+        current["key_info_history"] = history
 
     if changed:
         product.key_info = _json.dumps(current, ensure_ascii=False)
@@ -4645,7 +4761,14 @@ async def pre_analyze_upload(
                         if pid:
                             prod = db.query(Product).filter(Product.id == pid).first()
                             if prod:
-                                _merge_key_info_into_product(db, prod, info)
+                                merge_payload = dict(info)
+                                if idp.get("underlying_ticker"):
+                                    merge_payload["underlying_ticker"] = idp["underlying_ticker"]
+                                if idp.get("cnpj") and not merge_payload.get("cnpj"):
+                                    merge_payload["cnpj"] = idp["cnpj"]
+                                _merge_key_info_into_product(
+                                    db, prod, merge_payload, material_id=material.id
+                                )
                 db.commit()
         except Exception as deep_err:
             print(f"[PRE_ANALYZE][DEEP_INFO] Erro no deep extract: {deep_err}")
@@ -5035,16 +5158,38 @@ async def link_products_and_queue(
             if existing:
                 pid = existing.id
             else:
-                product_type = (cp.get("product_type") or "").strip() or None
+                product_type_raw = (cp.get("product_type") or "").strip() or None
+                _pt_alias = {
+                    "acao": "Ação", "ação": "Ação",
+                    "fii": "FII",
+                    "fia": "FIA",
+                    "fic-fia": "FIC-FIA", "fic fia": "FIC-FIA",
+                    "etf": "ETF", "bdr": "BDR",
+                    "cri": "CRI", "cra": "CRA",
+                    "debenture": "Debênture", "debênture": "Debênture",
+                    "fundo multimercado": "Fundo Multimercado",
+                    "fundo de renda fixa": "Fundo de Renda Fixa",
+                    "pop": "POP", "collar": "Collar", "coe": "COE",
+                    "estruturada": "Estruturada", "estruturado": "Estruturada",
+                    "lci": "LCI", "lca": "LCA", "fidc": "FIDC",
+                }
+                product_type = (
+                    _pt_alias.get(product_type_raw.lower(), product_type_raw)
+                    if product_type_raw else None
+                )
                 gestora = (cp.get("gestora") or "").strip() or None
 
                 category_map = {
-                    "FII": "fii", "FIA": "fundo_acoes", "ETF": "etf",
-                    "BDR": "bdr", "Ação": "acao", "Acao": "acao",
+                    "FII": "fii", "FIA": "fundo_acoes", "FIC-FIA": "fundo_acoes",
+                    "ETF": "etf", "BDR": "bdr", "Ação": "acao", "Acao": "acao",
                     "CRI": "renda_fixa", "CRA": "renda_fixa",
                     "Debênture": "renda_fixa", "Debenture": "renda_fixa",
                     "Fundo Multimercado": "multimercado",
                     "Fundo de Renda Fixa": "renda_fixa",
+                    "POP": "estruturada", "Collar": "estruturada",
+                    "COE": "estruturada", "Estruturada": "estruturada",
+                    "LCI": "renda_fixa", "LCA": "renda_fixa",
+                    "FIDC": "renda_fixa",
                 }
                 category = category_map.get(product_type, "") if product_type else ""
 
@@ -5055,13 +5200,35 @@ async def link_products_and_queue(
                     "Debênture": "debenture", "Debenture": "debenture",
                     "Fundo Multimercado": "outro", "Fundo de Renda Fixa": "outro",
                     "POP": "estruturada", "Collar": "estruturada", "COE": "estruturada",
+                    "Estruturada": "estruturada",
+                    "LCI": "outro", "LCA": "outro", "FIDC": "outro",
                 }
                 product_type_db = type_to_db_field.get(product_type, "outro") if product_type else None
 
                 cnpj = (cp.get("cnpj") or "").strip() or None
+                underlying_ticker = (cp.get("underlying_ticker") or "").strip().upper() or None
+                deep = cp.get("deep_info") if isinstance(cp.get("deep_info"), dict) else {}
+
                 key_info_dict = {}
+                for fld in (
+                    "investment_thesis", "expected_return", "investment_term",
+                    "main_risk", "issuer_or_manager", "rating",
+                    "minimum_investment", "liquidity",
+                ):
+                    val = deep.get(fld) if deep else None
+                    if isinstance(val, str):
+                        val = val.strip()
+                    if val:
+                        key_info_dict[fld] = val
+                hl = deep.get("additional_highlights") if deep else None
+                if isinstance(hl, list):
+                    cleaned = [str(item).strip() for item in hl if isinstance(item, str) and item.strip()]
+                    if cleaned:
+                        key_info_dict["additional_highlights"] = cleaned
                 if cnpj:
                     key_info_dict["cnpj"] = cnpj
+                if underlying_ticker:
+                    key_info_dict["underlying_ticker"] = underlying_ticker
 
                 import json as _json_inner
                 new_p = Product(
@@ -5077,7 +5244,11 @@ async def link_products_and_queue(
                 db.add(new_p)
                 db.flush()
                 pid = new_p.id
-                print(f"[LINK_QUEUE] Produto criado: {name or ticker} (ticker={ticker}, tipo={product_type})")
+                print(
+                    f"[LINK_QUEUE] Produto criado id={pid}: {name or ticker} "
+                    f"(ticker={ticker}, tipo={product_type}, underlying={underlying_ticker}, "
+                    f"key_info_fields={list(key_info_dict.keys())})"
+                )
 
         if pid:
             created_products.append(pid)
