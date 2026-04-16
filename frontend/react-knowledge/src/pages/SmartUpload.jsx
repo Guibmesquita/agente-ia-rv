@@ -576,7 +576,6 @@ export function SmartUpload() {
           body: JSON.stringify({
             confirmed_products: confirmed,
             primary_product_id: primaryId,
-            file_path: mat.file_path || '',
           }),
         });
         if (!resp.ok) {

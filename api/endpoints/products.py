@@ -4094,12 +4094,9 @@ async def pre_analyze_upload(
             })
             continue
 
-        auto_product = find_or_create_product_from_name(db, name)
-        product_id = auto_product.id if auto_product else None
-
         ps_value = ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, "PENDING") else "pending"
         material = Material(
-            product_id=product_id,
+            product_id=None,
             material_type=material_type,
             name=name,
             valid_from=parsed_valid_from,
@@ -4127,23 +4124,9 @@ async def pre_analyze_upload(
         ai_products = await _identify_products_with_ai(text, file.filename)
         identified = _match_products_to_db(db, ai_products)
 
-        if auto_product and not any(
-            p.get("product_id") == auto_product.id or
-            (p.get("ticker") and p.get("ticker") == auto_product.ticker)
-            for p in identified
-        ):
-            identified.insert(0, {
-                "ticker": auto_product.ticker or "",
-                "name": auto_product.name,
-                "product_id": auto_product.id,
-                "exists_in_db": True,
-                "selected": True,
-            })
-
         results.append({
             "filename": file.filename,
             "material_id": material.id,
-            "file_path": file_path,
             "identified_products": identified,
             "error": None,
         })
@@ -4177,18 +4160,14 @@ async def link_products_and_queue(
     body = await request.json()
     confirmed_products = body.get("confirmed_products", [])
     primary_product_id = body.get("primary_product_id")
-    file_path = body.get("file_path", "")
 
     material = db.query(Material).filter(Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
-    if not os.path.exists(file_path):
-        file_path_from_model = getattr(material, "source_file_path", None)
-        if file_path_from_model and os.path.exists(file_path_from_model):
-            file_path = file_path_from_model
-        else:
-            raise HTTPException(status_code=400, detail="Arquivo PDF não encontrado para processamento")
+    file_path = getattr(material, "source_file_path", None)
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=400, detail="Arquivo PDF não encontrado para processamento. Refaça o upload.")
 
     created_products = []
     for cp in confirmed_products:
