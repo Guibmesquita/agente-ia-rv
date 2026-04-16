@@ -1076,7 +1076,7 @@
             } else {
                 confidenceBadge = '<span class="ml-1 text-xs text-orange-500 font-medium">+ Novo</span>';
             }
-            var typeText = p.product_type ? '<span class="text-xs text-gray-400 ml-1">(' + p.product_type + ')</span>' : '';
+            var typeText = p.product_type ? '<span class="text-xs text-gray-400 ml-1">(' + escapeHtml(p.product_type) + ')</span>' : '';
             var selected = p.selected;
             var cls = selected
                 ? 'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer border-2 border-green-500 bg-green-50 text-green-800 select-none'

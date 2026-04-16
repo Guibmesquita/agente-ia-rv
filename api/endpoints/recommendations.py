@@ -820,12 +820,17 @@ async def link_committee_products(
                     "POP": "estruturada", "Collar": "estruturada", "COE": "estruturada",
                 }
                 product_type_db = type_to_db_field.get(product_type, "outro") if product_type else None
+                cnpj = (cp.get("cnpj") or "").strip() or None
+                key_info_dict = {}
+                if cnpj:
+                    key_info_dict["cnpj"] = cnpj
                 new_p = Product(
                     name=name or ticker,
                     ticker=ticker,
                     manager=gestora,
                     product_type=product_type_db,
                     categories=_json_links.dumps([category] if category else []),
+                    key_info=_json_links.dumps(key_info_dict, ensure_ascii=False) if key_info_dict else None,
                     description=f"Criado automaticamente via Comitê. Tipo: {product_type or 'não identificado'}.",
                     status="ativo",
                 )

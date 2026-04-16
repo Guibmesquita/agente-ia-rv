@@ -3997,35 +3997,38 @@ def _extract_pdf_text_for_analysis(file_content: bytes, max_pages: int = None) -
             return "\n".join(result_lines)
 
         if total <= 20:
-            indices = list(range(total))
-        else:
-            n_start = max(1, round(total * 0.30))
-            n_mid = max(1, round(total * 0.40))
-            n_end = max(1, round(total * 0.30))
-            mid_start = n_start
-            mid_end = total - n_end
-            mid_step = max(1, (mid_end - mid_start) // n_mid)
-            indices = (
-                list(range(0, n_start))
-                + list(range(mid_start, mid_end, mid_step))[:n_mid]
-                + list(range(total - n_end, total))
-            )
-            seen = set()
-            deduped = []
-            for i in indices:
-                if i not in seen:
-                    seen.add(i)
-                    deduped.append(i)
-            indices = deduped
+            texts = [_page_to_text(doc[i]) for i in range(total)]
+            doc.close()
+            return "\n\n".join(t for t in texts if t.strip())[:MAX_CHARS]
 
-        texts = []
-        for i in indices:
-            page = doc[i]
-            texts.append(_page_to_text(page))
+        # Sampler estratificado: 3 segmentos com budget de chars independente
+        # Garante cobertura real de início/meio/fim mesmo em PDFs de 200+ páginas
+        n_end_pages = max(1, round(total * 0.30))
+        n_start_pages = max(1, round(total * 0.30))
+        n_mid_start = n_start_pages
+        n_mid_end = total - n_end_pages
+
+        segments = [
+            (list(range(0, n_start_pages)),          int(MAX_CHARS * 0.30)),
+            (list(range(n_mid_start, n_mid_end)),    int(MAX_CHARS * 0.40)),
+            (list(range(n_mid_end, total)),          int(MAX_CHARS * 0.30)),
+        ]
+
+        parts = []
+        for page_indices, budget in segments:
+            seg_chars = 0
+            for i in page_indices:
+                if seg_chars >= budget:
+                    break
+                text = _page_to_text(doc[i])
+                if not text.strip():
+                    continue
+                remaining = budget - seg_chars
+                parts.append(text[:remaining])
+                seg_chars += min(len(text), remaining)
 
         doc.close()
-        combined = "\n\n".join(t for t in texts if t.strip())
-        return combined[:MAX_CHARS]
+        return "\n\n".join(p for p in parts if p.strip())[:MAX_CHARS]
     except Exception as e:
         print(f"[PRE_ANALYZE] Erro ao extrair texto do PDF: {e}")
         return ""
@@ -4452,6 +4455,11 @@ async def link_products_and_queue(
                 }
                 product_type_db = type_to_db_field.get(product_type, "outro") if product_type else None
 
+                cnpj = (cp.get("cnpj") or "").strip() or None
+                key_info_dict = {}
+                if cnpj:
+                    key_info_dict["cnpj"] = cnpj
+
                 import json as _json_inner
                 new_p = Product(
                     name=name or ticker,
@@ -4459,6 +4467,7 @@ async def link_products_and_queue(
                     manager=gestora,
                     product_type=product_type_db,
                     categories=_json_inner.dumps([category] if category else []),
+                    key_info=_json_inner.dumps(key_info_dict, ensure_ascii=False) if key_info_dict else None,
                     description=f"Criado automaticamente via SmartUpload. Tipo: {product_type or 'não identificado'}.",
                     status="ativo",
                 )
