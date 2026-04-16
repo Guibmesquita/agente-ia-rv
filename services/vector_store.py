@@ -1147,15 +1147,31 @@ class VectorStore:
 
                 gestora_inferred = self._infer_gestora_from_name(product.name) if hasattr(self, '_infer_gestora_from_name') else ''
 
+                from database.models import MaterialProductLink
+                from sqlalchemy import or_
+
+                linked_material_ids = [
+                    row.material_id for row in
+                    db.query(MaterialProductLink.material_id).filter(
+                        MaterialProductLink.product_id == pid
+                    ).all()
+                ]
+
                 blocks = db.query(ContentBlock).join(Material).filter(
-                    Material.product_id == pid,
+                    or_(
+                        Material.product_id == pid,
+                        Material.id.in_(linked_material_ids)
+                    ),
                     Material.publish_status.notin_(['rascunho', 'arquivado']),
                     ContentBlock.status.in_(['approved', 'auto_approved'])
                 ).order_by(ContentBlock.id).limit(max_per_product).all()
 
                 if not blocks:
                     blocks = db.query(ContentBlock).join(Material).filter(
-                        Material.product_id == pid,
+                        or_(
+                            Material.product_id == pid,
+                            Material.id.in_(linked_material_ids)
+                        ),
                         Material.publish_status != 'arquivado',
                         ContentBlock.status.in_(['approved', 'auto_approved'])
                     ).order_by(ContentBlock.id).limit(max_per_product).all()

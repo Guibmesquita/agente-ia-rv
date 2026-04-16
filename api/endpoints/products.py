@@ -492,8 +492,24 @@ async def get_product(
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     
+    from database.models import MaterialProductLink
+
+    seen_material_ids = set()
+    all_materials = list(product.materials)
+
+    linked = db.query(Material).join(
+        MaterialProductLink, MaterialProductLink.material_id == Material.id
+    ).filter(MaterialProductLink.product_id == product_id).all()
+    for lm in linked:
+        if lm.id not in {m.id for m in all_materials}:
+            all_materials.append(lm)
+
     materials = []
-    for m in product.materials:
+    for m in all_materials:
+        if m.id in seen_material_ids:
+            continue
+        seen_material_ids.add(m.id)
+
         blocks = []
         for b in m.blocks:
             blocks.append({
@@ -508,7 +524,8 @@ async def get_product(
                 "current_version": b.current_version,
                 "updated_at": b.updated_at.isoformat() if b.updated_at else None
             })
-        
+
+        is_linked = m.product_id != product_id
         materials.append({
             "id": m.id,
             "material_type": m.material_type,
@@ -518,7 +535,9 @@ async def get_product(
             "is_indexed": m.is_indexed,
             "blocks_count": len(blocks),
             "blocks": sorted(blocks, key=lambda x: x["order"]),
-            "updated_at": m.updated_at.isoformat() if m.updated_at else None
+            "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+            "is_multi_product_link": is_linked,
+            "primary_product_id": m.product_id,
         })
     
     scripts = []
@@ -2312,7 +2331,7 @@ async def upload_pdf_to_material(
 async def smart_upload_without_product(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    material_type: str = Form(...),
+    material_type: str = Form("one_page"),
     name: str = Form(...),
     description: str = Form(None),
     valid_from: str = Form(None),
@@ -2419,7 +2438,7 @@ async def smart_upload_without_product(
 async def smart_upload_stream(
     request: Request,
     file: UploadFile = File(...),
-    material_type: str = Form(...),
+    material_type: str = Form("one_page"),
     name: str = Form(...),
     description: str = Form(None),
     valid_from: str = Form(None),

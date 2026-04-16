@@ -2,7 +2,7 @@
 Modelos SQLAlchemy para o banco de dados.
 Define as tabelas User, Ticket, Interaction, TicketCategory e Integration.
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float, Index, LargeBinary
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float, Index, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
@@ -813,6 +813,7 @@ class Product(Base):
     materials = relationship("Material", back_populates="product", cascade="all, delete-orphan")
     scripts = relationship("WhatsAppScript", back_populates="product", cascade="all, delete-orphan")
     recommendation_entries = relationship("RecommendationEntry", back_populates="product", cascade="all, delete-orphan")
+    material_links = relationship("MaterialProductLink", back_populates="product", cascade="all, delete-orphan")
 
     def get_aliases(self):
         import json
@@ -885,6 +886,7 @@ class Material(Base):
     creator = relationship("User", foreign_keys=[created_by])
     blocks = relationship("ContentBlock", back_populates="material", cascade="all, delete-orphan", order_by="ContentBlock.order")
     file = relationship("MaterialFile", back_populates="material", uselist=False, cascade="all, delete-orphan")
+    product_links = relationship("MaterialProductLink", back_populates="material", cascade="all, delete-orphan")
 
 
 class MaterialFile(Base):
@@ -900,6 +902,27 @@ class MaterialFile(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     material = relationship("Material", back_populates="file")
+
+
+class MaterialProductLink(Base):
+    """
+    Tabela de junção: um material pode estar vinculado a múltiplos produtos.
+    Material.product_id = produto primário (backward compat).
+    Esta tabela registra vínculos adicionais gerados automaticamente durante o upload.
+    """
+    __tablename__ = "material_product_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("material_id", "product_id", name="uq_material_product_link"),
+    )
+
+    material = relationship("Material", back_populates="product_links")
+    product = relationship("Product", back_populates="material_links")
 
 
 class ContentBlock(Base):

@@ -453,8 +453,8 @@ export function SmartUpload() {
   };
 
   const handleUpload = async () => {
-    if (!files.length || !materialType) {
-      addToast('Selecione pelo menos um arquivo e um tipo de material', 'warning');
+    if (!files.length) {
+      addToast('Selecione pelo menos um arquivo para enviar', 'warning');
       return;
     }
 
@@ -952,7 +952,13 @@ export function SmartUpload() {
                     </div>
                     {item.product_name && (
                       <p className="text-xs mt-1">
-                        Produto: <span className="font-medium">{item.product_ticker || item.product_name}</span>
+                        Produto:{' '}
+                        <span className="font-medium">{item.product_ticker || item.product_name}</span>
+                        {item.additional_tickers && item.additional_tickers.length > 0 && (
+                          <span className="ml-1 text-gray-400">
+                            + {item.additional_tickers.join(', ')}
+                          </span>
+                        )}
                       </p>
                     )}
                   </>
@@ -983,7 +989,12 @@ export function SmartUpload() {
                   {getStatusIcon(item.status)}
                   <span className="flex-1 truncate">{item.filename}</span>
                   {item.product_ticker && (
-                    <span className="text-xs text-primary font-medium">{item.product_ticker}</span>
+                    <span className="text-xs text-primary font-medium">
+                      {item.product_ticker}
+                      {item.additional_tickers && item.additional_tickers.length > 0 && (
+                        <span className="text-gray-400"> +{item.additional_tickers.length}</span>
+                      )}
+                    </span>
                   )}
                   {item.stats && (
                     <span className="text-xs text-muted">{item.stats.blocks_created} blocos</span>

@@ -51,6 +51,7 @@ class UploadQueueItem:
         self.completed_at = None
         self.product_name = None
         self.product_ticker = None
+        self.additional_tickers = []
         self.priority = priority
         self._db_id = None
         self._page_times = []
@@ -99,6 +100,7 @@ class UploadQueueItem:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "product_name": self.product_name,
             "product_ticker": self.product_ticker,
+            "additional_tickers": self.additional_tickers or [],
             "priority": self.priority,
             "eta_seconds": self.eta_seconds,
             "avg_page_time": self.avg_page_time,
@@ -503,6 +505,59 @@ class UploadQueue:
             document_type="relatorio_gerencial",
         )
 
+    def _create_product_links(self, db, item: "UploadQueueItem", mat, metadata):
+        """Cria vínculos adicionais em material_product_links para cada ticker extra detectado."""
+        from database.models import MaterialProductLink, Product
+        additional = metadata.additional_tickers if hasattr(metadata, "additional_tickers") else []
+        if not additional:
+            return
+
+        primary_id = mat.product_id
+        created_count = 0
+        for ticker in additional:
+            try:
+                product = db.query(Product).filter(
+                    Product.ticker.ilike(ticker),
+                    Product.status == "ativo"
+                ).first()
+
+                if not product:
+                    inferred_type = "FII" if ticker.endswith("11") else "Ação"
+                    product = self._auto_create_product(
+                        db=db,
+                        fund_name=None,
+                        ticker=ticker,
+                        gestora=metadata.gestora,
+                        document_type=metadata.document_type,
+                    )
+
+                if not product or product.id == primary_id:
+                    continue
+
+                exists = db.query(MaterialProductLink).filter_by(
+                    material_id=mat.id,
+                    product_id=product.id
+                ).first()
+                if not exists:
+                    link = MaterialProductLink(material_id=mat.id, product_id=product.id)
+                    db.add(link)
+                    created_count += 1
+
+            except Exception as link_err:
+                logger.warning(f"[MultiProduct] Erro ao vincular ticker {ticker}: {link_err}")
+                db.rollback()
+
+        if created_count:
+            try:
+                db.commit()
+                item.add_log(
+                    f"Vínculos multi-produto criados: {created_count} produto(s) adicional(is)",
+                    "success"
+                )
+            except Exception as commit_err:
+                logger.error(f"[MultiProduct] Erro ao salvar vínculos: {commit_err}")
+                db.rollback()
+
     def _ensure_worker_running(self):
         if self._worker_thread is None or not self._worker_thread.is_alive():
             self._worker_thread = threading.Thread(target=self._worker, daemon=True)
@@ -742,7 +797,14 @@ class UploadQueue:
                         mat.extracted_metadata = json.dumps(metadata.to_dict(), ensure_ascii=False)
                         db.commit()
 
-                    item.add_log(f"Metadados: {metadata.fund_name or 'N/A'} | Ticker: {metadata.ticker or 'N/A'}", "info")
+                    all_found = [metadata.ticker] if metadata.ticker else []
+                    all_found += [t for t in (metadata.additional_tickers or []) if t not in all_found]
+                    tickers_str = ", ".join(all_found) if all_found else "N/A"
+                    item.add_log(
+                        f"Metadados: {metadata.fund_name or 'N/A'} | Tickers: {tickers_str}",
+                        "info"
+                    )
+                    item.additional_tickers = metadata.additional_tickers or []
 
                     if metadata.ticker or metadata.fund_name:
                         from services.product_resolver import get_product_resolver
@@ -808,6 +870,8 @@ class UploadQueue:
                                     f"{metadata.fund_name or 'N/A'}",
                                     "warning"
                                 )
+                    self._create_product_links(db, item, mat, metadata)
+
                 except Exception as meta_err:
                     item.add_log(f"Aviso: Metadados falhou ({str(meta_err)[:100]})", "warning")
 

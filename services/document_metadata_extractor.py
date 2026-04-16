@@ -14,7 +14,7 @@ import json
 import base64
 import requests
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field as dataclass_field
 import unicodedata
 from difflib import SequenceMatcher
 
@@ -28,18 +28,13 @@ class ExtractionResult:
     """Resultado da extração de metadados."""
     fund_name: Optional[str] = None
     ticker: Optional[str] = None
+    additional_tickers: List[str] = dataclass_field(default_factory=list)
     gestora: Optional[str] = None
     document_type: Optional[str] = None
     confidence: float = 0.0
-    source_pages: List[int] = None
-    raw_extraction: Dict[str, Any] = None
-    
-    def __post_init__(self):
-        if self.source_pages is None:
-            self.source_pages = []
-        if self.raw_extraction is None:
-            self.raw_extraction = {}
-    
+    source_pages: List[int] = dataclass_field(default_factory=list)
+    raw_extraction: Dict[str, Any] = dataclass_field(default_factory=dict)
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -215,11 +210,22 @@ def extract_pages_as_images(pdf_path: str, pages: List[int], max_size: int = 102
 
 
 def find_ticker_in_text(text: str) -> Optional[str]:
-    """Busca ticker no texto usando regex."""
+    """Busca o primeiro ticker no texto usando regex."""
     matches = TICKER_PATTERN.findall(text)
     if matches:
         return f"{matches[0][0]}{matches[0][1]}"
     return None
+
+
+def find_all_tickers_in_text(text: str) -> List[str]:
+    """Retorna todos os tickers únicos encontrados no texto, em ordem de aparição."""
+    matches = TICKER_PATTERN.findall(text)
+    seen = []
+    for g1, g2 in matches:
+        t = f"{g1}{g2}"
+        if t not in seen:
+            seen.append(t)
+    return seen
 
 
 def find_gestora_in_text(text: str) -> Optional[str]:
@@ -284,34 +290,63 @@ class DocumentMetadataExtractor:
         try:
             extraction = self._analyze_with_vision(page_images, pdf_path=pdf_path)
             
+            vision_tickers = extraction.get("tickers") or []
+            if isinstance(vision_tickers, list):
+                vision_tickers = [t for t in vision_tickers if isinstance(t, str) and TICKER_PATTERN.match(t)]
+            else:
+                vision_tickers = []
+
+            primary_ticker = extraction.get("ticker")
+
+            all_tickers_ordered = []
+            if primary_ticker and TICKER_PATTERN.match(primary_ticker):
+                all_tickers_ordered.append(primary_ticker)
+            for t in vision_tickers:
+                if t not in all_tickers_ordered:
+                    all_tickers_ordered.append(t)
+
             result = ExtractionResult(
                 fund_name=extraction.get("fund_name"),
-                ticker=extraction.get("ticker"),
+                ticker=all_tickers_ordered[0] if all_tickers_ordered else None,
+                additional_tickers=all_tickers_ordered[1:] if len(all_tickers_ordered) > 1 else [],
                 gestora=extraction.get("gestora"),
                 document_type=extraction.get("document_type"),
                 confidence=extraction.get("confidence", 0.5),
                 source_pages=[p[0] for p in page_images],
                 raw_extraction=extraction
             )
-            
-            if not result.ticker or not result.gestora:
+
+            if True:
                 try:
                     doc = fitz.open(pdf_path)
+                    all_text_tickers = []
                     for page_num, _ in page_images:
-                        if result.ticker and result.gestora:
-                            break
                         text = doc[page_num - 1].get_text()
-                        
-                        if not result.ticker:
-                            ticker = find_ticker_in_text(text)
-                            if ticker:
-                                result.ticker = ticker
-                        
+
+                        page_tickers = find_all_tickers_in_text(text)
+                        for t in page_tickers:
+                            if t not in all_text_tickers:
+                                all_text_tickers.append(t)
+
                         if not result.gestora:
                             gestora = find_gestora_in_text(text)
                             if gestora:
                                 result.gestora = gestora
+
                     doc.close()
+
+                    if all_text_tickers:
+                        if not result.ticker:
+                            result.ticker = all_text_tickers[0]
+                            extras = all_text_tickers[1:]
+                        else:
+                            existing = [result.ticker] + result.additional_tickers
+                            extras = [t for t in all_text_tickers if t not in existing]
+
+                        for t in extras:
+                            if t not in result.additional_tickers:
+                                result.additional_tickers.append(t)
+
                 except Exception as e:
                     print(f"[MetadataExtractor] Erro no fallback de texto: {e}")
             
@@ -345,10 +380,11 @@ class DocumentMetadataExtractor:
                 "type": "text",
                 "text": """Analise estas páginas de um documento financeiro brasileiro e extraia as seguintes informações:
 
-1. **Nome do Fundo/Produto**: O nome completo do fundo de investimento (ex: "MANATÍ HEDGE FUND FII", "TG Renda Imobiliária Feeder Pré")
-2. **Ticker**: O código de negociação na B3, geralmente 4 letras + 11/12/13 (ex: MANA11, XPML11, TGAR11)
-3. **Gestora**: A empresa gestora do fundo (ex: "TG Core Asset Management", "Manatí", "XP Asset")
-4. **Tipo de Documento**: Classifique como um dos tipos:
+1. **Nome do Fundo/Produto Principal**: O nome completo do fundo ou produto principal
+2. **Ticker Principal**: O primeiro código de negociação na B3 mencionado (ex: MANA11, XPML11, BEEF3)
+3. **Todos os Tickers**: TODOS os códigos de ticker B3 mencionados no documento (ativos, FIIs, ações — qualquer código no formato XXXX + número)
+4. **Gestora**: A empresa gestora (ex: "TG Core Asset Management", "XP Asset")
+5. **Tipo de Documento**: Classifique como um dos tipos:
    - material_publicitario (oferta pública, divulgação)
    - relatorio_gerencial (report mensal, informe)
    - prospecto (prospectus)
@@ -356,24 +392,28 @@ class DocumentMetadataExtractor:
    - regulamento
    - fato_relevante (comunicado)
    - apresentacao (institucional, investor presentation)
+   - operacoes_rv (operações estruturadas, recomendações de RV, POP, Collar, BM&F)
    - outro
 
 Procure por:
 - Logos de gestoras (TG Core, XP, BTG, etc.)
-- Nomes de fundos em destaque
-- Códigos de ticker mencionados
-- Cabeçalhos como "MATERIAL PUBLICITÁRIO", "RELATÓRIO GERENCIAL"
-- Rodapés com informações de gestora
+- Nomes de fundos e ações em destaque
+- TODOS os códigos de ticker mencionados (ex: BEEF3, WEGE3, SMAL11, PETR4, etc.)
+- Seções com múltiplos ativos / carteira recomendada
+- Cabeçalhos como "MATERIAL PUBLICITÁRIO", "OPERAÇÕES RV", "RELATÓRIO GERENCIAL"
 
 Responda APENAS em JSON válido com este formato:
 {
-  "fund_name": "nome completo do fundo ou null",
-  "ticker": "XXXX11 ou null",
+  "fund_name": "nome completo do produto principal ou null",
+  "ticker": "ticker principal ou null",
+  "tickers": ["BEEF3", "WEGE3", "RAPT4"],
   "gestora": "nome da gestora ou null",
   "document_type": "tipo do documento",
   "confidence": 0.0 a 1.0,
   "reasoning": "explicação breve de como identificou"
-}"""
+}
+
+IMPORTANTE: O campo "tickers" deve conter TODOS os tickers encontrados, incluindo o ticker principal."""
             }
         ]
         
