@@ -34,7 +34,12 @@ async def dev_login(request: Request, response: Response, db: Session = Depends(
             raise HTTPException(status_code=404)
         token_cookie = request.cookies.get("dev_access_verified")
         if token_cookie != hashlib.sha256(DEV_ACCESS_TOKEN.encode()).hexdigest():
-            raise HTTPException(status_code=403, detail="Acesso não autorizado")
+            # Navegação direta pelo browser → redirecionar para login com form de token aberto
+            accept = request.headers.get("accept", "")
+            if "text/html" in accept:
+                return RedirectResponse(url="/login#dev-access", status_code=302)
+            # Fetch probe do JS → 401 para que o frontend saiba que precisa do token
+            raise HTTPException(status_code=401, detail="Token de acesso dev necessário")
     admin_user = db.query(crud.User).filter(crud.User.role == "admin").first()
     if not admin_user:
         raise HTTPException(status_code=500, detail="Nenhum admin encontrado")

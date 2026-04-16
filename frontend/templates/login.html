@@ -141,13 +141,27 @@
         }
         
         let isDevLocal = false;
+
+        function openDevTokenForm() {
+            document.getElementById('dev-login-container').style.display = 'block';
+            document.getElementById('dev-login-btn').style.display = 'none';
+            document.getElementById('dev-token-form').style.display = 'block';
+            document.getElementById('dev-token-input').focus();
+        }
+
+        // Se veio de um redirect do endpoint /dev-login (sem cookie), abrir form direto
+        if (window.location.hash === '#dev-access') {
+            openDevTokenForm();
+        }
+
         fetch('/api/auth/dev-login', {redirect: 'manual'}).then(r => {
-            if (r.status !== 404) {
-                document.getElementById('dev-login-container').style.display = 'block';
-                if (r.type === 'opaqueredirect' || r.status === 302 || r.status === 200) {
-                    isDevLocal = true;
-                }
+            if (r.status === 404) return; // dev login não disponível
+            document.getElementById('dev-login-container').style.display = 'block';
+            if (r.type === 'opaqueredirect' || r.status === 302 || r.status === 200) {
+                // Modo dev local: login direto sem token
+                isDevLocal = true;
             }
+            // status 401: produção com DEV_ACCESS_TOKEN configurado — botão abre form de token
         }).catch(() => {});
         
         function handleDevLogin() {
