@@ -64,6 +64,7 @@
         </main>
     </div>
 
+    <script nonce="{{ request.state.csp_nonce }}">window.USER_ROLE = "{{ user_role }}";</script>
     <script nonce="{{ request.state.csp_nonce }}" type="module" crossorigin src="/conversas/assets/{{ js_file }}"></script>
 </body>
 </html>

@@ -672,6 +672,9 @@ function App() {
   const [zapiExpanded, setZapiExpanded] = useState(false);
   const [zapiDismissed, setZapiDismissed] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const userRole = typeof window !== 'undefined' ? (window.USER_ROLE || '') : '';
+  const canAdmin = userRole === 'admin' || userRole === 'gestao_rv';
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -878,6 +881,31 @@ function App() {
       setToast({ message: 'Erro ao conectar ao servidor.', type: 'error' });
     } finally {
       setIsSyncingHistory(false);
+    }
+  };
+
+  const deduplicarConversas = async () => {
+    setIsDeduplicating(true);
+    try {
+      const res = await fetch(`${API_BASE}/conversations/admin/deduplicate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.status === 403) {
+        setToast({ message: 'Acesso restrito: apenas administradores podem deduplicar conversas.', type: 'error' });
+      } else if (res.ok) {
+        setToast({ message: data.message, type: data.merges > 0 ? 'success' : 'info' });
+        if (data.merges > 0) {
+          fetchConversations(true);
+        }
+      } else {
+        setToast({ message: data.detail || 'Erro ao deduplicar conversas.', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Erro ao conectar ao servidor.', type: 'error' });
+    } finally {
+      setIsDeduplicating(false);
     }
   };
 
@@ -1375,6 +1403,17 @@ function App() {
             {isSyncingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             {isSyncingHistory ? 'Sincronizando...' : 'Sincronizar Histórico'}
           </button>
+          {canAdmin && (
+            <button
+              onClick={deduplicarConversas}
+              disabled={isDeduplicating}
+              title="Funde conversas duplicadas do mesmo número de telefone em formatos diferentes"
+              className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isDeduplicating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+              {isDeduplicating ? 'Processando...' : 'Deduplicar'}
+            </button>
+          )}
           <button
             onClick={() => setShowNewModal(true)}
             className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors shadow-sm"
