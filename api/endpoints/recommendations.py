@@ -3,6 +3,7 @@ Endpoints para gerenciar a lista de recomendações formais do Comitê SVN.
 A tabela recommendation_entries é a fonte de verdade para 'quais produtos
 estão no comitê ativo hoje'.
 """
+import logging
 from datetime import datetime
 from typing import Optional, List
 
@@ -13,9 +14,11 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from database.database import get_db
-from database.models import Product, RecommendationEntry
+from database.models import Product, RecommendationEntry, Material
 from api.endpoints.auth import get_current_user
 from database.models import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
 page_router = APIRouter(tags=["pages"])
@@ -248,6 +251,185 @@ async def delete_recommendation(
 
     db.commit()
     return None
+
+
+# ── Importação via Material ────────────────────────────────────────────────────
+
+class BulkImportItem(BaseModel):
+    product_id: int
+    rating: Optional[str] = None
+    target_price: Optional[float] = None
+    rationale: Optional[str] = None
+    valid_until: Optional[datetime] = None
+
+
+class BulkImportRequest(BaseModel):
+    items: List[BulkImportItem]
+
+
+@router.get("/materials-for-import")
+async def list_materials_for_import(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Lista materiais disponíveis para importação de recomendações do Comitê.
+    Prioriza materiais do tipo 'comite', depois exibe os demais.
+    Restrito a admin e gestão RV.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    from sqlalchemy import case
+    from database.models import ContentBlock
+
+    materials_with_blocks = db.query(Material.id).join(
+        ContentBlock, ContentBlock.material_id == Material.id
+    ).subquery()
+
+    materials = (
+        db.query(Material)
+        .filter(Material.id.in_(materials_with_blocks))
+        .order_by(
+            case(
+                (Material.material_type == "comite", 0),
+                else_=1
+            ),
+            Material.created_at.desc()
+        )
+        .limit(200)
+        .all()
+    )
+
+    result = []
+    for m in materials:
+        product = m.product
+        result.append({
+            "id": m.id,
+            "name": m.name or m.source_filename or f"Material #{m.id}",
+            "material_type": m.material_type,
+            "product_id": m.product_id,
+            "product_name": product.name if product else None,
+            "product_ticker": product.ticker if product else None,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "ai_summary": (m.ai_summary or "")[:150] if m.ai_summary else None,
+        })
+
+    return result
+
+
+@router.post("/preview-import/{material_id}")
+async def preview_import_from_material(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Analisa um material e retorna um preview das recomendações identificadas.
+    Usa GPT-4o-mini para extrair produtos, ratings, preços-alvo e racionais do conteúdo.
+    Cada item retornado inclui flags `unresolved` e `already_in_committee`.
+    Restrito a admin e gestão RV.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail=f"Material id={material_id} não encontrado")
+
+    try:
+        from services.committee_importer import extract_committee_from_material
+        items = extract_committee_from_material(db, material_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error(f"[preview-import] Erro inesperado: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao analisar material: {str(e)}")
+
+    return {
+        "material_id": material_id,
+        "material_name": material.name or material.source_filename or f"Material #{material_id}",
+        "items": items,
+        "total": len(items),
+        "resolved": sum(1 for i in items if not i["unresolved"]),
+        "unresolved": sum(1 for i in items if i["unresolved"]),
+    }
+
+
+@router.post("/bulk-import", status_code=201)
+async def bulk_import_recommendations(
+    data: BulkImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Cria RecommendationEntry para cada produto na lista confirmada.
+    Desativa entradas anteriores ativas para os mesmos produtos (mesmo comportamento do POST individual).
+    Retorna contagem de criados e lista de erros se houver.
+    Restrito a admin e gestão RV.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    if not data.items:
+        raise HTTPException(status_code=422, detail="Lista de itens está vazia")
+
+    created_entries = []
+    errors = []
+    added_by = current_user.email or current_user.username
+
+    for item in data.items:
+        try:
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            if not product:
+                errors.append({"product_id": item.product_id, "error": "Produto não encontrado"})
+                continue
+
+            if item.rating and item.rating not in VALID_RATINGS:
+                errors.append({"product_id": item.product_id, "error": f"Rating inválido: {item.rating}"})
+                continue
+
+            old_entries = db.query(RecommendationEntry).filter(
+                RecommendationEntry.product_id == item.product_id,
+                RecommendationEntry.is_active == True,
+            ).all()
+            for e in old_entries:
+                e.is_active = False
+
+            entry = RecommendationEntry(
+                product_id=item.product_id,
+                rating=item.rating,
+                target_price=item.target_price,
+                rationale=item.rationale,
+                added_by=added_by,
+                valid_from=datetime.utcnow(),
+                valid_until=item.valid_until,
+                is_active=True,
+            )
+            db.add(entry)
+            db.flush()
+            _sync_product_categories(db, product)
+            created_entries.append(_entry_to_dict(entry))
+            logger.info(f"[bulk-import] Produto '{product.name}' adicionado ao comitê por {added_by}")
+
+        except Exception as e:
+            logger.error(f"[bulk-import] Erro ao processar product_id={item.product_id}: {e}")
+            errors.append({"product_id": item.product_id, "error": str(e)})
+            continue
+
+    db.commit()
+
+    return {
+        "created": len(created_entries),
+        "errors": errors,
+        "entries": created_entries,
+        "message": (
+            f"{len(created_entries)} produto(s) adicionado(s) ao Comitê com sucesso."
+            if created_entries else "Nenhum produto pôde ser adicionado."
+        ),
+    }
 
 
 # ── Página do painel ──────────────────────────────────────────────────────────

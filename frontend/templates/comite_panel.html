@@ -24,12 +24,20 @@
                 <h1 class="text-2xl font-bold text-gray-900">Comitê Ativo</h1>
                 <p class="text-gray-500 mt-1">Produtos formalmente recomendados pelo Comitê SVN — fonte de verdade do agente Stevan</p>
             </div>
-            <button id="btn-open-add" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                </svg>
-                Adicionar ao Comitê
-            </button>
+            <div class="flex items-center gap-2">
+                <button id="btn-open-import" class="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+                    </svg>
+                    Importar do Material
+                </button>
+                <button id="btn-open-add" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Adicionar ao Comitê
+                </button>
+            </div>
         </div>
 
         <!-- Info Banner -->
@@ -168,6 +176,86 @@
         <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
             <button id="btn-cancel-edit" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">Cancelar</button>
             <button id="btn-confirm-edit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">Salvar Alterações</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Importar do Material -->
+<div id="modal-import" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <!-- Header -->
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+            <div>
+                <h2 class="text-lg font-bold text-gray-900">Importar do Material</h2>
+                <p class="text-sm text-gray-500 mt-0.5" id="import-subtitle">Selecione um material para analisar e importar recomendações</p>
+            </div>
+            <button id="btn-close-import" class="text-gray-400 hover:text-gray-600 p-1 rounded">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- Phase 1: Seletor de material -->
+        <div id="import-phase1" class="flex flex-col flex-1 min-h-0">
+            <div class="p-6 flex-shrink-0">
+                <input id="import-search" type="text" placeholder="Buscar por nome, ticker ou tipo de material..." class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
+                <div id="import-materials-loading" class="text-center py-6">
+                    <div class="inline-block w-6 h-6 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                    <p class="mt-2 text-sm text-gray-400">Carregando materiais...</p>
+                </div>
+                <div id="import-materials-empty" class="hidden text-center py-6 text-sm text-gray-400">Nenhum material com conteúdo indexado encontrado.</div>
+            </div>
+            <div id="import-materials-list" class="hidden overflow-y-auto px-6 pb-4 flex-1 space-y-2 min-h-0"></div>
+            <div class="p-6 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+                <span id="import-selected-label" class="text-sm text-gray-500">Nenhum material selecionado</span>
+                <button id="btn-analyze-material" disabled class="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                    Analisar Material
+                </button>
+            </div>
+        </div>
+
+        <!-- Phase 2: Preview das recomendações -->
+        <div id="import-phase2" class="hidden flex flex-col flex-1 min-h-0">
+            <div id="import-analyzing" class="hidden flex-col items-center justify-center py-12 text-center px-6 flex-1">
+                <div class="inline-block w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                <p class="text-gray-600 font-medium">Analisando material...</p>
+                <p class="text-sm text-gray-400 mt-1">O GPT está lendo o conteúdo e identificando recomendações</p>
+            </div>
+            <div id="import-preview-content" class="hidden flex-col flex-1 min-h-0">
+                <div class="px-6 pt-4 pb-2 flex-shrink-0">
+                    <div id="import-summary-banner" class="text-sm text-gray-600 bg-gray-50 rounded-lg px-4 py-2.5 border border-gray-200"></div>
+                </div>
+                <div class="overflow-auto flex-1 px-6 pb-4 min-h-0">
+                    <table class="w-full text-sm">
+                        <thead class="sticky top-0 bg-white border-b border-gray-200">
+                            <tr>
+                                <th class="text-left py-2 pr-3 w-8"><input type="checkbox" id="import-check-all" class="rounded"></th>
+                                <th class="text-left py-2 pr-3 text-xs font-semibold text-gray-500 uppercase">Produto</th>
+                                <th class="text-left py-2 pr-3 text-xs font-semibold text-gray-500 uppercase w-32">Rating</th>
+                                <th class="text-left py-2 pr-3 text-xs font-semibold text-gray-500 uppercase w-28">Preço-Alvo</th>
+                                <th class="text-left py-2 pr-3 text-xs font-semibold text-gray-500 uppercase w-32">Válido até</th>
+                                <th class="text-left py-2 text-xs font-semibold text-gray-500 uppercase">Justificativa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="import-preview-tbody" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="import-no-results" class="hidden flex-col items-center justify-center py-12 text-center px-6 flex-1">
+                <svg class="w-12 h-12 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <p class="text-gray-600 font-medium">Nenhuma recomendação identificada</p>
+                <p class="text-sm text-gray-400 mt-1">O material não contém recomendações formais com rating reconhecível. Tente com um relatório do Comitê.</p>
+            </div>
+            <div class="p-6 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+                <button id="btn-import-back" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">← Voltar</button>
+                <div class="flex items-center gap-3">
+                    <span id="import-confirm-label" class="text-sm text-gray-500"></span>
+                    <button id="btn-confirm-import" disabled class="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-green-700 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        Importar Selecionados
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -461,10 +549,331 @@
     });
 
     // Close modals on backdrop click
-    ['modal-add', 'modal-edit', 'modal-remove'].forEach(function(id) {
+    ['modal-add', 'modal-edit', 'modal-remove', 'modal-import'].forEach(function(id) {
         document.getElementById(id).addEventListener('click', function(e) {
             if (e.target === this) closeModal(id);
         });
+    });
+
+    // ── Import from Material ───────────────────────────────────────────────────
+    var importMaterials = [];
+    var importSelectedId = null;
+    var importSelectedName = null;
+    var importPreviewItems = [];
+
+    function renderMaterialsList(materials) {
+        var list = document.getElementById('import-materials-list');
+        var empty = document.getElementById('import-materials-empty');
+        var loading = document.getElementById('import-materials-loading');
+
+        loading.classList.add('hidden');
+
+        if (!materials || materials.length === 0) {
+            list.classList.add('hidden');
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        list.classList.remove('hidden');
+
+        list.innerHTML = materials.map(function(m) {
+            var isComite = m.material_type === 'comite';
+            var typeBadge = isComite
+                ? '<span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">Comitê</span>'
+                : '<span class="ml-1.5 px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">' + escapeHtml(m.material_type || '') + '</span>';
+            var productInfo = m.product_name
+                ? '<span class="text-xs text-gray-400">' + escapeHtml(m.product_ticker ? m.product_ticker + ' · ' : '') + escapeHtml(m.product_name) + '</span>'
+                : '';
+            var summary = m.ai_summary ? '<p class="text-xs text-gray-400 mt-0.5 line-clamp-1">' + escapeHtml(m.ai_summary) + '</p>' : '';
+
+            return '<div class="import-material-item flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors ' + (importSelectedId === m.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white') + '" data-action="select-material" data-id="' + m.id + '" data-name="' + escapeHtml(m.name || '') + '">' +
+                '<div class="mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 ' + (importSelectedId === m.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300') + '"></div>' +
+                '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center flex-wrap gap-1">' +
+                        '<span class="font-medium text-gray-900 text-sm">' + escapeHtml(m.name || ('Material #' + m.id)) + '</span>' +
+                        typeBadge +
+                    '</div>' +
+                    productInfo +
+                    summary +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    function filterMaterials() {
+        var q = document.getElementById('import-search').value.toLowerCase().trim();
+        if (!q) return renderMaterialsList(importMaterials);
+        var filtered = importMaterials.filter(function(m) {
+            return (
+                (m.name || '').toLowerCase().includes(q) ||
+                (m.product_name || '').toLowerCase().includes(q) ||
+                (m.product_ticker || '').toLowerCase().includes(q) ||
+                (m.material_type || '').toLowerCase().includes(q)
+            );
+        });
+        renderMaterialsList(filtered);
+    }
+
+    function loadMaterialsForImport() {
+        document.getElementById('import-materials-loading').classList.remove('hidden');
+        document.getElementById('import-materials-list').classList.add('hidden');
+        document.getElementById('import-materials-empty').classList.add('hidden');
+
+        fetch('/api/recommendations/materials-for-import', { credentials: 'include' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                importMaterials = Array.isArray(data) ? data : [];
+                renderMaterialsList(importMaterials);
+            })
+            .catch(function(err) {
+                console.error('[import] Erro ao carregar materiais:', err);
+                document.getElementById('import-materials-loading').classList.add('hidden');
+                document.getElementById('import-materials-empty').classList.remove('hidden');
+            });
+    }
+
+    function renderPreviewTable(items) {
+        var tbody = document.getElementById('import-preview-tbody');
+        tbody.innerHTML = items.map(function(item, idx) {
+            var disabled = item.unresolved;
+            var rowClass = disabled ? 'opacity-60' : '';
+            var badge = '';
+            if (item.unresolved) {
+                badge = '<span class="ml-1.5 px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">Não cadastrado</span>';
+            } else if (item.already_in_committee) {
+                badge = '<span class="ml-1.5 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">Já no Comitê</span>';
+            }
+            var productDisplay = item.product_name
+                ? '<span class="font-medium text-gray-900">' + escapeHtml(item.product_name) + '</span>' +
+                  (item.product_ticker ? '<span class="ml-1 text-xs text-gray-400">' + escapeHtml(item.product_ticker) + '</span>' : '')
+                : '<span class="font-medium text-gray-500 italic">' + escapeHtml(item.nome || item.ticker || '—') + '</span>';
+
+            var ratingVal = item.rating || '';
+            var targetVal = item.target_price !== null && item.target_price !== undefined ? item.target_price : '';
+            var validVal = item.valid_until ? item.valid_until.substring(0, 10) : '';
+            var rationaleVal = item.rationale || '';
+
+            return '<tr class="hover:bg-gray-50 ' + rowClass + '" data-idx="' + idx + '">' +
+                '<td class="py-2.5 pr-2 pl-0">' +
+                    '<input type="checkbox" class="import-row-check rounded" data-idx="' + idx + '" ' + (disabled ? 'disabled' : 'checked') + '>' +
+                '</td>' +
+                '<td class="py-2.5 pr-3">' +
+                    '<div class="flex items-center flex-wrap gap-1">' + productDisplay + badge + '</div>' +
+                '</td>' +
+                '<td class="py-2.5 pr-3">' +
+                    '<select class="import-rating w-full px-2 py-1 border border-gray-200 rounded text-xs" data-idx="' + idx + '" ' + (disabled ? 'disabled' : '') + '>' +
+                        '<option value="" ' + (!ratingVal ? 'selected' : '') + '>—</option>' +
+                        ['Compra', 'Manutenção', 'Venda'].map(function(r) {
+                            return '<option value="' + r + '" ' + (ratingVal === r ? 'selected' : '') + '>' + r + '</option>';
+                        }).join('') +
+                    '</select>' +
+                '</td>' +
+                '<td class="py-2.5 pr-3">' +
+                    '<input type="number" step="0.01" value="' + targetVal + '" placeholder="—" class="import-price w-full px-2 py-1 border border-gray-200 rounded text-xs" data-idx="' + idx + '" ' + (disabled ? 'disabled' : '') + '>' +
+                '</td>' +
+                '<td class="py-2.5 pr-3">' +
+                    '<input type="date" value="' + validVal + '" class="import-valid w-full px-2 py-1 border border-gray-200 rounded text-xs" data-idx="' + idx + '" ' + (disabled ? 'disabled' : '') + '>' +
+                '</td>' +
+                '<td class="py-2.5">' +
+                    '<input type="text" value="' + escapeHtml(rationaleVal) + '" placeholder="Justificativa..." class="import-rationale w-full px-2 py-1 border border-gray-200 rounded text-xs" data-idx="' + idx + '" ' + (disabled ? 'disabled' : '') + '>' +
+                '</td>' +
+            '</tr>';
+        }).join('');
+
+        updateImportConfirmState();
+    }
+
+    function updateImportConfirmState() {
+        var checks = document.querySelectorAll('.import-row-check:not(:disabled):checked');
+        var total = document.querySelectorAll('.import-row-check:not(:disabled)').length;
+        var btn = document.getElementById('btn-confirm-import');
+        var label = document.getElementById('import-confirm-label');
+        btn.disabled = checks.length === 0;
+        label.textContent = checks.length > 0
+            ? checks.length + ' de ' + total + ' produto(s) selecionado(s)'
+            : 'Selecione ao menos um produto';
+    }
+
+    function showImportPhase1() {
+        document.getElementById('import-phase1').classList.remove('hidden');
+        document.getElementById('import-phase2').classList.add('hidden');
+        document.getElementById('import-subtitle').textContent = 'Selecione um material para analisar e importar recomendações';
+    }
+
+    function showImportPhase2() {
+        document.getElementById('import-phase1').classList.add('hidden');
+        document.getElementById('import-phase2').classList.remove('hidden');
+    }
+
+    function showAnalyzing(visible) {
+        var analyzing = document.getElementById('import-analyzing');
+        var previewContent = document.getElementById('import-preview-content');
+        var noResults = document.getElementById('import-no-results');
+        if (visible) {
+            analyzing.classList.remove('hidden'); analyzing.style.display = 'flex';
+            previewContent.classList.add('hidden'); previewContent.style.display = '';
+            noResults.classList.add('hidden'); noResults.style.display = '';
+        } else {
+            analyzing.classList.add('hidden'); analyzing.style.display = '';
+        }
+    }
+
+    function analyzeMaterial() {
+        if (!importSelectedId) return;
+
+        var btn = document.getElementById('btn-analyze-material');
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg> Analisando...';
+
+        showImportPhase2();
+        showAnalyzing(true);
+
+        document.getElementById('import-subtitle').textContent = 'Analisando: ' + escapeHtml(importSelectedName || '');
+
+        fetch('/api/recommendations/preview-import/' + importSelectedId, {
+            method: 'POST',
+            credentials: 'include',
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(res) {
+            showAnalyzing(false);
+            if (!res.ok) {
+                if (window.showToast) window.showToast(res.data.detail || 'Erro ao analisar material', 'error');
+                showImportPhase1();
+                return;
+            }
+            importPreviewItems = res.data.items || [];
+            var previewContent = document.getElementById('import-preview-content');
+            var noResults = document.getElementById('import-no-results');
+
+            if (importPreviewItems.length === 0) {
+                noResults.classList.remove('hidden'); noResults.style.display = 'flex';
+                previewContent.classList.add('hidden');
+                document.getElementById('import-subtitle').textContent = 'Nenhuma recomendação encontrada';
+                return;
+            }
+
+            var banner = document.getElementById('import-summary-banner');
+            var resolved = res.data.resolved || 0;
+            var unresolved = res.data.unresolved || 0;
+            var total = res.data.total || 0;
+            banner.innerHTML = '<strong>' + total + ' produto(s) identificado(s)</strong>' +
+                (resolved > 0 ? ' — <span class="text-green-700">' + resolved + ' encontrado(s) na base</span>' : '') +
+                (unresolved > 0 ? ' — <span class="text-red-600">' + unresolved + ' não cadastrado(s)</span>' : '');
+
+            document.getElementById('import-subtitle').textContent = importSelectedName;
+            renderPreviewTable(importPreviewItems);
+            previewContent.classList.remove('hidden'); previewContent.style.display = 'flex';
+            noResults.classList.add('hidden');
+        })
+        .catch(function(err) {
+            console.error('[import] Erro ao analisar material:', err);
+            showAnalyzing(false);
+            showImportPhase1();
+            if (window.showToast) window.showToast('Erro ao conectar ao servidor', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg> Analisar Material';
+        });
+    }
+
+    function confirmImport() {
+        var rows = document.querySelectorAll('.import-row-check:not(:disabled):checked');
+        if (rows.length === 0) return;
+
+        var items = [];
+        rows.forEach(function(check) {
+            var idx = parseInt(check.dataset.idx);
+            var previewItem = importPreviewItems[idx];
+            if (!previewItem || !previewItem.product_id) return;
+
+            var ratingEl = document.querySelector('.import-rating[data-idx="' + idx + '"]');
+            var priceEl = document.querySelector('.import-price[data-idx="' + idx + '"]');
+            var validEl = document.querySelector('.import-valid[data-idx="' + idx + '"]');
+            var rationaleEl = document.querySelector('.import-rationale[data-idx="' + idx + '"]');
+
+            var item = { product_id: previewItem.product_id };
+            if (ratingEl && ratingEl.value) item.rating = ratingEl.value;
+            var price = parseFloat(priceEl ? priceEl.value : '');
+            if (!isNaN(price)) item.target_price = price;
+            if (validEl && validEl.value) item.valid_until = validEl.value + 'T23:59:59';
+            if (rationaleEl && rationaleEl.value.trim()) item.rationale = rationaleEl.value.trim();
+            items.push(item);
+        });
+
+        if (items.length === 0) return;
+
+        var btn = document.getElementById('btn-confirm-import');
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg> Importando...';
+
+        fetch('/api/recommendations/bulk-import', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: items }),
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(res) {
+            if (!res.ok) {
+                if (window.showToast) window.showToast(res.data.detail || 'Erro ao importar', 'error');
+                return;
+            }
+            closeModal('modal-import');
+            loadEntries();
+            if (window.showToast) window.showToast(res.data.message, 'success');
+        })
+        .catch(function(err) {
+            console.error('[import] Erro ao confirmar importação:', err);
+            if (window.showToast) window.showToast('Erro ao conectar ao servidor', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Importar Selecionados';
+        });
+    }
+
+    // Import button event listeners
+    document.getElementById('btn-open-import').addEventListener('click', function() {
+        importSelectedId = null;
+        importSelectedName = null;
+        importPreviewItems = [];
+        document.getElementById('btn-analyze-material').disabled = true;
+        document.getElementById('import-selected-label').textContent = 'Nenhum material selecionado';
+        showImportPhase1();
+        openModal('modal-import');
+        loadMaterialsForImport();
+    });
+
+    document.getElementById('btn-close-import').addEventListener('click', function() { closeModal('modal-import'); });
+    document.getElementById('btn-analyze-material').addEventListener('click', analyzeMaterial);
+    document.getElementById('btn-import-back').addEventListener('click', showImportPhase1);
+    document.getElementById('btn-confirm-import').addEventListener('click', confirmImport);
+
+    document.getElementById('import-search').addEventListener('input', filterMaterials);
+
+    document.getElementById('import-check-all').addEventListener('change', function() {
+        var checked = this.checked;
+        document.querySelectorAll('.import-row-check:not(:disabled)').forEach(function(c) { c.checked = checked; });
+        updateImportConfirmState();
+    });
+
+    document.getElementById('import-materials-list').addEventListener('click', function(e) {
+        var item = e.target.closest('[data-action="select-material"]');
+        if (!item) return;
+        importSelectedId = parseInt(item.dataset.id);
+        importSelectedName = item.dataset.name;
+        document.getElementById('btn-analyze-material').disabled = false;
+        document.getElementById('import-selected-label').textContent = escapeHtml(importSelectedName);
+        filterMaterials();
+    });
+
+    document.getElementById('import-preview-tbody').addEventListener('change', function(e) {
+        if (e.target.classList.contains('import-row-check')) {
+            updateImportConfirmState();
+        }
     });
 
     // Init
