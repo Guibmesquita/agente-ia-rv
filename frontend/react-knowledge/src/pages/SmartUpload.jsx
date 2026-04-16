@@ -1739,6 +1739,16 @@ export function SmartUpload() {
                 )}
               </div>
 
+              {mat.duplicate && (
+                <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+                  <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Este arquivo já existia na base{mat.existing_material_name ? ` como "${mat.existing_material_name}"` : ''}.
+                    Os produtos abaixo foram identificados a partir do conteúdo — você pode revisá-los e atualizar as informações nos cards existentes.
+                  </span>
+                </div>
+              )}
+
               {noProductsAutoDetected ? (
                 <div className="p-6 space-y-4">
                   <div className="flex items-start gap-3">

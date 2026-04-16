@@ -4561,41 +4561,35 @@ async def pre_analyze_upload(
             Material.file_hash.isnot(None),
             Material.processing_status == "success",
         ).first()
-        if existing_dup:
-            results.append({
-                "filename": file.filename,
-                "error": f"Arquivo idêntico já processado como '{existing_dup.name}'. Upload duplicado bloqueado.",
-                "material_id": existing_dup.id,
-                "identified_products": [],
-                "duplicate": True,
-            })
-            continue
+        is_duplicate = existing_dup is not None
+        if is_duplicate:
+            material = existing_dup
+        else:
+            ps_value = ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, "PENDING") else "pending"
+            material = Material(
+                product_id=None,
+                material_type=material_type,
+                name=name,
+                valid_from=parsed_valid_from,
+                valid_until=parsed_valid_until,
+                tags=_json.dumps(parsed_tags),
+                publish_status="rascunho",
+                processing_status=ps_value,
+                file_hash=file_hash,
+            )
+            db.add(material)
+            db.commit()
+            db.refresh(material)
 
-        ps_value = ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, "PENDING") else "pending"
-        material = Material(
-            product_id=None,
-            material_type=material_type,
-            name=name,
-            valid_from=parsed_valid_from,
-            valid_until=parsed_valid_until,
-            tags=_json.dumps(parsed_tags),
-            publish_status="rascunho",
-            processing_status=ps_value,
-            file_hash=file_hash,
-        )
-        db.add(material)
-        db.commit()
-        db.refresh(material)
+            unique_filename = f"{uuid.uuid4()}.pdf"
+            file_path = os.path.join(UPLOAD_DIR_QUEUE, unique_filename)
+            with open(file_path, "wb") as fh:
+                fh.write(content)
 
-        unique_filename = f"{uuid.uuid4()}.pdf"
-        file_path = os.path.join(UPLOAD_DIR_QUEUE, unique_filename)
-        with open(file_path, "wb") as fh:
-            fh.write(content)
+            _save_file_to_db(db, material.id, file.filename or "documento.pdf", content)
 
-        _save_file_to_db(db, material.id, file.filename or "documento.pdf", content)
-
-        material.source_file_path = file_path
-        db.commit()
+            material.source_file_path = file_path
+            db.commit()
 
         text = _extract_pdf_text_for_analysis(content, max_pages=5)
         ai_products = await _identify_products_with_ai(text, file.filename)
@@ -4682,6 +4676,8 @@ async def pre_analyze_upload(
             "no_products_detected": no_products_detected,
             "material_nature_guess": material_nature_guess,
             "error": None,
+            "duplicate": is_duplicate,
+            "existing_material_name": material.name if is_duplicate else None,
         })
 
     return {
