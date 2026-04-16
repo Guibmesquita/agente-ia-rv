@@ -1,0 +1,362 @@
+You are working on an existing, running application for a Variable Income (RV) 
+financial advisory AI agent called Stevan. The system has a sophisticated RAG 
+V3.2 pipeline fully documented internally. Your job is to make ONLY the changes 
+described below. 
+
+CRITICAL RULES:
+- Read every referenced file before touching it
+- Do NOT refactor, rename, or restructure anything not directly mentioned
+- Do NOT remove any existing database columns — only ADD new ones
+- Do NOT change any working API routes — only extend them
+- Do NOT modify services/semantic_search.py, services/openai_agent.py, 
+  services/vector_store.py, or services/agent_tools.py unless explicitly 
+  instructed below
+- Run all database changes as additive Alembic migrations
+- All new UI text must be in Portuguese (pt-BR)
+- Before implementing each change, read the relevant existing file first
+
+---
+
+## CHANGE 1 — UPGRADE THE PRE-ANALYSIS (pre-analyze-upload)
+
+File: the route handler for POST /api/products/pre-analyze-upload
+
+### Current behavior (do not break):
+- Extracts text via PyMuPDF get_text("dict") with a 20k char stratified sampler
+- Sends text to GPT-4o to identify products (ticker, name, product_type, gestora, cnpj)
+- Does cascade match against products table (5 levels: exact ticker, ILIKE, prefix, name, aliases)
+- Creates new products if needed
+- Saves result to Material.ai_product_analysis
+- Returns product list with match confidence
+
+### What to ADD (do not remove existing logic):
+
+**1a. Deep key_info extraction per identified product**
+
+After the existing product identification step, make a second GPT-4o call with 
+this purpose: for each product already identified, extract structured information.
+
+Use this prompt structure for the second call:
+- System: "You are a financial document analyst specializing in Brazilian variable 
+  income products. Extract detailed structured information."
+- User: Provide the same extracted text + the list of identified products, and ask:
+  "For each of the following products identified in this document: {product_list}
+   Extract all available information you can find. For each product return a JSON 
+   object with these fields (use null if not found):
+   {
+     ticker: string,
+     investment_thesis: string (the main investment rationale, up to 3 sentences),
+     expected_return: string (ex: 'IPCA + 6% a.a.', '12% a.a.', 'DY ~11%'),
+     investment_term: string (ex: '24 meses', 'longo prazo', 'sem vencimento'),
+     main_risk: string (primary risk factor),
+     issuer_or_manager: string,
+     rating: string or null,
+     minimum_investment: string or null,
+     liquidity: string or null,
+     additional_highlights: array of strings (up to 3 key bullet points)
+   }
+   If a field truly does not appear in the document, return null for that field.
+   Return ONLY a valid JSON array."
+
+Store this extracted info in the existing Product.key_info JSON field when creating 
+or updating a product. When updating an existing product's key_info, MERGE the new 
+fields — do not overwrite existing key_info entirely; only fill null/missing fields 
+with newly extracted values.
+
+**1b. Vision pass for low-confidence pages**
+
+After the text extraction, check if the extracted text for any page segment is 
+shorter than 200 characters (indicating a visual-heavy or table-heavy page that 
+PyMuPDF read poorly).
+
+For each such low-confidence segment (max 3 pages to control cost):
+- Render that page as an image via PyMuPDF at 200 DPI (reuse the pattern already 
+  in services/document_processor.py)
+- Send it to GPT-4o Vision with prompt:
+  "This is a page from a Brazilian financial document. List ALL financial products 
+   mentioned: tickers, fund names, structured product names. Also extract any key 
+   data visible in tables or charts (returns, ratings, terms, prices). 
+   Return JSON: {products_found: [{ticker, name, type}], key_data_found: string}"
+- Merge any newly found products into the identification result before the 
+  cascade match step
+
+**1c. Auto-detection of no-product materials**
+
+After both extraction steps, if zero products are identified with confidence > 0.4, 
+add a field to the response: "no_products_detected": true, along with a 
+"material_nature_guess": one of ["educacional", "macro", "regulatorio", "outro"].
+
+The frontend will use this flag (see Change 2c).
+
+---
+
+## CHANGE 2 — EXPANDED CONFIRMATION SCREEN (SmartUpload frontend)
+
+File: frontend/react-knowledge/src/pages/SmartUpload.jsx
+
+Read this file completely before making any changes. Preserve all existing 
+upload logic, progress bar, and file handling.
+
+### Current behavior (do not break):
+- User drags PDF(s) to SmartUpload
+- File is sent to pre-analyze-upload
+- Modal shows identified products as chips (green = selected, red = excluded)
+- Each chip shows: name, ticker, type, match confidence badge
+- Text field to add additional products
+- Confirm button sends to link-and-queue
+- Progress bar shows DocumentProcessor progress
+
+### What to CHANGE in the confirmation modal:
+
+**2a. Expand chips into product cards**
+
+Replace the simple chip for each identified product with an expandable card. 
+Each card shows by default (collapsed state):
+- Product name + ticker (bold)
+- Product type badge (styled by type: FII=blue, Ação=green, Estruturada=orange, 
+  Fundo=purple, ETF=cyan, Debênture=yellow, Outro=gray)
+- Match confidence badge (existing: exato/ilike/prefixo/nome/alias)
+- Toggle to include/exclude (existing green/red behavior)
+
+When the user clicks to expand a card, it shows the extracted key_info fields:
+- Tese de investimento
+- Retorno esperado
+- Prazo
+- Risco principal
+- Emissor / Gestora
+- Rating (if present)
+- Aplicação mínima (if present)
+- Liquidez (if present)
+- Destaques (bullet list)
+
+Each displayed field should be editable inline (simple text input on click). 
+Changes are stored locally and submitted with the confirmation payload.
+
+The confirmation payload sent to link-and-queue must include the (possibly edited) 
+key_info per product alongside the existing product_id list.
+
+**2b. Missing product re-analysis**
+
+The existing text field "adicionar produto não detectado" should be upgraded:
+
+When the user types a product description and clicks "Buscar produto faltante" 
+(rename button if it currently has a different label):
+
+1. Show a loading spinner inside the button
+2. Call a new endpoint: POST /api/products/find-missing-product
+   Payload: { material_id, description: "user's text", existing_products: [tickers] }
+3. This endpoint should:
+   - Load the MaterialFile.file_data for this material
+   - Render ALL pages as images at 150 DPI using PyMuPDF
+   - Call GPT-4o Vision with prompt:
+     "The user says this product was not found in the document: '{description}'
+      Previous identified products: {existing_products}
+      Search carefully through every page — tables, footnotes, headers, charts, 
+      appendices. Find any information about '{description}' or products matching 
+      this description. If found, extract: ticker, name, product_type, gestora, 
+      investment_thesis, expected_return, investment_term, main_risk, and any 
+      other available fields. If not found at all, say so explicitly.
+      Return JSON: {found: bool, product: {...} or null, found_on_pages: [int]}"
+   - If found: do cascade match, create/match product, return card data
+   - If not found: return {found: false, message: "Produto não encontrado no documento"}
+4. If found: add new product card to the confirmation list
+5. If not found: show inline message "Produto não encontrado no material. 
+   Deseja adicioná-lo manualmente?" with a button to add a minimal manual entry
+
+This step can be repeated multiple times (user can search for multiple missing products).
+
+**2c. No-products material handling**
+
+If the pre-analyze-upload response contains "no_products_detected": true:
+
+Do NOT show the product chips/cards modal. Instead, show a different confirmation 
+panel with:
+- Icon (document/book icon)
+- Message: "Nenhum produto específico foi identificado neste material."
+- Subtitle: "Este parece ser um material de [material_nature_guess]. 
+  O conteúdo será indexado na base de conhecimento do agente para consultas gerais."
+- Two buttons:
+  - "Confirmar como material conceitual" → proceeds without product linking
+  - "Havia produtos — deixa eu indicar" → opens the normal product search flow 
+    (user can manually search and add products from the products table)
+
+When confirmed as conceptual material:
+- Call link-and-queue with empty products list and a new flag: 
+  is_conceptual_material: true
+- The backend must handle this case: skip MaterialProductLink creation, 
+  proceed directly to DocumentProcessor queue
+- In document_embeddings, these blocks will have product_ticker = NULL and 
+  gestora = NULL — this is already supported by the schema, just ensure it's 
+  allowed in the insertion logic
+
+---
+
+## CHANGE 3 — ACTIVE COMMITTEE: PRODUCT-LEVEL ISOLATION
+
+### 3a. Backend — ensure product-level committee filtering exists
+
+File: services/semantic_search.py — READ THIS FILE FIRST, DO NOT MODIFY unless 
+the check below reveals the gap.
+
+Check: in the search results returned by EnhancedSearch, when building the 
+comite_tag for each chunk, does the logic currently check BOTH:
+  (a) Material.is_committee_active == True
+  AND
+  (b) MaterialProductLink.excluded_from_committee == False for the specific 
+      product_ticker of that chunk?
+
+If it only checks (a) and ignores (b), add the (b) check. This is the only 
+permitted modification to semantic_search.py.
+
+The result: a chunk about HGLG11 inside a material where HGLG11 has 
+excluded_from_committee=True must receive tag [NÃO-COMITÊ], even if the 
+material itself has is_committee_active=True.
+
+### 3b. Frontend — rebuild the Active Committee tab UI
+
+File: find the frontend file for the "Comitê Ativo" tab/section. 
+Read it completely before modifying.
+
+Replace the current committee selection UI with the following flow:
+
+**Step 1 — Material selection**
+Show a list/grid of available materials (those with publish_status='publicado' 
+and is_indexed=True). Each material card shows:
+- Material name
+- Material type badge
+- Number of linked products (count from MaterialProductLink)
+- Date
+- Currently in committee indicator (if is_committee_active=True)
+
+User clicks a material to add it to the committee.
+
+When a material is selected:
+- Set Material.is_committee_active = True via API call
+- Load and display all products linked to this material 
+  (via MaterialProductLink, excluding any already excluded)
+
+**Step 2 — Product list within selected material**
+Below or beside the material selection, show a "Produtos no Comitê Ativo" panel.
+
+For each product in the committee (across all selected materials):
+- Product name + ticker
+- Source material name (so user knows which material it came from)
+- A remove button (X) — clicking sets MaterialProductLink.excluded_from_committee 
+  = True for that specific material+product pair via API
+
+If the same product appears in multiple selected materials:
+- Show it once in the list
+- Indicate "presente em N materiais"
+- Removing it asks: "Remover de todos os materiais do comitê ou apenas de [material name]?"
+
+**Step 3 — Manual product addition**
+Below the product list, add:
+- A search input: "Adicionar produto ao comitê manualmente..."
+- Searches products table by ticker or name (call existing products search 
+  endpoint or create GET /api/products/search?q=... if not exists)
+- On selecting a product from search results, prompt user: 
+  "Selecione o material de referência para este produto:" 
+  (shows dropdown of currently active committee materials)
+- Creates a MaterialProductLink with excluded_from_committee=False for 
+  the selected material+product pair
+- Product appears in the committee list
+
+**Step 4 — Committee summary**
+Always visible at the top of the committee section:
+- "Comitê Ativo: X produtos | Y materiais"
+- If committee is empty: "Nenhum material no comitê. O agente usará toda a base 
+  de conhecimento."
+- If committee has items: "Ativo — o agente recomendará apenas os produtos listados."
+
+### 3c. New API endpoints needed for committee management
+
+Create these endpoints (check if they already exist first):
+
+GET /api/committee/status
+- Returns: { is_active: bool, materials: [{id, name, type, product_count}], 
+  products: [{id, name, ticker, source_material_name, excluded}] }
+
+POST /api/committee/add-material
+- Body: { material_id }
+- Sets Material.is_committee_active = True
+- Returns updated committee status
+
+POST /api/committee/remove-material  
+- Body: { material_id }
+- Sets Material.is_committee_active = False
+- Returns updated committee status
+
+POST /api/committee/exclude-product
+- Body: { material_id, product_id }
+- Sets MaterialProductLink.excluded_from_committee = True
+- Returns updated committee status
+
+POST /api/committee/include-product
+- Body: { material_id, product_id }
+- Sets MaterialProductLink.excluded_from_committee = False
+- Returns updated committee status
+
+POST /api/committee/add-product-manually
+- Body: { product_id, reference_material_id }
+- Creates MaterialProductLink if not exists, sets excluded_from_committee = False
+- Returns updated committee status
+
+---
+
+## CHANGE 4 — link-and-queue: accept edited key_info
+
+File: route handler for POST /api/products/{material_id}/link-and-queue
+
+Extend the endpoint to accept an optional products_with_info array in the 
+request body:
+[{ product_id, key_info: { ...edited fields } }]
+
+For each product in this array where key_info is provided:
+- Load the Product record
+- MERGE the submitted key_info with the existing Product.key_info 
+  (submitted values overwrite existing values for the same keys only)
+- Save the updated Product
+
+Do not change any existing logic in this endpoint beyond adding this merge step.
+
+---
+
+## SUMMARY OF NEW ENDPOINTS TO CREATE
+
+Check if each exists before creating:
+1. POST /api/products/find-missing-product (Change 2b)
+2. GET /api/products/search?q= (Change 3b — if not exists)
+3. GET /api/committee/status (Change 3c)
+4. POST /api/committee/add-material (Change 3c)
+5. POST /api/committee/remove-material (Change 3c)
+6. POST /api/committee/exclude-product (Change 3c)
+7. POST /api/committee/include-product (Change 3c)
+8. POST /api/committee/add-product-manually (Change 3c)
+
+---
+
+## SUMMARY OF DATABASE CHANGES (additive only)
+
+No new tables needed. Verify these columns exist, add only if missing:
+- Product.key_info: Text JSON — already exists per documentation
+- MaterialProductLink.excluded_from_committee: Boolean default False — 
+  already exists per documentation
+- Material.is_committee_active: Boolean — already exists per documentation
+
+The only possible new column: none required. All needed fields are documented 
+as existing. If the migration check reveals any of the above are missing, 
+create an additive Alembic migration to add them.
+
+---
+
+## WHAT NOT TO TOUCH
+
+- services/semantic_search.py — only the comite_tag check in Change 3a if gap confirmed
+- services/openai_agent.py — no changes
+- services/vector_store.py — no changes  
+- services/document_processor.py — no changes (read it for patterns, don't modify)
+- services/fii_lookup.py — no changes
+- services/visual_extractor.py — no changes
+- Any WhatsApp webhook logic — no changes
+- Authentication and user management — no changes
+- Any existing working endpoints — only extend, never replace
