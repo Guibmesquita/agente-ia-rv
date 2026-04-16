@@ -127,7 +127,11 @@ def get_or_create_conversation(
         conv = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
     
     if not conv and real_phone:
-        conv = db.query(Conversation).filter(Conversation.phone == real_phone).first()
+        from services.conversation_flow import normalize_phone_variants, canonicalize_phone
+        phone_variants = normalize_phone_variants(real_phone)
+        conv = db.query(Conversation).filter(Conversation.phone.in_(phone_variants)).first()
+        if not conv:
+            real_phone = canonicalize_phone(real_phone)
     
     if not conv and phone:
         clean_val = phone.replace("@lid", "")

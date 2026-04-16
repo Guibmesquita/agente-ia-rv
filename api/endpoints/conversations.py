@@ -18,7 +18,8 @@ from database.database import get_db
 from database.models import (
     Conversation, WhatsAppMessage, Assessor, User,
     ConversationStatus, ConversationState, SenderType, MessageDirection,
-    TicketStatusV2, EscalationLevel, TicketHistory, TicketHistoryActionType
+    TicketStatusV2, EscalationLevel, TicketHistory, TicketHistoryActionType,
+    UserRole
 )
 from api.endpoints.auth import get_current_user, get_current_user_sse
 from services.sse_manager import get_sse_manager
@@ -928,7 +929,6 @@ async def bulk_sync_conversations(
     Requer autenticação de admin.
     """
     from services.whatsapp_client import zapi_client
-    from database.models import UserRole
 
     if current_user.role not in [UserRole.ADMIN.value]:
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
@@ -1739,4 +1739,103 @@ async def update_ticket_status(
         "success": True,
         "message": f"Status atualizado para {request.status}",
         "ticket_status": conv.ticket_status
+    }
+
+
+@router.post("/admin/deduplicate")
+async def deduplicate_conversations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Detecta e funde conversas duplicadas originadas pelo mesmo número de telefone
+    em formatos diferentes (ex: com/sem código do país, com/sem dígito 9 após DDD).
+    Preserva a conversa mais antiga e migra todas as mensagens para ela.
+    Restrito a administradores e gestão RV.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar esta ação")
+
+    from services.conversation_flow import normalize_phone_variants
+
+    all_convs = db.query(Conversation).filter(
+        Conversation.phone.isnot(None),
+        Conversation.phone != ""
+    ).order_by(Conversation.created_at.asc()).all()
+
+    merged_groups = []
+    visited_ids: set = set()
+
+    for conv in all_convs:
+        if conv.id in visited_ids:
+            continue
+
+        variants = set(normalize_phone_variants(conv.phone))
+        if not variants:
+            visited_ids.add(conv.id)
+            continue
+
+        duplicates = [
+            c for c in all_convs
+            if c.id != conv.id
+            and c.id not in visited_ids
+            and c.phone
+            and bool(set(normalize_phone_variants(c.phone)) & variants)
+        ]
+
+        if duplicates:
+            canonical = conv
+            for dup in duplicates:
+                visited_ids.add(dup.id)
+
+                msgs_moved = db.query(WhatsAppMessage).filter(
+                    WhatsAppMessage.conversation_id == dup.id
+                ).count()
+
+                db.query(WhatsAppMessage).filter(
+                    WhatsAppMessage.conversation_id == dup.id
+                ).update({"conversation_id": canonical.id}, synchronize_session=False)
+
+                db.query(TicketHistory).filter(
+                    TicketHistory.conversation_id == dup.id
+                ).update({"conversation_id": canonical.id}, synchronize_session=False)
+
+                from database.models import ConversationTicket
+                db.query(ConversationTicket).filter(
+                    ConversationTicket.conversation_id == dup.id
+                ).update({"conversation_id": canonical.id}, synchronize_session=False)
+
+                if dup.assessor_id and not canonical.assessor_id:
+                    canonical.assessor_id = dup.assessor_id
+                    canonical.contact_name = dup.contact_name
+                if dup.lid and not canonical.lid:
+                    canonical.lid = dup.lid
+                if dup.chat_lid and not canonical.chat_lid:
+                    canonical.chat_lid = dup.chat_lid
+                if dup.last_message_at and (
+                    not canonical.last_message_at
+                    or dup.last_message_at > canonical.last_message_at
+                ):
+                    canonical.last_message_at = dup.last_message_at
+                    canonical.last_message_preview = dup.last_message_preview
+
+                merged_groups.append({
+                    "kept_id": canonical.id,
+                    "kept_phone": canonical.phone,
+                    "removed_id": dup.id,
+                    "removed_phone": dup.phone,
+                    "messages_migrated": msgs_moved
+                })
+
+                db.delete(dup)
+
+        visited_ids.add(conv.id)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "merges": len(merged_groups),
+        "detail": merged_groups,
+        "message": f"{len(merged_groups)} conversa(s) duplicada(s) fundida(s) com sucesso." if merged_groups else "Nenhuma conversa duplicada encontrada."
     }

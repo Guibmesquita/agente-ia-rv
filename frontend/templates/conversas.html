@@ -512,6 +512,10 @@
             outline: none;
             border-color: var(--primary-color);
         }
+
+        .spin {
+            animation: spin 1s linear infinite;
+        }
     </style>
 </head>
 <body>
@@ -525,12 +529,22 @@
                         <h1 class="page-title">Conversas</h1>
                         <p class="page-subtitle">Visualize e gerencie todas as conversas do agente</p>
                     </div>
-                    <button class="btn btn-primary" id="btnNewConversation">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                        </svg>
-                        Nova Conversa
-                    </button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        {% if user_role in ['admin', 'gestao_rv'] %}
+                        <button class="btn btn-secondary" id="btnDeduplicar" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                            Deduplicar Conversas
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-primary" id="btnNewConversation">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Nova Conversa
+                        </button>
+                    </div>
                 </div>
 
                 <div class="conversations-layout">
@@ -618,7 +632,52 @@
                 document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
             }
             loadConversations();
+
+            const btnDeduplicar = document.getElementById('btnDeduplicar');
+            if (btnDeduplicar) {
+                btnDeduplicar.addEventListener('click', deduplicarConversas);
+            }
         });
+
+        async function deduplicarConversas() {
+            const btn = document.getElementById('btnDeduplicar');
+            if (!btn) return;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<svg width="16" height="16" class="spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Processando...';
+            try {
+                const resp = await fetch('/api/conversations/admin/deduplicate', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    if (typeof showToast === 'function') {
+                        showToast(data.message, data.merges > 0 ? 'success' : 'info');
+                    } else {
+                        alert(data.message);
+                    }
+                    if (data.merges > 0) {
+                        loadConversations();
+                    }
+                } else {
+                    const msg = data.detail || 'Erro ao deduplicar conversas.';
+                    if (typeof showToast === 'function') {
+                        showToast(msg, 'error');
+                    } else {
+                        alert(msg);
+                    }
+                }
+            } catch (err) {
+                console.error('[Deduplicar]', err);
+                if (typeof showToast === 'function') {
+                    showToast('Erro de conexão ao tentar deduplicar conversas.', 'error');
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');

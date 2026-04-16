@@ -157,6 +157,36 @@ def normalize_phone_variants(phone: str) -> list:
     return list(variants)
 
 
+def canonicalize_phone(phone: str) -> str:
+    """
+    Converte um número de telefone para o formato canônico brasileiro.
+    Formato canônico: 55 + DDD(2 dígitos) + 9 + número(8 dígitos) = 13 dígitos.
+    Quando o número não tem o dígito 9 após o DDD, ele é adicionado.
+    Se não for possível determinar o formato completo, retorna apenas os dígitos limpos.
+    """
+    if not phone:
+        return phone or ""
+
+    clean = re.sub(r'\D', '', phone)
+    if len(clean) < 8:
+        return clean
+
+    has_country_code = clean.startswith('55') and len(clean) >= 12
+    if has_country_code:
+        ddd = clean[2:4]
+        rest = clean[4:]
+    elif len(clean) >= 10:
+        ddd = clean[0:2]
+        rest = clean[2:]
+    else:
+        return '55' + clean if not clean.startswith('55') else clean
+
+    if len(rest) == 8 and not rest.startswith('9'):
+        rest = '9' + rest
+
+    return '55' + ddd + rest
+
+
 def identify_contact(
     db: Session,
     phone: str,
