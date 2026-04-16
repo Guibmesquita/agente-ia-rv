@@ -882,6 +882,7 @@ class Material(Base):
     pdf_whatsapp_dismissed = Column(Boolean, default=False)  # Material dispensado da pendência "Sem PDF para WhatsApp"
     is_committee_active = Column(Boolean, default=False)  # Material marcado como Comitê Ativo — fonte primária do agente
     available_for_whatsapp = Column(Boolean, default=True)  # Disponível para envio via WhatsApp pelo agente
+    ai_product_analysis = Column(Text, nullable=True)  # Cache JSON de produtos detectados pela IA no pre-analyze-upload
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

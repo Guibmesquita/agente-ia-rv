@@ -4124,6 +4124,10 @@ async def pre_analyze_upload(
         ai_products = await _identify_products_with_ai(text, file.filename)
         identified = _match_products_to_db(db, ai_products)
 
+        import json as _json2
+        material.ai_product_analysis = _json2.dumps(identified, ensure_ascii=False)
+        db.commit()
+
         results.append({
             "filename": file.filename,
             "material_id": material.id,
@@ -4135,6 +4139,67 @@ async def pre_analyze_upload(
         "success": True,
         "materials": results,
     }
+
+
+@router.post("/analyze-pdf-products")
+async def analyze_pdf_products(
+    request: Request,
+    material_id: int = Form(None),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Alias/contrato principal para análise de produtos em PDF.
+    - Se `material_id` fornecido: retorna análise cacheada (sem re-processamento).
+    - Se `file` fornecido: extrai texto e analisa via IA (sem persistir material).
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    import json as _json
+
+    if material_id:
+        mat = db.query(Material).filter(Material.id == material_id).first()
+        if not mat:
+            raise HTTPException(status_code=404, detail="Material não encontrado")
+        cached = mat.ai_product_analysis
+        if cached:
+            try:
+                identified = _json.loads(cached)
+                return {"success": True, "material_id": material_id, "identified_products": identified, "cached": True}
+            except Exception:
+                pass
+        if mat.source_file_path and os.path.exists(mat.source_file_path):
+            with open(mat.source_file_path, "rb") as fh:
+                content = fh.read()
+        else:
+            from sqlalchemy import text as _sa_text
+            db_file = db.execute(
+                _sa_text("SELECT file_data FROM material_files WHERE material_id = :mid"),
+                {"mid": material_id}
+            ).fetchone()
+            if not db_file:
+                raise HTTPException(status_code=400, detail="Arquivo PDF não encontrado para este material")
+            content = bytes(db_file[0])
+
+        text = _extract_pdf_text_for_analysis(content, max_pages=5)
+        ai_products = await _identify_products_with_ai(text, mat.name or "")
+        identified = _match_products_to_db(db, ai_products)
+        mat.ai_product_analysis = _json.dumps(identified, ensure_ascii=False)
+        db.commit()
+        return {"success": True, "material_id": material_id, "identified_products": identified, "cached": False}
+
+    if file:
+        if not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Apenas PDFs são suportados")
+        content = await file.read()
+        text = _extract_pdf_text_for_analysis(content, max_pages=5)
+        ai_products = await _identify_products_with_ai(text, file.filename)
+        identified = _match_products_to_db(db, ai_products)
+        return {"success": True, "identified_products": identified, "cached": False}
+
+    raise HTTPException(status_code=400, detail="Forneça material_id ou file")
 
 
 @router.post("/{material_id}/link-and-queue")

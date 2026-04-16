@@ -395,6 +395,7 @@ def _apply_incremental_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_recommendation_entries_product ON recommendation_entries(product_id)",
         "CREATE INDEX IF NOT EXISTS ix_recommendation_entries_active ON recommendation_entries(is_active)",
+        "ALTER TABLE materials ADD COLUMN IF NOT EXISTS ai_product_analysis TEXT",
     ]
     db = SessionLocal()
     try:
@@ -405,6 +406,35 @@ def _apply_incremental_migrations():
     except Exception as e:
         db.rollback()
         print(f"[INIT] Aviso: erro em migração incremental: {e}")
+    finally:
+        db.close()
+
+
+def _cleanup_orphan_pre_analysis_materials():
+    """
+    Remove materiais 'pending' criados via pre-analyze-upload que foram abandonados
+    pelo usuário (não confirmados) há mais de 24 horas e sem nenhum MaterialProductLink.
+    """
+    from database.database import SessionLocal
+    from sqlalchemy import text as sql_text
+    db = SessionLocal()
+    try:
+        result = db.execute(sql_text("""
+            DELETE FROM materials
+            WHERE processing_status = 'pending'
+              AND product_id IS NULL
+              AND created_at < NOW() - INTERVAL '24 hours'
+              AND id NOT IN (
+                  SELECT DISTINCT material_id FROM material_product_links
+              )
+        """))
+        deleted = result.rowcount
+        if deleted > 0:
+            db.commit()
+            print(f"[INIT] Cleanup: {deleted} material(is) de pré-análise abandonados removidos")
+    except Exception as e:
+        db.rollback()
+        print(f"[INIT] Aviso: erro no cleanup de materiais orphans: {e}")
     finally:
         db.close()
 
@@ -430,6 +460,7 @@ def _sync_init_database():
     # Seguro para rodar múltiplas vezes: ADD COLUMN IF NOT EXISTS é idempotente no PostgreSQL.
     if not is_sqlite:
         _apply_incremental_migrations()
+        _cleanup_orphan_pre_analysis_materials()
 
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
