@@ -108,7 +108,12 @@ export function SmartUpload() {
 
   const [queueItems, setQueueItems] = useState([]);
   const [showQueue, setShowQueue] = useState(false);
+  const [recentlyQueued, setRecentlyQueued] = useState(false);
   const eventSourceRef = useRef(null);
+
+  const [analysisResults, setAnalysisResults] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const [missingPdfMaterials, setMissingPdfMaterials] = useState([]);
   const [failedMaterials, setFailedMaterials] = useState([]);
@@ -173,8 +178,11 @@ export function SmartUpload() {
       });
       if (response.ok) {
         const data = await response.json();
-        setQueueItems([...(data.active || []), ...(data.history || []).slice(0, 10)]);
+        const allItems = [...(data.active || []), ...(data.history || []).slice(0, 10)];
+        setQueueItems(allItems);
         if (data.active && data.active.length > 0) {
+          setShowQueue(true);
+        } else if (allItems.length > 0 && recentlyQueued) {
           setShowQueue(true);
         }
       }
@@ -452,6 +460,166 @@ export function SmartUpload() {
     setLogs(prev => [...prev, { time, message, type }]);
   };
 
+  const handlePreAnalyze = async () => {
+    if (!files.length) {
+      addToast('Selecione pelo menos um arquivo para enviar', 'warning');
+      return;
+    }
+    setAnalyzing(true);
+    try {
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append('files', file);
+      }
+      formData.append('material_type', materialType || 'one_page');
+      formData.append('tags', JSON.stringify(tags));
+      if (validFrom) formData.append('valid_from', validFrom);
+      if (validUntil) formData.append('valid_until', validUntil);
+
+      const response = await fetch('/api/products/pre-analyze-upload', {
+        method: 'POST',
+        body: formData,
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `Erro ${response.status}`);
+      }
+
+      const data = await response.json();
+      const materialsWithProducts = (data.materials || []).map(m => ({
+        ...m,
+        identified_products: (m.identified_products || []).map(p => ({
+          ...p,
+          selected: p.selected !== false,
+          _manualInput: false,
+        })),
+      }));
+
+      setAnalysisResults(materialsWithProducts);
+      setStep(3);
+    } catch (err) {
+      addToast(`Erro ao analisar arquivos: ${err.message}`, 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const toggleProductSelection = (materialIdx, productIdx) => {
+    setAnalysisResults(prev => {
+      const next = prev.map((m, mi) => {
+        if (mi !== materialIdx) return m;
+        return {
+          ...m,
+          identified_products: m.identified_products.map((p, pi) =>
+            pi === productIdx ? { ...p, selected: !p.selected } : p
+          ),
+        };
+      });
+      return next;
+    });
+  };
+
+  const addManualProduct = (materialIdx, text) => {
+    if (!text.trim()) return;
+    const tickerMatch = text.trim().toUpperCase().match(/\b([A-Z]{4}[0-9]{1,2})\b/);
+    const ticker = tickerMatch ? tickerMatch[1] : null;
+    const name = text.trim();
+    setAnalysisResults(prev => {
+      const next = [...prev];
+      next[materialIdx] = {
+        ...next[materialIdx],
+        identified_products: [
+          ...next[materialIdx].identified_products,
+          { ticker, name, product_id: null, exists_in_db: false, selected: true, _manualInput: true },
+        ],
+      };
+      return next;
+    });
+  };
+
+  const removeProduct = (materialIdx, productIdx) => {
+    setAnalysisResults(prev => {
+      const next = [...prev];
+      next[materialIdx] = {
+        ...next[materialIdx],
+        identified_products: next[materialIdx].identified_products.filter((_, pi) => pi !== productIdx),
+      };
+      return next;
+    });
+  };
+
+  const handleConfirmAndQueue = async () => {
+    const validMaterials = analysisResults.filter(m => m.material_id && !m.error && !m.duplicate);
+    if (!validMaterials.length) {
+      addToast('Nenhum material válido para processar', 'warning');
+      return;
+    }
+
+    setConfirming(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const mat of validMaterials) {
+      const confirmed = mat.identified_products.filter(p => p.selected);
+      const primary = confirmed.find(p => p.product_id) || confirmed[0];
+      const primaryId = primary?.product_id || null;
+
+      try {
+        const resp = await fetch(`/api/products/${mat.material_id}/link-and-queue`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            confirmed_products: confirmed,
+            primary_product_id: primaryId,
+            file_path: mat.file_path || '',
+          }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `Erro ${resp.status}`);
+        }
+        successCount++;
+      } catch (err) {
+        console.error(`Erro ao confirmar material ${mat.material_id}:`, err.message);
+        errorCount++;
+      }
+    }
+
+    setConfirming(false);
+
+    if (successCount > 0) {
+      const msg = successCount === 1
+        ? 'Material enviado para processamento'
+        : `${successCount} materiais enviados para processamento`;
+      addToast(msg, 'success');
+    }
+    if (errorCount > 0) {
+      addToast(`${errorCount} erro(s) ao confirmar`, 'error');
+    }
+
+    setRecentlyQueued(true);
+    setShowQueue(true);
+    loadQueueStatus();
+
+    setFiles([]);
+    setSelectedProduct(null);
+    setMaterialType('');
+    setTags([]);
+    setValidFrom('');
+    setValidUntil('');
+    setCampaignSlug('');
+    setCampaignStructureType('');
+    setCampaignKeyData([]);
+    setCampaignDiagramFile(null);
+    setAnalysisResults([]);
+    setStep(1);
+  };
+
   const handleUpload = async () => {
     if (!files.length) {
       addToast('Selecione pelo menos um arquivo para enviar', 'warning');
@@ -495,6 +663,7 @@ export function SmartUpload() {
         : `${count} arquivo(s) adicionado(s) à fila`;
       addToast(msg, 'success');
 
+      setRecentlyQueued(true);
       setShowQueue(true);
       loadQueueStatus();
 
@@ -1362,42 +1531,221 @@ export function SmartUpload() {
         <Button variant="secondary" onClick={() => setStep(1)} className="flex-1">
           Voltar
         </Button>
-        <Button 
-          onClick={handleUpload} 
-          disabled={!files.length}
-          className="flex-1"
-        >
-          <Sparkles className="w-4 h-4" />
-          {files.length > 1 ? `Processar ${files.length} Arquivos` : 'Processar Automaticamente'}
-        </Button>
+        {materialType === 'campanha' ? (
+          <Button
+            onClick={handleUpload}
+            disabled={!files.length || uploading}
+            className="flex-1"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Enviando...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                {files.length > 1 ? `Processar ${files.length} Campanhas` : 'Processar Campanha'}
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button
+            onClick={handlePreAnalyze}
+            disabled={!files.length || analyzing}
+            className="flex-1"
+          >
+            {analyzing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Analisando com IA...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                {files.length > 1 ? `Analisar ${files.length} Arquivos` : 'Analisar e Continuar'}
+              </>
+            )}
+          </Button>
+        )}
       </div>
     </motion.div>
   );
 
+  const renderStep3 = () => {
+    const validMaterials = analysisResults.filter(m => !m.error || m.duplicate);
+    const errorMaterials = analysisResults.filter(m => m.error && !m.duplicate);
+    const totalSelected = analysisResults.reduce((acc, m) =>
+      acc + (m.identified_products || []).filter(p => p.selected).length, 0);
+
+    return (
+      <motion.div
+        key="step3"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        className="space-y-6"
+      >
+        <div>
+          <h3 className="font-semibold text-foreground flex items-center gap-2 mb-1">
+            <Sparkles className="w-4 h-4 text-primary" />
+            Produtos Identificados pela IA
+          </h3>
+          <p className="text-xs text-muted">
+            Revise os produtos detectados. Desmarque os incorretos e adicione os que faltam antes de confirmar.
+          </p>
+        </div>
+
+        {errorMaterials.map((m, idx) => (
+          <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg flex gap-2 text-sm text-red-700">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-medium">{m.filename}</span>
+              {m.duplicate && <span className="ml-1 text-amber-700">(duplicado bloqueado)</span>}
+              {!m.duplicate && <span className="ml-1">{m.error}</span>}
+            </div>
+          </div>
+        ))}
+
+        {analysisResults.map((mat, mi) => {
+          if (mat.error && !mat.duplicate) return null;
+          const manualInputId = `manual-${mi}`;
+          const selectedCount = (mat.identified_products || []).filter(p => p.selected).length;
+
+          return (
+            <div key={mi} className="border border-border rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="font-medium text-sm text-foreground truncate">{mat.filename}</span>
+                </div>
+                <span className="text-xs text-muted ml-2 flex-shrink-0">
+                  {selectedCount} produto{selectedCount !== 1 ? 's' : ''} selecionado{selectedCount !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {mat.identified_products && mat.identified_products.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {mat.identified_products.map((p, pi) => (
+                      <div
+                        key={pi}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-all select-none
+                          ${p.selected
+                            ? p.exists_in_db
+                              ? 'bg-primary/10 text-primary border-primary/30'
+                              : 'bg-amber-50 text-amber-700 border-amber-300'
+                            : 'bg-gray-100 text-gray-400 border-gray-200 line-through'
+                          }`}
+                        title={p.exists_in_db ? 'Produto encontrado na base de dados' : 'Produto novo — será criado'}
+                        onClick={() => toggleProductSelection(mi, pi)}
+                      >
+                        {p.ticker && <span className="font-bold">{p.ticker}</span>}
+                        {p.ticker && p.name && p.name !== p.ticker && <span className="text-current/70">·</span>}
+                        <span className="max-w-[160px] truncate">{p.name || p.ticker}</span>
+                        {p.exists_in_db && (
+                          <CheckCircle className="w-3 h-3 flex-shrink-0 opacity-70" />
+                        )}
+                        {!p.exists_in_db && (
+                          <Sparkles className="w-3 h-3 flex-shrink-0 opacity-70" />
+                        )}
+                        <button
+                          className="ml-0.5 opacity-50 hover:opacity-100"
+                          onClick={(e) => { e.stopPropagation(); removeProduct(mi, pi); }}
+                          title="Remover produto"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted italic">Nenhum produto identificado automaticamente.</p>
+                )}
+
+                <div className="flex gap-2 mt-2">
+                  <input
+                    id={manualInputId}
+                    type="text"
+                    placeholder="Adicionar produto (ex: XPML11 ou nome do fundo)..."
+                    className="flex-1 px-3 py-1.5 text-xs bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        addManualProduct(mi, e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <button
+                    className="px-3 py-1.5 text-xs bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors font-medium"
+                    onClick={() => {
+                      const el = document.getElementById(manualInputId);
+                      if (el) { addManualProduct(mi, el.value); el.value = ''; }
+                    }}
+                  >
+                    Adicionar
+                  </button>
+                </div>
+                <p className="text-xs text-muted">
+                  <span className="text-amber-600 font-medium">Novo</span> = produto será criado automaticamente.{' '}
+                  <span className="text-primary font-medium">✓ Base</span> = produto já existe no cadastro.
+                </p>
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="flex gap-3 pt-2">
+          <Button variant="secondary" onClick={() => setStep(2)} className="flex-1" disabled={confirming}>
+            Voltar
+          </Button>
+          <Button
+            onClick={handleConfirmAndQueue}
+            disabled={confirming || totalSelected === 0}
+            className="flex-1"
+          >
+            {confirming ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Confirmando...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4" />
+                Confirmar e Processar ({totalSelected} produto{totalSelected !== 1 ? 's' : ''})
+              </>
+            )}
+          </Button>
+        </div>
+      </motion.div>
+    );
+  };
+
+  const stepLabels = ['Selecionar Arquivo', 'Configurar Detalhes', 'Confirmar Produtos'];
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4 mb-8">
-        {[1, 2].map((s) => (
+        {[1, 2, 3].map((s) => (
           <div key={s} className="flex items-center">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
                             ${step >= s ? 'bg-primary text-white' : 'bg-border text-muted'}`}>
-              {s}
+              {step > s ? <CheckCircle className="w-4 h-4" /> : s}
             </div>
-            {s < 2 && (
-              <div className={`w-16 h-0.5 ml-2 ${step > s ? 'bg-primary' : 'bg-border'}`} />
+            {s < 3 && (
+              <div className={`w-12 h-0.5 ml-2 ${step > s ? 'bg-primary' : 'bg-border'}`} />
             )}
           </div>
         ))}
         <div className="flex-1" />
-        <span className="text-xs text-muted">
-          {step === 1 ? 'Selecionar Arquivo' : 'Configurar Detalhes'}
-        </span>
+        <span className="text-xs text-muted">{stepLabels[step - 1]}</span>
       </div>
 
       <div className="bg-card rounded-xl border border-border p-8 shadow-sm">
         <AnimatePresence mode="wait">
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
         </AnimatePresence>
       </div>
 

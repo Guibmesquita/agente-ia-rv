@@ -3935,6 +3935,335 @@ async def batch_upload(
     }
 
 
+def _extract_pdf_text_for_analysis(file_content: bytes, max_pages: int = 5) -> str:
+    """Extrai texto das primeiras páginas de um PDF para análise rápida de produtos."""
+    try:
+        import fitz
+        doc = fitz.open(stream=file_content, filetype="pdf")
+        pages_to_read = min(max_pages, len(doc))
+        texts = []
+        for i in range(pages_to_read):
+            page = doc[i]
+            texts.append(page.get_text("text"))
+        doc.close()
+        combined = "\n".join(texts)
+        return combined[:8000]
+    except Exception as e:
+        print(f"[PRE_ANALYZE] Erro ao extrair texto do PDF: {e}")
+        return ""
+
+
+async def _identify_products_with_ai(text: str, filename: str) -> list:
+    """Usa GPT-4o-mini para identificar produtos/tickers em texto de documento financeiro."""
+    if not text.strip():
+        return []
+    try:
+        from openai import OpenAI
+        import os as _os
+        client = OpenAI(api_key=_os.environ.get("OPENAI_API_KEY"))
+        prompt = (
+            "Você é um especialista em identificar produtos financeiros brasileiros em documentos.\n"
+            "Analise o texto abaixo de um documento financeiro e identifique TODOS os fundos, ações, FIIs, ETFs e estruturas "
+            "mencionados explicitamente.\n\n"
+            "Para cada produto encontrado, inclua:\n"
+            "- ticker: código do ativo (ex: XPML11, PETR4, BOVA11). Se não houver ticker claro, use null.\n"
+            "- name: nome completo do fundo/produto.\n\n"
+            'Responda APENAS com JSON no formato: {"products": [{"ticker": "XPML11", "name": "XP Malls FII"}, ...]}\n\n'
+            f"Documento: {filename}\n\nTexto:\n{text[:6000]}"
+        )
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=800,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or "{}"
+        import json as _json
+        parsed = _json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed
+        for key in parsed:
+            if isinstance(parsed[key], list):
+                return parsed[key]
+        return []
+    except Exception as e:
+        print(f"[PRE_ANALYZE] Erro na análise IA: {e}")
+        return []
+
+
+def _match_products_to_db(db: Session, ai_products: list) -> list:
+    """Tenta encontrar cada produto identificado pela IA na base de dados."""
+    from services.document_metadata_extractor import normalize_text
+    result = []
+    for ap in ai_products:
+        ticker = (ap.get("ticker") or "").strip().upper() or None
+        name = (ap.get("name") or "").strip() or None
+        if not ticker and not name:
+            continue
+
+        matched_product = None
+        if ticker:
+            matched_product = db.query(Product).filter(Product.ticker == ticker).first()
+        if not matched_product and name:
+            norm_name = normalize_text(name)
+            for p in db.query(Product).filter(Product.name.isnot(None)).limit(500).all():
+                if normalize_text(p.name) == norm_name:
+                    matched_product = p
+                    break
+
+        result.append({
+            "ticker": ticker,
+            "name": name or (matched_product.name if matched_product else ticker),
+            "product_id": matched_product.id if matched_product else None,
+            "exists_in_db": matched_product is not None,
+            "selected": True,
+        })
+    return result
+
+
+@router.post("/pre-analyze-upload")
+async def pre_analyze_upload(
+    files: list[UploadFile] = File(...),
+    material_type: str = Form("one_page"),
+    tags: str = Form("[]"),
+    valid_from: str = Form(None),
+    valid_until: str = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fase 1 do SmartUpload inteligente: salva PDFs, cria materiais e analisa produtos via IA.
+    Retorna os materiais criados e os produtos identificados para revisão humana.
+    NÃO adiciona à fila de processamento. O usuário deve confirmar via /link-and-queue.
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    import json as _json
+    from database.models import ProcessingStatus
+
+    parsed_tags = []
+    try:
+        parsed_tags = _json.loads(tags) if tags else []
+    except Exception:
+        parsed_tags = []
+
+    parsed_valid_from = None
+    parsed_valid_until = None
+    if valid_from:
+        try:
+            parsed_valid_from = datetime.fromisoformat(valid_from.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    if valid_until:
+        try:
+            parsed_valid_until = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+    results = []
+
+    for file in files:
+        if not file.filename.lower().endswith(".pdf"):
+            results.append({
+                "filename": file.filename,
+                "error": "Apenas PDFs são suportados",
+                "material_id": None,
+                "identified_products": [],
+            })
+            continue
+
+        content = await file.read()
+        name = file.filename.replace(".pdf", "").replace(".PDF", "")
+
+        import hashlib as _hl
+        file_hash = _hl.sha256(content).hexdigest()
+        existing_dup = db.query(Material).filter(
+            Material.file_hash == file_hash,
+            Material.file_hash.isnot(None),
+            Material.processing_status == "success",
+        ).first()
+        if existing_dup:
+            results.append({
+                "filename": file.filename,
+                "error": f"Arquivo idêntico já processado como '{existing_dup.name}'. Upload duplicado bloqueado.",
+                "material_id": existing_dup.id,
+                "identified_products": [],
+                "duplicate": True,
+            })
+            continue
+
+        auto_product = find_or_create_product_from_name(db, name)
+        product_id = auto_product.id if auto_product else None
+
+        ps_value = ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, "PENDING") else "pending"
+        material = Material(
+            product_id=product_id,
+            material_type=material_type,
+            name=name,
+            valid_from=parsed_valid_from,
+            valid_until=parsed_valid_until,
+            tags=_json.dumps(parsed_tags),
+            publish_status="rascunho",
+            processing_status=ps_value,
+            file_hash=file_hash,
+        )
+        db.add(material)
+        db.commit()
+        db.refresh(material)
+
+        unique_filename = f"{uuid.uuid4()}.pdf"
+        file_path = os.path.join(UPLOAD_DIR_QUEUE, unique_filename)
+        with open(file_path, "wb") as fh:
+            fh.write(content)
+
+        _save_file_to_db(db, material.id, file.filename or "documento.pdf", content)
+
+        material.source_file_path = file_path
+        db.commit()
+
+        text = _extract_pdf_text_for_analysis(content, max_pages=5)
+        ai_products = await _identify_products_with_ai(text, file.filename)
+        identified = _match_products_to_db(db, ai_products)
+
+        if auto_product and not any(
+            p.get("product_id") == auto_product.id or
+            (p.get("ticker") and p.get("ticker") == auto_product.ticker)
+            for p in identified
+        ):
+            identified.insert(0, {
+                "ticker": auto_product.ticker or "",
+                "name": auto_product.name,
+                "product_id": auto_product.id,
+                "exists_in_db": True,
+                "selected": True,
+            })
+
+        results.append({
+            "filename": file.filename,
+            "material_id": material.id,
+            "file_path": file_path,
+            "identified_products": identified,
+            "error": None,
+        })
+
+    return {
+        "success": True,
+        "materials": results,
+    }
+
+
+@router.post("/{material_id}/link-and-queue")
+async def link_products_and_queue(
+    material_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fase 2 do SmartUpload: vincula produtos confirmados via MaterialProductLink e enfileira para processamento.
+    Body JSON:
+      confirmed_products: [{product_id: int|null, name: str, ticker: str}]
+      primary_product_id: int|null
+      file_path: str (path salvo na fase 1)
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    from database.models import MaterialProductLink
+    from services.upload_queue import upload_queue, UploadQueueItem
+
+    body = await request.json()
+    confirmed_products = body.get("confirmed_products", [])
+    primary_product_id = body.get("primary_product_id")
+    file_path = body.get("file_path", "")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    if not os.path.exists(file_path):
+        file_path_from_model = getattr(material, "source_file_path", None)
+        if file_path_from_model and os.path.exists(file_path_from_model):
+            file_path = file_path_from_model
+        else:
+            raise HTTPException(status_code=400, detail="Arquivo PDF não encontrado para processamento")
+
+    created_products = []
+    for cp in confirmed_products:
+        pid = cp.get("product_id")
+        if not pid:
+            ticker = (cp.get("ticker") or "").strip().upper() or None
+            name = (cp.get("name") or "").strip() or None
+            if not ticker and not name:
+                continue
+            search_key = name or ticker
+            new_p = find_or_create_product_from_name(db, search_key)
+            if new_p:
+                pid = new_p.id
+        if pid:
+            created_products.append(pid)
+
+    if not primary_product_id and created_products:
+        primary_product_id = created_products[0]
+
+    if primary_product_id:
+        material.product_id = primary_product_id
+
+    db.query(MaterialProductLink).filter(
+        MaterialProductLink.material_id == material_id
+    ).delete()
+
+    seen_ids = set()
+    if primary_product_id:
+        seen_ids.add(primary_product_id)
+
+    for pid in created_products:
+        if pid == primary_product_id:
+            continue
+        if pid in seen_ids:
+            continue
+        seen_ids.add(pid)
+        link = MaterialProductLink(
+            material_id=material_id,
+            product_id=pid,
+            excluded_from_committee=False,
+        )
+        db.add(link)
+
+    db.commit()
+
+    upload_id = str(uuid.uuid4())
+    queue_item = UploadQueueItem(
+        upload_id=upload_id,
+        file_path=file_path,
+        filename=material.name or f"material_{material_id}",
+        material_id=material_id,
+        name=material.name or f"material_{material_id}",
+        user_id=current_user.id,
+        material_type=material.material_type or "outro",
+        categories=[],
+        tags=[],
+        selected_product_id=primary_product_id,
+    )
+    upload_queue.add(queue_item)
+
+    print(
+        f"[LINK_QUEUE] Material {material_id} vinculado a {len(created_products)} produto(s) "
+        f"e adicionado à fila (upload_id={upload_id})"
+    )
+
+    return {
+        "success": True,
+        "upload_id": upload_id,
+        "material_id": material_id,
+        "linked_product_ids": list(seen_ids),
+        "primary_product_id": primary_product_id,
+        "message": f"Material vinculado a {len(seen_ids)} produto(s) e adicionado à fila",
+    }
+
+
 @router.get("/upload-queue/status")
 async def get_upload_queue_status(
     current_user: User = Depends(get_current_user)
