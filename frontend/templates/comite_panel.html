@@ -22,77 +22,145 @@
         <div class="flex items-center justify-between mb-8">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Comitê Ativo</h1>
-                <p class="text-gray-500 mt-1">Produtos formalmente recomendados pelo Comitê SVN — fonte de verdade do agente Stevan</p>
+                <p class="text-gray-500 mt-1">Fonte de verdade do agente Stevan para recomendações formais do Comitê SVN</p>
             </div>
             <div class="flex items-center gap-2">
+                <button id="btn-open-activate-material" class="inline-flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Ativar Material
+                </button>
                 <button id="btn-open-import" class="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
                     </svg>
                     Importar do Material
                 </button>
-                <button id="btn-open-add" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm">
+                <button id="btn-open-add" class="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                     </svg>
-                    Adicionar ao Comitê
+                    Adicionar Produto
                 </button>
             </div>
         </div>
 
         <!-- Info Banner -->
-        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex gap-3">
-            <svg class="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex gap-3">
+            <svg class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
-            <div class="text-sm text-blue-800">
-                <strong>Como funciona:</strong> Produtos nesta lista são reconhecidos como recomendações formais do Comitê SVN pelo agente.
-                Ao perguntar sobre qualquer ativo listado aqui, Stevan identifica automaticamente que é uma recomendação e usa o rating e preço-alvo definidos.
-                Produtos <strong>fora</strong> desta lista recebem o aviso de que são informações analíticas, não recomendação formal.
+            <div class="text-sm text-green-900">
+                <strong>Novo fluxo:</strong> Ative um material como Comitê Ativo e o agente passa a recomendar apenas os produtos identificados naquele documento.
+                O conteúdo do material é usado diretamente pelo agente para responder perguntas detalhadas.
+                Não é mais necessário registrar produtos um a um — basta ativar o PDF da carteira.
             </div>
         </div>
 
-        <!-- Filters -->
-        <div class="flex gap-3 mb-6">
-            <button id="filter-vigente" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium bg-green-100 text-green-700" data-filter="vigente">Vigentes</button>
-            <button id="filter-todos" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-filter="todos">Todos</button>
-            <button id="filter-expirado" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-filter="expirado">Expirados</button>
+        <!-- ── Seção: Materiais do Comitê Ativo ──────────────────────────── -->
+        <div class="mb-8">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-base font-semibold text-gray-900 flex items-center gap-2">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                    Materiais do Comitê Ativo
+                </h2>
+                <span id="committee-mats-count" class="text-xs text-gray-400"></span>
+            </div>
+
+            <div id="committee-mats-loading" class="text-center py-8">
+                <div class="inline-block w-6 h-6 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
+            </div>
+            <div id="committee-mats-empty" class="hidden bg-white rounded-xl border border-dashed border-gray-300 p-8 text-center">
+                <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <p class="text-gray-500 font-medium mb-1">Nenhum material ativo</p>
+                <p class="text-sm text-gray-400">Clique em <strong>Ativar Material</strong> para selecionar um PDF da carteira do comitê.</p>
+            </div>
+            <div id="committee-mats-list" class="hidden space-y-3"></div>
         </div>
 
-        <!-- Loading -->
-        <div id="entries-loading" class="text-center py-12">
-            <div class="inline-block w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-            <p class="mt-3 text-gray-500">Carregando recomendações...</p>
+        <!-- ── Seção: Enriquecimento de Recomendações ────────────────────── -->
+        <div>
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-base font-semibold text-gray-900 flex items-center gap-2">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                    Enriquecimento de Recomendações
+                </h2>
+                <div class="flex gap-2">
+                    <button id="filter-vigente" class="filter-btn px-3 py-1 rounded-lg text-xs font-medium bg-green-100 text-green-700" data-filter="vigente">Vigentes</button>
+                    <button id="filter-todos" class="filter-btn px-3 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-filter="todos">Todos</button>
+                    <button id="filter-expirado" class="filter-btn px-3 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-filter="expirado">Expirados</button>
+                </div>
+            </div>
+            <p class="text-xs text-gray-400 mb-4">Adicione rating e preço-alvo a produtos que já fazem parte do comitê via materiais. Produtos registrados aqui mas sem material ativo também são incluídos (compatibilidade).</p>
+
+            <!-- Loading -->
+            <div id="entries-loading" class="text-center py-8">
+                <div class="inline-block w-6 h-6 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            </div>
+
+            <!-- Empty -->
+            <div id="entries-empty" class="hidden text-center py-10 text-gray-400">
+                <p class="text-sm">Nenhuma entrada de enriquecimento encontrada</p>
+            </div>
+
+            <!-- Table -->
+            <div id="entries-table" class="hidden bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Produto</th>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Rating</th>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Preço-Alvo</th>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Válido até</th>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Adicionado por</th>
+                            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Adicionado em</th>
+                            <th class="px-4 py-3"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="entries-tbody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
         </div>
 
-        <!-- Empty -->
-        <div id="entries-empty" class="hidden text-center py-16">
-            <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            <h3 class="text-lg font-medium text-gray-600 mb-1">Nenhuma recomendação ativa</h3>
-            <p class="text-gray-400">Adicione um produto ao comitê para que o agente possa referenciá-lo como recomendação formal</p>
-        </div>
+    </div>
+</div>
 
-        <!-- Table -->
-        <div id="entries-table" class="hidden bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Produto</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Rating</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Preço-Alvo</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Válido até</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Adicionado por</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Adicionado em</th>
-                        <th class="px-4 py-3"></th>
-                    </tr>
-                </thead>
-                <tbody id="entries-tbody" class="divide-y divide-gray-100"></tbody>
-            </table>
+<!-- Modal: Ativar Material como Comitê -->
+<div id="modal-activate-material" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+            <div>
+                <h2 class="text-lg font-bold text-gray-900">Ativar Material como Comitê</h2>
+                <p class="text-sm text-gray-500 mt-0.5">Selecione o material da carteira do comitê — seus produtos serão recomendados pelo agente</p>
+            </div>
+            <button id="btn-close-activate-material" class="text-gray-400 hover:text-gray-600 p-1 rounded">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
         </div>
-
+        <div class="p-5 border-b border-gray-100 flex-shrink-0">
+            <input id="activate-search" type="text" placeholder="Buscar por nome do material..." class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+        </div>
+        <div class="flex-1 overflow-y-auto min-h-0">
+            <div id="activate-mat-loading" class="text-center py-10">
+                <div class="inline-block w-6 h-6 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
+            </div>
+            <div id="activate-mat-empty" class="hidden text-center py-10 text-sm text-gray-400">Nenhum material publicado com conteúdo encontrado.</div>
+            <div id="activate-mat-list" class="hidden p-4 space-y-2"></div>
+        </div>
+        <div class="p-5 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+            <span id="activate-selected-label" class="text-sm text-gray-500">Nenhum material selecionado</span>
+            <div class="flex gap-2">
+                <button id="btn-cancel-activate-material" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">Cancelar</button>
+                <button id="btn-confirm-activate-material" disabled class="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-green-700 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Ativar no Comitê
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -555,10 +623,232 @@
     });
 
     // Close modals on backdrop click
-    ['modal-add', 'modal-edit', 'modal-remove', 'modal-import'].forEach(function(id) {
+    ['modal-add', 'modal-edit', 'modal-remove', 'modal-import', 'modal-activate-material'].forEach(function(id) {
         document.getElementById(id).addEventListener('click', function(e) {
             if (e.target === this) closeModal(id);
         });
+    });
+
+    // ── Materiais do Comitê Ativo ──────────────────────────────────────────────
+    var committeeMatsList = [];
+
+    function renderCommitteeMats(mats) {
+        var container = document.getElementById('committee-mats-list');
+        var empty = document.getElementById('committee-mats-empty');
+        var countEl = document.getElementById('committee-mats-count');
+
+        document.getElementById('committee-mats-loading').classList.add('hidden');
+
+        if (!mats || mats.length === 0) {
+            container.classList.add('hidden');
+            empty.classList.remove('hidden');
+            if (countEl) countEl.textContent = '';
+            return;
+        }
+
+        empty.classList.add('hidden');
+        container.classList.remove('hidden');
+        if (countEl) countEl.textContent = mats.length + ' material(is) ativo(s)';
+
+        container.innerHTML = mats.map(function(m) {
+            var expired = m.is_expired
+                ? '<span class="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full font-medium">Expirado</span>'
+                : '<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">Ativo</span>';
+            var validStr = m.valid_until ? 'Válido até ' + m.valid_until.substring(0, 10) : 'Sem prazo de validade';
+            var products = (m.products || []).map(function(p) {
+                return '<span class="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full">' +
+                    escapeHtml(p.ticker || p.name) + '</span>';
+            }).join('');
+            var productsRow = m.products && m.products.length > 0
+                ? '<div class="flex flex-wrap gap-1 mt-2">' + products + '</div>'
+                : '<p class="text-xs text-gray-400 mt-1">Nenhum produto derivado detectado</p>';
+            return '<div class="bg-white border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-4">' +
+                '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center flex-wrap gap-2 mb-1">' +
+                        '<span class="font-medium text-gray-900 text-sm">' + escapeHtml(m.name || ('Material #' + m.id)) + '</span>' +
+                        expired +
+                        '<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">' + escapeHtml(m.material_type || 'sem tipo') + '</span>' +
+                    '</div>' +
+                    '<p class="text-xs text-gray-400">' + escapeHtml(validStr) + '</p>' +
+                    productsRow +
+                '</div>' +
+                '<button class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors" data-action="deactivate-mat" data-id="' + m.id + '" data-name="' + escapeHtml(m.name || '') + '">' +
+                    '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>' +
+                    'Desativar' +
+                '</button>' +
+            '</div>';
+        }).join('');
+    }
+
+    function loadCommitteeMats() {
+        document.getElementById('committee-mats-loading').classList.remove('hidden');
+        document.getElementById('committee-mats-list').classList.add('hidden');
+        document.getElementById('committee-mats-empty').classList.add('hidden');
+
+        fetch('/api/recommendations/committee-materials', { credentials: 'include' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                committeeMatsList = Array.isArray(data) ? data : [];
+                renderCommitteeMats(committeeMatsList);
+            })
+            .catch(function(err) {
+                console.error('[committee-mats] Erro:', err);
+                document.getElementById('committee-mats-loading').classList.add('hidden');
+                document.getElementById('committee-mats-empty').classList.remove('hidden');
+            });
+    }
+
+    function deactivateMat(materialId, materialName) {
+        if (!confirm('Desativar "' + materialName + '" do Comitê Ativo?\n\nOs produtos derivados serão atualizados automaticamente.')) return;
+        fetch('/api/recommendations/committee-materials/' + materialId + '/deactivate', {
+            method: 'POST',
+            credentials: 'include',
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Erro ao desativar'); });
+            return r.json();
+        })
+        .then(function(data) {
+            if (window.showToast) window.showToast('Material desativado do Comitê', 'success');
+            loadCommitteeMats();
+        })
+        .catch(function(err) { alert(err.message); });
+    }
+
+    // Delegation for committee mats actions
+    document.getElementById('committee-mats-list').addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        if (btn.dataset.action === 'deactivate-mat') {
+            deactivateMat(parseInt(btn.dataset.id), btn.dataset.name);
+        }
+    });
+
+    // ── Modal: Ativar Material ─────────────────────────────────────────────────
+    var activateMaterials = [];
+    var activateSelectedId = null;
+    var activateSelectedName = null;
+
+    function renderActivateMatList(mats) {
+        var list = document.getElementById('activate-mat-list');
+        var empty = document.getElementById('activate-mat-empty');
+        document.getElementById('activate-mat-loading').classList.add('hidden');
+
+        if (!mats || mats.length === 0) {
+            list.classList.add('hidden');
+            empty.classList.remove('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+        list.classList.remove('hidden');
+
+        list.innerHTML = mats.map(function(m) {
+            var isSelected = activateSelectedId === m.id;
+            var isActive = !!m.is_committee_active;
+            var activeTag = isActive
+                ? '<span class="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Ativo</span>'
+                : '';
+            var typeTag = '<span class="px-1.5 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">' + escapeHtml(m.material_type || '') + '</span>';
+            var prods = (m.products || []).map(function(p) { return escapeHtml(p.ticker || p.name); }).join(', ');
+            var prodsStr = prods ? '<span class="text-xs text-gray-400">' + prods + '</span>' : '';
+
+            return '<div class="activate-mat-item flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors ' + (isSelected ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white') + '" data-action="select-activate-mat" data-id="' + m.id + '" data-name="' + escapeHtml(m.name || '') + '">' +
+                '<div class="mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 ' + (isSelected ? 'border-green-500 bg-green-500' : 'border-gray-300') + '"></div>' +
+                '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center flex-wrap gap-1.5">' +
+                        '<span class="font-medium text-gray-900 text-sm">' + escapeHtml(m.name || ('Material #' + m.id)) + '</span>' +
+                        activeTag + typeTag +
+                    '</div>' +
+                    prodsStr +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    function filterActivateMats() {
+        var q = document.getElementById('activate-search').value.toLowerCase().trim();
+        if (!q) return renderActivateMatList(activateMaterials);
+        renderActivateMatList(activateMaterials.filter(function(m) {
+            return (m.name || '').toLowerCase().includes(q) ||
+                (m.products || []).some(function(p) {
+                    return (p.ticker || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q);
+                });
+        }));
+    }
+
+    function loadActivateMaterials() {
+        document.getElementById('activate-mat-loading').classList.remove('hidden');
+        document.getElementById('activate-mat-list').classList.add('hidden');
+        document.getElementById('activate-mat-empty').classList.add('hidden');
+
+        fetch('/api/recommendations/available-materials', { credentials: 'include' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                activateMaterials = Array.isArray(data) ? data : [];
+                renderActivateMatList(activateMaterials);
+            })
+            .catch(function(err) {
+                console.error('[activate-mats] Erro:', err);
+                document.getElementById('activate-mat-loading').classList.add('hidden');
+                document.getElementById('activate-mat-empty').classList.remove('hidden');
+            });
+    }
+
+    function confirmActivateMaterial() {
+        if (!activateSelectedId) return;
+        var btn = document.getElementById('btn-confirm-activate-material');
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg> Ativando...';
+
+        fetch('/api/recommendations/committee-materials/' + activateSelectedId + '/activate', {
+            method: 'POST',
+            credentials: 'include',
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Erro ao ativar'); });
+            return r.json();
+        })
+        .then(function(data) {
+            closeModal('modal-activate-material');
+            activateSelectedId = null;
+            activateSelectedName = null;
+            if (window.showToast) window.showToast(data.message || 'Material ativado no Comitê', 'success');
+            loadCommitteeMats();
+        })
+        .catch(function(err) { alert(err.message); })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Ativar no Comitê';
+        });
+    }
+
+    // Listeners for Ativar Material modal
+    document.getElementById('btn-open-activate-material').addEventListener('click', function() {
+        activateSelectedId = null;
+        activateSelectedName = null;
+        document.getElementById('activate-search').value = '';
+        document.getElementById('activate-selected-label').textContent = 'Nenhum material selecionado';
+        document.getElementById('btn-confirm-activate-material').disabled = true;
+        openModal('modal-activate-material');
+        loadActivateMaterials();
+    });
+    document.getElementById('btn-close-activate-material').addEventListener('click', function() { closeModal('modal-activate-material'); });
+    document.getElementById('btn-cancel-activate-material').addEventListener('click', function() { closeModal('modal-activate-material'); });
+    document.getElementById('btn-confirm-activate-material').addEventListener('click', confirmActivateMaterial);
+    document.getElementById('activate-search').addEventListener('input', filterActivateMats);
+    document.getElementById('activate-mat-list').addEventListener('click', function(e) {
+        var item = e.target.closest('[data-action="select-activate-mat"]');
+        if (!item) return;
+        activateSelectedId = parseInt(item.dataset.id);
+        activateSelectedName = item.dataset.name;
+        document.getElementById('activate-selected-label').textContent = 'Selecionado: ' + activateSelectedName;
+        document.getElementById('btn-confirm-activate-material').disabled = false;
+        // Re-render to reflect selection
+        var q = document.getElementById('activate-search').value.toLowerCase().trim();
+        var list = q ? activateMaterials.filter(function(m) {
+            return (m.name || '').toLowerCase().includes(q);
+        }) : activateMaterials;
+        renderActivateMatList(list);
     });
 
     // ── Import from Material ───────────────────────────────────────────────────
@@ -944,6 +1234,7 @@
     });
 
     // Init
+    loadCommitteeMats();
     loadEntries();
 })();
 </script>

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from database.database import get_db
-from database.models import Product, RecommendationEntry, Material
+from database.models import Product, RecommendationEntry, Material, MaterialProductLink
 from api.endpoints.auth import get_current_user
 from database.models import User
 
@@ -51,22 +51,43 @@ class RecommendationUpdate(BaseModel):
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-def _sync_product_categories(db: Session, product: Product):
-    """Garante que 'Comitê' esteja (ou não) em Product.categories conforme recomendações ativas."""
+def _is_product_in_committee(db: Session, product: Product) -> bool:
+    """Verifica se um produto pertence ao comitê ativo por qualquer das fontes."""
     now = datetime.utcnow()
-    has_active = db.query(RecommendationEntry).filter(
+    has_entry = db.query(RecommendationEntry).filter(
         RecommendationEntry.product_id == product.id,
         RecommendationEntry.is_active == True,
     ).filter(
         (RecommendationEntry.valid_until == None) |
         (RecommendationEntry.valid_until >= now)
     ).first()
+    if has_entry:
+        return True
 
+    from sqlalchemy import or_
+    has_material = db.query(Material).filter(
+        Material.is_committee_active == True,
+        Material.publish_status == 'publicado',
+        or_(
+            Material.product_id == product.id,
+            Material.id.in_(
+                db.query(MaterialProductLink.material_id).filter(
+                    MaterialProductLink.product_id == product.id
+                )
+            )
+        )
+    ).first()
+    return has_material is not None
+
+
+def _sync_product_categories(db: Session, product: Product):
+    """Garante que 'Comitê' esteja (ou não) em Product.categories conforme fontes ativas."""
+    in_committee = _is_product_in_committee(db, product)
     cats = product.get_categories()
-    if has_active and "Comitê" not in cats:
+    if in_committee and "Comitê" not in cats:
         cats.append("Comitê")
         product.set_categories(cats)
-    elif not has_active and "Comitê" in cats:
+    elif not in_committee and "Comitê" in cats:
         cats = [c for c in cats if c != "Comitê"]
         product.set_categories(cats)
 
@@ -482,6 +503,171 @@ async def bulk_import_recommendations(
         "errors": errors,
         "entries": created_entries,
         "message": " ".join(msg_parts),
+    }
+
+
+# ── Materiais do Comitê Ativo ─────────────────────────────────────────────────
+
+def _get_material_derived_products(db: Session, material: Material) -> list:
+    """Retorna todos os produtos vinculados a um material (primário + junction)."""
+    products = []
+    seen = set()
+    if material.product_id:
+        p = db.query(Product).filter(Product.id == material.product_id).first()
+        if p and p.id not in seen:
+            products.append(p)
+            seen.add(p.id)
+    links = db.query(MaterialProductLink).filter(MaterialProductLink.material_id == material.id).all()
+    for link in links:
+        p = db.query(Product).filter(Product.id == link.product_id).first()
+        if p and p.id not in seen:
+            products.append(p)
+            seen.add(p.id)
+    return products
+
+
+def _material_committee_dict(material: Material, db: Session) -> dict:
+    derived = _get_material_derived_products(db, material)
+    now = datetime.utcnow()
+    expired = material.valid_until is not None and material.valid_until.replace(tzinfo=None) < now
+    return {
+        "id": material.id,
+        "name": material.name or "",
+        "material_type": material.material_type or "",
+        "publish_status": material.publish_status,
+        "is_committee_active": material.is_committee_active,
+        "valid_until": material.valid_until.isoformat() if material.valid_until else None,
+        "is_expired": expired,
+        "created_at": material.created_at.isoformat() if material.created_at else None,
+        "updated_at": material.updated_at.isoformat() if material.updated_at else None,
+        "products": [
+            {"id": p.id, "name": p.name, "ticker": p.ticker or "", "manager": p.manager or ""}
+            for p in derived
+        ],
+    }
+
+
+@router.get("/committee-materials")
+async def list_committee_materials(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lista materiais marcados como Comitê Ativo com seus produtos derivados."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    materials = db.query(Material).filter(
+        Material.is_committee_active == True
+    ).order_by(Material.updated_at.desc()).all()
+
+    return [_material_committee_dict(m, db) for m in materials]
+
+
+@router.get("/available-materials")
+async def list_available_materials(
+    q: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lista materiais publicados disponíveis para ativação como Comitê."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    from database.models import ContentBlock, MaterialStatus
+    from sqlalchemy import or_, case
+
+    mats_with_content = db.query(Material.id).join(
+        ContentBlock, ContentBlock.material_id == Material.id
+    ).filter(ContentBlock.status.in_(['approved', 'auto_approved'])).subquery()
+
+    query = db.query(Material).filter(
+        Material.publish_status == MaterialStatus.PUBLISHED.value,
+        Material.id.in_(mats_with_content),
+    )
+
+    if q:
+        query = query.filter(
+            or_(
+                Material.name.ilike(f"%{q}%"),
+            )
+        )
+
+    materials = query.order_by(
+        case((Material.is_committee_active == True, 0), else_=1),
+        Material.updated_at.desc()
+    ).limit(50).all()
+
+    return [_material_committee_dict(m, db) for m in materials]
+
+
+@router.post("/committee-materials/{material_id}/activate", status_code=200)
+async def activate_committee_material(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ativa um material como Comitê Ativo e sincroniza categorias dos produtos derivados."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    if material.publish_status != 'publicado':
+        raise HTTPException(status_code=400, detail="Somente materiais publicados podem ser ativados no Comitê")
+
+    material.is_committee_active = True
+    db.flush()
+
+    derived = _get_material_derived_products(db, material)
+    for product in derived:
+        _sync_product_categories(db, product)
+
+    db.commit()
+
+    logger.info(
+        f"[COMITÊ] Material '{material.name}' (id={material.id}) ativado como Comitê Ativo "
+        f"por {current_user.email} — {len(derived)} produto(s) derivado(s)"
+    )
+    return {
+        "success": True,
+        "message": f"Material ativado no Comitê com {len(derived)} produto(s) derivado(s)",
+        "material": _material_committee_dict(material, db),
+    }
+
+
+@router.post("/committee-materials/{material_id}/deactivate", status_code=200)
+async def deactivate_committee_material(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Desativa um material do Comitê Ativo e atualiza categorias dos produtos derivados."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    material.is_committee_active = False
+    db.flush()
+
+    derived = _get_material_derived_products(db, material)
+    for product in derived:
+        _sync_product_categories(db, product)
+
+    db.commit()
+
+    logger.info(
+        f"[COMITÊ] Material '{material.name}' (id={material.id}) desativado do Comitê "
+        f"por {current_user.email}"
+    )
+    return {
+        "success": True,
+        "message": "Material removido do Comitê Ativo",
+        "material": _material_committee_dict(material, db),
     }
 
 
