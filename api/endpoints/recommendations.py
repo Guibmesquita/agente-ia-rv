@@ -53,7 +53,11 @@ class RecommendationUpdate(BaseModel):
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def _is_product_in_committee(db: Session, product: Product) -> bool:
-    """Verifica se um produto pertence ao comitê ativo por qualquer das fontes."""
+    """Verifica se um produto pertence ao comitê ativo por qualquer das fontes.
+    
+    Respeita `excluded_from_committee` em MaterialProductLink — um produto
+    explicitamente excluído não conta como membro do comitê via materiais.
+    """
     now = datetime.utcnow()
     has_entry = db.query(RecommendationEntry).filter(
         RecommendationEntry.product_id == product.id,
@@ -68,7 +72,7 @@ def _is_product_in_committee(db: Session, product: Product) -> bool:
     from sqlalchemy import or_
     from datetime import datetime as _dt
     _now = _dt.utcnow()
-    has_material = db.query(Material).filter(
+    active_mats = db.query(Material).filter(
         Material.is_committee_active == True,
         Material.publish_status == 'publicado',
         or_(
@@ -83,8 +87,19 @@ def _is_product_in_committee(db: Session, product: Product) -> bool:
                 )
             )
         )
-    ).first()
-    return has_material is not None
+    ).all()
+
+    for mat in active_mats:
+        # Verificar se o produto está explicitamente excluído neste material
+        exclusion_link = db.query(MaterialProductLink).filter(
+            MaterialProductLink.material_id == mat.id,
+            MaterialProductLink.product_id == product.id,
+            MaterialProductLink.excluded_from_committee == True,
+        ).first()
+        if exclusion_link is None:
+            # Produto não excluído neste material → está no comitê
+            return True
+    return False
 
 
 def _sync_product_categories(db: Session, product: Product):
@@ -537,18 +552,35 @@ def _material_committee_dict(material: Material, db: Session) -> dict:
     derived = _get_material_derived_products(db, material)
     now = datetime.utcnow()
     expired = material.valid_until is not None and material.valid_until.replace(tzinfo=None) < now
+
+    def _product_exclusion(p: Product) -> bool:
+        """Retorna True se o produto está excluído do comitê neste material."""
+        link = db.query(MaterialProductLink).filter(
+            MaterialProductLink.material_id == material.id,
+            MaterialProductLink.product_id == p.id,
+            MaterialProductLink.excluded_from_committee == True,
+        ).first()
+        return link is not None
+
     return {
         "id": material.id,
         "name": material.name or "",
         "material_type": material.material_type or "",
         "publish_status": material.publish_status,
         "is_committee_active": material.is_committee_active,
+        "available_for_whatsapp": material.available_for_whatsapp if material.available_for_whatsapp is not None else True,
         "valid_until": material.valid_until.isoformat() if material.valid_until else None,
         "is_expired": expired,
         "created_at": material.created_at.isoformat() if material.created_at else None,
         "updated_at": material.updated_at.isoformat() if material.updated_at else None,
         "products": [
-            {"id": p.id, "name": p.name, "ticker": p.ticker or "", "manager": p.manager or ""}
+            {
+                "id": p.id,
+                "name": p.name,
+                "ticker": p.ticker or "",
+                "manager": p.manager or "",
+                "excluded_from_committee": _product_exclusion(p),
+            }
             for p in derived
         ],
     }
@@ -675,6 +707,108 @@ async def deactivate_committee_material(
         "success": True,
         "message": "Material removido do Comitê Ativo",
         "material": _material_committee_dict(material, db),
+    }
+
+
+@router.post("/committee-materials/{material_id}/products/{product_id}/toggle-exclusion", status_code=200)
+async def toggle_product_exclusion(
+    material_id: int,
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Inclui ou exclui um produto específico do Comitê Ativo para o material dado.
+
+    Se não existir um registro em material_product_links para (material_id, product_id),
+    ele é criado automaticamente com excluded_from_committee=True (exclusão imediata).
+    Produtos excluídos não aparecem na carteira do agente nem no summary do Comitê.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito a admin e gestão RV")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    # Verificar se o produto pertence a este material (primário ou junction)
+    is_primary = material.product_id == product_id
+    link = db.query(MaterialProductLink).filter(
+        MaterialProductLink.material_id == material_id,
+        MaterialProductLink.product_id == product_id,
+    ).first()
+
+    if not is_primary and link is None:
+        raise HTTPException(status_code=400, detail="Produto não vinculado a este material")
+
+    if link is None:
+        # Produto primário sem entrada no junction — cria entrada para controle de exclusão
+        from sqlalchemy.exc import IntegrityError
+        link = MaterialProductLink(
+            material_id=material_id,
+            product_id=product_id,
+            excluded_from_committee=True,
+        )
+        try:
+            db.add(link)
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            link = db.query(MaterialProductLink).filter(
+                MaterialProductLink.material_id == material_id,
+                MaterialProductLink.product_id == product_id,
+            ).first()
+            link.excluded_from_committee = not link.excluded_from_committee
+    else:
+        link.excluded_from_committee = not link.excluded_from_committee
+
+    db.flush()
+    _sync_product_categories(db, product)
+    db.commit()
+
+    action = "excluído" if link.excluded_from_committee else "incluído"
+    logger.info(
+        f"[COMITÊ] Produto '{product.name}' (id={product_id}) {action} do Comitê "
+        f"no material '{material.name}' (id={material_id}) por {current_user.email}"
+    )
+    return {
+        "success": True,
+        "excluded_from_committee": link.excluded_from_committee,
+        "message": f"Produto {action} do Comitê Ativo neste material",
+        "material": _material_committee_dict(material, db),
+    }
+
+
+@router.post("/committee-materials/{material_id}/toggle-whatsapp", status_code=200)
+async def toggle_material_whatsapp(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ativa ou desativa disponibilidade do material para envio via WhatsApp pelo agente."""
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    current_val = material.available_for_whatsapp if material.available_for_whatsapp is not None else True
+    material.available_for_whatsapp = not current_val
+    db.commit()
+
+    state = "ativado" if material.available_for_whatsapp else "desativado"
+    logger.info(
+        f"[WHATSAPP] Material '{material.name}' (id={material_id}) {state} para WhatsApp "
+        f"por {current_user.email}"
+    )
+    return {
+        "success": True,
+        "available_for_whatsapp": material.available_for_whatsapp,
+        "message": f"Material {state} para envio via WhatsApp",
     }
 
 

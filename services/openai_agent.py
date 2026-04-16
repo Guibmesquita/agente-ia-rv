@@ -3345,7 +3345,10 @@ INSTRUÇÕES IMPORTANTES:
             return []
 
     def _list_available_materials(self, db) -> List[str]:
-        """Lista materiais com PDF disponível para o system prompt V2."""
+        """Lista materiais com PDF disponível para o system prompt V2.
+        
+        Aplica filtro available_for_whatsapp=True para controle granular do gestor.
+        """
         try:
             from database.models import Material, Product, MaterialFile
 
@@ -3360,6 +3363,7 @@ INSTRUÇÕES IMPORTANTES:
                 .join(Product, Product.id == Material.product_id)
                 .join(MaterialFile, MaterialFile.material_id == Material.id)
                 .filter(Material.publish_status != "arquivado")
+                .filter(Material.available_for_whatsapp.is_(True))
                 .all()
             )
             result = []

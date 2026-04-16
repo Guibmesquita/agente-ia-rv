@@ -802,6 +802,8 @@ class Product(Base):
     categories = Column(Text, default="[]")
     status = Column(String(20), default=ProductStatus.ACTIVE.value)
     description = Column(Text, nullable=True)
+    product_type = Column(String(50), nullable=True)  # acao | estruturada | fundo | fii | etf | debenture | outro
+    key_info = Column(Text, nullable=True)  # JSON com campos extraídos: retorno esperado, risco, prazo, emissor, etc.
     name_aliases = Column(Text, default="[]")
     valid_from = Column(DateTime(timezone=True), nullable=True)
     valid_until = Column(DateTime(timezone=True), nullable=True)
@@ -879,6 +881,7 @@ class Material(Base):
     ai_themes = Column(Text, default="[]")  # JSON array de temas principais identificados por GPT
     pdf_whatsapp_dismissed = Column(Boolean, default=False)  # Material dispensado da pendência "Sem PDF para WhatsApp"
     is_committee_active = Column(Boolean, default=False)  # Material marcado como Comitê Ativo — fonte primária do agente
+    available_for_whatsapp = Column(Boolean, default=True)  # Disponível para envio via WhatsApp pelo agente
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -916,6 +919,7 @@ class MaterialProductLink(Base):
     id = Column(Integer, primary_key=True, index=True)
     material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    excluded_from_committee = Column(Boolean, default=False)  # Produto excluído do Comitê Ativo neste material
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

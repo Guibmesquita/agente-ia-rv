@@ -696,27 +696,64 @@
                 ? '<span class="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full font-medium">Expirado</span>'
                 : '<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">Ativo</span>';
             var validStr = m.valid_until ? 'Válido até ' + m.valid_until.substring(0, 10) : 'Sem prazo de validade';
-            var products = (m.products || []).map(function(p) {
-                return '<span class="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full">' +
-                    escapeHtml(p.ticker || p.name) + '</span>';
-            }).join('');
-            var productsRow = m.products && m.products.length > 0
-                ? '<div class="flex flex-wrap gap-1 mt-2">' + products + '</div>'
-                : '<p class="text-xs text-gray-400 mt-1">Nenhum produto derivado detectado</p>';
-            return '<div class="bg-white border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-4">' +
-                '<div class="flex-1 min-w-0">' +
-                    '<div class="flex items-center flex-wrap gap-2 mb-1">' +
-                        '<span class="font-medium text-gray-900 text-sm">' + escapeHtml(m.name || ('Material #' + m.id)) + '</span>' +
-                        expired +
-                        '<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">' + escapeHtml(m.material_type || 'sem tipo') + '</span>' +
+
+            // Produtos como chips clicáveis com estado de exclusão
+            var productsRow;
+            if (m.products && m.products.length > 0) {
+                var chips = m.products.map(function(p) {
+                    var excluded = p.excluded_from_committee;
+                    var label = escapeHtml(p.ticker || p.name);
+                    if (excluded) {
+                        return '<button class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ' +
+                            'bg-red-50 text-red-500 border border-red-200 line-through hover:bg-red-100 transition-colors" ' +
+                            'title="Excluído do Comitê — clique para reincluir" ' +
+                            'data-action="toggle-product-exclusion" data-mat-id="' + m.id + '" data-prod-id="' + p.id + '">' +
+                            '<svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M18.364 5.636L5.636 18.364M5.636 5.636l12.728 12.728"/></svg>' +
+                            label + '</button>';
+                    }
+                    return '<button class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ' +
+                        'bg-gray-100 text-gray-700 border border-transparent hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors" ' +
+                        'title="Clique para excluir do Comitê" ' +
+                        'data-action="toggle-product-exclusion" data-mat-id="' + m.id + '" data-prod-id="' + p.id + '">' +
+                        label + '</button>';
+                }).join('');
+                productsRow = '<div class="flex flex-wrap gap-1 mt-2">' + chips + '</div>' +
+                    '<p class="text-xs text-gray-400 mt-1">Clique em um produto para excluí-lo ou reincluí-lo no Comitê.</p>';
+            } else {
+                productsRow = '<p class="text-xs text-gray-400 mt-1">Nenhum produto derivado detectado</p>';
+            }
+
+            // Toggle WhatsApp
+            var waAvailable = m.available_for_whatsapp !== false;
+            var waToggle = '<button class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ' +
+                (waAvailable
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                    : 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200') +
+                '" data-action="toggle-whatsapp" data-id="' + m.id + '" title="' +
+                (waAvailable ? 'Disponível para envio via WhatsApp — clique para desativar' : 'Indisponível via WhatsApp — clique para ativar') + '">' +
+                '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>' +
+                (waAvailable ? 'WhatsApp: On' : 'WhatsApp: Off') +
+                '</button>';
+
+            return '<div class="bg-white border border-gray-200 rounded-xl p-4">' +
+                '<div class="flex items-start justify-between gap-4">' +
+                    '<div class="flex-1 min-w-0">' +
+                        '<div class="flex items-center flex-wrap gap-2 mb-1">' +
+                            '<span class="font-medium text-gray-900 text-sm">' + escapeHtml(m.name || ('Material #' + m.id)) + '</span>' +
+                            expired +
+                            '<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">' + escapeHtml(m.material_type || 'sem tipo') + '</span>' +
+                        '</div>' +
+                        '<p class="text-xs text-gray-400">' + escapeHtml(validStr) + '</p>' +
+                        productsRow +
                     '</div>' +
-                    '<p class="text-xs text-gray-400">' + escapeHtml(validStr) + '</p>' +
-                    productsRow +
+                    '<div class="flex flex-col items-end gap-2 flex-shrink-0">' +
+                        waToggle +
+                        '<button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors" data-action="deactivate-mat" data-id="' + m.id + '" data-name="' + escapeHtml(m.name || '') + '">' +
+                            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>' +
+                            'Desativar' +
+                        '</button>' +
+                    '</div>' +
                 '</div>' +
-                '<button class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors" data-action="deactivate-mat" data-id="' + m.id + '" data-name="' + escapeHtml(m.name || '') + '">' +
-                    '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>' +
-                    'Desativar' +
-                '</button>' +
             '</div>';
         }).join('');
     }
@@ -792,12 +829,66 @@
         .catch(function(err) { alert(err.message); });
     }
 
+    function toggleProductExclusion(matId, prodId, btn) {
+        btn.disabled = true;
+        fetch('/api/recommendations/committee-materials/' + matId + '/products/' + prodId + '/toggle-exclusion', {
+            method: 'POST',
+            credentials: 'include',
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Erro'); });
+            return r.json();
+        })
+        .then(function(data) {
+            var action = data.excluded_from_committee ? 'excluído do' : 'reincluído no';
+            if (window.showToast) window.showToast('Produto ' + action + ' Comitê', 'success');
+            committeeMatsList = committeeMatsList.map(function(m) {
+                return m.id === matId ? data.material : m;
+            });
+            renderCommitteeMats(committeeMatsList);
+            renderUnenrichedProducts();
+        })
+        .catch(function(err) {
+            if (window.showToast) window.showToast(err.message, 'error');
+            btn.disabled = false;
+        });
+    }
+
+    function toggleMatWhatsapp(matId, btn) {
+        btn.disabled = true;
+        fetch('/api/recommendations/committee-materials/' + matId + '/toggle-whatsapp', {
+            method: 'POST',
+            credentials: 'include',
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Erro'); });
+            return r.json();
+        })
+        .then(function(data) {
+            if (window.showToast) window.showToast(data.message, 'success');
+            // Atualiza o estado local e re-renderiza
+            committeeMatsList = committeeMatsList.map(function(m) {
+                if (m.id === matId) return Object.assign({}, m, { available_for_whatsapp: data.available_for_whatsapp });
+                return m;
+            });
+            renderCommitteeMats(committeeMatsList);
+        })
+        .catch(function(err) {
+            if (window.showToast) window.showToast(err.message, 'error');
+            btn.disabled = false;
+        });
+    }
+
     // Delegation for committee mats actions
     document.getElementById('committee-mats-list').addEventListener('click', function(e) {
         var btn = e.target.closest('[data-action]');
         if (!btn) return;
         if (btn.dataset.action === 'deactivate-mat') {
             deactivateMat(parseInt(btn.dataset.id), btn.dataset.name);
+        } else if (btn.dataset.action === 'toggle-product-exclusion') {
+            toggleProductExclusion(parseInt(btn.dataset.matId), parseInt(btn.dataset.prodId), btn);
+        } else if (btn.dataset.action === 'toggle-whatsapp') {
+            toggleMatWhatsapp(parseInt(btn.dataset.id), btn);
         }
     });
 

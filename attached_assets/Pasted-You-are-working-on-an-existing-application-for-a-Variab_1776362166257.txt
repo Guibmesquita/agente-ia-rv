@@ -1,0 +1,126 @@
+You are working on an existing application for a Variable Income (RV) financial advisory agent. 
+The app is already running. Your job is to make ONLY the changes described below. 
+DO NOT refactor, rename, or restructure anything that is not directly related to these changes. 
+Preserve all existing routes, components, and database tables unless explicitly instructed to modify them.
+
+---
+
+## CONTEXT
+
+This is an AI agent platform that:
+- Communicates with financial advisors via WhatsApp
+- Allows admins to upload PDF materials about financial products (stocks, structured products, funds, FIIs, ETFs, debentures, etc.)
+- Uses the knowledge from those materials to power the agent's responses
+- Has an "Active Committee" section where specific materials are selected to define which products the agent can recommend
+
+---
+
+## REQUIRED CHANGES
+
+### CHANGE 1 — DATA MODEL: Separate "Material" from "Product"
+
+Currently, materials and products may be conflated. We need two distinct entities:
+
+**Material:**
+- id, name, file_url, upload_date, status (processing | ready | error), available_for_whatsapp (boolean)
+- A material is the raw PDF document. It is never deleted. It is the audit trail.
+
+**Product:**
+- id, name, ticker_or_code (optional), product_type (enum: acao | estruturada | fundo | fii | etf | debenture | outro), description, key_info (JSON — stores all extracted fields like expected return, risk, term, issuer, rating, thesis, etc.), material_ids (array — a product can appear in multiple materials), created_at, updated_at
+- A product is a knowledge entity extracted from one or more materials.
+
+If a Product table/model already exists, extend it carefully. If it doesn't exist, create it.
+If a Material table/model already exists, extend it carefully with the new fields.
+Create the necessary database migration(s) without dropping any existing columns.
+
+---
+
+### CHANGE 2 — SMART UPLOAD FLOW (Frontend + Backend)
+
+Replace or extend the current upload flow with the following multi-step process:
+
+**Step 1 — File Selection**
+- User selects a PDF file. No change to existing file upload UI if it already works.
+
+**Step 2 — Upload + AI Analysis**
+- On upload, send the PDF to the AI (Claude API) with a detailed system prompt instructing it to:
+  - Identify ALL financial products mentioned in the document
+  - For each product, extract: name, ticker/code (if present), product type, investment thesis, risks, expected return, term, issuer/emissor, minimum investment, liquidity, rating, and any other relevant fields
+  - Return a structured JSON array of products
+- Show a loading state with message: "Analisando o material e identificando produtos..."
+
+**Step 3 — Product Review Screen**
+- Display the extracted products in a review UI with:
+  - Each product shown as a card with all identified fields
+  - Editable fields so the user can correct any extraction errors
+  - Product type shown as a dropdown (ação, estruturada, fundo, FII, ETF, debênture, outro)
+  - A text input at the bottom: "Faltou algum produto? Descreva o que a IA deve buscar:" with a "Buscar produto faltante" button
+
+**Step 4 — Missing Product Search**
+- When the user describes a missing product and clicks the button:
+  - Send the original PDF + the user's description back to the AI
+  - Prompt: "The user says the following product was not identified: [user_description]. Re-analyze the document and extract all information about this product."
+  - Add the newly found product(s) to the review list
+  - Allow this step to repeat multiple times
+
+**Step 5 — Final Confirmation**
+- User clicks "Confirmar e salvar produtos"
+- Save the Material record
+- Save each Product record linked to this material's ID
+- Show success message with count: "Material salvo. X produtos criados."
+- Return to materials list
+
+---
+
+### CHANGE 3 — ACTIVE COMMITTEE: Precise Product Isolation
+
+In the existing "Comitê Ativo" (Active Committee) tab/section:
+
+**UI changes:**
+- The committee selection should show a list of available Materials (not raw products)
+- When a material is selected for the committee, display the products linked to that material
+- The user can deselect individual products within a material if needed (granular control)
+- Show the final consolidated list of products in the committee with a clear "Produtos no Comitê Ativo:" section
+
+**Backend/Agent changes:**
+- Store the active committee as a list of product IDs (not material IDs) — this is the precise, confirmed list
+- When the AI agent (WhatsApp agent) builds its context/prompt, it MUST:
+  - If a committee is active: inject ONLY the products in the committee list into its knowledge context
+  - If no committee is active: inject all available products
+  - Never recommend or discuss a product that is not in the active committee when a committee is set
+- Add a check: if a user asks about a product not in the committee, the agent should respond that this product is not in the current recommendation list, without elaborating on why
+
+---
+
+### CHANGE 4 — MATERIAL AVAILABILITY FLAGS
+
+In the Material model and UI:
+- Add a toggle: "Disponível para envio no WhatsApp" (available_for_whatsapp: boolean, default true)
+- In the materials list view, show this status clearly
+- The WhatsApp agent should only offer to send materials where available_for_whatsapp is true
+
+---
+
+## CONSTRAINTS AND SAFETY RULES
+
+1. DO NOT change any existing API routes that are already working
+2. DO NOT modify the WhatsApp integration logic beyond adding the committee filter to the agent context
+3. DO NOT change authentication or user management
+4. DO NOT remove any existing database columns — only ADD new ones
+5. Run all database changes as additive migrations
+6. If you are unsure whether something already exists, CHECK the existing code first before creating it
+7. Keep all existing UI pages intact — only extend them
+8. Write all new UI text in Portuguese (pt-BR)
+9. If the existing code uses a specific AI model or API client, use the same one for new AI calls
+10. Test each step independently — the multi-step upload must not break the rest of the app if the user navigates away mid-flow
+
+---
+
+## EXPECTED OUTCOME
+
+After these changes:
+- Uploading a PDF creates a Material and one or more Products as separate records
+- The upload flow has a human-in-the-loop review step before saving
+- The Active Committee precisely controls which products the agent recommends
+- Materials remain available for WhatsApp sending and agent knowledge base
+- No existing functionality is broken

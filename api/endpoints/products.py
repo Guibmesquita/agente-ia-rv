@@ -247,6 +247,8 @@ class ProductUpdate(BaseModel):
     categories: Optional[List[str]] = None
     status: Optional[str] = None
     description: Optional[str] = None
+    product_type: Optional[str] = None  # acao | estruturada | fundo | fii | etf | debenture | outro
+    key_info: Optional[str] = None      # JSON com campos extraídos relevantes
 
 
 class MaterialCreate(BaseModel):
@@ -561,6 +563,8 @@ async def get_product(
         "categories": product.get_categories(),
         "status": product.status,
         "description": product.description,
+        "product_type": product.product_type,
+        "key_info": product.key_info,
         "materials": materials,
         "scripts": scripts,
         "created_at": product.created_at.isoformat() if product.created_at else None,
@@ -597,7 +601,11 @@ async def update_product(
         product.status = data.status
     if data.description is not None:
         product.description = data.description
-    
+    if data.product_type is not None:
+        product.product_type = data.product_type
+    if data.key_info is not None:
+        product.key_info = data.key_info
+
     db.commit()
     return {"success": True}
 
@@ -2254,6 +2262,35 @@ async def dismiss_pdf_pending(
     db.commit()
 
     return {"ok": True}
+
+
+@router.post("/materials/{material_id}/toggle-whatsapp")
+async def toggle_material_whatsapp(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Ativa ou desativa o envio do material via WhatsApp pelo agente.
+    Quando desativado, o material não aparece na lista de materiais disponíveis para envio.
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    current_val = material.available_for_whatsapp if material.available_for_whatsapp is not None else True
+    material.available_for_whatsapp = not current_val
+    db.commit()
+
+    state = "ativado" if material.available_for_whatsapp else "desativado"
+    return {
+        "ok": True,
+        "available_for_whatsapp": material.available_for_whatsapp,
+        "message": f"Material {state} para envio via WhatsApp"
+    }
 
 
 @router.post("/{product_id}/materials/{material_id}/upload")

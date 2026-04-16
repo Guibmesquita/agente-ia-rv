@@ -1556,10 +1556,18 @@ class VectorStore:
 
                 for mat in active_mats:
                     product_ids_for_mat = []
-                    if mat.product_id:
+                    # Pré-carregar IDs excluídos para este material
+                    excluded_links = db.query(MaterialProductLink).filter(
+                        MaterialProductLink.material_id == mat.id,
+                        MaterialProductLink.excluded_from_committee == True,
+                    ).all()
+                    excluded_pids = {lnk.product_id for lnk in excluded_links}
+
+                    if mat.product_id and mat.product_id not in excluded_pids:
                         product_ids_for_mat.append(mat.product_id)
                     links = db.query(MaterialProductLink).filter(
-                        MaterialProductLink.material_id == mat.id
+                        MaterialProductLink.material_id == mat.id,
+                        MaterialProductLink.excluded_from_committee != True,
                     ).all()
                     for lnk in links:
                         if lnk.product_id not in product_ids_for_mat:
@@ -1709,13 +1717,18 @@ class VectorStore:
                 all_link_rows = db.query(MaterialProductLink).filter(
                     MaterialProductLink.material_id.in_(mat_ids)
                 ).all()
-                link_map: dict = {}  # material_id → [product_id, ...]
+                link_map: dict = {}       # material_id → [product_id (não excluídos)]
+                excluded_map: dict = {}   # material_id → set de product_ids excluídos
                 for lnk in all_link_rows:
-                    link_map.setdefault(lnk.material_id, []).append(lnk.product_id)
+                    if lnk.excluded_from_committee:
+                        excluded_map.setdefault(lnk.material_id, set()).add(lnk.product_id)
+                    else:
+                        link_map.setdefault(lnk.material_id, []).append(lnk.product_id)
 
                 for mat in active_committee_mats:
                     derived_pids = []
-                    if mat.product_id:
+                    exc = excluded_map.get(mat.id, set())
+                    if mat.product_id and mat.product_id not in exc:
                         derived_pids.append(mat.product_id)
                     for pid in link_map.get(mat.id, []):
                         if pid not in derived_pids:

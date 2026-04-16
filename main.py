@@ -345,6 +345,10 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_campaign_dispatches_scheduled ON campaign_dispatches(scheduled_for)",
         "ALTER TABLE materials ADD COLUMN IF NOT EXISTS pdf_whatsapp_dismissed BOOLEAN DEFAULT FALSE",
         "ALTER TABLE materials ADD COLUMN IF NOT EXISTS is_committee_active BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE materials ADD COLUMN IF NOT EXISTS available_for_whatsapp BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(50)",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS key_info TEXT",
+        "ALTER TABLE material_product_links ADD COLUMN IF NOT EXISTS excluded_from_committee BOOLEAN DEFAULT FALSE",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS categories TEXT DEFAULT '[]'",
         """UPDATE products SET categories = json_build_array(category)::text
            WHERE category IS NOT NULL AND category != ''

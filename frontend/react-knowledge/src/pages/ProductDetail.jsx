@@ -713,6 +713,23 @@ export function ProductDetail() {
               onSave={(v) => handleUpdateProduct('description', v)}
               multiline
             />
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted uppercase tracking-wide">Tipo do Produto</label>
+              <select
+                value={product.product_type || ''}
+                onChange={(e) => handleUpdateProduct('product_type', e.target.value || null)}
+                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-foreground"
+              >
+                <option value="">— Não definido —</option>
+                <option value="fii">FII (Fundo de Investimento Imobiliário)</option>
+                <option value="acao">Ação</option>
+                <option value="etf">ETF</option>
+                <option value="fundo">Fundo de Investimento</option>
+                <option value="debenture">Debênture</option>
+                <option value="estruturada">Estrutura / Derivativo</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
           </div>
         </Tabs.Content>
       </Tabs.Root>
