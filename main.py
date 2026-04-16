@@ -349,6 +349,8 @@ def _apply_incremental_migrations():
         "ALTER TABLE materials ADD COLUMN IF NOT EXISTS available_for_whatsapp BOOLEAN DEFAULT TRUE",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(50)",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS key_info TEXT",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_committee BOOLEAN DEFAULT FALSE",
+        "CREATE INDEX IF NOT EXISTS ix_products_is_committee ON products(is_committee)",
         "ALTER TABLE material_product_links ADD COLUMN IF NOT EXISTS excluded_from_committee BOOLEAN DEFAULT FALSE",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS categories TEXT DEFAULT '[]'",
         """UPDATE products SET categories = json_build_array(category)::text

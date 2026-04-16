@@ -1564,15 +1564,30 @@ class VectorStore:
     
     def get_active_committee_product_ids(self) -> List[int]:
         """
-        Retorna product_ids de produtos atualmente no Comitê SVN (via recommendation_entries).
-        Usado para verificação proativa no pipeline do agente.
+        Retorna product_ids de produtos marcados como Comitê SVN.
+
+        Fonte de verdade atual: flag `Product.is_committee` (estrela no card).
+        Mantém fallback para `RecommendationEntry` (legado) e categoria "Comitê"
+        para compatibilidade com dados antigos enquanto a migração de marcação
+        manual não é concluída.
         """
         from database.database import SessionLocal
         from datetime import datetime
         db = SessionLocal()
         try:
-            from sqlalchemy import text as sql_text, or_
+            from sqlalchemy import or_
+            from database.models import Product
             now = datetime.utcnow()
+
+            # Fonte primária: flag Product.is_committee (estrela)
+            ids_from_flag: list = []
+            try:
+                rows = db.query(Product.id).filter(Product.is_committee == True).all()
+                ids_from_flag = [row[0] for row in rows]
+            except Exception:
+                ids_from_flag = []
+
+            # Legado: recommendation_entries
             try:
                 from database.models import RecommendationEntry
                 entries = db.query(RecommendationEntry.product_id).filter(
@@ -1582,22 +1597,24 @@ class VectorStore:
                         RecommendationEntry.valid_until == None,
                         RecommendationEntry.valid_until >= now
                     )
-                ).order_by(RecommendationEntry.added_at.desc()).distinct().all()
+                ).distinct().all()
                 ids_from_entries = [row[0] for row in entries]
             except Exception:
                 ids_from_entries = []
 
-            # Fallback: produtos com "Comitê" em categories (marcação manual)
-            from database.models import Product
-            manual = db.query(Product.id).filter(
-                or_(
-                    Product.categories.like('%"Comitê"%'),
-                    Product.categories.like('%"comite"%'),
-                )
-            ).all()
-            ids_from_cats = [row[0] for row in manual]
+            # Legado: categoria "Comitê"
+            try:
+                manual = db.query(Product.id).filter(
+                    or_(
+                        Product.categories.like('%"Comitê"%'),
+                        Product.categories.like('%"comite"%'),
+                    )
+                ).all()
+                ids_from_cats = [row[0] for row in manual]
+            except Exception:
+                ids_from_cats = []
 
-            return list(set(ids_from_entries + ids_from_cats))
+            return list(set(ids_from_flag + ids_from_entries + ids_from_cats))
         except Exception as e:
             print(f"[VECTOR_STORE] Erro ao buscar product_ids do Comitê: {e}")
             return []

@@ -5,7 +5,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import {
   ArrowLeft, FileText, MessageSquare, Edit, Trash2, Plus,
   Upload, ChevronDown, ChevronRight, Clock, Check, AlertTriangle,
-  RefreshCw, History, Send, Table2, CheckSquare, Square, Pencil, X,
+  RefreshCw, History, Send, Table2, CheckSquare, Square, Pencil, X, Star,
 } from 'lucide-react';
 import { productsAPI, materialsAPI, blocksAPI, scriptsAPI } from '../services/api';
 import { Button } from '../components/Button';
@@ -575,7 +575,40 @@ export function ProductDetail() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-foreground">{product.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">{product.name}</h1>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const result = await productsAPI.toggleCommittee(product.id);
+                  setProduct((p) => ({ ...p, is_committee: Boolean(result?.is_committee) }));
+                  addToast(
+                    result?.is_committee
+                      ? `${product.name} adicionado ao Comitê SVN`
+                      : `${product.name} removido do Comitê SVN`,
+                    'success'
+                  );
+                } catch (err) {
+                  addToast(`Erro ao atualizar Comitê: ${err.message}`, 'error');
+                }
+              }}
+              title={product.is_committee
+                ? 'Produto do Comitê SVN — clique para remover'
+                : 'Marcar como produto do Comitê SVN'}
+              aria-pressed={Boolean(product.is_committee)}
+              aria-label={product.is_committee ? 'Remover do Comitê' : 'Adicionar ao Comitê'}
+              className="p-1 rounded-md hover:bg-gray-100 transition-colors"
+            >
+              <Star
+                className={`w-6 h-6 transition-colors ${
+                  product.is_committee
+                    ? 'text-amber-400 fill-amber-400'
+                    : 'text-gray-300 hover:text-amber-400'
+                }`}
+              />
+            </button>
+          </div>
           <p className="text-muted">
             {product.ticker && <span className="text-primary font-medium">{product.ticker}</span>}
             {product.ticker && product.category && ' • '}

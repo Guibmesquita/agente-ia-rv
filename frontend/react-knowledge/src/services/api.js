@@ -56,6 +56,8 @@ export const productsAPI = {
 
   reindex: (productId) => fetchAPI(`/products/${productId}/reindex`, { method: 'POST' }),
 
+  toggleCommittee: (productId) => fetchAPI(`/products/${productId}/toggle-committee`, { method: 'POST' }),
+
   search: (query, limit = 5) => fetchAPI(`/search/quick?q=${encodeURIComponent(query)}&limit=${limit}`),
 };
 

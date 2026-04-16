@@ -1078,22 +1078,8 @@ async def comite_panel_page(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Painel de gestão do Comitê Ativo SVN."""
-    if current_user.role not in ["admin", "gestao_rv"]:
-        raise HTTPException(status_code=403, detail="Acesso restrito")
-
-    products = db.query(Product).filter(Product.status == "ativo").order_by(Product.name).all()
-    products_list = [
-        {"id": p.id, "name": p.name, "ticker": p.ticker or "", "manager": p.manager or ""}
-        for p in products
-    ]
-
-    return templates.TemplateResponse(
-        "comite_panel.html",
-        {
-            "request": request,
-            "user_role": current_user.role,
-            "current_user": current_user,
-            "products_list": products_list,
-        },
-    )
+    """A página do Comitê foi descontinuada — agora os produtos do Comitê
+    são marcados via estrela diretamente no card do produto na Base de
+    Conhecimento. Redireciona para a base de conhecimento."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/base-conhecimento", status_code=307)

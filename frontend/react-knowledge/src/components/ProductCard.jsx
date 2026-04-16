@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Calendar, MoreVertical, RefreshCw, Trash2, Pencil, X } from 'lucide-react';
+import { FileText, Calendar, MoreVertical, RefreshCw, Trash2, Pencil, X, Star } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { productsAPI, materialsAPI } from '../services/api';
 import { useToast } from './Toast';
@@ -157,13 +157,45 @@ function EditCategoryModal({ product, onClose }) {
   );
 }
 
-export function ProductCard({ product, onClick, onReindex, onDelete, isReindexing = false }) {
+export function ProductCard({ product, onClick, onReindex, onDelete, onCommitteeChange, isReindexing = false }) {
+  const { addToast } = useToast();
   const status = getProductStatus(product);
   const materialsCount = product.materials_count ?? product.materials?.length ?? 0;
   const blocksCount = product.blocks_count ?? product.materials?.reduce((acc, m) => acc + (m.blocks?.length || 0), 0) ?? 0;
   const [menuOpen, setMenuOpen] = useState(false);
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
+  const [isCommittee, setIsCommittee] = useState(Boolean(product.is_committee));
+  const [togglingCommittee, setTogglingCommittee] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    setIsCommittee(Boolean(product.is_committee));
+  }, [product.is_committee]);
+
+  const handleToggleCommittee = async (e) => {
+    e.stopPropagation();
+    if (togglingCommittee) return;
+    setTogglingCommittee(true);
+    const previous = isCommittee;
+    setIsCommittee(!previous);
+    try {
+      const result = await productsAPI.toggleCommittee(product.id);
+      const newValue = Boolean(result?.is_committee);
+      setIsCommittee(newValue);
+      onCommitteeChange?.(product.id, newValue);
+      addToast(
+        newValue
+          ? `${product.name} adicionado ao Comitê SVN`
+          : `${product.name} removido do Comitê SVN`,
+        'success'
+      );
+    } catch (err) {
+      setIsCommittee(previous);
+      addToast(`Erro ao atualizar Comitê: ${err.message}`, 'error');
+    } finally {
+      setTogglingCommittee(false);
+    }
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -212,6 +244,27 @@ export function ProductCard({ product, onClick, onReindex, onDelete, isReindexin
         <div className="flex justify-between items-start mb-3">
           <h3 className="font-semibold text-foreground text-lg flex-1 mr-2">{product.name}</h3>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={handleToggleCommittee}
+              disabled={togglingCommittee}
+              title={isCommittee
+                ? 'Produto do Comitê SVN — clique para remover'
+                : 'Marcar como produto do Comitê SVN'}
+              aria-pressed={isCommittee}
+              aria-label={isCommittee ? 'Remover do Comitê' : 'Adicionar ao Comitê'}
+              className={`p-1 rounded-md transition-all ${
+                togglingCommittee ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:bg-gray-100'
+              }`}
+            >
+              <Star
+                className={`w-4 h-4 transition-colors ${
+                  isCommittee
+                    ? 'text-amber-400 fill-amber-400'
+                    : 'text-gray-300 hover:text-amber-400'
+                }`}
+              />
+            </button>
             <StatusBadge status={status} />
             {(onReindex || onDelete) && (
               <div className="relative" ref={menuRef}>

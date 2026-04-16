@@ -649,7 +649,9 @@ export function SmartUpload() {
   };
 
   const handleConfirmAndQueue = async () => {
-    const validMaterials = analysisResults.filter(m => m.material_id && !m.error && !m.duplicate);
+    // Materiais duplicados ainda são processáveis: o backend reutiliza o registro
+    // existente, atualiza/cria os produtos identificados e acumula informações.
+    const validMaterials = analysisResults.filter(m => m.material_id && !m.error);
     if (!validMaterials.length) {
       addToast('Nenhum material válido para processar', 'warning');
       return;

@@ -373,6 +373,7 @@ async def list_products(
             "categories": p.get_categories(),
             "status": p.status,
             "description": p.description,
+            "is_committee": bool(getattr(p, "is_committee", False)),
             "materials_count": materials_count,
             "scripts_count": scripts_count,
             "blocks_count": blocks_count,
@@ -565,6 +566,7 @@ async def get_product(
         "description": product.description,
         "product_type": product.product_type,
         "key_info": product.key_info,
+        "is_committee": bool(getattr(product, "is_committee", False)),
         "materials": materials,
         "scripts": scripts,
         "created_at": product.created_at.isoformat() if product.created_at else None,
@@ -734,6 +736,40 @@ async def delete_product(
     return {"success": True}
 
 
+@router.post("/{product_id}/toggle-committee")
+async def toggle_product_committee(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alterna a flag is_committee (estrela) de um produto.
+
+    Produtos estrelados são tratados como recomendação formal do Comitê SVN
+    pelo agente; produtos não estrelados são informativos (não-recomendação).
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    product.is_committee = not bool(getattr(product, "is_committee", False))
+    db.commit()
+    db.refresh(product)
+
+    print(
+        f"[TOGGLE COMMITTEE] '{product.name}' (id={product_id}) -> "
+        f"is_committee={product.is_committee} por {current_user.username}"
+    )
+
+    return {
+        "success": True,
+        "id": product.id,
+        "is_committee": bool(product.is_committee),
+    }
+
+
 # ==================== Materials Endpoints ====================
 
 @router.post("/{product_id}/materials")
@@ -863,6 +899,23 @@ async def delete_material(
         DocumentProcessingJob.material_id == material_id
     ).delete()
     print(f"[DELETE MATERIAL] {n} processing_jobs removidos")
+
+    # FK sem CASCADE — limpeza manual obrigatória antes de db.delete(material).
+    block_ids = [b.id for b in material.blocks]
+    if block_ids:
+        n = db.query(PendingReviewItem).filter(
+            PendingReviewItem.block_id.in_(block_ids)
+        ).delete(synchronize_session=False)
+        print(f"[DELETE MATERIAL] {n} pending_review_items removidos")
+        n = db.query(BlockVersion).filter(
+            BlockVersion.block_id.in_(block_ids)
+        ).delete(synchronize_session=False)
+        print(f"[DELETE MATERIAL] {n} block_versions removidos")
+
+    n = db.query(IngestionLog).filter(
+        IngestionLog.material_id == material_id
+    ).delete(synchronize_session=False)
+    print(f"[DELETE MATERIAL] {n} ingestion_logs removidos")
 
     db.delete(material)
     db.commit()

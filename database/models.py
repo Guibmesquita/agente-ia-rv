@@ -805,6 +805,7 @@ class Product(Base):
     product_type = Column(String(50), nullable=True)  # acao | estruturada | fundo | fii | etf | debenture | outro
     key_info = Column(Text, nullable=True)  # JSON com campos extraídos: retorno esperado, risco, prazo, emissor, etc.
     name_aliases = Column(Text, default="[]")
+    is_committee = Column(Boolean, default=False, index=True)  # Estrela = produto do Comitê SVN (recomendação formal)
     valid_from = Column(DateTime(timezone=True), nullable=True)
     valid_until = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
