@@ -857,7 +857,7 @@ class Material(Base):
     __tablename__ = "materials"
     
     id = Column(Integer, primary_key=True, index=True)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True, index=True)
     material_type = Column(String(50), default=MaterialType.ONE_PAGE.value)
     name = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)

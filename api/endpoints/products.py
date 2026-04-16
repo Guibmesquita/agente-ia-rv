@@ -4252,6 +4252,12 @@ async def link_products_and_queue(
     if not primary_product_id and created_products:
         primary_product_id = created_products[0]
 
+    if not primary_product_id and not created_products:
+        raise HTTPException(
+            status_code=400,
+            detail="Selecione pelo menos um produto para vincular ao material antes de processar."
+        )
+
     if primary_product_id:
         material.product_id = primary_product_id
 

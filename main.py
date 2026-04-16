@@ -396,6 +396,7 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_recommendation_entries_product ON recommendation_entries(product_id)",
         "CREATE INDEX IF NOT EXISTS ix_recommendation_entries_active ON recommendation_entries(is_active)",
         "ALTER TABLE materials ADD COLUMN IF NOT EXISTS ai_product_analysis TEXT",
+        "ALTER TABLE materials ALTER COLUMN product_id DROP NOT NULL",
     ]
     db = SessionLocal()
     try:
