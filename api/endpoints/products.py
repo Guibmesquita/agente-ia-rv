@@ -5201,6 +5201,44 @@ async def link_products_and_queue(
                 underlying_ticker = (cp.get("underlying_ticker") or "").strip().upper() or None
                 deep = cp.get("deep_info") if isinstance(cp.get("deep_info"), dict) else {}
 
+                # Fallback (Task #113): se frontend não enviou deep_info, recupera
+                # de material.ai_product_analysis por ticker/nome.
+                if not deep:
+                    try:
+                        import json as _json_fb
+                        raw = getattr(material, "ai_product_analysis", None)
+                        if raw:
+                            analysis = _json_fb.loads(raw) if isinstance(raw, str) else raw
+                            candidates = []
+                            if isinstance(analysis, dict):
+                                candidates = (
+                                    analysis.get("identified_products")
+                                    or analysis.get("products")
+                                    or []
+                                )
+                            elif isinstance(analysis, list):
+                                candidates = analysis
+                            ticker_up = (ticker or "").upper()
+                            name_low = (name or "").lower()
+                            for item in candidates:
+                                if not isinstance(item, dict):
+                                    continue
+                                it_tk = (item.get("ticker") or "").upper()
+                                it_nm = (item.get("name") or "").lower()
+                                if (ticker_up and it_tk == ticker_up) or (
+                                    name_low and it_nm == name_low
+                                ):
+                                    di = item.get("deep_info")
+                                    if isinstance(di, dict) and di:
+                                        deep = di
+                                        print(
+                                            f"[LINK_QUEUE][FALLBACK] deep_info recuperado de "
+                                            f"material.ai_product_analysis para ticker={ticker_up}"
+                                        )
+                                    break
+                    except Exception as fb_err:
+                        print(f"[LINK_QUEUE][FALLBACK] Erro ao ler ai_product_analysis: {fb_err}")
+
                 key_info_dict = {}
                 for fld in (
                     "investment_thesis", "expected_return", "investment_term",
