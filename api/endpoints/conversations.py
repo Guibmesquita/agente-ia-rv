@@ -13,6 +13,9 @@ import os
 import httpx
 import asyncio
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database.database import get_db
 from database.models import (
@@ -1871,6 +1874,8 @@ async def backfill_assessors(
     ).all()
 
     fixed = 0
+    failed = 0
+    last_error = None
     for conv in unmatched:
         try:
             assessor, found = identify_contact(db, conv.phone)
@@ -1879,14 +1884,18 @@ async def backfill_assessors(
                 if not conv.contact_name or conv.contact_name == "Desconhecido":
                     conv.contact_name = assessor.nome
                 fixed += 1
-        except Exception:
+        except Exception as e:
+            failed += 1
+            last_error = str(e)
+            logger.warning(f"[backfill-assessors] Falha ao processar conversa {conv.id} (phone={conv.phone}): {e}")
             continue
 
     db.commit()
 
-    return {
+    result: dict = {
         "success": True,
         "fixed": fixed,
+        "failed": failed,
         "total_checked": len(unmatched),
         "message": (
             f"{fixed} conversa(s) associada(s) ao assessor correto."
@@ -1894,3 +1903,6 @@ async def backfill_assessors(
             else "Nenhuma conversa nova pôde ser associada a um assessor."
         )
     }
+    if failed > 0 and last_error:
+        result["last_error"] = last_error
+    return result
