@@ -903,6 +903,8 @@
         importPreviewItems = [];
         document.getElementById('btn-analyze-material').disabled = true;
         document.getElementById('import-selected-label').textContent = 'Nenhum material selecionado';
+        var autoCreateCb = document.getElementById('auto-create-checkbox');
+        if (autoCreateCb) { autoCreateCb.checked = true; }
         showImportPhase1();
         openModal('modal-import');
         loadMaterialsForImport();
