@@ -43,6 +43,7 @@ def _register_routers():
     app.include_router(costs.router)
     app.include_router(health.router)
     app.include_router(recommendations_mod.router)
+    app.include_router(recommendations_mod.materials_router)
     app.include_router(recommendations_mod.page_router)
     print("[INIT] Routers registrados com sucesso.")
 

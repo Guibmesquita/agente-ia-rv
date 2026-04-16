@@ -22,6 +22,7 @@ from database.models import User
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
+materials_router = APIRouter(prefix="/api/materials", tags=["materials"])
 page_router = APIRouter(tags=["pages"])
 
 templates = Jinja2Templates(directory="frontend/templates")
@@ -669,6 +670,47 @@ async def deactivate_committee_material(
         "message": "Material removido do Comitê Ativo",
         "material": _material_committee_dict(material, db),
     }
+
+
+# ── Aliases /api/materials/... (compatibilidade de contrato) ──────────────────
+
+@materials_router.get("/committee")
+async def list_committee_materials_alias(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alias para GET /api/recommendations/committee-materials."""
+    return await list_committee_materials(db=db, current_user=current_user)
+
+
+@materials_router.get("/committee/available")
+async def list_available_materials_alias(
+    q: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alias para GET /api/recommendations/available-materials."""
+    return await list_available_materials(q=q, db=db, current_user=current_user)
+
+
+@materials_router.post("/{material_id}/committee/activate", status_code=200)
+async def activate_committee_material_alias(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alias para POST /api/recommendations/committee-materials/{id}/activate."""
+    return await activate_committee_material(material_id=material_id, db=db, current_user=current_user)
+
+
+@materials_router.post("/{material_id}/committee/deactivate", status_code=200)
+async def deactivate_committee_material_alias(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alias para POST /api/recommendations/committee-materials/{id}/deactivate."""
+    return await deactivate_committee_material(material_id=material_id, db=db, current_user=current_user)
 
 
 # ── Página do painel ──────────────────────────────────────────────────────────
