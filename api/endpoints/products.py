@@ -845,7 +845,12 @@ def _auto_extract_key_info_sync(db: Session, product: "Product") -> dict:
     if not api_key:
         return {"extracted": False, "reason": "OPENAI_API_KEY não configurado"}
 
-    blocks = (
+    STRATEGIC_BLOCK_TYPES = [
+        "estrategia", "risco", "perspectivas", "thesis", "analysis",
+        "summary", "overview", "key_points", "highlights",
+    ]
+
+    strategic_blocks = (
         db.query(ContentBlock)
         .join(Material, ContentBlock.material_id == Material.id)
         .filter(
@@ -854,11 +859,33 @@ def _auto_extract_key_info_sync(db: Session, product: "Product") -> dict:
                 ContentBlockStatus.APPROVED.value,
                 ContentBlockStatus.AUTO_APPROVED.value,
             ]),
+            ContentBlock.block_type.in_(STRATEGIC_BLOCK_TYPES),
         )
         .order_by(ContentBlock.order.asc())
-        .limit(20)
+        .limit(10)
         .all()
     )
+
+    if len(strategic_blocks) >= 3:
+        blocks = strategic_blocks
+    else:
+        all_blocks = (
+            db.query(ContentBlock)
+            .join(Material, ContentBlock.material_id == Material.id)
+            .filter(
+                Material.product_id == product.id,
+                ContentBlock.status.in_([
+                    ContentBlockStatus.APPROVED.value,
+                    ContentBlockStatus.AUTO_APPROVED.value,
+                ]),
+            )
+            .order_by(ContentBlock.order.asc())
+            .limit(20)
+            .all()
+        )
+        existing_ids = {b.id for b in strategic_blocks}
+        extra = [b for b in all_blocks if b.id not in existing_ids]
+        blocks = strategic_blocks + extra
 
     if not blocks:
         return {"extracted": False, "reason": "Nenhum bloco aprovado para este produto"}

@@ -1808,7 +1808,9 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                         f" NÃO há PDF para esta fonte — NUNCA acione send_document para ela."
                     )
                 else:
-                    section += f"\n⚠️ Ao citar dados: (Fonte: {material_name})"
+                    source_page = metadata.get("page") or metadata.get("source_page")
+                    page_suffix = f", pág. {source_page}" if source_page and int(source_page) > 0 else ""
+                    section += f"\n⚠️ Ao citar dados: (Fonte: {material_name}{page_suffix})"
                 section += f"\n{content}\n\n"
             sections.append(section)
 

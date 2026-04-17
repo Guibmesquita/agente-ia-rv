@@ -413,6 +413,42 @@ def _apply_incremental_migrations():
              AND (categories IS NULL OR categories = '[]' OR categories = '["fii"]')
              AND ticker IS NOT NULL
              AND UPPER(ticker) LIKE '%11'""",
+        # Task #134 (v2): Subcategorias de FII por padrão de nome do produto
+        """UPDATE products SET category = 'FII de Papel'
+           WHERE category = 'FII'
+             AND (
+               name ~* '\\y(papel|receb[ií]vel|crédito|credito|cri\\b|high.?grade|lci\\b|hipotecário)\\y'
+               OR name ~* '\\y(high grade|papel imobiliário|renda imobiliária)\\y'
+             )
+             AND ticker IS NOT NULL
+             AND UPPER(ticker) LIKE '%11'""",
+        """UPDATE products SET category = 'FII Logística'
+           WHERE category = 'FII'
+             AND (
+               name ~* '\\y(log[ií]stic|galpão|galpao|industrial|armazém|armazem|condomínio logístico)\\y'
+             )
+             AND ticker IS NOT NULL
+             AND UPPER(ticker) LIKE '%11'""",
+        """UPDATE products SET category = 'FII de Fundos'
+           WHERE category = 'FII'
+             AND (
+               name ~* '\\y(fundo de fundos|fof\\b|multigestão|multi.gestão|fundo.s.imobiliário.s.acesso)\\y'
+             )
+             AND ticker IS NOT NULL
+             AND UPPER(ticker) LIKE '%11'""",
+        """UPDATE products SET category = 'FII Híbrido'
+           WHERE category = 'FII'
+             AND (
+               name ~* '\\y(híbrido|hibrido|misto|diversificado)\\y'
+             )
+             AND ticker IS NOT NULL
+             AND UPPER(ticker) LIKE '%11'""",
+        # Task #134 (v2): Sincronizar categories array com as subcategorias atribuídas
+        """UPDATE products SET categories = json_build_array(category)::text
+           WHERE category IN ('FII de Papel','FII Logística','FII de Fundos','FII Híbrido','FII Tijolo')
+             AND (categories IS NULL OR categories = '[]' OR categories = '["FII"]' OR categories = '["fii"]')
+             AND ticker IS NOT NULL
+             AND UPPER(ticker) LIKE '%11'""",
     ]
     db = SessionLocal()
     try:
