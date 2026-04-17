@@ -12,10 +12,16 @@ block_type:   `product_key_info`
 material_name: "Ficha do Produto"
 """
 import json
+import hashlib
+import threading
 from typing import Optional, Dict, Any
 
 from database.models import Product
 from services.vector_store import get_vector_store
+
+
+_INDEX_CACHE_LOCK = threading.Lock()
+_LAST_INDEXED_HASH: Dict[int, str] = {}
 
 
 KEY_INFO_TEXT_FIELDS = [
@@ -123,11 +129,22 @@ def index_product_key_info(product: Product) -> bool:
             vs.delete_document(doc_id)
         except Exception:
             pass
+        with _INDEX_CACHE_LOCK:
+            _LAST_INDEXED_HASH.pop(product.id, None)
         return False
 
     text = build_key_info_narrative(product, key_info)
     ticker = (product.ticker or "").upper()
     name = product.name or ""
+
+    new_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    with _INDEX_CACHE_LOCK:
+        if _LAST_INDEXED_HASH.get(product.id) == new_hash:
+            print(
+                f"[KEY_INFO_INDEX] Sem mudanças no conteúdo da Ficha do Produto "
+                f"id={product.id} ({ticker or name}); reindex ignorado (idempotência)."
+            )
+            return False
 
     metadata = {
         "doc_type": "product_key_info",
@@ -148,6 +165,8 @@ def index_product_key_info(product: Product) -> bool:
 
     try:
         vs.add_document(doc_id=doc_id, text=text, metadata=metadata)
+        with _INDEX_CACHE_LOCK:
+            _LAST_INDEXED_HASH[product.id] = new_hash
         print(
             f"[KEY_INFO_INDEX] Produto id={product.id} ({ticker or name}) "
             f"indexado como {doc_id}"
@@ -166,7 +185,10 @@ def delete_product_key_info_index(product_id: int) -> bool:
     if not vs:
         return False
     try:
-        return vs.delete_document(f"product_keyinfo_{product_id}")
+        result = vs.delete_document(f"product_keyinfo_{product_id}")
+        with _INDEX_CACHE_LOCK:
+            _LAST_INDEXED_HASH.pop(product_id, None)
+        return result
     except Exception:
         return False
 

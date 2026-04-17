@@ -185,6 +185,32 @@ def _build_global_context_for_block(material, product) -> str:
     
     return "\n".join(parts)
 
+def _reindex_product_key_info_safe(product):
+    """Reindexa a Ficha do Produto (key_info) de forma idempotente e tolerante a erros."""
+    if not product:
+        return
+    try:
+        from services.product_key_info_indexer import index_product_key_info
+        index_product_key_info(product)
+    except Exception as e:
+        pid = getattr(product, "id", None)
+        print(f"[KEY_INFO_INDEX] Aviso: falha ao reindexar Ficha do Produto id={pid}: {e}")
+
+
+def _reindex_product_key_info_for_block(block, db: Session):
+    """Resolve produto a partir de um ContentBlock e dispara reindex da Ficha do Produto."""
+    if not block:
+        return
+    try:
+        material = db.query(Material).filter(Material.id == block.material_id).first()
+        if not material:
+            return
+        product = db.query(Product).filter(Product.id == material.product_id).first()
+        _reindex_product_key_info_safe(product)
+    except Exception as e:
+        print(f"[KEY_INFO_INDEX] Aviso: falha ao resolver produto para reindex: {e}")
+
+
 def auto_publish_if_ready(material, db: Session):
     pending_count = db.query(ContentBlock).filter(
         ContentBlock.material_id == material.id,
@@ -1155,7 +1181,9 @@ async def create_block(
     )
     db.add(version)
     db.commit()
-    
+
+    _reindex_product_key_info_for_block(block, db)
+
     return {"success": True, "block_id": block.id}
 
 
@@ -1210,7 +1238,9 @@ async def update_block(
     )
     db.add(version)
     db.commit()
-    
+
+    _reindex_product_key_info_for_block(block, db)
+
     return {"success": True, "new_version": block.current_version}
 
 
@@ -1287,7 +1317,9 @@ async def restore_block_version(
     )
     db.add(new_version)
     db.commit()
-    
+
+    _reindex_product_key_info_for_block(block, db)
+
     return {"success": True, "new_version": block.current_version}
 
 
@@ -1307,9 +1339,15 @@ async def delete_block(
     
     if not block:
         raise HTTPException(status_code=404, detail="Bloco não encontrado")
-    
+
+    material = db.query(Material).filter(Material.id == block.material_id).first()
+    product = db.query(Product).filter(Product.id == material.product_id).first() if material else None
+
     db.delete(block)
     db.commit()
+
+    _reindex_product_key_info_safe(product)
+
     return {"success": True}
 
 
@@ -1356,8 +1394,9 @@ async def approve_block(
                 product_ticker=product.ticker,
                 db=db
             )
+            _reindex_product_key_info_safe(product)
         auto_publish_if_ready(material, db)
-    
+
     return {"success": True, "status": block.status}
 
 
@@ -1381,6 +1420,7 @@ async def bulk_approve_blocks(
     approved_count = 0
     errors = []
     indexed_materials = set()
+    affected_product_ids = set()
     
     for block_id in request.block_ids:
         block = db.query(ContentBlock).filter(ContentBlock.id == block_id).first()
@@ -1422,7 +1462,12 @@ async def bulk_approve_blocks(
                     product_ticker=product.ticker,
                     db=db
                 )
+                affected_product_ids.add(product.id)
             auto_publish_if_ready(material, db)
+
+    for pid in affected_product_ids:
+        prod = db.query(Product).filter(Product.id == pid).first()
+        _reindex_product_key_info_safe(prod)
     
     return {
         "success": True,
@@ -1872,9 +1917,12 @@ async def approve_review_item(
                 product_ticker=_product.ticker if _product else None,
                 db=db
             )
+            _reindex_product_key_info_safe(_product)
+        else:
+            _reindex_product_key_info_for_block(block, db)
     else:
         db.commit()
-    
+
     return {"success": True}
 
 
@@ -1916,6 +1964,9 @@ async def edit_review_item(
     item.extracted_content = data.content
     
     db.commit()
+
+    _reindex_product_key_info_for_block(block, db)
+
     return {"success": True}
 
 
@@ -1942,6 +1993,9 @@ async def reject_review_item(
         block.status = ContentBlockStatus.REJECTED.value
     
     db.commit()
+
+    _reindex_product_key_info_for_block(block, db)
+
     return {"success": True}
 
 
