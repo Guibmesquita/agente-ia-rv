@@ -24,10 +24,10 @@ export function Dashboard() {
   const { addToast } = useToast();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(() => sessionStorage.getItem(STORAGE_SEARCH_KEY) || '');
+  const [search, setSearch] = useState(() => localStorage.getItem(STORAGE_SEARCH_KEY) || '');
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(() => sessionStorage.getItem(STORAGE_CATEGORY_KEY) || '');
-  const [committeeFilter, setCommitteeFilter] = useState(() => sessionStorage.getItem(STORAGE_COMMITTEE_KEY) === 'true');
+  const [selectedCategory, setSelectedCategory] = useState(() => localStorage.getItem(STORAGE_CATEGORY_KEY) || '');
+  const [committeeFilter, setCommitteeFilter] = useState(() => localStorage.getItem(STORAGE_COMMITTEE_KEY) === 'true');
   const [showNewModal, setShowNewModal] = useState(false);
   const [newProduct, setNewProduct] = useState({ name: '', ticker: '', categories: [] });
   const [creating, setCreating] = useState(false);
@@ -49,15 +49,15 @@ export function Dashboard() {
   const [bulkCommitteeWorking, setBulkCommitteeWorking] = useState(false);
 
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_SEARCH_KEY, search);
+    localStorage.setItem(STORAGE_SEARCH_KEY, search);
   }, [search]);
 
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_CATEGORY_KEY, selectedCategory);
+    localStorage.setItem(STORAGE_CATEGORY_KEY, selectedCategory);
   }, [selectedCategory]);
 
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_COMMITTEE_KEY, committeeFilter);
+    localStorage.setItem(STORAGE_COMMITTEE_KEY, committeeFilter);
   }, [committeeFilter]);
 
   const loadProducts = async () => {
