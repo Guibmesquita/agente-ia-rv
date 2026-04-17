@@ -291,6 +291,115 @@ class ProductIngestor:
         
         return {"success": True, "stats": stats}
     
+    def _link_derived_products_to_base_material(
+        self,
+        material_id: int,
+        document_title: str,
+        redistributed_material_ids: set,
+        db: Session,
+        log_fn=None
+    ):
+        """
+        Após redistribuição de blocos por ticker, verifica se produtos derivados
+        (ex: POP, Collar, COE) com `underlying_ticker` em key_info estão vinculados
+        ao material placeholder original. Para cada um, localiza o material per-ticker
+        criado durante a redistribuição e cria um MaterialProductLink apontando o produto
+        derivado para esse material específico, removendo o vínculo com o placeholder.
+        """
+        from database.models import MaterialProductLink, Product, Material
+
+        def _log(msg, t="info"):
+            if log_fn:
+                log_fn(msg, t)
+            else:
+                print(f"[DERIVED_LINK] {msg}")
+
+        if not redistributed_material_ids:
+            return
+
+        linked_product_ids = set()
+
+        mpl_rows = db.query(MaterialProductLink).filter(
+            MaterialProductLink.material_id == material_id
+        ).all()
+        for mpl in mpl_rows:
+            linked_product_ids.add(mpl.product_id)
+
+        orig_mat = db.query(Material).filter(Material.id == material_id).first()
+        if orig_mat and orig_mat.product_id:
+            linked_product_ids.add(orig_mat.product_id)
+
+        if not linked_product_ids:
+            return
+
+        linked_products = db.query(Product).filter(Product.id.in_(linked_product_ids)).all()
+
+        changes_made = False
+        for derived_product in linked_products:
+            try:
+                ki = json.loads(derived_product.key_info or "{}")
+            except Exception:
+                ki = {}
+
+            underlying_ticker = (ki.get("underlying_ticker") or "").strip().upper()
+            if not underlying_ticker:
+                continue
+
+            base_product = db.query(Product).filter(
+                Product.ticker == underlying_ticker
+            ).first()
+            if not base_product:
+                _log(
+                    f"Ativo-base '{underlying_ticker}' não encontrado para '{derived_product.ticker}'",
+                    "warning"
+                )
+                continue
+
+            base_material = db.query(Material).filter(
+                Material.product_id == base_product.id,
+                Material.name == document_title,
+                Material.id.in_(redistributed_material_ids)
+            ).first()
+
+            if not base_material:
+                _log(
+                    f"Material per-ticker '{underlying_ticker}' não está na redistribuição "
+                    f"(produto derivado: '{derived_product.ticker}')",
+                    "warning"
+                )
+                continue
+
+            if base_material.product_id == derived_product.id:
+                continue
+
+            already_linked = db.query(MaterialProductLink).filter(
+                MaterialProductLink.material_id == base_material.id,
+                MaterialProductLink.product_id == derived_product.id
+            ).first()
+
+            if already_linked:
+                _log(
+                    f"'{derived_product.ticker}' já vinculado ao material de '{underlying_ticker}'",
+                    "info"
+                )
+                continue
+
+            new_link = MaterialProductLink(
+                material_id=base_material.id,
+                product_id=derived_product.id,
+                excluded_from_committee=False
+            )
+            db.add(new_link)
+            _log(
+                f"Produto derivado '{derived_product.ticker}' → material de '{underlying_ticker}' "
+                f"(material_id={base_material.id})",
+                "success"
+            )
+            changes_made = True
+
+        if changes_made:
+            db.commit()
+
     def process_pdf_with_product_detection(
         self,
         pdf_path: str,
@@ -328,6 +437,7 @@ class ProductIngestor:
         }
         
         block_order = 0
+        redistributed_material_ids = set()
         
         for page in processed.get("pages", []):
             page_num = page.get("page_number", 0)
@@ -374,6 +484,7 @@ class ProductIngestor:
                 
                 if existing_material:
                     target_material_id = existing_material.id
+                    redistributed_material_ids.add(existing_material.id)
                 else:
                     new_material = Material(
                         product_id=matched_product.id,
@@ -386,6 +497,7 @@ class ProductIngestor:
                     db.commit()
                     db.refresh(new_material)
                     target_material_id = new_material.id
+                    redistributed_material_ids.add(new_material.id)
             
             if content_type == "table" or raw_data.get("tables"):
                 tables = raw_data.get("tables", [])
@@ -454,6 +566,13 @@ class ProductIngestor:
             original_material.source_filename = os.path.basename(pdf_path)
             db.commit()
             _ensure_material_file(db, material_id, pdf_path, original_material.source_filename)
+            
+            self._link_derived_products_to_base_material(
+                material_id=material_id,
+                document_title=document_title,
+                redistributed_material_ids=redistributed_material_ids,
+                db=db
+            )
             
             from database.models import ContentBlock as CB, DocumentProcessingJob, DocumentPageResult
             blocks_in_original = db.query(CB).filter(CB.material_id == material_id).count()
@@ -746,6 +865,14 @@ class ProductIngestor:
             
             db.commit()
             _ensure_material_file(db, material_id, pdf_path, original_material.source_filename)
+            
+            self._link_derived_products_to_base_material(
+                material_id=material_id,
+                document_title=document_title,
+                redistributed_material_ids=redistributed_material_ids,
+                db=db,
+                log_fn=log
+            )
             
             from database.models import ContentBlock as CB, DocumentProcessingJob as DPJ2, DocumentPageResult as DPR2
             blocks_in_original = db.query(CB).filter(CB.material_id == material_id).count()
