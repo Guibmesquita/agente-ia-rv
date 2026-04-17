@@ -245,8 +245,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 PREDEFINED_PRODUCT_CATEGORIES = [
     "FII",
-    "FII de Papel",
+    "FII Papel",
     "FII de CRI",
+    "FII Tijolo",
+    "FII Logística",
+    "FII Híbrido",
+    "FII de Fundos",
     "Ação",
     "COE",
     "Derivativo",

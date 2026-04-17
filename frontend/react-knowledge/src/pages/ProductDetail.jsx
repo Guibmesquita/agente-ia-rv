@@ -838,6 +838,40 @@ export function ProductDetail() {
               onSave={(v) => handleUpdateProduct('ticker', v)}
               placeholder="Ex: XPTO11"
             />
+            {product.ticker && product.ticker.toUpperCase().endsWith('11') && (
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-foreground">Subcategoria FII</label>
+                <select
+                  value={
+                    ['FII Papel', 'FII Tijolo', 'FII Logística', 'FII Híbrido', 'FII de Fundos'].includes(product.category)
+                      ? product.category
+                      : ''
+                  }
+                  onChange={async (e) => {
+                    const sub = e.target.value;
+                    if (!sub) return;
+                    try {
+                      await productsAPI.update(id, { category: sub });
+                      addToast('Subcategoria atualizada!', 'success');
+                      loadProduct();
+                    } catch (err) {
+                      addToast(`Erro: ${err.message}`, 'error');
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-foreground"
+                >
+                  <option value="">— Selecione a subcategoria —</option>
+                  <option value="FII Papel">FII Papel</option>
+                  <option value="FII Tijolo">FII Tijolo</option>
+                  <option value="FII Logística">FII Logística</option>
+                  <option value="FII Híbrido">FII Híbrido</option>
+                  <option value="FII de Fundos">FII de Fundos</option>
+                </select>
+                <p className="text-xs text-muted">
+                  Substitui a categoria genérica 'FII' por uma subcategoria específica.
+                </p>
+              </div>
+            )}
             <div>
               <ProductCategories
                 label="Categorias do Produto"

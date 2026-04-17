@@ -453,6 +453,20 @@ def _apply_incremental_migrations():
              AND (categories IS NULL OR categories = '[]' OR categories = '["FII"]' OR categories = '["fii"]')
              AND ticker IS NOT NULL
              AND UPPER(ticker) LIKE '%11'""",
+        # Task #137: Normalizar 'FII de Papel' → 'FII Papel' (nome canônico sem 'de')
+        """UPDATE products SET category = 'FII Papel',
+                               categories = REPLACE(categories, 'FII de Papel', 'FII Papel')
+           WHERE category = 'FII de Papel'""",
+        # Task #137: Subcategorias de FII — tickers conhecidos com classificação manual
+        """UPDATE products SET category = 'FII Papel', categories = '["FII Papel"]'
+           WHERE UPPER(ticker) IN ('GARE11','MANA11','RZAT11','MCRE11','PCIP11')
+             AND (category IS NULL OR category = '' OR category = 'FII')""",
+        """UPDATE products SET category = 'FII Logística', categories = '["FII Logística"]'
+           WHERE UPPER(ticker) IN ('LVBI11','BTLG11')
+             AND (category IS NULL OR category = '' OR category = 'FII')""",
+        """UPDATE products SET category = 'FII Tijolo', categories = '["FII Tijolo"]'
+           WHERE UPPER(ticker) IN ('LIFE11')
+             AND (category IS NULL OR category = '' OR category = 'FII')""",
     ]
     db = SessionLocal()
     try:

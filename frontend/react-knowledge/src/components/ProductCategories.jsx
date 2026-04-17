@@ -5,7 +5,7 @@ const PRODUCT_CATEGORIES = [
   { value: 'FII', label: 'FII', tooltip: 'Fundo de Investimento Imobiliário (categoria geral)' },
   { value: 'FII Tijolo', label: 'FII Tijolo', tooltip: 'FII com imóveis físicos: lajes corporativas, shoppings, galpões logísticos, hospitais, etc.' },
   { value: 'FII Logística', label: 'FII Logística', tooltip: 'FII focado em galpões logísticos e industriais' },
-  { value: 'FII de Papel', label: 'FII de Papel', tooltip: 'FII com ativos financeiros lastreados em imóveis: CRI, LCI, etc.' },
+  { value: 'FII Papel', label: 'FII Papel', tooltip: 'FII com ativos financeiros lastreados em imóveis: CRI, LCI, etc.' },
   { value: 'FII de CRI', label: 'FII de CRI', tooltip: 'FII especializado em Certificados de Recebíveis Imobiliários' },
   { value: 'FII Híbrido', label: 'FII Híbrido', tooltip: 'FII com mix de ativos físicos e financeiros (tijolo + papel)' },
   { value: 'FII de Fundos', label: 'FII de Fundos', tooltip: 'FII que investe em cotas de outros FIIs (FOF)' },
