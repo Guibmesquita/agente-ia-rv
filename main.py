@@ -18,7 +18,7 @@ def _register_routers():
     from api.endpoints import (
         auth, users, tickets, whatsapp_webhook, integrations, agent_config,
         assessores, campaigns, knowledge, agent_test, conversations, products,
-        files, insights, search, trusted_sources, costs, health, committee
+        files, insights, search, trusted_sources, costs, health, committee, admin
     )
     from api.endpoints import recommendations as recommendations_mod
 
@@ -43,6 +43,7 @@ def _register_routers():
     app.include_router(costs.router)
     app.include_router(health.router)
     app.include_router(committee.router)
+    app.include_router(admin.router)
     app.include_router(recommendations_mod.router)
     app.include_router(recommendations_mod.materials_router)
     app.include_router(recommendations_mod.page_router)
