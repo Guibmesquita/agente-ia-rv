@@ -2381,6 +2381,45 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                     "fundo sugerido",
                     "ativo sugerido",
                     "produto sugerido",
+                    # Formas coloquiais curtas — adicionadas em Task #150
+                    "me indica",
+                    "me indique",
+                    "me sugere",
+                    "me sugira",
+                    "me recomenda",
+                    "me recomende",
+                    "sugere algum",
+                    "sugira algum",
+                    "indica algum",
+                    "indique algum",
+                    "tem algum fundo",
+                    "tem algum fii",
+                    "tem algum ativo",
+                    "fii bom",
+                    "fundo bom",
+                    "o que tá bom",
+                    "o que ta bom",
+                    "o que está bom",
+                    "o que esta bom",
+                    "o que vocês tão",
+                    "o que voces tao",
+                    "o que tão recomendando",
+                    "o que tao recomendando",
+                    "o que tão indicando",
+                    "o que tao indicando",
+                    "o que tá na carteira",
+                    "o que ta na carteira",
+                    "qual você escolheria",
+                    "qual voce escolheria",
+                    "qual escolheria",
+                    "o que tá no portfólio",
+                    "o que ta no portfolio",
+                    "algo interessante pra",
+                    "algo interessante para",
+                    "novidade no comitê",
+                    "novidade no comite",
+                    "novidades do comitê",
+                    "novidades do comite",
                 ]
                 msg_lower = user_message.lower()
                 if any(kw in msg_lower for kw in comite_keywords):
@@ -2399,6 +2438,49 @@ REGRAS PARA INFORMAÇÕES DA INTERNET:
                     print(
                         f"[OpenAI] {len(comite_docs)} documentos vigentes do Comitê adicionados ao contexto"
                     )
+                    # Verificar cobertura: documentos podem cobrir apenas parte dos produtos do comitê.
+                    # Se houver produtos com estrela sem documentos publicados, injetar aviso
+                    # para que o agente use a lista completa do system prompt, não apenas os docs.
+                    try:
+                        _all_star_ids = vs.get_active_committee_product_ids()
+                        _docs_pids: set = set()
+                        for _d in comite_docs:
+                            _pid = (_d.get("metadata") or {}).get("product_id")
+                            if _pid:
+                                try:
+                                    _docs_pids.add(int(_pid))
+                                except (TypeError, ValueError):
+                                    pass
+                        _total_star = len(_all_star_ids)
+                        _covered = len(_docs_pids & set(_all_star_ids))
+                        if _total_star > _covered:
+                            _missing = _total_star - _covered
+                            print(
+                                f"[OpenAI] Cobertura parcial: {_covered}/{_total_star} produto(s) do comitê têm documentos. "
+                                f"{_missing} produto(s) sem docs — injetando aviso de lista completa."
+                            )
+                            context_documents.insert(
+                                0,
+                                {
+                                    "content": (
+                                        f"ℹ️ AVISO DE SISTEMA [COMITÊ-COBERTURA-PARCIAL]: "
+                                        f"O Comitê SVN tem {_total_star} produto(s) com recomendação formal ativa. "
+                                        f"Os documentos de análise abaixo cobrem apenas {_covered} deles. "
+                                        f"OBRIGATÓRIO: Ao responder sobre QUAIS produtos fazem parte do Comitê SVN "
+                                        f"ou ao listar as recomendações vigentes, use SEMPRE a lista completa do bloco "
+                                        f"'=== CARTEIRA DO COMITÊ SVN ===' no seu contexto de sistema — "
+                                        f"não apenas os documentos presentes neste contexto de busca. "
+                                        f"Todos os {_total_star} produto(s) listados no system prompt devem ser mencionados."
+                                    ),
+                                    "metadata": {
+                                        "material_type": "system_info",
+                                        "title": "AVISO-COMITÊ-COBERTURA-PARCIAL",
+                                    },
+                                    "source": "system",
+                                },
+                            )
+                    except Exception as _cov_err:
+                        print(f"[OpenAI] Aviso: erro ao verificar cobertura do comitê: {_cov_err}")
                 else:
                     print(
                         f"[OpenAI] Nenhum produto vigente encontrado - Stevan informará ao assessor"
