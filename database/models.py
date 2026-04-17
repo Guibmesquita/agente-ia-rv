@@ -766,6 +766,7 @@ class ContentBlockType(str, enum.Enum):
     """Tipos de bloco de conteúdo."""
     TEXT = "texto"
     TABLE = "tabela"
+    FINANCIAL_TABLE = "financial_table"
     SCRIPT = "script"
     CHART = "grafico"
     IMAGE = "imagem"
