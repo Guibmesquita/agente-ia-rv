@@ -118,7 +118,7 @@ def detect_high_risk(content: str, content_type: str, image_quality: str = "good
         (is_high_risk, reason, confidence_score)
     """
     
-    if content_type in ["table", "tabela", "tabela_financeira"]:
+    if content_type in ["table", "tabela", "financial_table"]:
         return False, "", 95
     
     if content_type in ["text", "texto", "mixed"]:
@@ -214,7 +214,7 @@ class ProductIngestor:
                     fin_metrics = _detect_financial_metrics_in_table(table)
                     if fin_metrics:
                         table["_financial_metrics_detected"] = fin_metrics
-                        effective_block_type = "tabela_financeira"
+                        effective_block_type = "financial_table"
                     else:
                         effective_block_type = ContentBlockType.TABLE.value
                     table_json = json.dumps(table, ensure_ascii=False)
@@ -560,7 +560,7 @@ class ProductIngestor:
                     fin_metrics = _detect_financial_metrics_in_table(table)
                     if fin_metrics:
                         table["_financial_metrics_detected"] = fin_metrics
-                        effective_block_type = "tabela_financeira"
+                        effective_block_type = "financial_table"
                     else:
                         effective_block_type = ContentBlockType.TABLE.value
                     table_json = json.dumps(table, ensure_ascii=False)
@@ -838,7 +838,7 @@ class ProductIngestor:
                     fin_metrics = _detect_financial_metrics_in_table(table)
                     if fin_metrics:
                         table["_financial_metrics_detected"] = fin_metrics
-                        effective_block_type = "tabela_financeira"
+                        effective_block_type = "financial_table"
                     else:
                         effective_block_type = ContentBlockType.TABLE.value
                     table_json = json.dumps(table, ensure_ascii=False)
@@ -1142,7 +1142,7 @@ class ProductIngestor:
         for block in blocks:
             content_for_indexing = block.content
             financial_metrics_detected = []
-            if block.block_type in (ContentBlockType.TABLE.value, "tabela_financeira"):
+            if block.block_type in (ContentBlockType.TABLE.value, "financial_table"):
                 try:
                     table_data = json.loads(block.content)
                     financial_metrics_detected = table_data.pop("_financial_metrics_detected", [])
@@ -1198,7 +1198,7 @@ class ProductIngestor:
             
             if financial_metrics_detected:
                 metadata["financial_metrics_detected"] = json.dumps(financial_metrics_detected, ensure_ascii=False)
-                if block.block_type == "tabela_financeira":
+                if block.block_type == "financial_table":
                     print(f"[INGESTOR] Bloco {block.id} — tabela financeira com métricas: {financial_metrics_detected}")
             
             try:

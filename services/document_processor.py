@@ -430,18 +430,34 @@ FORMATO DE RESPOSTA (JSON puro, sem markdown):
             print(f"[DOC_PROCESSOR] Erro ao analisar página (texto nativo): {e}")
             return {"content_type": "text", "summary": f"Erro: {str(e)}", "facts": [], "raw_data": {}}
 
+    def _normalize_page_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normaliza o resultado da análise de página.
+        Move `financial_metrics` do topo para `raw_data.financial_metrics` de forma padronizada.
+        Mantém compatibilidade: consumidores que lêem `raw_data.financial_metrics` sempre encontram os dados.
+        """
+        fm = result.pop("financial_metrics", None)
+        if fm and isinstance(fm, dict) and fm:
+            raw_data = result.get("raw_data")
+            if not isinstance(raw_data, dict):
+                raw_data = {}
+                result["raw_data"] = raw_data
+            raw_data["financial_metrics"] = fm
+        return result
+
     def analyze_page_hybrid(self, page, pre_content_type, document_title: str = "", page_number: int = 0) -> Dict[str, Any]:
         """
         Estratégia híbrida de extração:
-        - Se a página tem texto nativo suficiente (>NATIVE_TEXT_MIN_CHARS chars) E é classificada
-          como TEXT ou MIXED, usa analyze_page_with_text (mais barato e preciso).
-        - Caso contrário, usa Vision completo via analyze_page.
-        Loga qual estratégia foi usada.
+        - Se a página é classificada como TEXT PURO e tem texto nativo suficiente (>NATIVE_TEXT_MIN_CHARS
+          chars), usa analyze_page_with_text (GPT-4o texto puro — mais barato e preciso).
+        - Para MIXED, TABLE, INFOGRAPHIC e IMAGE_ONLY, usa Vision completo via analyze_page —
+          essas páginas podem ter conteúdo visual que o texto nativo não captura.
+        Loga qual estratégia foi usada por página.
         """
         native_text = self._extract_page_text_native(page)
         use_native = (
             len(native_text) >= NATIVE_TEXT_MIN_CHARS
-            and pre_content_type in (ContentType.TEXT, ContentType.MIXED)
+            and pre_content_type == ContentType.TEXT
         )
 
         if use_native:
@@ -455,7 +471,7 @@ FORMATO DE RESPOSTA (JSON puro, sem markdown):
             result = self.analyze_page(image, document_title, page_number)
             result["extraction_strategy"] = "vision"
 
-        return result
+        return self._normalize_page_result(result)
 
     def process_pdf(
         self, 
