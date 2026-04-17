@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Calendar, MoreVertical, RefreshCw, Trash2, Pencil, X, Star } from 'lucide-react';
+import { FileText, Calendar, MoreVertical, RefreshCw, Trash2, Pencil, X, Star, Check } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { productsAPI, materialsAPI } from '../services/api';
 import { useToast } from './Toast';
@@ -157,7 +157,17 @@ function EditCategoryModal({ product, onClose }) {
   );
 }
 
-export function ProductCard({ product, onClick, onReindex, onDelete, onCommitteeChange, isReindexing = false }) {
+export function ProductCard({
+  product,
+  onClick,
+  onReindex,
+  onDelete,
+  onCommitteeChange,
+  isReindexing = false,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
+}) {
   const { addToast } = useToast();
   const status = getProductStatus(product);
   const materialsCount = product.materials_count ?? product.materials?.length ?? 0;
@@ -232,41 +242,75 @@ export function ProductCard({ product, onClick, onReindex, onDelete, onCommittee
     setEditCategoryOpen(true);
   };
 
+  const handleCardClick = () => {
+    if (selectionMode) {
+      onToggleSelect?.(product.id);
+    } else if (!isReindexing) {
+      onClick?.(product);
+    }
+  };
+
   return (
     <>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: isReindexing ? 0.6 : 1, y: 0 }}
         whileHover={{ y: isReindexing ? 0 : -2, boxShadow: isReindexing ? undefined : '0 4px 12px rgba(0, 0, 0, 0.1)' }}
-        onClick={() => !isReindexing && onClick(product)}
-        className={`bg-card rounded-card border border-border p-5 shadow-card transition-opacity duration-200 ${isReindexing ? 'cursor-default' : 'cursor-pointer'}`}
+        onClick={handleCardClick}
+        className={`relative bg-card rounded-card border p-5 shadow-card transition-all duration-200
+          ${selectionMode
+            ? isSelected
+              ? 'border-primary ring-2 ring-primary/20 cursor-pointer'
+              : 'border-border hover:border-primary/50 cursor-pointer'
+            : isReindexing
+              ? 'border-border cursor-default'
+              : 'border-border cursor-pointer'
+          }`}
       >
-        <div className="flex justify-between items-start mb-3">
+        {selectionMode && (
+          <div
+            className={`absolute top-3 left-3 w-5 h-5 rounded flex items-center justify-center
+              border-2 transition-all
+              ${isSelected
+                ? 'bg-primary border-primary'
+                : 'bg-white border-gray-300'
+              }`}
+          >
+            {isSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+          </div>
+        )}
+
+        <div className={`flex justify-between items-start mb-3 ${selectionMode ? 'pl-7' : ''}`}>
           <h3 className="font-semibold text-foreground text-lg flex-1 mr-2">{product.name}</h3>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              onClick={handleToggleCommittee}
-              disabled={togglingCommittee}
-              title={isCommittee
-                ? 'Produto do Comitê SVN — clique para remover'
-                : 'Marcar como produto do Comitê SVN'}
-              aria-pressed={isCommittee}
-              aria-label={isCommittee ? 'Remover do Comitê' : 'Adicionar ao Comitê'}
-              className={`p-1 rounded-md transition-all ${
-                togglingCommittee ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:bg-gray-100'
-              }`}
-            >
-              <Star
-                className={`w-4 h-4 transition-colors ${
-                  isCommittee
-                    ? 'text-amber-400 fill-amber-400'
-                    : 'text-gray-300 hover:text-amber-400'
+            {!selectionMode && (
+              <button
+                type="button"
+                onClick={handleToggleCommittee}
+                disabled={togglingCommittee}
+                title={isCommittee
+                  ? 'Produto do Comitê SVN — clique para remover'
+                  : 'Marcar como produto do Comitê SVN'}
+                aria-pressed={isCommittee}
+                aria-label={isCommittee ? 'Remover do Comitê' : 'Adicionar ao Comitê'}
+                className={`p-1 rounded-md transition-all ${
+                  togglingCommittee ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:bg-gray-100'
                 }`}
-              />
-            </button>
+              >
+                <Star
+                  className={`w-4 h-4 transition-colors ${
+                    isCommittee
+                      ? 'text-amber-400 fill-amber-400'
+                      : 'text-gray-300 hover:text-amber-400'
+                  }`}
+                />
+              </button>
+            )}
+            {selectionMode && isCommittee && (
+              <Star className="w-4 h-4 text-amber-400 fill-amber-400 flex-shrink-0" title="No Comitê SVN" />
+            )}
             <StatusBadge status={status} />
-            {(onReindex || onDelete) && (
+            {!selectionMode && (onReindex || onDelete) && (
               <div className="relative" ref={menuRef}>
                 {isReindexing ? (
                   <span title="Reindexando..." className="p-1 flex items-center justify-center">

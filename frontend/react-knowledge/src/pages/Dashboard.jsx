@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Filter, RefreshCw, Package, Search, X } from 'lucide-react';
+import {
+  Plus, RefreshCw, Package, Search, X,
+  CheckSquare, Square, Trash2, Star, StarOff, MousePointer,
+} from 'lucide-react';
 import { productsAPI, searchAPI } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
 import { Button } from '../components/Button';
@@ -12,14 +15,17 @@ import { useToast } from '../components/Toast';
 import { GlobalSearchResults } from '../components/GlobalSearchResults';
 import { ProductCategories } from '../components/ProductCategories';
 
+const STORAGE_SEARCH_KEY = 'products_filter_search';
+const STORAGE_CATEGORY_KEY = 'products_filter_category';
+
 export function Dashboard() {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => sessionStorage.getItem(STORAGE_SEARCH_KEY) || '');
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(() => sessionStorage.getItem(STORAGE_CATEGORY_KEY) || '');
   const [showNewModal, setShowNewModal] = useState(false);
   const [newProduct, setNewProduct] = useState({ name: '', ticker: '', categories: [] });
   const [creating, setCreating] = useState(false);
@@ -27,12 +33,26 @@ export function Dashboard() {
   const [deleting, setDeleting] = useState(false);
   const [reindexingIds, setReindexingIds] = useState(new Set());
   const MAX_CONCURRENT_REINDEX = 2;
-  
+
   const [globalSearchResults, setGlobalSearchResults] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [showGlobalResults, setShowGlobalResults] = useState(false);
   const searchContainerRef = useRef(null);
   const searchTimeoutRef = useRef(null);
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkCommitteeWorking, setBulkCommitteeWorking] = useState(false);
+
+  useEffect(() => {
+    sessionStorage.setItem(STORAGE_SEARCH_KEY, search);
+  }, [search]);
+
+  useEffect(() => {
+    sessionStorage.setItem(STORAGE_CATEGORY_KEY, selectedCategory);
+  }, [selectedCategory]);
 
   const loadProducts = async () => {
     try {
@@ -66,7 +86,6 @@ export function Dashboard() {
         setShowGlobalResults(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
@@ -77,7 +96,6 @@ export function Dashboard() {
       setShowGlobalResults(false);
       return;
     }
-
     setIsSearching(true);
     try {
       const results = await searchAPI.global(query);
@@ -92,11 +110,7 @@ export function Dashboard() {
 
   const handleSearchChange = (value) => {
     setSearch(value);
-    
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
       performGlobalSearch(value);
     }, 300);
@@ -110,11 +124,29 @@ export function Dashboard() {
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
-      const matchesCategory = selectedCategory === '' ||
-        product.category === selectedCategory;
-      return matchesCategory;
+      const matchesCategory =
+        selectedCategory === '' || product.category === selectedCategory;
+      if (!matchesCategory) return false;
+
+      const term = search.trim().toLowerCase();
+      if (!term) return true;
+
+      const nameMatch = product.name?.toLowerCase().includes(term);
+      const tickerMatch = product.ticker?.toLowerCase().includes(term);
+      const categoryMatch = product.category?.toLowerCase().includes(term);
+      const categoriesMatch =
+        Array.isArray(product.categories) &&
+        product.categories.some((c) => c?.toLowerCase().includes(term));
+
+      return nameMatch || tickerMatch || categoryMatch || categoriesMatch;
     });
-  }, [products, selectedCategory]);
+  }, [products, selectedCategory, search]);
+
+  const handleCommitteeChange = (productId, newValue) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === productId ? { ...p, is_committee: newValue } : p))
+    );
+  };
 
   const handleReindex = async (product) => {
     if (reindexingIds.size >= MAX_CONCURRENT_REINDEX) {
@@ -136,9 +168,7 @@ export function Dashboard() {
     }
   };
 
-  const handleDelete = (product) => {
-    setProductToDelete(product);
-  };
+  const handleDelete = (product) => setProductToDelete(product);
 
   const confirmDelete = async () => {
     if (!productToDelete) return;
@@ -161,7 +191,6 @@ export function Dashboard() {
       addToast('Nome do produto é obrigatório', 'warning');
       return;
     }
-
     setCreating(true);
     try {
       const created = await productsAPI.create(newProduct);
@@ -176,22 +205,132 @@ export function Dashboard() {
     }
   };
 
+  const handleToggleSelect = (productId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  };
+
+  const allVisibleSelected =
+    filteredProducts.length > 0 && filteredProducts.every((p) => selectedIds.has(p.id));
+
+  const handleToggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredProducts.map((p) => p.id)));
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkAddCommittee = async () => {
+    const targets = products.filter((p) => selectedIds.has(p.id) && !p.is_committee);
+    if (targets.length === 0) {
+      addToast('Todos os produtos selecionados já estão no Comitê', 'info');
+      return;
+    }
+    setBulkCommitteeWorking(true);
+    try {
+      await Promise.all(targets.map((p) => productsAPI.toggleCommittee(p.id)));
+      setProducts((prev) =>
+        prev.map((p) => (selectedIds.has(p.id) ? { ...p, is_committee: true } : p))
+      );
+      addToast(`${targets.length} produto(s) adicionado(s) ao Comitê SVN`, 'success');
+      setSelectedIds(new Set());
+    } catch (err) {
+      addToast(`Erro ao atualizar Comitê: ${err.message}`, 'error');
+    } finally {
+      setBulkCommitteeWorking(false);
+    }
+  };
+
+  const handleBulkRemoveCommittee = async () => {
+    const targets = products.filter((p) => selectedIds.has(p.id) && p.is_committee);
+    if (targets.length === 0) {
+      addToast('Nenhum dos produtos selecionados está no Comitê', 'info');
+      return;
+    }
+    setBulkCommitteeWorking(true);
+    try {
+      await Promise.all(targets.map((p) => productsAPI.toggleCommittee(p.id)));
+      setProducts((prev) =>
+        prev.map((p) => (selectedIds.has(p.id) ? { ...p, is_committee: false } : p))
+      );
+      addToast(`${targets.length} produto(s) removido(s) do Comitê SVN`, 'success');
+      setSelectedIds(new Set());
+    } catch (err) {
+      addToast(`Erro ao atualizar Comitê: ${err.message}`, 'error');
+    } finally {
+      setBulkCommitteeWorking(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    setConfirmBulkDelete(false);
+    const targets = [...selectedIds];
+    const results = await Promise.allSettled(targets.map((id) => productsAPI.delete(id)));
+    const succeeded = targets.filter((_, i) => results[i].status === 'fulfilled');
+    const failedCount = results.filter((r) => r.status === 'rejected').length;
+
+    if (succeeded.length > 0) {
+      const succeededSet = new Set(succeeded);
+      setProducts((prev) => prev.filter((p) => !succeededSet.has(p.id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        succeeded.forEach((id) => next.delete(id));
+        return next;
+      });
+      addToast(`${succeeded.length} produto(s) excluído(s) com sucesso`, 'success');
+    }
+    if (failedCount > 0) {
+      addToast(
+        `${failedCount} produto(s) não ${failedCount === 1 ? 'pôde' : 'puderam'} ser excluído(s)`,
+        'error'
+      );
+    }
+    if (failedCount === 0) setSelectionMode(false);
+    setBulkDeleting(false);
+  };
+
+  const bulkWorking = bulkDeleting || bulkCommitteeWorking;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Produtos</h1>
           <p className="text-muted">Gerencie a base de conhecimento dos produtos</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={loadProducts} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Atualizar
-          </Button>
-          <Button onClick={() => setShowNewModal(true)}>
-            <Plus className="w-4 h-4" />
-            Novo Produto
-          </Button>
+          {selectionMode ? (
+            <Button variant="secondary" onClick={exitSelectionMode}>
+              <X className="w-4 h-4" />
+              Cancelar seleção
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setSelectionMode(true)}>
+                <MousePointer className="w-4 h-4" />
+                Selecionar
+              </Button>
+              <Button variant="secondary" onClick={loadProducts} disabled={loading}>
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Atualizar
+              </Button>
+              <Button onClick={() => setShowNewModal(true)}>
+                <Plus className="w-4 h-4" />
+                Novo Produto
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -204,7 +343,7 @@ export function Dashboard() {
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => search.length >= 2 && setShowGlobalResults(true)}
-              placeholder="Busca global: produtos, gestores, materiais, documentos..."
+              placeholder="Filtrar por nome, ticker ou categoria..."
               className="w-full pl-10 pr-10 py-3 bg-card border border-border rounded-xl
                         text-foreground placeholder:text-muted/60
                         focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50
@@ -225,7 +364,7 @@ export function Dashboard() {
               </div>
             )}
           </div>
-          
+
           <AnimatePresence>
             {showGlobalResults && globalSearchResults && (
               <GlobalSearchResults
@@ -236,7 +375,7 @@ export function Dashboard() {
             )}
           </AnimatePresence>
         </div>
-        
+
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
@@ -258,34 +397,126 @@ export function Dashboard() {
         <EmptyState
           icon={Package}
           title="Nenhum produto encontrado"
-          description={selectedCategory
-            ? "Tente ajustar os filtros de busca"
-            : "Comece criando um novo produto para sua base de conhecimento"
+          description={
+            search || selectedCategory
+              ? 'Tente ajustar os filtros de busca'
+              : 'Comece criando um novo produto para sua base de conhecimento'
           }
           action={() => setShowNewModal(true)}
           actionLabel="Criar Produto"
         />
       ) : (
         <>
-          <p className="text-sm text-muted">
-            {filteredProducts.length} produto{filteredProducts.length !== 1 ? 's' : ''} encontrado{filteredProducts.length !== 1 ? 's' : ''}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted">
+              {filteredProducts.length} produto{filteredProducts.length !== 1 ? 's' : ''} encontrado{filteredProducts.length !== 1 ? 's' : ''}
+              {(search || selectedCategory) && products.length !== filteredProducts.length && (
+                <span className="ml-1 text-primary font-medium">
+                  (de {products.length} no total)
+                </span>
+              )}
+            </p>
+            {selectionMode && (
+              <button
+                onClick={handleToggleSelectAll}
+                className="flex items-center gap-1.5 text-sm text-primary hover:text-primary-dark transition-colors"
+              >
+                {allVisibleSelected ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                {allVisibleSelected ? 'Desselecionar todos' : 'Selecionar todos'}
+              </button>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence>
               {filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
-                  onClick={(p) => navigate(`/product/${p.id}`)}
-                  onReindex={handleReindex}
-                  onDelete={handleDelete}
+                  onClick={(p) => !selectionMode && navigate(`/product/${p.id}`)}
+                  onReindex={!selectionMode ? handleReindex : undefined}
+                  onDelete={!selectionMode ? handleDelete : undefined}
+                  onCommitteeChange={handleCommitteeChange}
                   isReindexing={reindexingIds.has(product.id)}
+                  selectionMode={selectionMode}
+                  isSelected={selectedIds.has(product.id)}
+                  onToggleSelect={handleToggleSelect}
                 />
               ))}
             </AnimatePresence>
           </div>
         </>
       )}
+
+      <AnimatePresence>
+        {selectionMode && selectedIds.size > 0 && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50
+                       bg-white border border-border rounded-2xl shadow-xl
+                       flex items-center gap-3 px-5 py-3"
+          >
+            <span className="text-sm font-semibold text-foreground whitespace-nowrap">
+              {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}
+            </span>
+
+            <div className="w-px h-5 bg-border" />
+
+            <button
+              onClick={handleBulkAddCommittee}
+              disabled={bulkWorking}
+              title="Adicionar ao Comitê SVN"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                         text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200
+                         transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+              Adicionar ao Comitê
+            </button>
+
+            <button
+              onClick={handleBulkRemoveCommittee}
+              disabled={bulkWorking}
+              title="Retirar do Comitê SVN"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                         text-gray-600 bg-gray-100 hover:bg-gray-200 border border-gray-200
+                         transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <StarOff className="w-4 h-4" />
+              Retirar do Comitê
+            </button>
+
+            <button
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={bulkWorking}
+              title="Excluir selecionados"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                         text-red-600 bg-red-50 hover:bg-red-100 border border-red-200
+                         transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+
+            <div className="w-px h-5 bg-border" />
+
+            <button
+              onClick={exitSelectionMode}
+              className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-gray-100 transition-colors"
+              title="Cancelar seleção"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Modal
         open={showNewModal}
@@ -306,7 +537,7 @@ export function Dashboard() {
                         text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
               Ticker
@@ -337,11 +568,7 @@ export function Dashboard() {
             >
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              loading={creating}
-              className="flex-1"
-            >
+            <Button type="submit" loading={creating} className="flex-1">
               Criar Produto
             </Button>
           </div>
@@ -374,6 +601,37 @@ export function Dashboard() {
                        disabled:cursor-not-allowed transition-colors"
           >
             {deleting ? 'Excluindo...' : 'Excluir'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={confirmBulkDelete}
+        onClose={() => !bulkDeleting && setConfirmBulkDelete(false)}
+        title="Confirmar exclusão em massa"
+        size="sm"
+      >
+        <p className="text-foreground mb-6">
+          Tem certeza que deseja excluir{' '}
+          <strong>{selectedIds.size} produto{selectedIds.size !== 1 ? 's' : ''}</strong>?
+          Esta ação não pode ser desfeita.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <Button
+            variant="secondary"
+            onClick={() => setConfirmBulkDelete(false)}
+            disabled={bulkDeleting}
+          >
+            Cancelar
+          </Button>
+          <button
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting}
+            className="px-4 py-2 rounded-input text-sm font-medium text-white
+                       bg-red-600 hover:bg-red-700 disabled:opacity-50
+                       disabled:cursor-not-allowed transition-colors"
+          >
+            {bulkDeleting ? 'Excluindo...' : `Excluir ${selectedIds.size} produto${selectedIds.size !== 1 ? 's' : ''}`}
           </button>
         </div>
       </Modal>
