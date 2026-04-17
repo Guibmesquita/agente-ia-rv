@@ -98,7 +98,10 @@ Se perguntado sobre recomendações, informe que o comitê não tem recomendaç�
         if rating:
             display += f" | Rating: {rating}"
         if target_price:
-            display += f" | Preço-alvo: R${target_price:.2f}"
+            if isinstance(target_price, (int, float)):
+                display += f" | Preço-alvo: R${target_price:.2f}"
+            else:
+                display += f" | Retorno esperado: {target_price}"
         if valid_until:
             display += f" | Válido até: {valid_until}"
         else:
