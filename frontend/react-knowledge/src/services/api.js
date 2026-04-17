@@ -58,6 +58,11 @@ export const productsAPI = {
 
   toggleCommittee: (productId) => fetchAPI(`/products/${productId}/toggle-committee`, { method: 'POST' }),
 
+  updateKeyInfo: (productId, partial) => fetchAPI(`/products/${productId}/key-info`, {
+    method: 'PATCH',
+    body: JSON.stringify(partial),
+  }),
+
   search: (query, limit = 5) => fetchAPI(`/search/quick?q=${encodeURIComponent(query)}&limit=${limit}`),
 };
 

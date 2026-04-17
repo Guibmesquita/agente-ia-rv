@@ -56,6 +56,19 @@ KNOWN_MANAGERS = {
 }
 
 
+def _safe_load_key_info(raw) -> dict:
+    """Carrega `Product.key_info` (str JSON) de forma resiliente."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
 def extract_tickers_from_query(query: str) -> List[str]:
     """
     Extrai tickers de uma query (FIIs e ações).
@@ -1703,6 +1716,7 @@ class VectorStore:
                             "target_price": rec.target_price if rec else None,
                             "valid_until": rec.valid_until.strftime("%d/%m/%Y") if (rec and rec.valid_until) else "",
                             "rationale": rec.rationale if rec else "",
+                            "key_info": _safe_load_key_info(prod.key_info),
                             "source": "committee_material",
                             "material_name": mat.name or "",
                         })
@@ -1743,6 +1757,7 @@ class VectorStore:
                         "target_price": e.target_price,
                         "valid_until": e.valid_until.strftime("%d/%m/%Y") if e.valid_until else "",
                         "rationale": e.rationale or "",
+                        "key_info": _safe_load_key_info(prod.key_info),
                         "source": "recommendation_entry",
                     })
 
@@ -1765,6 +1780,7 @@ class VectorStore:
                             "target_price": None,
                             "valid_until": "",
                             "rationale": "",
+                            "key_info": _safe_load_key_info(p.key_info),
                             "source": "product_category",
                         })
 

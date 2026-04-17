@@ -365,6 +365,26 @@ export function ProductCard({ product, onClick, onReindex, onDelete, onCommittee
         {!isReindexing && product.description && (
           <p className="text-sm text-muted mt-3 line-clamp-2">{product.description}</p>
         )}
+
+        {!isReindexing && (() => {
+          let ki = null;
+          try {
+            ki = product.key_info
+              ? (typeof product.key_info === 'string' ? JSON.parse(product.key_info) : product.key_info)
+              : null;
+          } catch { ki = null; }
+          if (!ki) return null;
+          const summary =
+            (ki.investment_thesis && String(ki.investment_thesis).trim()) ||
+            (Array.isArray(ki.additional_highlights) && ki.additional_highlights.find((h) => h && String(h).trim())) ||
+            null;
+          if (!summary) return null;
+          return (
+            <p className="text-xs text-foreground/80 mt-2 line-clamp-2 italic border-l-2 border-primary/40 pl-2">
+              {summary}
+            </p>
+          );
+        })()}
       </motion.div>
 
       {editCategoryOpen && (

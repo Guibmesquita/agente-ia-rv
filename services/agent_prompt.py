@@ -74,6 +74,17 @@ Se perguntado sobre recomendações, informe que o comitê não tem recomendaç�
         target_price = e.get("target_price")
         valid_until = e.get("valid_until", "")
         rationale = e.get("rationale", "")
+        key_info = e.get("key_info") or {}
+
+        # Fallbacks a partir de key_info quando os campos do RecommendationEntry
+        # estão vazios — garante visibilidade mesmo para produtos sem entry formal.
+        if not rating and isinstance(key_info, dict):
+            rating = (key_info.get("rating") or "").strip()
+        if not rationale and isinstance(key_info, dict):
+            rationale = (key_info.get("investment_thesis") or "").strip()
+        extra_return = key_info.get("expected_return") if isinstance(key_info, dict) else None
+        extra_term = key_info.get("investment_term") if isinstance(key_info, dict) else None
+        extra_risk = key_info.get("main_risk") if isinstance(key_info, dict) else None
 
         display = f"• {name}"
         if ticker:
@@ -90,6 +101,12 @@ Se perguntado sobre recomendações, informe que o comitê não tem recomendaç�
             display += " | Vigente (sem prazo)"
         if rationale:
             display += f"\n  Tese: {rationale}"
+        if extra_return:
+            display += f"\n  Retorno esperado: {extra_return}"
+        if extra_term:
+            display += f"\n  Prazo: {extra_term}"
+        if extra_risk:
+            display += f"\n  Principal risco: {extra_risk}"
         lines.append(display)
 
     committee_list = "\n".join(lines)

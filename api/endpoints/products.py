@@ -609,7 +609,71 @@ async def update_product(
         product.key_info = data.key_info
 
     db.commit()
+
+    # Reindexa documento sintético de key_info no vector store
+    try:
+        from services.product_key_info_indexer import index_product_key_info
+        db.refresh(product)
+        index_product_key_info(product)
+    except Exception as idx_err:
+        print(f"[PRODUCT_UPDATE] Aviso: falha ao reindexar key_info do produto {product_id}: {idx_err}")
+
     return {"success": True}
+
+
+@router.patch("/{product_id}/key-info")
+async def update_product_key_info(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Atualiza campos do `key_info` do produto preservando histórico via merge
+    acumulativo. Aceita corpo JSON com chaves de key_info (investment_thesis,
+    expected_return, investment_term, main_risk, issuer_or_manager, rating,
+    minimum_investment, liquidity, additional_highlights, cnpj,
+    underlying_ticker). Reindexa o documento sintético no vector store.
+
+    Para sobrescrever um campo (sem registrar histórico), use o PUT /products/{id}
+    enviando o JSON completo em `key_info`.
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Corpo deve ser objeto JSON")
+
+    # Source manual: marca origem como 'edição manual' (material_id=None)
+    changed = _merge_key_info_into_product(db, product, body, material_id=None)
+    if changed:
+        db.commit()
+
+    try:
+        from services.product_key_info_indexer import index_product_key_info
+        db.refresh(product)
+        index_product_key_info(product)
+    except Exception as idx_err:
+        print(f"[KEY_INFO_PATCH] Aviso: falha ao reindexar produto {product_id}: {idx_err}")
+
+    return {"success": True, "changed": changed, "key_info": product.key_info}
+
+
+@router.post("/admin/backfill-key-info-index")
+async def admin_backfill_key_info_index(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reindexação idempotente de todos os produtos com key_info populado."""
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    from services.product_key_info_indexer import backfill_all
+    return await asyncio.to_thread(backfill_all, db)
 
 
 @router.post("/{product_id}/reindex")
@@ -732,6 +796,12 @@ async def delete_product(
         if vector_store.delete_document(f"product_block_{bid}"):
             removed += 1
     print(f"[DELETE PRODUCT] {removed}/{len(block_ids)} embeddings removidos do vector store")
+
+    try:
+        from services.product_key_info_indexer import delete_product_key_info_index
+        delete_product_key_info_index(product_id)
+    except Exception as ki_err:
+        print(f"[DELETE PRODUCT] Aviso: falha ao remover key_info index: {ki_err}")
 
     return {"success": True}
 
@@ -5180,6 +5250,18 @@ async def link_products_and_queue(
             except Exception as merge_err:
                 print(f"[LINK_QUEUE] Erro ao mesclar key_info: {merge_err}")
         db.commit()
+        # Reindexa key_info de cada produto afetado
+        try:
+            from services.product_key_info_indexer import index_product_key_info
+            for entry in products_with_info:
+                pid = entry.get("product_id")
+                if not pid:
+                    continue
+                prod = db.query(Product).filter(Product.id == pid).first()
+                if prod:
+                    index_product_key_info(prod)
+        except Exception as idx_err:
+            print(f"[LINK_QUEUE] Aviso: falha ao reindexar key_info: {idx_err}")
 
     # Change 2c — material conceitual: pula vinculação de produtos, enfileira mesmo assim
     if is_conceptual_material:

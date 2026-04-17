@@ -16,6 +16,7 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 import { useToast } from '../components/Toast';
 import { MATERIAL_TYPE_OPTIONS, getMaterialTypeLabel } from '../lib/materialTypes';
 import { ProductCategories } from '../components/ProductCategories';
+import { ProductKeyInfoCard } from '../components/ProductKeyInfoCard';
 
 function convertTableToTopics(content) {
   if (!content) return null;
@@ -764,6 +765,8 @@ export function ProductDetail() {
               </select>
             </div>
           </div>
+
+          <ProductKeyInfoCard product={product} onUpdated={loadProduct} />
         </Tabs.Content>
       </Tabs.Root>
 
