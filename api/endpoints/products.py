@@ -555,6 +555,7 @@ async def get_product(
             })
 
         is_linked = m.product_id != product_id
+        pending_count = sum(1 for b in m.blocks if b.status == ContentBlockStatus.PENDING_REVIEW.value)
         materials.append({
             "id": m.id,
             "material_type": m.material_type,
@@ -562,6 +563,10 @@ async def get_product(
             "description": m.description,
             "current_version": m.current_version,
             "is_indexed": m.is_indexed,
+            "publish_status": m.publish_status or "rascunho",
+            "pending_blocks_count": pending_count,
+            "valid_until": m.valid_until.isoformat() if m.valid_until else None,
+            "valid_from": m.valid_from.isoformat() if m.valid_from else None,
             "blocks_count": len(blocks),
             "blocks": sorted(blocks, key=lambda x: x["order"]),
             "updated_at": m.updated_at.isoformat() if m.updated_at else None,
@@ -3448,7 +3453,19 @@ async def smart_upload_stream(
                 mat.processing_status = ProcessingStatus.SUCCESS.value
                 db_local.commit()
                 
-                pass
+                try:
+                    published = auto_publish_if_ready(mat, db_local)
+                    if published:
+                        print(f"[SMART_UPLOAD] Material {mat.id} '{mat.name}' auto-publicado após processamento.")
+                    else:
+                        pending = db_local.query(ContentBlock).filter(
+                            ContentBlock.material_id == mat.id,
+                            ContentBlock.status == ContentBlockStatus.PENDING_REVIEW.value
+                        ).count()
+                        print(f"[SMART_UPLOAD] Material {mat.id} não auto-publicado: "
+                              f"publish_status={mat.publish_status}, pending_blocks={pending}")
+                except Exception as _pub_err:
+                    print(f"[SMART_UPLOAD] Erro ao auto-publicar material {mat.id}: {_pub_err}")
             
             processing_success = True
             
@@ -3466,10 +3483,24 @@ async def smart_upload_stream(
                 
                 db_local.commit()
             
+            _final_status = mat.publish_status if mat else "rascunho"
+            _pending_final = db_local.query(ContentBlock).filter(
+                ContentBlock.material_id == material_id_local,
+                ContentBlock.status == ContentBlockStatus.PENDING_REVIEW.value
+            ).count() if mat else 0
+            _complete_msg = (
+                "Material publicado e indexado automaticamente!"
+                if _final_status == "publicado"
+                else f"Processamento concluído. {_pending_final} bloco(s) aguardam revisão antes de publicar."
+                if _pending_final > 0
+                else "Processamento concluído com sucesso!"
+            )
             progress_queue.put({
                 "type": "complete",
                 "success": True,
-                "message": "Processamento concluído com sucesso!",
+                "message": _complete_msg,
+                "publish_status": _final_status,
+                "pending_blocks": _pending_final,
                 "stats": {
                     "blocks_created": result.get("stats", {}).get("blocks_created", 0),
                     "products_matched": list(result.get("stats", {}).get("products_matched", [])),

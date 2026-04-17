@@ -92,17 +92,13 @@ function ContentDisplay({ content, blockType }) {
 
 
 function getMaterialStatus(material) {
+  if (!material.valid_until) return null;
   const now = new Date();
-  
-  if (material.valid_until) {
-    const validUntil = new Date(material.valid_until);
-    if (validUntil < now) return 'expirado';
-    
-    const daysUntil = (validUntil - now) / (1000 * 60 * 60 * 24);
-    if (daysUntil <= 30) return 'expirando';
-  }
-  
-  return material.publication_status || 'draft';
+  const validUntil = new Date(material.valid_until);
+  if (validUntil < now) return 'expirado';
+  const daysUntil = (validUntil - now) / (1000 * 60 * 60 * 24);
+  if (daysUntil <= 30) return 'expirando';
+  return null;
 }
 
 function MaterialSection({ material, productId, onRefresh, onUnlink }) {
@@ -115,12 +111,31 @@ function MaterialSection({ material, productId, onRefresh, onUnlink }) {
   const [editingType, setEditingType] = useState(false);
   const [selectedType, setSelectedType] = useState(material.material_type || '');
   const [savingType, setSavingType] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const { addToast } = useToast();
   
   const materialStatus = getMaterialStatus(material);
 
   const blocks = material.blocks || [];
   const pendingBlocks = blocks.filter(b => b.status === 'pending_review');
+
+  const isRascunho = (material.publish_status || 'rascunho') === 'rascunho';
+  const pendingCount = material.pending_blocks_count ?? pendingBlocks.length;
+  const canPublishNow = isRascunho && pendingCount === 0 && blocks.length > 0;
+
+  const handlePublishNow = async (e) => {
+    e.stopPropagation();
+    setPublishing(true);
+    try {
+      await materialsAPI.reindex(material.id);
+      addToast('Material publicado e indexado com sucesso!', 'success');
+      onRefresh();
+    } catch (err) {
+      addToast(`Erro ao publicar: ${err.message}`, 'error');
+    } finally {
+      setPublishing(false);
+    }
+  };
   
   const sortedBlocks = useMemo(() => {
     return [...blocks].sort((a, b) => {
@@ -332,8 +347,8 @@ function MaterialSection({ material, productId, onRefresh, onUnlink }) {
               Vinculado
             </span>
           )}
-          <StatusBadge status={materialStatus} />
-          {material.is_indexed && material.publish_status === 'publicado' ? (
+          {materialStatus && <StatusBadge status={materialStatus} />}
+          {material.publish_status === 'publicado' && material.is_indexed ? (
             <span
               className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
                          bg-green-100 text-green-700 font-medium border border-green-200"
@@ -342,13 +357,40 @@ function MaterialSection({ material, productId, onRefresh, onUnlink }) {
               <Check className="w-3 h-3" />
               Indexado
             </span>
-          ) : (material.is_indexed || (material.publish_status && material.publish_status !== 'publicado')) ? (
+          ) : canPublishNow ? (
+            <button
+              onClick={handlePublishNow}
+              disabled={publishing}
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                         bg-blue-50 text-blue-700 font-medium border border-blue-200
+                         hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-60"
+              title="Todos os blocos foram aprovados. Clique para publicar e indexar agora."
+            >
+              {publishing ? (
+                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+              ) : (
+                <Send className="w-3 h-3" />
+              )}
+              {publishing ? 'Publicando…' : 'Publicar agora'}
+            </button>
+          ) : pendingCount > 0 ? (
             <span
               className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
                          bg-amber-100 text-amber-700 font-medium border border-amber-200"
-              title={`Indexado: ${material.is_indexed ? 'sim' : 'não'} · Status: ${material.publish_status || 'rascunho'} — invisível ao agente`}
+              title={`${pendingCount} bloco(s) aguardando revisão manual antes de publicar`}
             >
-              Não publicado
+              {pendingCount} {pendingCount === 1 ? 'pendente' : 'pendentes'}
+            </span>
+          ) : isRascunho && blocks.length === 0 ? (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                         bg-gray-100 text-gray-500 font-medium border border-gray-200"
+              title="Nenhum bloco de conteúdo criado ainda"
+            >
+              Sem blocos
             </span>
           ) : null}
           {material.valid_until && (
