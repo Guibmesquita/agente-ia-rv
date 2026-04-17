@@ -1703,7 +1703,6 @@ class VectorStore:
         Camada 0 (primária): materiais com is_committee_active=True — conteúdo direto.
         Camada 1: recommendation_entries ativas (fonte formal de recomendação).
         Camada 2: Product.categories com 'Comitê' (marcação manual).
-        Camada 3: Material.material_type='comite' (legado).
         """
         from database.database import SessionLocal
         from database.models import Product, Material, ContentBlock, MaterialStatus
@@ -1832,7 +1831,6 @@ class VectorStore:
                             "valid_until": valid_until_str,
                             "rating": rating,
                             "target_price": target_price,
-                            "is_comite": True,
                             "block_type": block.block_type,
                             "publish_status": material.publish_status,
                             "source_layer": "committee_material",
@@ -1883,21 +1881,6 @@ class VectorStore:
                     if p.id not in recommendation_map:
                         recommendation_map[p.id] = {
                             "rating": "", "target_price": None, "valid_until": "", "rationale": ""
-                        }
-
-            # 3. Backward compat: materiais com material_type='comite' (legado)
-            legacy_mats = db.query(Material).filter(
-                Material.material_type == 'comite',
-                Material.publish_status == MaterialStatus.PUBLISHED.value,
-            ).all()
-            for m in legacy_mats:
-                if m.product_id and m.product_id not in committee_product_ids:
-                    committee_product_ids.append(m.product_id)
-                    if m.product_id not in recommendation_map:
-                        recommendation_map[m.product_id] = {
-                            "rating": "", "target_price": None,
-                            "valid_until": m.valid_until.strftime("%d/%m/%Y") if m.valid_until else "",
-                            "rationale": ""
                         }
 
             committee_product_ids = list(set(committee_product_ids))
@@ -1973,7 +1956,6 @@ class VectorStore:
                     "valid_until": valid_until_str,
                     "rating": rating,
                     "target_price": target_price,
-                    "is_comite": True,
                     "block_type": block.block_type,
                     "publish_status": material.publish_status,
                 }
