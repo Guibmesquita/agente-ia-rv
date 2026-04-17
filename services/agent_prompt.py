@@ -82,6 +82,10 @@ Se perguntado sobre recomendações, informe que o comitê não tem recomendaç�
             rating = (key_info.get("rating") or "").strip()
         if not rationale and isinstance(key_info, dict):
             rationale = (key_info.get("investment_thesis") or "").strip()
+        if not target_price and isinstance(key_info, dict):
+            ki_return = (key_info.get("expected_return") or "").strip()
+            if ki_return:
+                target_price = ki_return
         extra_return = key_info.get("expected_return") if isinstance(key_info, dict) else None
         extra_term = key_info.get("investment_term") if isinstance(key_info, dict) else None
         extra_risk = key_info.get("main_risk") if isinstance(key_info, dict) else None

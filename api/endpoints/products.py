@@ -645,12 +645,83 @@ async def update_product_key_info(
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Corpo da requisição não é JSON válido")
     if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Corpo deve ser objeto JSON")
+        raise HTTPException(status_code=400, detail="Corpo deve ser objeto JSON com campos do key_info")
+
+    # Whitelist de campos aceitos (alinhada ao schema persistido em Product.key_info)
+    ALLOWED_STR_FIELDS = {
+        "investment_thesis", "expected_return", "investment_term", "main_risk",
+        "issuer_or_manager", "rating", "minimum_investment", "liquidity",
+        "cnpj", "underlying_ticker",
+    }
+    ALLOWED_LIST_FIELDS = {"additional_highlights"}
+    ALLOWED_FIELDS = ALLOWED_STR_FIELDS | ALLOWED_LIST_FIELDS
+
+    MAX_STR_LEN = 4000
+    MAX_LIST_ITEMS = 50
+    MAX_LIST_ITEM_LEN = 1000
+
+    unknown = [k for k in body.keys() if k not in ALLOWED_FIELDS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campos não permitidos: {', '.join(sorted(unknown))}. Campos válidos: {', '.join(sorted(ALLOWED_FIELDS))}",
+        )
+
+    sanitized = {}
+    for key, value in body.items():
+        if value is None:
+            sanitized[key] = None
+            continue
+        if key in ALLOWED_STR_FIELDS:
+            if not isinstance(value, str):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Campo '{key}' deve ser texto (string), recebido: {type(value).__name__}",
+                )
+            if len(value) > MAX_STR_LEN:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Campo '{key}' excede o limite de {MAX_STR_LEN} caracteres",
+                )
+            sanitized[key] = value.strip()
+        elif key in ALLOWED_LIST_FIELDS:
+            if not isinstance(value, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Campo '{key}' deve ser uma lista de textos",
+                )
+            if len(value) > MAX_LIST_ITEMS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Campo '{key}' excede o limite de {MAX_LIST_ITEMS} itens",
+                )
+            cleaned_list = []
+            for idx, item in enumerate(value):
+                if not isinstance(item, str):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Item {idx} de '{key}' deve ser texto (string)",
+                    )
+                if len(item) > MAX_LIST_ITEM_LEN:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Item {idx} de '{key}' excede {MAX_LIST_ITEM_LEN} caracteres",
+                    )
+                trimmed = item.strip()
+                if trimmed:
+                    cleaned_list.append(trimmed)
+            sanitized[key] = cleaned_list
+
+    if not sanitized:
+        raise HTTPException(status_code=400, detail="Envie ao menos um campo válido para atualização")
 
     # Source manual: marca origem como 'edição manual' (material_id=None)
-    changed = _merge_key_info_into_product(db, product, body, material_id=None)
+    changed = _merge_key_info_into_product(db, product, sanitized, material_id=None)
     if changed:
         db.commit()
 

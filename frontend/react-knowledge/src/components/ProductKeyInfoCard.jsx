@@ -268,17 +268,17 @@ function HistoryPanel({ history }) {
 }
 
 export function ProductKeyInfoCard({ product, onUpdated }) {
-  const { showToast } = useToast();
+  const { addToast } = useToast();
   const keyInfo = useMemo(() => parseKeyInfo(product?.key_info), [product?.key_info]);
   const history = keyInfo.key_info_history;
 
   const handleFieldSave = async (field, value) => {
     try {
       await productsAPI.updateKeyInfo(product.id, { [field]: value });
-      showToast('Campo atualizado e reindexado para o agente', 'success');
+      addToast('Campo atualizado e reindexado para o agente', 'success');
       if (onUpdated) await onUpdated();
     } catch (err) {
-      showToast(`Erro ao salvar: ${err.message}`, 'error');
+      addToast(`Erro ao salvar: ${err.message}`, 'error');
       throw err;
     }
   };
@@ -294,10 +294,10 @@ export function ProductKeyInfoCard({ product, onUpdated }) {
       } else {
         await productsAPI.updateKeyInfo(product.id, { additional_highlights: newList.slice(keyInfo.additional_highlights?.length || 0) });
       }
-      showToast('Destaques atualizados e reindexados', 'success');
+      addToast('Destaques atualizados e reindexados', 'success');
       if (onUpdated) await onUpdated();
     } catch (err) {
-      showToast(`Erro ao salvar destaques: ${err.message}`, 'error');
+      addToast(`Erro ao salvar destaques: ${err.message}`, 'error');
       throw err;
     }
   };
