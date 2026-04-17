@@ -58,6 +58,12 @@ export function Dashboard() {
   const [reviewQueueRunning, setReviewQueueRunning] = useState(false);
   const [reviewQueueResult, setReviewQueueResult] = useState(null);
 
+  const [orphansLoading, setOrphansLoading] = useState(false);
+  const [orphansList, setOrphansList] = useState(null);
+  const [selectedOrphanIds, setSelectedOrphanIds] = useState(new Set());
+  const [archivingOrphans, setArchivingOrphans] = useState(false);
+  const [archiveOrphansResult, setArchiveOrphansResult] = useState(null);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_SEARCH_KEY, search);
   }, [search]);
@@ -383,6 +389,51 @@ export function Dashboard() {
       addToast(`Erro: ${err.message}`, 'error');
     } finally {
       setEnrichBackfillRunning(false);
+    }
+  };
+
+  const handleLoadOrphans = async () => {
+    setOrphansLoading(true);
+    setOrphansList(null);
+    setSelectedOrphanIds(new Set());
+    setArchiveOrphansResult(null);
+    try {
+      const result = await adminAPI.listOrphans();
+      setOrphansList(result.orphans || []);
+      if ((result.orphans || []).length === 0) {
+        addToast('Nenhum produto sem conteúdo encontrado.', 'info');
+      }
+    } catch (err) {
+      addToast(`Erro ao buscar órfãos: ${err.message}`, 'error');
+    } finally {
+      setOrphansLoading(false);
+    }
+  };
+
+  const handleToggleOrphan = (id) => {
+    setSelectedOrphanIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleArchiveOrphans = async () => {
+    if (selectedOrphanIds.size === 0) return;
+    setArchivingOrphans(true);
+    setArchiveOrphansResult(null);
+    try {
+      const result = await adminAPI.archiveOrphans([...selectedOrphanIds]);
+      setArchiveOrphansResult(result);
+      setOrphansList((prev) => prev.filter((o) => !selectedOrphanIds.has(o.id)));
+      setSelectedOrphanIds(new Set());
+      addToast(`${result.archived} produto(s) arquivado(s) com sucesso.`, 'success');
+      loadProducts();
+    } catch (err) {
+      addToast(`Erro ao arquivar: ${err.message}`, 'error');
+    } finally {
+      setArchivingOrphans(false);
     }
   };
 
@@ -893,10 +944,120 @@ export function Dashboard() {
             </div>
           </div>
 
+          <div className="space-y-4 border-b border-border pb-5">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                4. Produtos sem conteúdo (placeholders)
+              </h3>
+              <p className="text-sm text-muted mb-3">
+                Identifica produtos criados automaticamente pelo ingestor como placeholders — sem
+                materiais, sem scripts e sem blocos de conteúdo. Podem ser arquivados em lote para
+                limpar a base. Produtos do Comitê e com scripts nunca são arquivados automaticamente.
+              </p>
+              <button
+                onClick={handleLoadOrphans}
+                disabled={orphansLoading}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                           bg-primary text-white hover:bg-primary/90
+                           disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {orphansLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Buscando...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-4 h-4" />
+                    Identificar produtos sem conteúdo
+                  </>
+                )}
+              </button>
+
+              {orphansList !== null && (
+                <div className="mt-3 space-y-2">
+                  {orphansList.length === 0 ? (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-green-800">
+                        Nenhum produto sem conteúdo encontrado.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <p className="text-sm font-semibold text-amber-800 mb-2">
+                          {orphansList.length} produto(s) sem conteúdo encontrado(s).
+                          Selecione os que deseja arquivar:
+                        </p>
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {orphansList.map((o) => (
+                            <label
+                              key={o.id}
+                              className="flex items-center gap-2 text-sm text-amber-900 cursor-pointer
+                                         hover:bg-amber-100 px-2 py-1 rounded"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedOrphanIds.has(o.id)}
+                                onChange={() => handleToggleOrphan(o.id)}
+                                className="w-4 h-4 accent-primary"
+                              />
+                              <span className="font-medium">{o.name}</span>
+                              {o.ticker && (
+                                <span className="text-xs text-amber-600 font-mono">{o.ticker}</span>
+                              )}
+                              {o.category && (
+                                <span className="text-xs text-amber-500">· {o.category}</span>
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      {selectedOrphanIds.size > 0 && (
+                        <button
+                          onClick={handleArchiveOrphans}
+                          disabled={archivingOrphans}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                                     bg-red-600 text-white hover:bg-red-700
+                                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {archivingOrphans ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              Arquivando...
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="w-4 h-4" />
+                              Arquivar {selectedOrphanIds.size} produto(s) selecionado(s)
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {archiveOrphansResult && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+                      <p className="text-sm font-semibold text-green-800">
+                        {archiveOrphansResult.archived} produto(s) arquivado(s) com sucesso.
+                      </p>
+                      {archiveOrphansResult.skipped?.length > 0 && (
+                        <p className="text-xs text-amber-700">
+                          {archiveOrphansResult.skipped.length} ignorado(s) (Comitê ou com scripts).
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-start gap-4 flex-wrap">
             <div className="flex-1 min-w-[260px]">
               <h3 className="text-sm font-semibold text-foreground mb-1">
-                3. Vínculos de produtos derivados
+                5. Vínculos de produtos derivados
               </h3>
               <p className="text-sm text-muted mb-3">
                 Corrige retroativamente os vínculos de materiais entre produtos derivados e seus

@@ -24,7 +24,7 @@ from database.models import (
     WhatsAppScript, PendingReviewItem, DocumentProcessingJob,
     DocumentPageResult, ProductStatus, MaterialType, ContentBlockType, 
     ContentBlockStatus, ContentSourceType, PersistentQueueItem,
-    IngestionLog, MaterialFile, DocumentEmbedding
+    IngestionLog, MaterialFile, DocumentEmbedding, MaterialProductLink
 )
 from api.endpoints.auth import get_current_user
 from services.vector_store import VectorStore
@@ -386,9 +386,20 @@ async def list_products(
     
     result = []
     for p in products:
-        materials_count = db.query(Material).filter(Material.product_id == p.id).count()
+        direct_mat_ids = set(
+            r[0] for r in db.query(Material.id).filter(Material.product_id == p.id).all()
+        )
+        linked_mat_ids = set(
+            r[0] for r in db.query(MaterialProductLink.material_id)
+            .filter(MaterialProductLink.product_id == p.id).all()
+        )
+        all_mat_ids = direct_mat_ids | linked_mat_ids
+        materials_count = len(all_mat_ids)
+
         scripts_count = db.query(WhatsAppScript).filter(WhatsAppScript.product_id == p.id).count()
-        blocks_count = db.query(ContentBlock).join(Material).filter(Material.product_id == p.id).count()
+        blocks_count = db.query(ContentBlock).join(Material).filter(
+            Material.id.in_(all_mat_ids)
+        ).count() if all_mat_ids else 0
         
         result.append({
             "id": p.id,
@@ -6595,6 +6606,98 @@ async def backfill_derived_links(
     )
 
     return {"success": True, **results}
+
+
+@router.get("/admin/orphans")
+async def list_orphan_products(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lista produtos sem nenhum material (direto ou vinculado), sem scripts e sem blocos de conteúdo.
+    Exclui produtos marcados como Comitê. Útil para identificar e limpar produtos placeholder.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar")
+
+    all_products = db.query(Product).filter(
+        Product.status != "arquivado"
+    ).all()
+
+    orphans = []
+    for p in all_products:
+        if p.is_committee:
+            continue
+
+        scripts_count = db.query(WhatsAppScript).filter(WhatsAppScript.product_id == p.id).count()
+        if scripts_count > 0:
+            continue
+
+        direct_mat_ids = set(
+            r[0] for r in db.query(Material.id).filter(Material.product_id == p.id).all()
+        )
+        linked_mat_ids = set(
+            r[0] for r in db.query(MaterialProductLink.material_id)
+            .filter(MaterialProductLink.product_id == p.id).all()
+        )
+        all_mat_ids = direct_mat_ids | linked_mat_ids
+        if all_mat_ids:
+            continue
+
+        blocks_count = db.query(ContentBlock).join(Material).filter(
+            Material.product_id == p.id
+        ).count()
+        if blocks_count > 0:
+            continue
+
+        orphans.append({
+            "id": p.id,
+            "name": p.name,
+            "ticker": p.ticker,
+            "category": p.category,
+            "status": p.status,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        })
+
+    return {"orphans": orphans, "total": len(orphans)}
+
+
+@router.post("/admin/archive-orphans")
+async def archive_orphan_products(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Arquiva produtos placeholder (sem conteúdo). Nunca arquiva produtos do Comitê ou com scripts.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar")
+
+    product_ids = payload.get("product_ids", [])
+    if not product_ids:
+        raise HTTPException(status_code=400, detail="Nenhum ID de produto fornecido")
+
+    archived = 0
+    skipped = []
+    for pid in product_ids:
+        p = db.query(Product).filter(Product.id == pid).first()
+        if not p:
+            skipped.append({"id": pid, "reason": "not_found"})
+            continue
+        if p.is_committee:
+            skipped.append({"id": pid, "name": p.name, "reason": "is_committee"})
+            continue
+        scripts_count = db.query(WhatsAppScript).filter(WhatsAppScript.product_id == p.id).count()
+        if scripts_count > 0:
+            skipped.append({"id": pid, "name": p.name, "reason": "has_scripts"})
+            continue
+        p.status = "arquivado"
+        archived += 1
+
+    db.commit()
+    print(f"[ARCHIVE_ORPHANS] arquivados={archived}, ignorados={len(skipped)}")
+    return {"success": True, "archived": archived, "skipped": skipped}
 
 
 @router.get("/visual-cache/{block_id}/image")

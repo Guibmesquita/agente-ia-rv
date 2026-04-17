@@ -259,6 +259,14 @@ export const adminAPI = {
   backfillReviewQueue: () => fetchAPI('/products/admin/backfill-review-queue', {
     method: 'POST',
   }),
+
+  listOrphans: () => fetchAPI('/products/admin/orphans'),
+
+  archiveOrphans: (productIds) => fetchAPI('/products/admin/archive-orphans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_ids: productIds }),
+  }),
 };
 
 export const knowledgeAPI = {
