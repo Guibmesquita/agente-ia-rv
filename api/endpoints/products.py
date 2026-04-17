@@ -6112,6 +6112,169 @@ async def backfill_product_data(
     return {"success": True, **results}
 
 
+@router.post("/admin/backfill-derived-links")
+async def backfill_derived_links(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Backfill retroativo: para cada produto derivado (com underlying_ticker em key_info),
+    localiza materiais do ativo-base com o mesmo nome dos materiais já vinculados ao derivado,
+    cria MaterialProductLinks corretos e remove vínculos obsoletos (placeholders).
+    Idempotente.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar")
+
+    import json
+    from database.models import MaterialProductLink
+
+    results = {
+        "derived_products_found": 0,
+        "links_created": 0,
+        "links_already_existed": 0,
+        "stale_links_removed": 0,
+        "skipped_no_base_product": 0,
+        "skipped_no_base_material": 0,
+        "details": []
+    }
+
+    all_products = db.query(Product).filter(
+        Product.key_info.isnot(None),
+        Product.key_info != ""
+    ).all()
+
+    derived_products = []
+    for p in all_products:
+        try:
+            ki = json.loads(p.key_info)
+        except Exception:
+            ki = {}
+        underlying_ticker = (ki.get("underlying_ticker") or "").strip().upper()
+        if underlying_ticker:
+            derived_products.append((p, underlying_ticker))
+
+    results["derived_products_found"] = len(derived_products)
+
+    for derived_product, underlying_ticker in derived_products:
+        base_product = db.query(Product).filter(
+            Product.ticker == underlying_ticker
+        ).first()
+
+        if not base_product:
+            results["skipped_no_base_product"] += 1
+            results["details"].append({
+                "derived": derived_product.ticker,
+                "underlying": underlying_ticker,
+                "status": "skipped_no_base_product"
+            })
+            continue
+
+        derived_material_ids = set()
+        direct_materials = db.query(Material).filter(
+            Material.product_id == derived_product.id
+        ).all()
+        for m in direct_materials:
+            derived_material_ids.add(m.id)
+
+        link_rows = db.query(MaterialProductLink).filter(
+            MaterialProductLink.product_id == derived_product.id
+        ).all()
+        for lm in link_rows:
+            derived_material_ids.add(lm.material_id)
+
+        if not derived_material_ids:
+            continue
+
+        derived_material_names = set()
+        for mid in derived_material_ids:
+            mat = db.query(Material).filter(Material.id == mid).first()
+            if mat and mat.name:
+                derived_material_names.add(mat.name)
+
+        if not derived_material_names:
+            continue
+
+        base_materials = db.query(Material).filter(
+            Material.product_id == base_product.id,
+            Material.name.in_(derived_material_names)
+        ).all()
+
+        if not base_materials:
+            results["skipped_no_base_material"] += 1
+            results["details"].append({
+                "derived": derived_product.ticker,
+                "underlying": underlying_ticker,
+                "status": "skipped_no_base_material",
+                "searched_names": list(derived_material_names)
+            })
+            continue
+
+        corrected_names = set()
+        for base_material in base_materials:
+            if base_material.product_id == derived_product.id:
+                continue
+
+            already_linked = db.query(MaterialProductLink).filter(
+                MaterialProductLink.material_id == base_material.id,
+                MaterialProductLink.product_id == derived_product.id
+            ).first()
+
+            if already_linked:
+                results["links_already_existed"] += 1
+            else:
+                new_link = MaterialProductLink(
+                    material_id=base_material.id,
+                    product_id=derived_product.id,
+                    excluded_from_committee=False
+                )
+                db.add(new_link)
+                results["links_created"] += 1
+                results["details"].append({
+                    "derived": derived_product.ticker,
+                    "underlying": underlying_ticker,
+                    "material_id": base_material.id,
+                    "material_name": base_material.name,
+                    "status": "link_created"
+                })
+
+            corrected_names.add(base_material.name)
+
+        for stale_mid in list(derived_material_ids):
+            stale_mat = db.query(Material).filter(Material.id == stale_mid).first()
+            if not stale_mat or stale_mat.name not in corrected_names:
+                continue
+            if stale_mat.product_id == base_product.id:
+                continue
+            stale_link = db.query(MaterialProductLink).filter(
+                MaterialProductLink.material_id == stale_mid,
+                MaterialProductLink.product_id == derived_product.id
+            ).first()
+            if stale_link:
+                db.delete(stale_link)
+                results["stale_links_removed"] += 1
+                results["details"].append({
+                    "derived": derived_product.ticker,
+                    "underlying": underlying_ticker,
+                    "stale_material_id": stale_mid,
+                    "stale_material_name": stale_mat.name,
+                    "status": "stale_link_removed"
+                })
+
+    db.commit()
+
+    print(
+        f"[BACKFILL_DERIVED_LINKS] derivados={results['derived_products_found']}, "
+        f"links_criados={results['links_created']}, "
+        f"ja_existiam={results['links_already_existed']}, "
+        f"obsoletos_removidos={results['stale_links_removed']}, "
+        f"sem_base_produto={results['skipped_no_base_product']}, "
+        f"sem_base_material={results['skipped_no_base_material']}"
+    )
+
+    return {"success": True, **results}
+
+
 @router.get("/visual-cache/{block_id}/image")
 async def get_visual_cache_image(
     block_id: int,
