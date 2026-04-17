@@ -61,6 +61,43 @@ def compute_hash(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
+FINANCIAL_TABLE_HEADERS = {
+    "dy", "d.y.", "dividend yield", "dividendo", "dividendos",
+    "p/vp", "pvp", "p/vpa", "valor patrimonial", "vpa",
+    "ltv", "loan to value", "loan-to-value",
+    "patrimônio", "patrimônio líquido", "pl",
+    "cotistas", "num cotistas",
+    "inadimplência", "inadimplencia",
+    "vacância", "vacância física", "vacância financeira",
+    "retorno", "rentabilidade", "retorno esperado",
+    "ffo", "ffo/cota",
+    "cap rate",
+    "cdi", "ipca",
+}
+
+
+def _detect_financial_metrics_in_table(table_data: dict) -> list:
+    """
+    Detecta métricas financeiras nos headers de uma tabela JSON.
+    Retorna lista de nomes de colunas que correspondem a métricas financeiras conhecidas.
+    """
+    if not isinstance(table_data, dict):
+        return []
+    headers = table_data.get("headers", [])
+    if not headers:
+        rows = table_data.get("rows", [])
+        if rows and isinstance(rows[0], list):
+            headers = rows[0]
+    detected = []
+    for h in headers:
+        h_lower = str(h).lower().strip()
+        for metric in FINANCIAL_TABLE_HEADERS:
+            if metric in h_lower or h_lower in metric:
+                detected.append(str(h).strip())
+                break
+    return detected
+
+
 def detect_high_risk(content: str, content_type: str, image_quality: str = "good") -> Tuple[bool, str, int]:
     """
     Detecta se o conteúdo é de alto risco e precisa de revisão humana.
@@ -81,7 +118,7 @@ def detect_high_risk(content: str, content_type: str, image_quality: str = "good
         (is_high_risk, reason, confidence_score)
     """
     
-    if content_type in ["table", "tabela"]:
+    if content_type in ["table", "tabela", "tabela_financeira"]:
         return False, "", 95
     
     if content_type in ["text", "texto", "mixed"]:
@@ -174,10 +211,16 @@ class ProductIngestor:
             if content_type == "table" or raw_data.get("tables"):
                 tables = raw_data.get("tables", [])
                 for i, table in enumerate(tables):
+                    fin_metrics = _detect_financial_metrics_in_table(table)
+                    if fin_metrics:
+                        table["_financial_metrics_detected"] = fin_metrics
+                        effective_block_type = "tabela_financeira"
+                    else:
+                        effective_block_type = ContentBlockType.TABLE.value
                     table_json = json.dumps(table, ensure_ascii=False)
                     block, was_created = self._create_block(
                         material_id=material_id,
-                        block_type=ContentBlockType.TABLE.value,
+                        block_type=effective_block_type,
                         title=f"Tabela - Página {page_num}" + (f" ({i+1})" if len(tables) > 1 else ""),
                         content=table_json,
                         source_page=page_num,
@@ -457,7 +500,7 @@ class ProductIngestor:
             summary = page.get("summary", "")
             facts = page.get("facts", [])
             raw_data = page.get("raw_data", {})
-            products_in_page = page.get("products", [])
+            products_in_page = page.get("products_mentioned", page.get("products", []))
             
             if content_type == "structural_only" or (not facts and not raw_data.get("tables") and not summary):
                 stats["skipped_structural"] = stats.get("skipped_structural", 0) + 1
@@ -514,10 +557,16 @@ class ProductIngestor:
             if content_type == "table" or raw_data.get("tables"):
                 tables = raw_data.get("tables", [])
                 for i, table in enumerate(tables):
+                    fin_metrics = _detect_financial_metrics_in_table(table)
+                    if fin_metrics:
+                        table["_financial_metrics_detected"] = fin_metrics
+                        effective_block_type = "tabela_financeira"
+                    else:
+                        effective_block_type = ContentBlockType.TABLE.value
                     table_json = json.dumps(table, ensure_ascii=False)
                     block, was_created = self._create_block(
                         material_id=target_material_id,
-                        block_type=ContentBlockType.TABLE.value,
+                        block_type=effective_block_type,
                         title=f"Tabela - Página {page_num}" + (f" ({i+1})" if len(tables) > 1 else ""),
                         content=table_json,
                         source_page=page_num,
@@ -715,7 +764,7 @@ class ProductIngestor:
             summary = page.get("summary", "")
             facts = page.get("facts", [])
             raw_data = page.get("raw_data", {})
-            products_in_page = page.get("products", [])
+            products_in_page = page.get("products_mentioned", page.get("products", []))
             
             if content_type == "structural_only" or (not facts and not raw_data.get("tables") and not summary):
                 stats["skipped_structural"] = stats.get("skipped_structural", 0) + 1
@@ -786,10 +835,16 @@ class ProductIngestor:
             if content_type == "table" or raw_data.get("tables"):
                 tables = raw_data.get("tables", [])
                 for i, table in enumerate(tables):
+                    fin_metrics = _detect_financial_metrics_in_table(table)
+                    if fin_metrics:
+                        table["_financial_metrics_detected"] = fin_metrics
+                        effective_block_type = "tabela_financeira"
+                    else:
+                        effective_block_type = ContentBlockType.TABLE.value
                     table_json = json.dumps(table, ensure_ascii=False)
                     block, was_created = self._create_block(
                         material_id=target_material_id,
-                        block_type=ContentBlockType.TABLE.value,
+                        block_type=effective_block_type,
                         title=f"Tabela - Página {page_num}" + (f" ({i+1})" if len(tables) > 1 else ""),
                         content=table_json,
                         source_page=page_num,
@@ -1086,9 +1141,11 @@ class ProductIngestor:
         
         for block in blocks:
             content_for_indexing = block.content
-            if block.block_type == ContentBlockType.TABLE.value:
+            financial_metrics_detected = []
+            if block.block_type in (ContentBlockType.TABLE.value, "tabela_financeira"):
                 try:
                     table_data = json.loads(block.content)
+                    financial_metrics_detected = table_data.pop("_financial_metrics_detected", [])
                     text_repr = self._table_to_text(table_data)
                     content_for_indexing = f"Tabela: {block.title}\n{text_repr}"
                 except json.JSONDecodeError as e:
@@ -1138,6 +1195,11 @@ class ProductIngestor:
                 "tags": tags_str,
                 "categories": categories_str
             }
+            
+            if financial_metrics_detected:
+                metadata["financial_metrics_detected"] = json.dumps(financial_metrics_detected, ensure_ascii=False)
+                if block.block_type == "tabela_financeira":
+                    print(f"[INGESTOR] Bloco {block.id} — tabela financeira com métricas: {financial_metrics_detected}")
             
             try:
                 from services.chunk_enrichment import enrich_metadata

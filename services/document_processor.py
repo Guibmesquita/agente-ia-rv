@@ -1,6 +1,7 @@
 """
 Serviço de processamento inteligente de documentos.
 Usa GPT-4 Vision para analisar páginas e extrair informações estruturadas.
+Extração híbrida: texto nativo via PyMuPDF quando disponível, Vision para páginas sem texto.
 """
 import base64
 import io
@@ -18,6 +19,22 @@ from core.config import get_settings
 from services.cost_tracker import cost_tracker
 
 settings = get_settings()
+
+NATIVE_TEXT_MIN_CHARS = 100
+
+FINANCIAL_METRIC_COLUMNS = {
+    "dy", "d.y.", "dividend yield", "dividendo", "dividendos",
+    "p/vp", "pvp", "p/vpa",
+    "ltv", "loan to value", "loan-to-value",
+    "vpa", "valor patrimonial",
+    "patrimônio", "patrimonio", "pl ",
+    "cotistas",
+    "inadimplência", "inadimplencia",
+    "vacância", "vacancia", "vacância física", "vacância financeira",
+    "retorno", "rentabilidade", "cdi", "ipca",
+    "cap rate",
+    "ffo", "ffo/cota",
+}
 
 
 class ContentType(str, Enum):
@@ -47,6 +64,16 @@ class DocumentProcessor:
         if settings.OPENAI_API_KEY:
             self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
     
+    def _extract_page_text_native(self, page) -> str:
+        """Extrai texto nativo da página usando PyMuPDF (pdfminer-like).
+        Retorna string vazia se a página não tem texto selecionável suficiente."""
+        try:
+            text = page.get_text("text").strip()
+            return text
+        except Exception as e:
+            print(f"[DOC_PROCESSOR] Erro ao extrair texto nativo: {e}")
+            return ""
+
     def _classify_page_content(self, page) -> ContentType:
         """Pré-classifica o tipo de conteúdo de uma página usando texto nativo do PyMuPDF.
         Usado para determinar o DPI ideal antes de enviar ao Vision."""
@@ -202,6 +229,24 @@ INSTRUÇÕES:
    Regra prática: se o texto seria idêntico em qualquer
    outra página do mesmo documento, ignore-o.
 
+8. MÉTRICAS FINANCEIRAS ESPECÍFICAS (se presentes):
+   Extraia indicadores financeiros em `financial_metrics` com valor e data de referência.
+   Preencha APENAS os campos que aparecem explicitamente na página.
+   Campos disponíveis:
+   - dy_monthly: Dividend Yield mensal (ex: "0,75%")
+   - dy_annual: Dividend Yield anual (ex: "9,0%")
+   - pvp: Preço sobre Valor Patrimonial (ex: "0,98")
+   - vpa: Valor Patrimonial por Cota (ex: "R$ 102,50")
+   - ltv: Loan-to-Value médio (ex: "62%")
+   - patrimonio: Patrimônio líquido (ex: "R$ 1,2 bilhão")
+   - num_cotistas: Número de cotistas (ex: "45.000")
+   - inadimplencia: Taxa de inadimplência (ex: "1,2%")
+   - vacancia: Taxa de vacância (ex: "8,5%")
+   - retornos_historicos: objeto {{periodo: retorno}} (ex: {{"1m": "0,75%", "12m": "9,0%"}})
+   - composicao_setorial: objeto {{setor: percentual}} (ex: {{"Logística": "45%"}})
+   - referencia: Mês/período de referência (ex: "Março 2025")
+   Se não houver métricas financeiras claras, omita o campo ou retorne {{}}.
+
 FORMATO DE RESPOSTA (JSON):
 {{
     "content_type": "table|infographic|text|mixed|image_only|structural_only",
@@ -212,6 +257,11 @@ FORMATO DE RESPOSTA (JSON):
         "perfil": ["conservador"],
         "momento": ["selic-alta"],
         "informacao": ["indicadores", "comparativo"]
+    }},
+    "financial_metrics": {{
+        "dy_monthly": "0,75%",
+        "pvp": "0,98",
+        "referencia": "Março 2025"
     }},
     "facts": [
         "Fato 1 completo e auto-contido",
@@ -292,6 +342,121 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 "raw_data": {}
             }
     
+    def analyze_page_with_text(self, text: str, document_title: str = "", page_number: int = 0) -> Dict[str, Any]:
+        """
+        Analisa uma página usando APENAS o texto nativo (sem Vision).
+        Mais rápido e barato para páginas com texto selecionável suficiente.
+        Retorna o mesmo formato JSON que analyze_page().
+        """
+        if not self.client:
+            raise ValueError("OpenAI API key não configurada")
+
+        prompt = f"""Analise o texto abaixo extraído da página {page_number} do documento "{document_title}" e extraia as informações de forma estruturada.
+
+TEXTO DA PÁGINA:
+{text}
+
+INSTRUÇÕES:
+1. Identifique o TIPO de conteúdo:
+   - "table": tabelas com dados estruturados
+   - "text": texto corrido e parágrafos
+   - "mixed": combinação de texto e dados
+   - "structural_only": apenas cabeçalhos, rodapés, numeração — sem conteúdo útil
+
+2. Para TABELAS: extraia headers e todas as linhas em raw_data.tables. Cada linha da tabela original deve virar uma linha no JSON.
+
+3. Para TEXTO: extraia pontos principais como fatos independentes e auto-contidos.
+
+4. Identifique PRODUTOS/FUNDOS mencionados (tickers, nomes completos, variações).
+
+5. MÉTRICAS FINANCEIRAS (se presentes): preencha apenas campos explícitos:
+   - dy_monthly, dy_annual, pvp, vpa, ltv, patrimonio, num_cotistas,
+     inadimplencia, vacancia, retornos_historicos, composicao_setorial, referencia.
+
+6. AUTO-TAGS nas categorias:
+   - contexto: abordagem, fechamento, objecao, follow-up, renovacao, rebalanceamento
+   - perfil: conservador, moderado, arrojado, institucional, pf, pj
+   - momento: alta, baixa, volatilidade, selic-alta, selic-baixa, dolar-forte
+   - informacao: indicadores, historico, comparativo, projecao, risco, estrategia
+
+7. IGNORAR elementos estruturais (cabeçalhos, rodapés, numeração, disclaimers padrão).
+
+FORMATO DE RESPOSTA (JSON puro, sem markdown):
+{{
+    "content_type": "table|text|mixed|structural_only",
+    "summary": "Resumo breve do conteúdo",
+    "products_mentioned": ["TGRI", "TG Core", ...],
+    "auto_tags": {{"contexto": [], "perfil": [], "momento": [], "informacao": []}},
+    "financial_metrics": {{}},
+    "facts": ["Fato 1 auto-contido", "Fato 2 auto-contido", ...],
+    "raw_data": {{
+        "tables": [{{"headers": ["col1", "col2"], "rows": [["val1", "val2"]]}}],
+        "key_values": {{}}
+    }}
+}}"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=8192,
+                temperature=0.1
+            )
+            try:
+                if response.usage:
+                    cost_tracker.track_openai_chat(
+                        model='gpt-4o',
+                        prompt_tokens=response.usage.prompt_tokens,
+                        completion_tokens=response.usage.completion_tokens,
+                        total_tokens=response.usage.total_tokens,
+                        operation='document_text_extraction',
+                        context=f'doc:{document_title}|pg:{page_number}' if document_title else None
+                    )
+            except Exception:
+                pass
+
+            result_text = response.choices[0].message.content.strip()
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+
+            return json.loads(result_text)
+
+        except json.JSONDecodeError as e:
+            print(f"[DOC_PROCESSOR] Erro ao parsear JSON (texto nativo): {e}")
+            return {"content_type": "text", "summary": "Erro ao processar página", "facts": [], "raw_data": {}}
+        except Exception as e:
+            print(f"[DOC_PROCESSOR] Erro ao analisar página (texto nativo): {e}")
+            return {"content_type": "text", "summary": f"Erro: {str(e)}", "facts": [], "raw_data": {}}
+
+    def analyze_page_hybrid(self, page, pre_content_type, document_title: str = "", page_number: int = 0) -> Dict[str, Any]:
+        """
+        Estratégia híbrida de extração:
+        - Se a página tem texto nativo suficiente (>NATIVE_TEXT_MIN_CHARS chars) E é classificada
+          como TEXT ou MIXED, usa analyze_page_with_text (mais barato e preciso).
+        - Caso contrário, usa Vision completo via analyze_page.
+        Loga qual estratégia foi usada.
+        """
+        native_text = self._extract_page_text_native(page)
+        use_native = (
+            len(native_text) >= NATIVE_TEXT_MIN_CHARS
+            and pre_content_type in (ContentType.TEXT, ContentType.MIXED)
+        )
+
+        if use_native:
+            print(f"[DOC_PROCESSOR] Página {page_number}: estratégia=TEXTO_NATIVO ({len(native_text)} chars, tipo={pre_content_type.value})")
+            result = self.analyze_page_with_text(native_text, document_title, page_number)
+            result["extraction_strategy"] = "native_text"
+        else:
+            dpi = DPI_BY_CONTENT.get(pre_content_type, DPI_DEFAULT)
+            image = self._page_to_image(page, dpi=dpi)
+            print(f"[DOC_PROCESSOR] Página {page_number}: estratégia=VISION (tipo={pre_content_type.value}, dpi={dpi}, texto={len(native_text)} chars)")
+            result = self.analyze_page(image, document_title, page_number)
+            result["extraction_strategy"] = "vision"
+
+        return result
+
     def process_pdf(
         self, 
         pdf_path: str = None, 
@@ -341,10 +506,9 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
             for i, page in enumerate(doc):
                 content_type = self._classify_page_content(page)
                 dpi = DPI_BY_CONTENT.get(content_type, DPI_DEFAULT)
-                print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages} (tipo={content_type.value}, dpi={dpi})...")
+                print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages} (pré-classificação={content_type.value}, dpi={dpi})...")
                 
-                image = self._page_to_image(page, dpi=dpi)
-                page_result = self.analyze_page(image, document_title, page_number=i + 1)
+                page_result = self.analyze_page_hybrid(page, content_type, document_title, page_number=i + 1)
                 page_result["page_number"] = i + 1
                 page_result["adaptive_dpi"] = dpi
                 page_result["pre_classification"] = content_type.value
@@ -420,14 +584,13 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
                 page = doc[i]
                 content_type = self._classify_page_content(page)
                 dpi = DPI_BY_CONTENT.get(content_type, DPI_DEFAULT)
-                image = self._page_to_image(page, dpi=dpi)
-                print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages} (tipo={content_type.value}, dpi={dpi})...")
+                print(f"[DOC_PROCESSOR] Processando página {i + 1}/{total_pages} (pré-classificação={content_type.value}, dpi={dpi})...")
                 
                 try:
                     import time
                     start_time = time.time()
                     
-                    page_result = self.analyze_page(image, document_title, page_number=i + 1)
+                    page_result = self.analyze_page_hybrid(page, content_type, document_title, page_number=i + 1)
                     page_result["page_number"] = i + 1
                     page_result["adaptive_dpi"] = dpi
                     page_result["pre_classification"] = content_type.value
