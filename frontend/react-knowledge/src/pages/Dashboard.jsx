@@ -405,7 +405,7 @@ export function Dashboard() {
             }`}
         >
           <Star className={`w-4 h-4 ${committeeFilter ? 'fill-amber-400 text-amber-400' : ''}`} />
-          Somente Comitê
+          Somente Comitê ({products.filter((p) => p.is_committee).length})
         </button>
       </div>
 
