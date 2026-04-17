@@ -1579,55 +1579,16 @@ class VectorStore:
         """
         Retorna product_ids de produtos marcados como Comitê SVN.
 
-        Fonte de verdade atual: flag `Product.is_committee` (estrela no card).
-        Mantém fallback para `RecommendationEntry` (legado) e categoria "Comitê"
-        para compatibilidade com dados antigos enquanto a migração de marcação
-        manual não é concluída.
+        Fonte de verdade única: flag `Product.is_committee` (botão estrela no card).
+        Legados (RecommendationEntry e categoria "Comitê") foram removidos —
+        a estrela é a única forma de adicionar um produto ao comitê.
         """
         from database.database import SessionLocal
-        from datetime import datetime
         db = SessionLocal()
         try:
-            from sqlalchemy import or_
             from database.models import Product
-            now = datetime.utcnow()
-
-            # Fonte primária: flag Product.is_committee (estrela)
-            ids_from_flag: list = []
-            try:
-                rows = db.query(Product.id).filter(Product.is_committee == True).all()
-                ids_from_flag = [row[0] for row in rows]
-            except Exception:
-                ids_from_flag = []
-
-            # Legado: recommendation_entries
-            try:
-                from database.models import RecommendationEntry
-                entries = db.query(RecommendationEntry.product_id).filter(
-                    RecommendationEntry.is_active == True,
-                ).filter(
-                    or_(
-                        RecommendationEntry.valid_until == None,
-                        RecommendationEntry.valid_until >= now
-                    )
-                ).distinct().all()
-                ids_from_entries = [row[0] for row in entries]
-            except Exception:
-                ids_from_entries = []
-
-            # Legado: categoria "Comitê"
-            try:
-                manual = db.query(Product.id).filter(
-                    or_(
-                        Product.categories.like('%"Comitê"%'),
-                        Product.categories.like('%"comite"%'),
-                    )
-                ).all()
-                ids_from_cats = [row[0] for row in manual]
-            except Exception:
-                ids_from_cats = []
-
-            return list(set(ids_from_flag + ids_from_entries + ids_from_cats))
+            rows = db.query(Product.id).filter(Product.is_committee == True).all()
+            return [row[0] for row in rows]
         except Exception as e:
             print(f"[VECTOR_STORE] Erro ao buscar product_ids do Comitê: {e}")
             return []
@@ -1637,9 +1598,12 @@ class VectorStore:
     def get_committee_summary(self) -> List[dict]:
         """
         Retorna resumo estruturado do comitê ativo para injeção no system prompt.
-        Camada 0 (primária): materiais com is_committee_active=True → produtos derivados.
-        Camada 1: recommendation_entries ativas (enriquecimento e fallback).
-        Camada 2: Product.categories com 'Comitê' (fallback legado).
+
+        Fonte de verdade: Product.is_committee == True (botão estrela no card).
+        Enriquecimento (opcional, não obrigatório):
+          - RecommendationEntry ativa: rating, preço-alvo, tese, validade
+          - Material com is_committee_active: nome do material fonte
+        Legados removidos: categorias "Comitê", fallback por entries sem estrela.
         """
         from database.database import SessionLocal
         from datetime import datetime
@@ -1648,12 +1612,39 @@ class VectorStore:
         try:
             now = datetime.utcnow()
             result = []
-            seen = set()
 
-            # ── Camada 0: materiais com is_committee_active=True ──────────────
-            has_active_committee_mats = False
+            # ── Fonte de verdade: Product.is_committee == True ─────────────────
+            from database.models import Product as ProductModel
+            committee_products = db.query(ProductModel).filter(
+                ProductModel.is_committee == True
+            ).all()
+
+            if not committee_products:
+                print("[VECTOR_STORE] committee_summary: nenhum produto com estrela ativa")
+                return []
+
+            # ── Enriquecimento 1: RecommendationEntry ativas ───────────────────
+            rec_map: dict = {}
             try:
-                from database.models import Material, MaterialProductLink, Product as ProductModel
+                from database.models import RecommendationEntry
+                entries = db.query(RecommendationEntry).filter(
+                    RecommendationEntry.is_active == True,
+                ).filter(
+                    or_(
+                        RecommendationEntry.valid_until == None,
+                        RecommendationEntry.valid_until >= now,
+                    )
+                ).order_by(RecommendationEntry.added_at.desc()).all()
+                for e in entries:
+                    if e.product_id not in rec_map:
+                        rec_map[e.product_id] = e
+            except Exception as rec_err:
+                print(f"[VECTOR_STORE] Aviso: erro ao carregar recommendation_entries: {rec_err}")
+
+            # ── Enriquecimento 2: materiais com is_committee_active=True ────────
+            mat_product_map: dict = {}  # product_id -> material_name
+            try:
+                from database.models import Material, MaterialProductLink
                 active_mats = db.query(Material).filter(
                     Material.is_committee_active == True,
                     Material.publish_status == 'publicado',
@@ -1662,133 +1653,43 @@ class VectorStore:
                         Material.valid_until >= now,
                     ),
                 ).all()
-
-                has_active_committee_mats = len(active_mats) > 0
-
-                rec_map = {}
-                if active_mats:
-                    # Pré-carregar recommendation_entries para enriquecimento
-                    from database.models import RecommendationEntry
-                    entries = db.query(RecommendationEntry).filter(
-                        RecommendationEntry.is_active == True,
-                    ).filter(
-                        or_(
-                            RecommendationEntry.valid_until == None,
-                            RecommendationEntry.valid_until >= now
-                        )
-                    ).all()
-                    for e in entries:
-                        if e.product_id not in rec_map:
-                            rec_map[e.product_id] = e
-
                 for mat in active_mats:
-                    product_ids_for_mat = []
-                    # Pré-carregar IDs excluídos para este material
-                    excluded_links = db.query(MaterialProductLink).filter(
-                        MaterialProductLink.material_id == mat.id,
-                        MaterialProductLink.excluded_from_committee == True,
-                    ).all()
-                    excluded_pids = {lnk.product_id for lnk in excluded_links}
-
-                    if mat.product_id and mat.product_id not in excluded_pids:
-                        product_ids_for_mat.append(mat.product_id)
+                    pids_for_mat = []
+                    if mat.product_id:
+                        pids_for_mat.append(mat.product_id)
                     links = db.query(MaterialProductLink).filter(
                         MaterialProductLink.material_id == mat.id,
                         MaterialProductLink.excluded_from_committee != True,
                     ).all()
                     for lnk in links:
-                        if lnk.product_id not in product_ids_for_mat:
-                            product_ids_for_mat.append(lnk.product_id)
-
-                    for pid in product_ids_for_mat:
-                        if pid in seen:
-                            continue
-                        seen.add(pid)
-                        prod = db.query(ProductModel).filter(ProductModel.id == pid).first()
-                        if not prod:
-                            continue
-                        rec = rec_map.get(pid)
-                        result.append({
-                            "product_name": prod.name,
-                            "ticker": prod.ticker or "",
-                            "manager": prod.manager or "",
-                            "rating": rec.rating if rec else "",
-                            "target_price": rec.target_price if rec else None,
-                            "valid_until": rec.valid_until.strftime("%d/%m/%Y") if (rec and rec.valid_until) else "",
-                            "rationale": rec.rationale if rec else "",
-                            "key_info": _safe_load_key_info(prod.key_info),
-                            "source": "committee_material",
-                            "material_name": mat.name or "",
-                        })
-
-                if has_active_committee_mats:
-                    # Materiais ativos são fonte exclusiva — fallback legado não executado
-                    print(f"[VECTOR_STORE] committee_summary via materiais ativos: {len(result)} produto(s)")
-                    return result
-
+                        if lnk.product_id not in pids_for_mat:
+                            pids_for_mat.append(lnk.product_id)
+                    for pid in pids_for_mat:
+                        if pid not in mat_product_map:
+                            mat_product_map[pid] = mat.name or ""
             except Exception as mat_err:
-                print(f"[VECTOR_STORE] Erro ao buscar materiais do comitê: {mat_err}")
-                has_active_committee_mats = False
+                print(f"[VECTOR_STORE] Aviso: erro ao carregar materiais do comitê: {mat_err}")
 
-            # ── Camada 1-2: recommendation_entries + categories (somente sem materiais ativos) ─
-            try:
-                from database.models import RecommendationEntry, Product as ProductModel
-                entries = db.query(RecommendationEntry).filter(
-                    RecommendationEntry.is_active == True,
-                ).filter(
-                    or_(
-                        RecommendationEntry.valid_until == None,
-                        RecommendationEntry.valid_until >= now
-                    )
-                ).order_by(RecommendationEntry.added_at.desc()).all()
+            # ── Montar resultado por produto com estrela ───────────────────────
+            for prod in committee_products:
+                rec = rec_map.get(prod.id)
+                material_name = mat_product_map.get(prod.id, "")
+                result.append({
+                    "product_name": prod.name,
+                    "ticker": prod.ticker or "",
+                    "manager": prod.manager or "",
+                    "rating": rec.rating if rec else "",
+                    "target_price": rec.target_price if rec else None,
+                    "valid_until": rec.valid_until.strftime("%d/%m/%Y") if (rec and rec.valid_until) else "",
+                    "rationale": rec.rationale if rec else "",
+                    "key_info": _safe_load_key_info(prod.key_info),
+                    "source": "is_committee_flag",
+                    "material_name": material_name,
+                })
 
-                for e in entries:
-                    if e.product_id in seen:
-                        continue
-                    seen.add(e.product_id)
-                    prod = db.query(ProductModel).filter(ProductModel.id == e.product_id).first()
-                    if not prod:
-                        continue
-                    result.append({
-                        "product_name": prod.name,
-                        "ticker": prod.ticker or "",
-                        "manager": prod.manager or "",
-                        "rating": e.rating or "",
-                        "target_price": e.target_price,
-                        "valid_until": e.valid_until.strftime("%d/%m/%Y") if e.valid_until else "",
-                        "rationale": e.rationale or "",
-                        "key_info": _safe_load_key_info(prod.key_info),
-                        "source": "recommendation_entry",
-                    })
+            print(f"[VECTOR_STORE] committee_summary via Product.is_committee: {len(result)} produto(s)")
+            return result
 
-                # ── Camada 2: Product.categories com 'Comitê' (legado) ───────
-                from database.models import Product as ProductModel2
-                manual = db.query(ProductModel2).filter(
-                    or_(
-                        ProductModel2.categories.like('%"Comitê"%'),
-                        ProductModel2.categories.like('%"comite"%'),
-                    )
-                ).all()
-                for p in manual:
-                    if p.id not in seen:
-                        seen.add(p.id)
-                        result.append({
-                            "product_name": p.name,
-                            "ticker": p.ticker or "",
-                            "manager": p.manager or "",
-                            "rating": "",
-                            "target_price": None,
-                            "valid_until": "",
-                            "rationale": "",
-                            "key_info": _safe_load_key_info(p.key_info),
-                            "source": "product_category",
-                        })
-
-                return result
-
-            except Exception as inner_e:
-                print(f"[VECTOR_STORE] Erro ao buscar resumo do comitê: {inner_e}")
-                return []
         except Exception as e:
             print(f"[VECTOR_STORE] Erro ao buscar comitê summary: {e}")
             return []
