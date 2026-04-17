@@ -55,6 +55,8 @@ export function Dashboard() {
   const [publishBackfillResult, setPublishBackfillResult] = useState(null);
   const [enrichBackfillRunning, setEnrichBackfillRunning] = useState(false);
   const [enrichBackfillResult, setEnrichBackfillResult] = useState(null);
+  const [reviewQueueRunning, setReviewQueueRunning] = useState(false);
+  const [reviewQueueResult, setReviewQueueResult] = useState(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_SEARCH_KEY, search);
@@ -347,6 +349,23 @@ export function Dashboard() {
       addToast(`Erro: ${err.message}`, 'error');
     } finally {
       setPublishBackfillRunning(false);
+    }
+  };
+
+  const handleBackfillReviewQueue = async () => {
+    setReviewQueueRunning(true);
+    setReviewQueueResult(null);
+    try {
+      const result = await adminAPI.backfillReviewQueue();
+      setReviewQueueResult(result);
+      addToast(
+        `${result.review_items_created} item(ns) criado(s) na fila de revisão`,
+        'success'
+      );
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+    } finally {
+      setReviewQueueRunning(false);
     }
   };
 
@@ -775,7 +794,55 @@ export function Dashboard() {
           <div className="space-y-4 border-b border-border pb-5">
             <div>
               <h3 className="text-sm font-semibold text-foreground mb-1">
-                2. Enriquecer índice semântico (aumenta precisão de busca)
+                2. Sincronizar fila de revisão (recupera blocos invisíveis)
+              </h3>
+              <p className="text-sm text-muted mb-3">
+                Cria itens na fila de revisão para todo bloco com status <code className="text-xs bg-muted/10 px-1 rounded">pending_review</code>
+                que ficou sem entrada na tabela auxiliar (caso histórico onde o pipeline marcou
+                gráficos/tabelas como pendentes mas pulou a criação do item, tornando-os
+                invisíveis em <strong>/review</strong>). A partir desta versão, um listener
+                garante automaticamente a criação — esta operação serve para limpar o histórico.
+              </p>
+              <button
+                onClick={handleBackfillReviewQueue}
+                disabled={reviewQueueRunning}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                           bg-primary text-white hover:bg-primary/90
+                           disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {reviewQueueRunning ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <Wrench className="w-4 h-4" />
+                    Sincronizar fila de revisão
+                  </>
+                )}
+              </button>
+              {reviewQueueResult && (
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+                  <p className="text-sm font-semibold text-green-800">
+                    {reviewQueueResult.review_items_created} item(ns) criado(s) ·
+                    {' '}{reviewQueueResult.already_had_open_item} já tinha(m) item ·
+                    {' '}{reviewQueueResult.pending_blocks_found} bloco(s) pendente(s) no total
+                  </p>
+                  {reviewQueueResult.failed?.length > 0 && (
+                    <p className="text-xs text-red-700">
+                      {reviewQueueResult.failed.length} falha(s) — veja os logs do servidor.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 border-b border-border pb-5">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                3. Enriquecer índice semântico (aumenta precisão de busca)
               </h3>
               <p className="text-sm text-muted mb-3">
                 Detecta termos do glossário financeiro (LTV, FFO, duration, cap rate, etc.) em cada

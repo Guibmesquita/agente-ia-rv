@@ -2,8 +2,8 @@
 Modelos SQLAlchemy para o banco de dados.
 Define as tabelas User, Ticket, Interaction, TicketCategory e Integration.
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float, Index, LargeBinary, UniqueConstraint
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float, Index, LargeBinary, UniqueConstraint, event
+from sqlalchemy.orm import relationship, backref, Session as ORMSession
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
 from database.database import Base
@@ -1459,3 +1459,53 @@ class RevokedToken(Base):
     jti = Column(String(36), primary_key=True)
     revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
+
+
+@event.listens_for(ContentBlock, "after_insert")
+def _content_block_after_insert(mapper, connection, target):
+    """Garante PendingReviewItem quando bloco já nasce pending_review."""
+    if target.status != ContentBlockStatus.PENDING_REVIEW.value:
+        return
+    existing = connection.execute(
+        PendingReviewItem.__table__.select().where(
+            (PendingReviewItem.block_id == target.id) &
+            (PendingReviewItem.reviewed_at.is_(None))
+        ).limit(1)
+    ).first()
+    if existing:
+        return
+    content = target.content or ""
+    connection.execute(
+        PendingReviewItem.__table__.insert().values(
+            block_id=target.id,
+            original_content=content,
+            extracted_content=content,
+            confidence_score=int(target.confidence_score or 0),
+            risk_reason="Auto-criado pelo listener (bloco criado em pending_review)",
+        )
+    )
+
+
+@event.listens_for(ContentBlock, "after_update")
+def _content_block_after_update(mapper, connection, target):
+    """Garante PendingReviewItem quando status transiciona para pending_review."""
+    if target.status != ContentBlockStatus.PENDING_REVIEW.value:
+        return
+    existing = connection.execute(
+        PendingReviewItem.__table__.select().where(
+            (PendingReviewItem.block_id == target.id) &
+            (PendingReviewItem.reviewed_at.is_(None))
+        ).limit(1)
+    ).first()
+    if existing:
+        return
+    content = target.content or ""
+    connection.execute(
+        PendingReviewItem.__table__.insert().values(
+            block_id=target.id,
+            original_content=content,
+            extracted_content=content,
+            confidence_score=int(target.confidence_score or 0),
+            risk_reason="Auto-criado pelo listener (status mudou para pending_review)",
+        )
+    )

@@ -1000,15 +1000,20 @@ class ProductIngestor:
         )
         db.add(version)
         
-        if is_high_risk:
-            review_item = PendingReviewItem(
-                block_id=block.id,
-                original_content=content,
-                extracted_content=content,
-                confidence_score=confidence,
-                risk_reason=risk_reason
-            )
-            db.add(review_item)
+        if block.status == ContentBlockStatus.PENDING_REVIEW.value:
+            existing_review = db.query(PendingReviewItem).filter(
+                PendingReviewItem.block_id == block.id,
+                PendingReviewItem.reviewed_at.is_(None),
+            ).first()
+            if not existing_review:
+                review_item = PendingReviewItem(
+                    block_id=block.id,
+                    original_content=content,
+                    extracted_content=content,
+                    confidence_score=confidence,
+                    risk_reason=risk_reason or ("Alto risco" if is_high_risk else "Requer revisão humana"),
+                )
+                db.add(review_item)
         
         db.commit()
         return (block, True)

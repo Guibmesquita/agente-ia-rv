@@ -255,6 +255,10 @@ export const adminAPI = {
     fetchAPI(`/products/admin/backfill-enrichment?only_missing=${onlyMissing}&limit=${limit}`, {
       method: 'POST',
     }),
+
+  backfillReviewQueue: () => fetchAPI('/products/admin/backfill-review-queue', {
+    method: 'POST',
+  }),
 };
 
 export const knowledgeAPI = {

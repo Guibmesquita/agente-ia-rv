@@ -1165,6 +1165,74 @@ async def admin_backfill_enrichment(
     }
 
 
+@router.post("/admin/backfill-review-queue")
+async def admin_backfill_review_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Sincroniza a fila de revisão: cria PendingReviewItem para cada
+    bloco com `status='pending_review'` que não tem item aberto.
+    
+    Resolve o caso histórico onde o pipeline marcou blocos como
+    pending_review mas pulou a criação do item (gráficos, tabelas
+    extraídas, etc.), tornando-os invisíveis na UI /review.
+    
+    Idempotente — pode ser executado quantas vezes precisar.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    pending_blocks = db.query(ContentBlock).filter(
+        ContentBlock.status == ContentBlockStatus.PENDING_REVIEW.value
+    ).all()
+    
+    created = []
+    already_had = 0
+    failed = []
+    
+    for block in pending_blocks:
+        existing = db.query(PendingReviewItem).filter(
+            PendingReviewItem.block_id == block.id,
+            PendingReviewItem.reviewed_at.is_(None),
+        ).first()
+        if existing:
+            already_had += 1
+            continue
+        try:
+            content = block.content or ""
+            review_item = PendingReviewItem(
+                block_id=block.id,
+                original_content=content,
+                extracted_content=content,
+                confidence_score=int(block.confidence_score or 0),
+                risk_reason="Backfill: bloco estava pending_review sem item de revisão",
+            )
+            db.add(review_item)
+            created.append({
+                "block_id": block.id,
+                "material_id": block.material_id,
+                "block_type": block.block_type,
+            })
+        except Exception as e:
+            failed.append({"block_id": block.id, "error": str(e)})
+    
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": f"commit falhou: {e}"}
+    
+    return {
+        "success": True,
+        "pending_blocks_found": len(pending_blocks),
+        "review_items_created": len(created),
+        "already_had_open_item": already_had,
+        "failed": failed,
+        "created_details": created[:50],
+    }
+
+
 @router.post("/{product_id}/reindex")
 async def reindex_product(
     product_id: int,
