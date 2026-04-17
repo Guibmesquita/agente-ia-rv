@@ -952,6 +952,15 @@ Omita campos que não encontrou. Não inclua campos além dos listados."""
         return {"extracted": False, "reason": "Nenhum campo extraído pelo modelo"}
 
     material_id = blocks[0].material_id if blocks else None
+
+    before_key_info: dict = {}
+    try:
+        before_key_info = _json.loads(product.key_info) if product.key_info else {}
+        if not isinstance(before_key_info, dict):
+            before_key_info = {}
+    except Exception:
+        pass
+
     changed = _merge_key_info_into_product(db, product, extracted, material_id=material_id)
     if changed:
         db.commit()
@@ -962,7 +971,25 @@ Omita campos que não encontrou. Não inclua campos além dos listados."""
         except Exception as idx_err:
             print(f"[AUTO_EXTRACT] Falha ao reindexar key_info produto {product.id}: {idx_err}")
 
-    return {"extracted": changed, "fields_set": list(extracted.keys())}
+    after_key_info: dict = {}
+    try:
+        after_key_info = _json.loads(product.key_info) if product.key_info else {}
+        if not isinstance(after_key_info, dict):
+            after_key_info = {}
+    except Exception:
+        pass
+
+    changed_fields = [
+        k for k in extracted.keys()
+        if after_key_info.get(k) != before_key_info.get(k)
+    ]
+
+    return {
+        "extracted": changed,
+        "fields_extracted": list(extracted.keys()),
+        "changed_fields": changed_fields,
+        "fields_set": changed_fields,
+    }
 
 
 @router.post("/{product_id}/auto-extract-key-info")
@@ -994,9 +1021,14 @@ async def auto_extract_product_key_info(
         }
 
     db.refresh(product)
+    changed_fields = result.get("changed_fields", [])
+    fields_extracted = result.get("fields_extracted", result.get("fields_set", []))
     return {
         "success": True,
-        "fields_set": result.get("fields_set", []),
+        "extracted": result.get("extracted", False),
+        "fields_extracted": fields_extracted,
+        "changed_fields": changed_fields,
+        "fields_set": changed_fields,
         "key_info": product.key_info,
     }
 

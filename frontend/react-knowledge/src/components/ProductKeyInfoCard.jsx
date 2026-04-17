@@ -287,11 +287,13 @@ export function ProductKeyInfoCard({ product, onUpdated }) {
     setExtracting(true);
     try {
       const result = await productsAPI.autoExtractKeyInfo(product.id);
-      if (result.success && result.fields_set?.length > 0) {
-        addToast(`${result.fields_set.length} campo(s) extraído(s) automaticamente`, 'success');
+      if (result.success && result.changed_fields?.length > 0) {
+        addToast(`${result.changed_fields.length} campo(s) preenchido(s) automaticamente`, 'success');
         if (onUpdated) await onUpdated();
+      } else if (result.success && result.fields_extracted?.length > 0) {
+        addToast('Informações já estavam preenchidas — nenhum campo novo atualizado', 'info');
       } else if (result.success) {
-        addToast('Nenhum campo novo encontrado nos documentos', 'info');
+        addToast('Nenhuma informação encontrada nos documentos', 'info');
       } else {
         addToast(result.message || 'Não foi possível extrair informações', 'warning');
       }
