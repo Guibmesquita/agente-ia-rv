@@ -99,6 +99,16 @@ def find_or_create_product_from_name(db: Session, material_name: str, gestora: s
     if ticker and ticker not in (product_name or ""):
         product_name = f"{product_name} ({ticker})"
 
+    auto_category = None
+    auto_categories = []
+    if ticker:
+        desc_hint = f"Produto criado automaticamente a partir de upload de documento ({document_type or 'N/A'})"
+        if _is_fii_ticker(ticker, product_name, desc_hint, require_keyword=False):
+            subcategory = _classify_fii_subcategory(ticker, product_name, desc_hint)
+            auto_category = subcategory
+            auto_categories = [subcategory]
+            print(f"[FIND_OR_CREATE] FII auto-classificado: ticker={ticker} → {subcategory}")
+
     try:
         new_product = Product(
             name=product_name,
@@ -106,7 +116,10 @@ def find_or_create_product_from_name(db: Session, material_name: str, gestora: s
             manager=gestora,
             status="ativo",
             description=f"Produto criado automaticamente a partir de upload de documento ({document_type or 'N/A'})",
+            category=auto_category,
         )
+        if auto_categories:
+            new_product.set_categories(auto_categories)
         db.add(new_product)
         db.commit()
         db.refresh(new_product)
@@ -495,6 +508,88 @@ async def get_expiring_materials(
     }
 
 
+def _classify_fii_subcategory(ticker: str, name: str, description: str = "") -> str:
+    """
+    Infere a subcategoria de FII com base em padrões de nome/ticker.
+    Retorna a subcategoria canônica (ex: 'FII Papel', 'FII Logística', ...)
+    ou 'FII' quando não for possível refinar.
+    Replica a lógica das migrações incrementais do main.py (Task #134 v2 / Task #137).
+    """
+    import re
+
+    ticker_upper = (ticker or "").upper().strip()
+    name_lower = (name or "").lower()
+    desc_lower = (description or "").lower()
+
+    MANUAL_PAPEL = {"GARE11", "MANA11", "RZAT11", "MCRE11", "PCIP11"}
+    MANUAL_LOGISTICA = {"LVBI11", "BTLG11"}
+    MANUAL_TIJOLO = {"LIFE11"}
+
+    if ticker_upper in MANUAL_PAPEL:
+        return "FII Papel"
+    if ticker_upper in MANUAL_LOGISTICA:
+        return "FII Logística"
+    if ticker_upper in MANUAL_TIJOLO:
+        return "FII Tijolo"
+
+    def m(pattern, text):
+        return bool(re.search(pattern, text, re.IGNORECASE))
+
+    if m(r'\b(papel|receb[ií]vel|crédito|credito|\bcri\b|high.?grade|\blci\b|hipotecário|hipotecario|papel imobiliário|renda imobiliária)\b', name_lower):
+        return "FII Papel"
+
+    if m(r'\b(log[ií]stic|galpão|galpao|industrial|armazém|armazem|condomínio logístico|condominio logistico)\b', name_lower):
+        return "FII Logística"
+
+    if m(r'\b(fundo de fundos|\bfof\b|multigestão|multi.gestão|fundos.imobiliários.acesso)\b', name_lower):
+        return "FII de Fundos"
+
+    if m(r'\b(híbrido|hibrido|misto|diversificado)\b', name_lower):
+        return "FII Híbrido"
+
+    return "FII"
+
+
+def _is_fii_ticker(ticker: str, name: str = "", description: str = "", require_keyword: bool = True) -> bool:
+    """
+    Verifica se um produto é um FII com base no ticker e, opcionalmente, no nome/descrição.
+    Mesma heurística usada nas migrações do main.py (Task #134).
+
+    require_keyword=True (padrão): exige que nome ou descrição contenha termos imobiliários,
+    evitando classificar ETFs/units erroneamente quando o nome é rico em contexto.
+    require_keyword=False: classifica qualquer ticker ^[A-Z]{4}11$ (fora das exceções ETF)
+    como FII — adequado para uploads com nome apenas pelo ticker (ex: XPML11.pdf).
+    """
+    import re
+
+    ETF_EXCEPTIONS = {"BOVA11", "IVVB11", "SMAL11", "DIVO11", "FIND11", "SPXI11",
+                      "BRAX11", "ECOO11", "GOVE11", "MATB11", "ISUS11", "PIBB11"}
+
+    ticker_upper = (ticker or "").upper().strip()
+    if ticker_upper in ETF_EXCEPTIONS:
+        return False
+
+    if not re.match(r'^[A-Z]{4}11$', ticker_upper):
+        return False
+
+    if not require_keyword:
+        return True
+
+    name_lower = (name or "").lower()
+    desc_lower = (description or "").lower()
+
+    has_fii_name = bool(re.search(
+        r'\b(fundo|fii|imobiliário|imobiliario|fiagro|\bcri\b|recebíveis|recebiveis|renda imobiliária|reit)\b',
+        name_lower, re.IGNORECASE
+    ))
+    has_fii_desc = bool(re.search(
+        r'\b(fundo de investimento imobiliário|fii|\bcri\b|imóveis|imoveis|imóvel|imovel)\b',
+        desc_lower, re.IGNORECASE
+    ))
+
+    return has_fii_name or has_fii_desc
+
+
 @router.post("")
 async def create_product(
     data: ProductCreate,
@@ -504,23 +599,32 @@ async def create_product(
     """Cria um novo produto."""
     if current_user.role not in ["admin", "gestao_rv", "broker"]:
         raise HTTPException(status_code=403, detail="Acesso negado")
-    
+
+    category = data.category
+    categories = data.categories if data.categories is not None else ([category] if category else [])
+
+    if data.ticker and (not category or category in ("FII", "", "fii")):
+        if _is_fii_ticker(data.ticker, data.name or "", data.description or ""):
+            subcategory = _classify_fii_subcategory(data.ticker, data.name or "", data.description or "")
+            category = subcategory
+            categories = [subcategory]
+            print(f"[CREATE_PRODUCT] FII auto-classificado: ticker={data.ticker} → {subcategory}")
+
     product = Product(
         name=data.name,
         ticker=data.ticker,
         manager=data.manager,
-        category=data.category,
+        category=category,
         description=data.description,
         created_by=current_user.id
     )
-    cats = data.categories if data.categories is not None else ([data.category] if data.category else [])
-    product.set_categories(cats)
+    product.set_categories(categories)
 
     db.add(product)
     db.commit()
     db.refresh(product)
     
-    return {"success": True, "product_id": product.id}
+    return {"success": True, "product_id": product.id, "category": product.category}
 
 
 @router.get("/{product_id}")
