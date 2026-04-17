@@ -17,6 +17,7 @@ import { ProductCategories } from '../components/ProductCategories';
 
 const STORAGE_SEARCH_KEY = 'products_filter_search';
 const STORAGE_CATEGORY_KEY = 'products_filter_category';
+const STORAGE_COMMITTEE_KEY = 'products_filter_committee';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export function Dashboard() {
   const [search, setSearch] = useState(() => sessionStorage.getItem(STORAGE_SEARCH_KEY) || '');
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(() => sessionStorage.getItem(STORAGE_CATEGORY_KEY) || '');
+  const [committeeFilter, setCommitteeFilter] = useState(() => sessionStorage.getItem(STORAGE_COMMITTEE_KEY) === 'true');
   const [showNewModal, setShowNewModal] = useState(false);
   const [newProduct, setNewProduct] = useState({ name: '', ticker: '', categories: [] });
   const [creating, setCreating] = useState(false);
@@ -53,6 +55,10 @@ export function Dashboard() {
   useEffect(() => {
     sessionStorage.setItem(STORAGE_CATEGORY_KEY, selectedCategory);
   }, [selectedCategory]);
+
+  useEffect(() => {
+    sessionStorage.setItem(STORAGE_COMMITTEE_KEY, committeeFilter);
+  }, [committeeFilter]);
 
   const loadProducts = async () => {
     try {
@@ -124,6 +130,8 @@ export function Dashboard() {
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
+      if (committeeFilter && !product.is_committee) return false;
+
       const matchesCategory =
         selectedCategory === '' || product.category === selectedCategory;
       if (!matchesCategory) return false;
@@ -140,7 +148,7 @@ export function Dashboard() {
 
       return nameMatch || tickerMatch || categoryMatch || categoriesMatch;
     });
-  }, [products, selectedCategory, search]);
+  }, [products, selectedCategory, search, committeeFilter]);
 
   const handleCommitteeChange = (productId, newValue) => {
     setProducts((prev) =>
@@ -387,6 +395,18 @@ export function Dashboard() {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
+
+        <button
+          onClick={() => setCommitteeFilter((prev) => !prev)}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-input text-sm font-medium border transition-colors whitespace-nowrap
+            ${committeeFilter
+              ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+              : 'bg-card border-border text-muted hover:text-foreground hover:border-primary/40'
+            }`}
+        >
+          <Star className={`w-4 h-4 ${committeeFilter ? 'fill-amber-400 text-amber-400' : ''}`} />
+          Somente Comitê
+        </button>
       </div>
 
       {loading ? (
@@ -398,7 +418,7 @@ export function Dashboard() {
           icon={Package}
           title="Nenhum produto encontrado"
           description={
-            search || selectedCategory
+            search || selectedCategory || committeeFilter
               ? 'Tente ajustar os filtros de busca'
               : 'Comece criando um novo produto para sua base de conhecimento'
           }
@@ -410,7 +430,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted">
               {filteredProducts.length} produto{filteredProducts.length !== 1 ? 's' : ''} encontrado{filteredProducts.length !== 1 ? 's' : ''}
-              {(search || selectedCategory) && products.length !== filteredProducts.length && (
+              {(search || selectedCategory || committeeFilter) && products.length !== filteredProducts.length && (
                 <span className="ml-1 text-primary font-medium">
                   (de {products.length} no total)
                 </span>
