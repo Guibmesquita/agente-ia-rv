@@ -600,6 +600,172 @@ async def get_product(
     }
 
 
+@router.get("/{product_id}/materials-linkable")
+async def list_linkable_materials(
+    product_id: int,
+    q: str = "",
+    limit: int = 40,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Lista materiais disponíveis para vincular ao produto (não vinculados ainda).
+    Suporta busca por nome via ?q=. Retorna até `limit` resultados.
+    """
+    from database.models import MaterialProductLink
+    from sqlalchemy import func
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    # IDs já vinculados ao produto (via product_id direto ou via MaterialProductLink)
+    direct_ids = {m.id for m in db.query(Material).filter(Material.product_id == product_id).all()}
+    link_ids = {
+        row[0]
+        for row in db.query(MaterialProductLink.material_id).filter(
+            MaterialProductLink.product_id == product_id
+        ).all()
+    }
+    already_linked = direct_ids | link_ids
+
+    query = db.query(Material)
+    if q:
+        query = query.filter(Material.name.ilike(f"%{q}%"))
+    query = query.order_by(Material.updated_at.desc()).limit(limit + len(already_linked))
+
+    results = []
+    for m in query.all():
+        if m.id in already_linked:
+            continue
+        # Produto primário dono deste material
+        primary_product = db.query(Product).filter(Product.id == m.product_id).first() if m.product_id else None
+        blocks_count = db.query(ContentBlock).filter(ContentBlock.material_id == m.id).count()
+        results.append({
+            "id": m.id,
+            "name": m.name,
+            "material_type": m.material_type,
+            "blocks_count": blocks_count,
+            "primary_product_id": m.product_id,
+            "primary_product_name": primary_product.name if primary_product else None,
+            "primary_product_ticker": primary_product.ticker if primary_product else None,
+            "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+        })
+        if len(results) >= limit:
+            break
+
+    return {"materials": results, "total": len(results)}
+
+
+@router.post("/{product_id}/link-material")
+async def link_material_to_product(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Vincula um material existente a este produto via MaterialProductLink.
+    Não altera o produto primário do material.
+    Body: {"material_id": int}
+    """
+    from database.models import MaterialProductLink
+
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido no corpo da requisição")
+
+    material_id = body.get("material_id")
+    if not material_id or not isinstance(material_id, int):
+        raise HTTPException(status_code=400, detail="Campo 'material_id' é obrigatório e deve ser inteiro")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    # Se o material já é primário deste produto, não há nada a fazer
+    if material.product_id == product_id:
+        return {"success": True, "already_primary": True, "message": "Material já é primário deste produto"}
+
+    # Verifica se o vínculo já existe
+    existing = db.query(MaterialProductLink).filter(
+        MaterialProductLink.material_id == material_id,
+        MaterialProductLink.product_id == product_id,
+    ).first()
+    if existing:
+        return {"success": True, "already_linked": True, "message": "Material já vinculado"}
+
+    link = MaterialProductLink(
+        material_id=material_id,
+        product_id=product_id,
+        excluded_from_committee=False,
+    )
+    db.add(link)
+    db.commit()
+
+    print(
+        f"[LINK_MATERIAL] Material id={material_id} ({material.name!r}) vinculado ao "
+        f"produto id={product_id} ({product.name!r}) por user={current_user.email}"
+    )
+    return {"success": True, "message": "Material vinculado com sucesso"}
+
+
+@router.delete("/{product_id}/link-material/{material_id}")
+async def unlink_material_from_product(
+    product_id: int,
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Remove o vínculo de um material com este produto (via MaterialProductLink).
+    Não é possível desvincular o material primário (product_id direto).
+    """
+    from database.models import MaterialProductLink
+
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    # Impede desvinculação do material primário — use DELETE /materials/{id} para isso
+    if material.product_id == product_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Este material é o documento primário deste produto. Use a exclusão direta do material para removê-lo.",
+        )
+
+    link = db.query(MaterialProductLink).filter(
+        MaterialProductLink.material_id == material_id,
+        MaterialProductLink.product_id == product_id,
+    ).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Vínculo não encontrado")
+
+    db.delete(link)
+    db.commit()
+
+    print(
+        f"[UNLINK_MATERIAL] Material id={material_id} desvinculado do produto id={product_id} "
+        f"por user={current_user.email}"
+    )
+    return {"success": True, "message": "Material desvinculado com sucesso"}
+
+
 @router.put("/{product_id}")
 async def update_product(
     product_id: int,

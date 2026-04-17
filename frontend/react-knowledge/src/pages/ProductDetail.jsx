@@ -6,6 +6,7 @@ import {
   ArrowLeft, FileText, MessageSquare, Edit, Trash2, Plus,
   Upload, ChevronDown, ChevronRight, Clock, Check, AlertTriangle,
   RefreshCw, History, Send, Table2, CheckSquare, Square, Pencil, X, Star,
+  Link2, Unlink,
 } from 'lucide-react';
 import { productsAPI, materialsAPI, blocksAPI, scriptsAPI } from '../services/api';
 import { Button } from '../components/Button';
@@ -17,6 +18,7 @@ import { useToast } from '../components/Toast';
 import { MATERIAL_TYPE_OPTIONS, getMaterialTypeLabel } from '../lib/materialTypes';
 import { ProductCategories } from '../components/ProductCategories';
 import { ProductKeyInfoCard } from '../components/ProductKeyInfoCard';
+import { LinkMaterialModal } from '../components/LinkMaterialModal';
 
 function convertTableToTopics(content) {
   if (!content) return null;
@@ -103,7 +105,7 @@ function getMaterialStatus(material) {
   return material.publication_status || 'draft';
 }
 
-function MaterialSection({ material, productId, onRefresh }) {
+function MaterialSection({ material, productId, onRefresh, onUnlink }) {
   const [expanded, setExpanded] = useState(false);
   const [showVersions, setShowVersions] = useState(null);
   const [versions, setVersions] = useState([]);
@@ -320,11 +322,30 @@ function MaterialSection({ material, productId, onRefresh }) {
               </button>
             </div>
           )}
+          {material.is_multi_product_link && (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                         bg-primary/10 text-primary font-medium border border-primary/20"
+              title="Vinculado via associação — não é o documento primário deste produto"
+            >
+              <Link2 className="w-3 h-3" />
+              Vinculado
+            </span>
+          )}
           <StatusBadge status={materialStatus} />
           {material.valid_until && (
             <span className="text-xs text-muted">
               até {new Date(material.valid_until).toLocaleDateString('pt-BR')}
             </span>
+          )}
+          {onUnlink && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onUnlink(); }}
+              className="p-1.5 rounded hover:bg-red-50 text-muted hover:text-red-500 transition-colors"
+              title="Desassociar este material do produto"
+            >
+              <Unlink className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
       </button>
@@ -501,6 +522,7 @@ export function ProductDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [newScript, setNewScript] = useState({ title: '', content: '' });
   const [showScriptModal, setShowScriptModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
 
   const loadProduct = async () => {
     try {
@@ -655,7 +677,11 @@ export function ProductDetail() {
         </Tabs.List>
 
         <Tabs.Content value="materials" className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowLinkModal(true)}>
+              <Link2 className="w-4 h-4" />
+              Vincular material existente
+            </Button>
             <Button onClick={() => navigate(`/upload?product=${id}`)}>
               <Upload className="w-4 h-4" />
               Upload Inteligente
@@ -667,12 +693,18 @@ export function ProductDetail() {
               <FileText className="w-12 h-12 text-muted mx-auto mb-4" />
               <p className="text-foreground font-medium mb-2">Nenhum material ainda</p>
               <p className="text-muted text-sm mb-4">
-                Use o Upload Inteligente para adicionar documentos
+                Faça upload de um documento via Upload Inteligente ou vincule um material já existente no sistema
               </p>
-              <Button onClick={() => navigate(`/upload?product=${id}`)}>
-                <Upload className="w-4 h-4" />
-                Fazer Upload
-              </Button>
+              <div className="flex justify-center gap-2">
+                <Button variant="secondary" onClick={() => setShowLinkModal(true)}>
+                  <Link2 className="w-4 h-4" />
+                  Vincular existente
+                </Button>
+                <Button onClick={() => navigate(`/upload?product=${id}`)}>
+                  <Upload className="w-4 h-4" />
+                  Fazer Upload
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -682,10 +714,27 @@ export function ProductDetail() {
                   material={material}
                   productId={id}
                   onRefresh={loadProduct}
+                  onUnlink={material.is_multi_product_link ? async () => {
+                    try {
+                      await productsAPI.unlinkMaterial(id, material.id);
+                      addToast('Material desassociado com sucesso', 'success');
+                      loadProduct();
+                    } catch (err) {
+                      addToast(`Erro ao desassociar: ${err.message}`, 'error');
+                    }
+                  } : null}
                 />
               ))}
             </div>
           )}
+
+          <LinkMaterialModal
+            open={showLinkModal}
+            onClose={() => setShowLinkModal(false)}
+            productId={id}
+            productName={product?.name || ''}
+            onLinked={loadProduct}
+          />
         </Tabs.Content>
 
         <Tabs.Content value="scripts" className="space-y-4">

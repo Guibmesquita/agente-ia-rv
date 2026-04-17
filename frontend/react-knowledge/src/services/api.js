@@ -63,6 +63,18 @@ export const productsAPI = {
     body: JSON.stringify(partial),
   }),
 
+  linkableMaterials: (productId, q = '', limit = 40) =>
+    fetchAPI(`/products/${productId}/materials-linkable?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  linkMaterial: (productId, materialId) => fetchAPI(`/products/${productId}/link-material`, {
+    method: 'POST',
+    body: JSON.stringify({ material_id: materialId }),
+  }),
+
+  unlinkMaterial: (productId, materialId) => fetchAPI(`/products/${productId}/link-material/${materialId}`, {
+    method: 'DELETE',
+  }),
+
   search: (query, limit = 5) => fetchAPI(`/search/quick?q=${encodeURIComponent(query)}&limit=${limit}`),
 };
 
