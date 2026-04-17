@@ -51,6 +51,10 @@ export function Dashboard() {
   const [currentUser, setCurrentUser] = useState(null);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillResult, setBackfillResult] = useState(null);
+  const [publishBackfillRunning, setPublishBackfillRunning] = useState(false);
+  const [publishBackfillResult, setPublishBackfillResult] = useState(null);
+  const [enrichBackfillRunning, setEnrichBackfillRunning] = useState(false);
+  const [enrichBackfillResult, setEnrichBackfillResult] = useState(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_SEARCH_KEY, search);
@@ -326,6 +330,40 @@ export function Dashboard() {
       addToast(`Erro ao executar backfill: ${err.message}`, 'error');
     } finally {
       setBackfillRunning(false);
+    }
+  };
+
+  const handleBackfillPublish = async () => {
+    setPublishBackfillRunning(true);
+    setPublishBackfillResult(null);
+    try {
+      const result = await adminAPI.backfillPublishAndReindex();
+      setPublishBackfillResult(result);
+      addToast(
+        `${result.promoted_count} material(is) publicado(s) e ${result.total_indexed_blocks} bloco(s) reindexado(s)`,
+        'success'
+      );
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+    } finally {
+      setPublishBackfillRunning(false);
+    }
+  };
+
+  const handleBackfillEnrichment = async () => {
+    setEnrichBackfillRunning(true);
+    setEnrichBackfillResult(null);
+    try {
+      const result = await adminAPI.backfillEnrichment(true, 1000);
+      setEnrichBackfillResult(result);
+      addToast(
+        `Enriquecidos: ${result.enriched_with_gpt} via IA + ${result.enriched_deterministic_only} via glossário`,
+        'success'
+      );
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+    } finally {
+      setEnrichBackfillRunning(false);
     }
   };
 
@@ -676,14 +714,123 @@ export function Dashboard() {
       </Modal>
 
       {currentUser?.role === 'admin' && (
-        <div className="border border-border rounded-xl p-5 bg-card space-y-4">
+        <div className="border border-border rounded-xl p-5 bg-card space-y-6">
           <div className="flex items-center gap-2">
             <Wrench className="w-5 h-5 text-muted" />
             <h2 className="text-base font-semibold text-foreground">Manutenção</h2>
           </div>
 
+          <div className="space-y-4 border-b border-border pb-5">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                1. Publicar materiais aprovados (libera para o agente)
+              </h3>
+              <p className="text-sm text-muted mb-3">
+                Promove para <strong>publicado</strong> todos os materiais com 100% dos blocos
+                aprovados que ficaram travados em rascunho. Sem essa promoção o agente Stevan
+                <strong> não enxerga </strong>esses dados (filtro de visibilidade no vector store).
+                Recomendado executar uma vez agora e quando suspeitar que o agente "não acha" algo.
+              </p>
+              <button
+                onClick={handleBackfillPublish}
+                disabled={publishBackfillRunning}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                           bg-primary text-white hover:bg-primary/90
+                           disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {publishBackfillRunning ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Publicando e reindexando...
+                  </>
+                ) : (
+                  <>
+                    <Wrench className="w-4 h-4" />
+                    Publicar materiais elegíveis e reindexar
+                  </>
+                )}
+              </button>
+              {publishBackfillResult && (
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+                  <p className="text-sm font-semibold text-green-800">
+                    {publishBackfillResult.promoted_count} material(is) publicado(s)
+                    · {publishBackfillResult.total_indexed_blocks} bloco(s) reindexado(s)
+                  </p>
+                  {publishBackfillResult.skipped_with_pending_review > 0 && (
+                    <p className="text-xs text-amber-700">
+                      {publishBackfillResult.skipped_with_pending_review} material(is) ignorado(s)
+                      por terem blocos pendentes de revisão.
+                    </p>
+                  )}
+                  {publishBackfillResult.failed?.length > 0 && (
+                    <p className="text-xs text-red-700">
+                      {publishBackfillResult.failed.length} falha(s).
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 border-b border-border pb-5">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                2. Enriquecer índice semântico (aumenta precisão de busca)
+              </h3>
+              <p className="text-sm text-muted mb-3">
+                Detecta termos do glossário financeiro (LTV, FFO, duration, cap rate, etc.) em cada
+                bloco indexado e popula os campos <code className="text-xs bg-muted/10 px-1 rounded">topic</code>,
+                <code className="text-xs bg-muted/10 px-1 rounded ml-1">concepts</code> e
+                <code className="text-xs bg-muted/10 px-1 rounded ml-1">keywords</code>. Sem isso, o
+                ranking híbrido perde 20% do peso e queries específicas por termo técnico ficam frágeis.
+                Processa em lotes de 1.000 — execute novamente se houver "restantes".
+              </p>
+              <button
+                onClick={handleBackfillEnrichment}
+                disabled={enrichBackfillRunning}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                           bg-primary text-white hover:bg-primary/90
+                           disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {enrichBackfillRunning ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Enriquecendo... (pode demorar)
+                  </>
+                ) : (
+                  <>
+                    <Wrench className="w-4 h-4" />
+                    Enriquecer embeddings (1.000 por execução)
+                  </>
+                )}
+              </button>
+              {enrichBackfillResult && (
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+                  <p className="text-sm font-semibold text-green-800">
+                    Processados: {enrichBackfillResult.processed} · IA: {enrichBackfillResult.enriched_with_gpt}
+                    {' · '}Glossário: {enrichBackfillResult.enriched_deterministic_only}
+                  </p>
+                  {enrichBackfillResult.remaining_unprocessed_estimate > 0 && (
+                    <p className="text-xs text-amber-700">
+                      Ainda restam aproximadamente <strong>{enrichBackfillResult.remaining_unprocessed_estimate}</strong> embeddings
+                      sem enriquecimento. Clique novamente para continuar.
+                    </p>
+                  )}
+                  {enrichBackfillResult.failed > 0 && (
+                    <p className="text-xs text-red-700">
+                      {enrichBackfillResult.failed} falha(s) — veja os logs do servidor.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-start gap-4 flex-wrap">
             <div className="flex-1 min-w-[260px]">
+              <h3 className="text-sm font-semibold text-foreground mb-1">
+                3. Vínculos de produtos derivados
+              </h3>
               <p className="text-sm text-muted mb-3">
                 Corrige retroativamente os vínculos de materiais entre produtos derivados e seus
                 ativos-base com base no campo <code className="text-xs bg-muted/10 px-1 rounded">underlying_ticker</code>.

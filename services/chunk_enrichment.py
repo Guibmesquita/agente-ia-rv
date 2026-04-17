@@ -193,16 +193,47 @@ def enrich_metadata(
 
     if result:
         metadata['topic'] = result.get('topic', 'geral')
-        metadata['concepts'] = json.dumps(result.get('concepts', []))
+        gpt_concepts = result.get('concepts', []) or []
         if result.get('summary'):
             metadata['chunk_summary'] = result['summary'][:200]
         logger.info(
             f"[ENRICHMENT] Chunk enriquecido: [{product_ticker}] "
-            f"topic={metadata['topic']}, concepts={metadata['concepts']}"
+            f"topic={metadata['topic']}, gpt_concepts={gpt_concepts}"
         )
     else:
         metadata['topic'] = 'geral'
-        metadata['concepts'] = '[]'
+        gpt_concepts = []
         logger.warning(f"[ENRICHMENT] Falha ao classificar chunk de {product_ticker}, usando defaults")
+
+    # ENRIQUECIMENTO DETERMINÍSTICO (sem custo OpenAI):
+    # Detecta menções literais de termos do glossário no conteúdo e popula
+    # 'concepts' (união GPT + literal) e 'keywords' (termos literais).
+    # Isso é o que alimenta o boost de hybrid scoring e fuzzy/keyword matching.
+    try:
+        from services.financial_concepts import extract_glossary_terms_from_text
+        detected = extract_glossary_terms_from_text(content)
+        literal_concepts = detected.get("concept_ids", [])
+        literal_terms = detected.get("matched_terms", [])
+
+        # Concepts = união GPT (semântico) + literal (lexical), mantendo ordem
+        all_concepts: List[str] = []
+        seen = set()
+        for c in (list(gpt_concepts) + literal_concepts):
+            if c and c not in seen:
+                all_concepts.append(c)
+                seen.add(c)
+        metadata['concepts'] = json.dumps(all_concepts)
+        metadata['keywords'] = ",".join(literal_terms) if literal_terms else ""
+
+        if literal_terms:
+            logger.info(
+                f"[ENRICHMENT] Glossário literal detectado em {product_ticker}: "
+                f"{literal_terms[:6]}{'...' if len(literal_terms) > 6 else ''}"
+            )
+    except Exception as e:
+        logger.warning(f"[ENRICHMENT] Falha enriquecimento determinístico: {e}")
+        if 'concepts' not in metadata:
+            metadata['concepts'] = json.dumps(gpt_concepts) if gpt_concepts else '[]'
+        metadata.setdefault('keywords', '')
 
     return metadata

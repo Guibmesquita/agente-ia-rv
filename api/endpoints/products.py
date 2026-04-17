@@ -24,7 +24,7 @@ from database.models import (
     WhatsAppScript, PendingReviewItem, DocumentProcessingJob,
     DocumentPageResult, ProductStatus, MaterialType, ContentBlockType, 
     ContentBlockStatus, ContentSourceType, PersistentQueueItem,
-    IngestionLog, MaterialFile
+    IngestionLog, MaterialFile, DocumentEmbedding
 )
 from api.endpoints.auth import get_current_user
 from services.vector_store import VectorStore
@@ -940,6 +940,229 @@ async def admin_backfill_key_info_index(
         raise HTTPException(status_code=403, detail="Acesso negado")
     from services.product_key_info_indexer import backfill_all
     return await asyncio.to_thread(backfill_all, db)
+
+
+@router.post("/admin/backfill-publish-and-reindex")
+async def admin_backfill_publish_and_reindex(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Promove para `publicado` todos os materiais que têm 0 blocos pendentes
+    e estão travados em `rascunho`. Reindexa os blocos no vector store.
+    
+    Resolve o caso onde `auto_publish_if_ready` não disparou (aprovação em massa,
+    edição manual, materiais antigos pré-feature, falha silenciosa de hook).
+    Sem este backfill, os embeddings ficam invisíveis ao agente devido ao filtro
+    `publish_status NOT IN ('rascunho', 'arquivado')`.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    candidates = db.query(Material).filter(
+        Material.publish_status.in_([None, "rascunho"])
+    ).all()
+    
+    promoted = []
+    skipped_pending = []
+    failed = []
+    total_indexed = 0
+    
+    for mat in candidates:
+        pending = db.query(ContentBlock).filter(
+            ContentBlock.material_id == mat.id,
+            ContentBlock.status == ContentBlockStatus.PENDING_REVIEW.value
+        ).count()
+        
+        if pending > 0:
+            skipped_pending.append({"id": mat.id, "name": mat.name, "pending_blocks": pending})
+            continue
+        
+        approved_count = db.query(ContentBlock).filter(
+            ContentBlock.material_id == mat.id,
+            ContentBlock.status.in_([
+                ContentBlockStatus.APPROVED.value,
+                ContentBlockStatus.AUTO_APPROVED.value,
+            ])
+        ).count()
+        
+        if approved_count == 0:
+            continue
+        
+        try:
+            mat.publish_status = "publicado"
+            db.commit()
+            
+            from services.product_ingestor import get_product_ingestor
+            ingestor = get_product_ingestor()
+            
+            product = db.query(Product).filter(Product.id == mat.product_id).first()
+            if not product:
+                failed.append({"id": mat.id, "reason": "produto não encontrado"})
+                continue
+            
+            result = await asyncio.to_thread(
+                ingestor.index_approved_blocks,
+                material_id=mat.id,
+                product_name=product.name,
+                product_ticker=product.ticker,
+                db=db,
+            )
+            indexed = result.get("indexed_count", 0)
+            total_indexed += indexed
+            promoted.append({
+                "id": mat.id,
+                "name": mat.name,
+                "product": product.name,
+                "ticker": product.ticker,
+                "approved_blocks": approved_count,
+                "indexed_blocks": indexed,
+            })
+        except Exception as e:
+            failed.append({"id": mat.id, "name": mat.name, "error": str(e)})
+            print(f"[BACKFILL_PUBLISH] Falha em material {mat.id}: {e}")
+    
+    return {
+        "success": True,
+        "promoted_count": len(promoted),
+        "promoted": promoted,
+        "total_indexed_blocks": total_indexed,
+        "skipped_with_pending_review": len(skipped_pending),
+        "skipped_details": skipped_pending,
+        "failed": failed,
+    }
+
+
+@router.post("/admin/backfill-enrichment")
+async def admin_backfill_enrichment(
+    only_missing: bool = True,
+    limit: int = 1000,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Enriquece embeddings existentes com `topic`, `concepts` e `keywords`.
+    
+    - `only_missing=True` (padrão): processa apenas embeddings sem topic/keywords.
+    - `only_missing=False`: re-enriquece todos (custoso, usa GPT-4o-mini).
+    
+    O enriquecimento determinístico (keywords via glossário literal) é gratuito
+    e roda mesmo quando GPT falha. Crítico para hybrid scoring.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    from sqlalchemy import or_, and_
+    from services.chunk_enrichment import classify_chunk_content
+    from services.financial_concepts import extract_glossary_terms_from_text
+    import json as _json
+    
+    q = db.query(DocumentEmbedding)
+    if only_missing:
+        q = q.filter(or_(
+            DocumentEmbedding.topic.is_(None),
+            DocumentEmbedding.topic == "",
+            DocumentEmbedding.keywords.is_(None),
+            DocumentEmbedding.keywords == "",
+        ))
+    
+    rows = q.limit(max(1, min(limit, 5000))).all()
+    
+    enriched_with_gpt = 0
+    enriched_deterministic_only = 0
+    failed = 0
+    
+    def _process_one(emb):
+        try:
+            content = emb.content or ""
+            # Remove o prefixo [CONTEXTO GLOBAL]...--- antes de classificar
+            clean = content
+            if "---" in clean:
+                parts = clean.split("---", 1)
+                if len(parts) > 1:
+                    clean = parts[1]
+            clean = clean.strip()[:2000]
+            
+            need_gpt = (not emb.topic) or emb.topic in ("", "geral")
+            
+            gpt_concepts: list = []
+            if need_gpt and clean:
+                result = classify_chunk_content(
+                    content=clean,
+                    product_name=emb.product_name or "N/A",
+                    product_ticker=emb.product_ticker or "N/A",
+                    block_type=emb.block_type or "N/A",
+                    material_type=emb.material_type or "N/A",
+                )
+                if result:
+                    emb.topic = result.get("topic", "geral")
+                    gpt_concepts = result.get("concepts", []) or []
+                    return "gpt"
+            else:
+                # Mantém o topic existente, só recompõe concepts/keywords
+                try:
+                    gpt_concepts = _json.loads(emb.concepts or "[]") or []
+                except Exception:
+                    gpt_concepts = []
+            
+            # Determinístico (sempre roda)
+            detected = extract_glossary_terms_from_text(clean or content)
+            literal_concepts = detected.get("concept_ids", [])
+            literal_terms = detected.get("matched_terms", [])
+            
+            all_concepts: list = []
+            seen = set()
+            for c in (list(gpt_concepts) + literal_concepts):
+                if c and c not in seen:
+                    all_concepts.append(c)
+                    seen.add(c)
+            
+            emb.concepts = _json.dumps(all_concepts)
+            emb.keywords = ",".join(literal_terms) if literal_terms else (emb.keywords or "")
+            if not emb.topic:
+                emb.topic = "geral"
+            return "deterministic"
+        except Exception as e:
+            print(f"[BACKFILL_ENRICH] Falha em embedding {emb.id}: {e}")
+            return "failed"
+    
+    for emb in rows:
+        outcome = await asyncio.to_thread(_process_one, emb)
+        if outcome == "gpt":
+            enriched_with_gpt += 1
+        elif outcome == "deterministic":
+            enriched_deterministic_only += 1
+        else:
+            failed += 1
+        # Commit em lote a cada 25 para não perder progresso em falhas
+        if (enriched_with_gpt + enriched_deterministic_only) % 25 == 0:
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+    
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": f"commit final falhou: {e}"}
+    
+    return {
+        "success": True,
+        "processed": len(rows),
+        "enriched_with_gpt": enriched_with_gpt,
+        "enriched_deterministic_only": enriched_deterministic_only,
+        "failed": failed,
+        "remaining_unprocessed_estimate": max(
+            0,
+            db.query(DocumentEmbedding).filter(or_(
+                DocumentEmbedding.topic.is_(None),
+                DocumentEmbedding.topic == "",
+                DocumentEmbedding.keywords.is_(None),
+                DocumentEmbedding.keywords == "",
+            )).count() if only_missing else 0
+        ),
+    }
 
 
 @router.post("/{product_id}/reindex")

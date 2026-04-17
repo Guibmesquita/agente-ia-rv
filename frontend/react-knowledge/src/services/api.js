@@ -246,6 +246,15 @@ export const adminAPI = {
   backfillDerivedLinks: () => fetchAPI('/products/admin/backfill-derived-links', {
     method: 'POST',
   }),
+
+  backfillPublishAndReindex: () => fetchAPI('/products/admin/backfill-publish-and-reindex', {
+    method: 'POST',
+  }),
+
+  backfillEnrichment: (onlyMissing = true, limit = 1000) =>
+    fetchAPI(`/products/admin/backfill-enrichment?only_missing=${onlyMissing}&limit=${limit}`, {
+      method: 'POST',
+    }),
 };
 
 export const knowledgeAPI = {

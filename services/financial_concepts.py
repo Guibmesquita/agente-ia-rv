@@ -7526,8 +7526,65 @@ def _build_index():
             if term_lower not in _TERM_INDEX:
                 _TERM_INDEX[term_lower] = []
             _TERM_INDEX[term_lower].append(concept)
+        # Também indexa termos_busca (mais técnicos, ex: "LTV", "duration")
+        for term in concept.get("termos_busca", []):
+            term_lower = term.lower()
+            if term_lower not in _TERM_INDEX:
+                _TERM_INDEX[term_lower] = []
+            if concept not in _TERM_INDEX[term_lower]:
+                _TERM_INDEX[term_lower].append(concept)
     
-    _INITIALIZED = False
+    _INITIALIZED = True
+
+
+def extract_glossary_terms_from_text(text: str, max_terms: int = 12) -> Dict[str, List[str]]:
+    """
+    Detecta ocorrências literais de termos do glossário num texto livre.
+    
+    Retorna:
+        {
+            "concept_ids": [...],   # ids únicos de conceitos detectados (ordem de aparição)
+            "matched_terms": [...]  # palavras/expressões literais encontradas no texto
+        }
+    
+    Usado durante a indexação para popular o campo `keywords` do embedding,
+    permitindo hybrid scoring com boost por menção literal de termos técnicos
+    (LTV, duration, cap rate, FFO, dividend yield, etc.).
+    """
+    if not text:
+        return {"concept_ids": [], "matched_terms": []}
+    
+    _build_index()
+    
+    text_lower = text.lower()
+    matched_concepts: List[str] = []
+    matched_terms: List[str] = []
+    seen_concepts: Set[str] = set()
+    seen_terms: Set[str] = set()
+    
+    # Termos longos primeiro (evita "ltv" mascarando "ltv médio")
+    sorted_terms = sorted(_TERM_INDEX.keys(), key=len, reverse=True)
+    
+    for term in sorted_terms:
+        if len(term) < 2:
+            continue
+        pattern = r'\b' + re.escape(term) + r'\b'
+        if re.search(pattern, text_lower):
+            if term not in seen_terms:
+                matched_terms.append(term)
+                seen_terms.add(term)
+            for concept in _TERM_INDEX[term]:
+                cid = concept["id"]
+                if cid not in seen_concepts:
+                    matched_concepts.append(cid)
+                    seen_concepts.add(cid)
+            if len(matched_concepts) >= max_terms:
+                break
+    
+    return {
+        "concept_ids": matched_concepts[:max_terms],
+        "matched_terms": matched_terms[:max_terms]
+    }
 
 
 def expand_query(user_message: str) -> Dict[str, any]:

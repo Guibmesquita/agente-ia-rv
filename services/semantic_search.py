@@ -929,6 +929,45 @@ class CompositeScorer:
             for token in tokens.all_tokens[:5]:
                 if token in content_norm:
                     result.fuzzy_score += 0.1
+            
+            # BOOST DETERMINÍSTICO POR GLOSSÁRIO LITERAL:
+            # Se a query menciona um termo do glossário (LTV, FFO, duration, etc.)
+            # e o embedding tem esse termo populado em metadata['keywords'] OU em
+            # metadata['concepts'], dá um forte boost de fuzzy_score.
+            # Isso resolve o caso "LTV médio do MCCE11" mesmo quando o termo
+            # está diluído em um bloco grande.
+            try:
+                from services.financial_concepts import extract_glossary_terms_from_text
+                query_text_for_glossary = getattr(tokens, 'original', '') or ' '.join(tokens.all_tokens)
+                query_terms = extract_glossary_terms_from_text(query_text_for_glossary)
+                query_concept_ids = set(query_terms.get('concept_ids', []))
+                query_literal_terms = set(query_terms.get('matched_terms', []))
+                
+                if query_literal_terms or query_concept_ids:
+                    kw_meta = (metadata.get('keywords') or '').lower()
+                    concepts_meta_raw = metadata.get('concepts') or '[]'
+                    try:
+                        import json as _json
+                        concepts_meta = set(_json.loads(concepts_meta_raw)) if isinstance(concepts_meta_raw, str) else set(concepts_meta_raw)
+                    except Exception:
+                        concepts_meta = set()
+                    
+                    # Match literal de termos no campo keywords
+                    literal_hit = any(t in kw_meta for t in query_literal_terms if t)
+                    # Match conceitual via concepts
+                    concept_hit = bool(query_concept_ids & concepts_meta)
+                    # Fallback: termo literal aparece no conteúdo bruto
+                    content_hit = any(t in result.content.lower() for t in query_literal_terms if len(t) >= 3)
+                    
+                    if literal_hit:
+                        result.fuzzy_score += 0.4
+                    elif concept_hit:
+                        result.fuzzy_score += 0.25
+                    elif content_hit:
+                        result.fuzzy_score += 0.15
+            except Exception:
+                pass
+            
             result.fuzzy_score = min(1.0, result.fuzzy_score)
             
             result.calculate_composite_score()

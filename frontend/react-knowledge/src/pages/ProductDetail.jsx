@@ -333,6 +333,24 @@ function MaterialSection({ material, productId, onRefresh, onUnlink }) {
             </span>
           )}
           <StatusBadge status={materialStatus} />
+          {material.is_indexed && material.publish_status === 'publicado' ? (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                         bg-green-100 text-green-700 font-medium border border-green-200"
+              title="Material indexado e visível para o agente"
+            >
+              <Check className="w-3 h-3" />
+              Indexado
+            </span>
+          ) : (material.is_indexed || (material.publish_status && material.publish_status !== 'publicado')) ? (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                         bg-amber-100 text-amber-700 font-medium border border-amber-200"
+              title={`Indexado: ${material.is_indexed ? 'sim' : 'não'} · Status: ${material.publish_status || 'rascunho'} — invisível ao agente`}
+            >
+              Não publicado
+            </span>
+          ) : null}
           {material.valid_until && (
             <span className="text-xs text-muted">
               até {new Date(material.valid_until).toLocaleDateString('pt-BR')}
