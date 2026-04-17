@@ -703,27 +703,36 @@ export function SmartUpload() {
         ? 'Material enviado para processamento'
         : `${successCount} materiais enviados para processamento`;
       addToast(msg, 'success');
+
+      // Só navega para a fila e limpa o formulário quando pelo menos um
+      // material foi enfileirado com sucesso.
+      setRecentlyQueued(true);
+      setShowQueue(true);
+      loadQueueStatus();
+
+      setFiles([]);
+      setSelectedProduct(null);
+      setMaterialType('');
+      setTags([]);
+      setValidFrom('');
+      setValidUntil('');
+      setCampaignSlug('');
+      setCampaignStructureType('');
+      setCampaignKeyData([]);
+      setCampaignDiagramFile(null);
+      setAnalysisResults([]);
+      setStep(1);
     }
+
     if (errorCount > 0) {
-      addToast(`${errorCount} erro(s) ao confirmar`, 'error');
+      const errMsg = successCount > 0
+        ? `${errorCount} material(is) não pôde(ram) ser processado(s)`
+        : errorCount === 1
+          ? 'Erro ao confirmar o material. Verifique e tente novamente.'
+          : `Erro ao confirmar ${errorCount} materiais. Verifique e tente novamente.`;
+      addToast(errMsg, 'error');
+      // Se TODOS falharam, mantém o usuário na tela de revisão para retry.
     }
-
-    setRecentlyQueued(true);
-    setShowQueue(true);
-    loadQueueStatus();
-
-    setFiles([]);
-    setSelectedProduct(null);
-    setMaterialType('');
-    setTags([]);
-    setValidFrom('');
-    setValidUntil('');
-    setCampaignSlug('');
-    setCampaignStructureType('');
-    setCampaignKeyData([]);
-    setCampaignDiagramFile(null);
-    setAnalysisResults([]);
-    setStep(1);
   };
 
   const handleUpload = async () => {

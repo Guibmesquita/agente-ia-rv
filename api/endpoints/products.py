@@ -4733,6 +4733,26 @@ async def pre_analyze_upload(
         is_duplicate = existing_dup is not None
         if is_duplicate:
             material = existing_dup
+            # Para duplicatas, o arquivo pode ter sumido do disco (ambiente efêmero).
+            # Como o conteúdo está em memória agora, salvar em disco imediatamente
+            # para que link-and-queue encontre sem precisar restaurar do BYTEA.
+            if not material.source_file_path or not os.path.exists(material.source_file_path):
+                try:
+                    dup_filename = f"{uuid.uuid4()}.pdf"
+                    dup_file_path = os.path.join(UPLOAD_DIR_QUEUE, dup_filename)
+                    with open(dup_file_path, "wb") as fh:
+                        fh.write(content)
+                    material.source_file_path = dup_file_path
+                    db.commit()
+                    print(
+                        f"[PRE_ANALYZE] Duplicata material_id={material.id}: "
+                        f"arquivo salvo em disco: {dup_file_path}"
+                    )
+                except Exception as dup_save_err:
+                    print(
+                        f"[PRE_ANALYZE] Aviso: falha ao salvar duplicata em disco "
+                        f"(material_id={material.id}): {dup_save_err}"
+                    )
         else:
             ps_value = ProcessingStatus.PENDING.value if hasattr(ProcessingStatus, "PENDING") else "pending"
             material = Material(
@@ -5121,7 +5141,26 @@ async def link_products_and_queue(
 
     file_path = getattr(material, "source_file_path", None)
     if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=400, detail="Arquivo PDF não encontrado para processamento. Refaça o upload.")
+        # Arquivo não existe no disco (ambiente efêmero ou duplicata de sessão anterior).
+        # Tenta restaurar da tabela material_files (BYTEA — fonte de verdade persistente).
+        print(
+            f"[LINK_QUEUE] source_file_path ausente ou inexistente para material {material_id} "
+            f"(path={file_path!r}). Tentando restaurar do banco..."
+        )
+        restored = _restore_pdf_from_db(db, material_id)
+        if restored:
+            file_path = restored
+            material.source_file_path = restored
+            db.commit()
+            print(f"[LINK_QUEUE] PDF restaurado com sucesso: {restored}")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Arquivo PDF não encontrado para processamento e não há cópia no banco. "
+                    "Refaça o upload do arquivo."
+                ),
+            )
 
     # MERGE ACUMULATIVO do key_info editado pelo usuário (Task #113)
     # Usa _merge_key_info_into_product para preservar histórico ao invés de sobrescrever.
