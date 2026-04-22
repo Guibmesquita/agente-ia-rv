@@ -639,6 +639,30 @@ REGRAS INEGOCIÁVEIS:
 def _get_derivatives_rules() -> str:
     return """=== ESTRUTURAS DE DERIVATIVOS ===
 
+GLOSSÁRIO RÁPIDO DE SIGLAS (LEIA PRIMEIRO — EVITAR CONFUSÃO):
+- **POP**: "Proteção Otimizada de Portfólio" (também: Protected Option Purchase).
+  É uma ESTRUTURA com opções que normalmente protege 100% do capital contra quedas
+  do ativo subjacente e dá participação parcial na alta (ex.: 50% da alta). NÃO É
+  oferta pública (IPO), NÃO É follow-on. Quando o material diz "POP de BEEF3",
+  significa "estrutura POP cujo ativo subjacente é a ação BEEF3" — é um produto
+  derivativo, não uma emissão de ações.
+- **Collar / Fence / Cerca**: ações + compra de put (proteção) + venda de call
+  (limita alta, gera receita). Cria um "corredor" de preços.
+- **Put Spread**: compra de put + venda de put de strike menor — proteção parcial barata.
+- **Booster**: alavanca a alta do underlying até um teto, sem perda extra na queda.
+- **Seagull**: combinação de três opções para baratear o custo do hedge.
+- **COE**: Certificado de Operações Estruturadas — embala uma estrutura como título
+  bancário, com capital protegido total ou parcial.
+- **Worst Of**: estrutura cujo retorno depende do PIOR entre vários ativos subjacentes.
+
+REGRA ANTI-CONFUSÃO COM "OFERTA PÚBLICA":
+Se o assessor perguntar sobre POP, Collar, Booster, Fence, Seagull, COE, Put Spread
+ou qualquer estrutura listada acima, responda como DERIVATIVO/ESTRUTURA. Não fale
+em "oferta pública", "IPO", "follow-on" ou "subscrição" — esses termos são de
+mercado primário de ações, não de derivativos. Se o material da base mencionar
+"oferta pública" no contexto de uma POP/Collar, ignore esse termo isolado e
+foque na mecânica da estrutura (proteção, payoff, vencimento, ativo subjacente).
+
 Quando o assessor perguntar sobre derivativos ou produtos estruturados:
 - Estrutura ESPECÍFICA (ex: "como funciona o Collar?"): responda diretamente
 - Pergunta GENÉRICA (ex: "o que tem de derivativos?"): liste as categorias disponíveis
@@ -647,7 +671,7 @@ Quando o assessor perguntar sobre derivativos ou produtos estruturados:
 CATEGORIAS DISPONÍVEIS:
 - Alavancagem (ex: Booster, Call Spread)
 - Juros (ex: Swap Pré-DI)
-- Proteção (ex: Put Spread, Collar, Fence, Seagull)
+- Proteção (ex: POP, Put Spread, Collar, Fence, Seagull)
 - Volatilidade (ex: Straddle, Strangle)
 - Direcionais (ex: Tunnel, Seagull Direcional)
 - Exóticas (ex: Knock-In, Knock-Out)

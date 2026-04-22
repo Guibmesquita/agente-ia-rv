@@ -7,6 +7,7 @@ import json
 import logging
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -420,11 +421,50 @@ class UploadQueue:
         for lid in dead:
             self._event_listeners.pop(lid, None)
 
+    # Padrões de estruturas (Renda Variável estruturada). Quando aparecem no
+    # nome do material/fund_name, o produto criado é OBRIGATORIAMENTE do tipo
+    # `estruturada` (e não `acao`/`fii` por padrão). Cobre as siglas mais
+    # usadas pela mesa SVN (POP, Collar, Fence, Put Spread, Booster, Worst Of).
+    # Keywords são propositalmente ESPECÍFICAS (POP, Collar, Fence, etc.) — termos
+    # genéricos como "estrutura"/"estruturado" foram excluídos para evitar falsos
+    # positivos com materiais que apenas mencionam "estrutura de capital",
+    # "estrutura a termo de juros", "estrutura preferencial" etc.
+    _STRUCTURE_KEYWORDS = (
+        "pop", "collar", "fence", "booster", "put spread", "call spread",
+        "seagull", "worst of", "worst-of", "coe", "strangle", "straddle",
+        "borboleta", "butterfly", "trava de alta", "trava de baixa",
+        "operação estruturada", "produto estruturado", "nota estruturada",
+    )
+
+    @classmethod
+    def _detect_structure_in_name(cls, *texts) -> Optional[str]:
+        """Retorna a primeira sigla de estrutura encontrada nos textos (ex.: 'pop'),
+        ou None se nenhuma casar. Usa busca case-insensitive em palavras inteiras
+        para evitar falsos positivos (ex.: 'pop' não casa com 'popular')."""
+        import re
+        joined = " ".join(t for t in texts if t).lower()
+        if not joined:
+            return None
+        for kw in cls._STRUCTURE_KEYWORDS:
+            # \b ... \b funciona para todas as siglas listadas (puramente alfabéticas
+            # ou separadas por espaço/hífen).
+            if re.search(rf"\b{re.escape(kw)}\b", joined):
+                return kw
+        return None
+
     def _auto_create_product(self, db, fund_name, ticker, gestora, document_type=None):
         from database.models import Product, ProductStatus
         from services.product_resolver import ProductResolver
+        from services.product_type_inference import coerce_product_type
+        import json
         if not fund_name and not ticker:
             return None
+
+        # Detecta se o material é sobre uma ESTRUTURA (POP/Collar/Fence...).
+        # Quando for, o resolve normal por ticker do underlying é perigoso —
+        # ele encontraria a ação nua e linkaria o material da estrutura à ação,
+        # apagando o vínculo correto e silenciando o tipo `estruturada`.
+        structure_kw = self._detect_structure_in_name(fund_name, document_type)
 
         resolver = ProductResolver(db)
         result = resolver.resolve(
@@ -433,23 +473,60 @@ class UploadQueue:
             gestora=gestora,
         )
 
-        if result.matched_product_id:
+        if result.matched_product_id and not structure_kw:
             matched = db.query(Product).filter(Product.id == result.matched_product_id).first()
             if matched:
                 logger.info(f"[AutoCreate] ProductResolver encontrou match: {matched.name} (id={matched.id}, tipo={result.match_type})")
                 return matched
 
-        if ticker:
+        # Quando é estrutura, evitamos cair na ação nua: só reusa match se ele
+        # também for `estruturada`. Caso contrário, criamos um produto novo do
+        # tipo `estruturada`.
+        if result.matched_product_id and structure_kw:
+            matched = db.query(Product).filter(Product.id == result.matched_product_id).first()
+            if matched and (matched.product_type or "").lower() in ("estruturada", "estrutura", "estruturado"):
+                logger.info(f"[AutoCreate] Match em produto estruturado existente: {matched.name} (id={matched.id})")
+                return matched
+            if matched:
+                logger.info(
+                    f"[AutoCreate] Material parece estrutura ({structure_kw!r}) mas resolver "
+                    f"matched produto não-estruturado {matched.name} (type={matched.product_type!r}). "
+                    f"Criando produto estruturado novo em vez de reusar."
+                )
+
+        if ticker and not structure_kw:
             existing = db.query(Product).filter(Product.ticker == ticker).first()
             if existing:
                 logger.info(f"[AutoCreate] Produto já existe com ticker {ticker}: {existing.name} (id={existing.id})")
                 return existing
 
-        product_name = fund_name or ticker
-        if ticker and ticker not in (product_name or ""):
-            product_name = f"{product_name} ({ticker})"
+        # Monta o nome do produto. Para estruturas, o nome humano é mais útil
+        # que o ticker do underlying ("POP sobre BEEF3" vs apenas "BEEF3").
+        if structure_kw and ticker:
+            product_name = fund_name or f"{structure_kw.upper()} sobre {ticker}"
+        else:
+            product_name = fund_name or ticker
+            if ticker and ticker not in (product_name or ""):
+                product_name = f"{product_name} ({ticker})"
 
-        category = "fii"
+        # Infere `product_type` canônico via helper compartilhado. Para estruturas,
+        # forçamos o tipo (a heurística por ticker confundiria BEEF3 com ação).
+        if structure_kw:
+            product_type = "estruturada"
+        else:
+            product_type = coerce_product_type(
+                ticker=ticker,
+                name=product_name,
+                description=fund_name or document_type,
+            )
+
+        category = product_type if product_type and product_type != "outro" else "fii"
+
+        # name_aliases: salva o fund_name original (nome da empresa/emissor) para
+        # que perguntas como "Minerva" casem com BEEF3, "Petrobras" com PETR4 etc.
+        aliases: list[str] = []
+        if fund_name and fund_name.strip().upper() != (ticker or "").strip().upper():
+            aliases.append(fund_name.strip())
 
         try:
             new_product = Product(
@@ -457,19 +534,41 @@ class UploadQueue:
                 ticker=ticker,
                 manager=gestora,
                 category=category,
+                product_type=product_type,
+                name_aliases=json.dumps(aliases, ensure_ascii=False) if aliases else "[]",
                 status=ProductStatus.ACTIVE.value,
-                description=f"Produto criado automaticamente a partir de upload de documento ({document_type or 'N/A'})",
+                description=(
+                    f"Produto criado automaticamente a partir de upload de documento "
+                    f"({document_type or 'N/A'}). Tipo inferido: {product_type}."
+                    + (f" Estrutura detectada: {structure_kw.upper()}." if structure_kw else "")
+                ),
             )
             db.add(new_product)
             db.commit()
             db.refresh(new_product)
-            logger.info(f"[AutoCreate] Produto criado: {new_product.name} (ticker={ticker}, id={new_product.id})")
+            logger.info(
+                f"[AutoCreate] Produto criado: {new_product.name} "
+                f"(ticker={ticker}, id={new_product.id}, type={product_type}, "
+                f"aliases={aliases})"
+            )
             return new_product
         except Exception as e:
             db.rollback()
             if ticker:
                 existing = db.query(Product).filter(Product.ticker == ticker).first()
                 if existing:
+                    # Quando o material é estrutura, NÃO devolvemos a ação nua
+                    # mesmo que ela exista por race condition — isso reintroduziria
+                    # o bug "POP de BEEF3 cai na ação BEEF3".
+                    if structure_kw and (existing.product_type or "").lower() not in (
+                        "estruturada", "estrutura", "estruturado"
+                    ):
+                        logger.warning(
+                            f"[AutoCreate] Erro na criação ({e}); fallback ignorado porque "
+                            f"o produto existente (ticker {ticker}) é {existing.product_type!r}, "
+                            f"mas o material é estrutura ({structure_kw!r})."
+                        )
+                        return None
                     logger.info(f"[AutoCreate] Produto já existia (concurrent): {existing.name}")
                     return existing
             logger.error(f"[AutoCreate] Erro ao criar produto: {e}")
@@ -513,6 +612,25 @@ class UploadQueue:
             return
 
         primary_id = mat.product_id
+
+        # Quando o material primário é uma ESTRUTURA (POP/Collar/Fence...),
+        # tickers extras são tipicamente o UNDERLYING ou ativos comparáveis.
+        # Não devemos criar produtos-ação fantasmas (ex.: criar BEEF3 ação
+        # quando o material é "POP de BEEF3"). Só linkamos a produtos
+        # PRÉ-EXISTENTES desses tickers; não criamos novos.
+        primary_product = db.query(Product).filter(Product.id == primary_id).first() if primary_id else None
+        primary_is_structure = (
+            primary_product is not None
+            and (primary_product.product_type or "").lower() in ("estruturada", "estrutura", "estruturado")
+        )
+        material_looks_like_structure = bool(
+            self._detect_structure_in_name(
+                getattr(metadata, "fund_name", None),
+                getattr(mat, "name", None),
+            )
+        )
+        skip_auto_create = primary_is_structure or material_looks_like_structure
+
         created_count = 0
         for ticker in additional:
             try:
@@ -521,13 +639,19 @@ class UploadQueue:
                     Product.status == "ativo"
                 ).first()
 
-                if not product:
+                if not product and not skip_auto_create:
                     product = self._auto_create_product(
                         db=db,
                         fund_name=None,
                         ticker=ticker,
                         gestora=metadata.gestora,
                         document_type=metadata.document_type,
+                    )
+                elif not product and skip_auto_create:
+                    logger.info(
+                        f"[MultiProduct] Pulando auto-criação de produto ação para "
+                        f"ticker {ticker!r} — material primário é estrutura "
+                        f"(primary_id={primary_id})."
                     )
 
                 if not product or product.id == primary_id:
