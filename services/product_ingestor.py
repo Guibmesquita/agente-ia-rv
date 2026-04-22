@@ -1207,6 +1207,10 @@ class ProductIngestor:
                 "page": str(block.source_page or 0),
                 "products": product_ticker.upper() if product_ticker else product_name.upper(),
                 "publish_status": material.publish_status or "rascunho",
+                # Task #153 — tipo e id do produto, vital para diferenciar ação
+                # de estrutura sobre essa ação na hora de recomendar.
+                "product_type": (product.product_type or "").lower() or None,
+                "product_id": str(product.id),
                 "valid_until": valid_until_str,
                 "valid_until_dt": valid_until_dt_iso or None,
                 "created_at": created_at_str,

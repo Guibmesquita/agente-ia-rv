@@ -65,10 +65,46 @@ Qualquer informação sobre ativos deve ser apresentada como analítica/informat
 Se perguntado sobre recomendações, informe que o comitê não tem recomendações ativas cadastradas e sugira contato com o broker responsável.
 =============================="""
 
-    lines = []
+    # Task #153 — mapa de rótulos por product_type para diferenciação visual
+    # explícita entre ação, estrutura sobre essa ação, FII, fundo, etc.
+    PRODUCT_TYPE_LABELS = {
+        "acao": "📈 AÇÃO",
+        "estruturada": "🎯 ESTRUTURADA",
+        "estrutura": "🎯 ESTRUTURADA",
+        "fundo": "💼 FUNDO",
+        "fii": "🏢 FII",
+        "etf": "📊 ETF",
+        "debenture": "📜 DEBÊNTURE",
+        "outro": "📦 OUTRO",
+    }
+
+    # Detecta colisão de underlying: o mesmo ticker (ou ticker contido no nome)
+    # aparece em mais de um product_type. Usado para alertar o agente que
+    # precisa diferenciar com precisão na resposta.
+    underlying_count: dict = {}
     for e in committee_entries:
+        ticker_raw = (e.get("ticker") or "").upper().strip()
+        if ticker_raw:
+            underlying_count[ticker_raw] = underlying_count.get(ticker_raw, 0) + 1
+    ambiguous_underlyings = {t for t, c in underlying_count.items() if c >= 2}
+
+    # Agrupa por tipo para ordenação previsível.
+    by_type_order = ["acao", "estruturada", "estrutura", "fii", "fundo", "etf", "debenture", "outro"]
+    committee_entries_sorted = sorted(
+        committee_entries,
+        key=lambda x: (
+            by_type_order.index(((x.get("product_type") or "outro").lower()))
+            if (x.get("product_type") or "outro").lower() in by_type_order else 99,
+            (x.get("product_name") or "").lower(),
+        ),
+    )
+
+    lines = []
+    for e in committee_entries_sorted:
         name = e.get("product_name", "")
         ticker = e.get("ticker", "")
+        product_type_raw = (e.get("product_type") or "outro").lower()
+        type_label = PRODUCT_TYPE_LABELS.get(product_type_raw, "📦 OUTRO")
         manager = e.get("manager", "")
         rating = e.get("rating", "")
         target_price = e.get("target_price")
@@ -90,9 +126,13 @@ Se perguntado sobre recomendações, informe que o comitê não tem recomendaç�
         extra_term = key_info.get("investment_term") if isinstance(key_info, dict) else None
         extra_risk = key_info.get("main_risk") if isinstance(key_info, dict) else None
 
-        display = f"• {name}"
+        # Task #153 — prefixo de tipo é OBRIGATÓRIO no display para o agente
+        # nunca confundir, por exemplo, "Put Spread sobre PETR4" (estruturada)
+        # com "PETR4" (ação). O badge aparece antes do nome.
+        display = f"• [{type_label}] {name}"
         if ticker:
-            display += f" ({ticker})"
+            ambig_mark = " ⚠️AMBÍGUO" if ticker.upper() in ambiguous_underlyings else ""
+            display += f" ({ticker}){ambig_mark}"
         if manager:
             display += f" — Gestora: {manager}"
         if rating:
@@ -118,12 +158,42 @@ Se perguntado sobre recomendações, informe que o comitê não tem recomendaç�
 
     committee_list = "\n".join(lines)
 
-    return f"""=== CARTEIRA DO COMITÊ SVN (RECOMENDAÇÕES ATIVAS) ===
-Os produtos abaixo são as recomendações FORMAIS e VIGENTES do Comitê de Investimentos da SVN:
+    # Task #153 — bloco de alerta quando há colisão de underlying.
+    ambig_block = ""
+    if ambiguous_underlyings:
+        ambig_list = ", ".join(sorted(ambiguous_underlyings))
+        ambig_block = (
+            f"\n\n⚠️ ATENÇÃO — UNDERLYINGS AMBÍGUOS NO COMITÊ: {ambig_list}\n"
+            "Os tickers acima aparecem em MAIS DE UM tipo de produto na carteira "
+            "(ex.: a ação E uma estruturada sobre ela). Ao mencionar esses tickers, "
+            "você É OBRIGADO a deixar EXPLÍCITO de qual produto está falando "
+            "(ex.: \"a estruturada Put Spread sobre PETR4\" vs \"a ação PETR4\"). "
+            "NUNCA recomende o ativo subjacente como se fosse a recomendação do comitê "
+            "quando o que está no comitê é uma estrutura sobre ele."
+        )
 
-{committee_list}
+    return f"""=== CARTEIRA DO COMITÊ SVN (RECOMENDAÇÕES ATIVAS) ===
+Os produtos abaixo são as recomendações FORMAIS e VIGENTES do Comitê de Investimentos da SVN.
+Cada item tem um TIPO entre colchetes (ex.: [📈 AÇÃO], [🎯 ESTRUTURADA], [🏢 FII]).
+O tipo determina O QUE está sendo recomendado — ele é parte INSEPARÁVEL da identidade do produto:
+
+{committee_list}{ambig_block}
 
 REGRAS DE USO DESTA LISTA (ABSOLUTAS E INVIOLÁVEIS):
+
+0. DIFERENCIAÇÃO DE TIPO DE PRODUTO (CRÍTICO — LEIA PRIMEIRO):
+   - "Ação", "Estruturada", "FII", "Fundo", "ETF" e "Debênture" são produtos DIFERENTES
+     mesmo quando compartilham o ticker do ativo subjacente.
+   - Uma ESTRUTURADA sobre PETR4 (ex.: "Put Spread PETR4") é um produto distinto da AÇÃO PETR4.
+     Recomendar "PETR4" quando o comitê tem apenas a estruturada é ERRO GRAVE de precisão.
+   - Sempre que citar uma recomendação do comitê, EXPLICITE o tipo no início da frase:
+       ✅ "A SVN recomenda a estruturada Put Spread sobre PETR4 (Comitê) — não a ação PETR4 nua."
+       ❌ "A SVN recomenda PETR4." (ambíguo, omite o tipo)
+   - Se o assessor perguntar genericamente sobre um ticker que tem itens de tipos diferentes
+     no comitê, liste cada tipo separadamente antes de aprofundar em qualquer um.
+   - Se o assessor perguntar pela ação underlying e SÓ a estruturada está no comitê:
+     deixe claro que a recomendação formal é a ESTRUTURA, e que a ação em si pode ser
+     mencionada como informativa, mas não é a recomendação.
 
 1. PRODUTOS NESTA LISTA → framing de recomendação formal (CONTEXTUAL):
    - Se a pergunta envolver decisão de investimento, comparação, perfil de cliente ou recomendação

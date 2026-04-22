@@ -221,10 +221,35 @@ class EntityResolver:
                 'product_id': product.id,
                 'name': product.name,
                 'ticker': product.ticker,
+                # Task #153 — expõe product_type para roteamento downstream
+                'product_type': (product.product_type or '').lower() or 'outro',
                 'confidence': 1.0,
                 'match_type': 'ticker_exact'
             })
             return results
+
+        # Task #153 — exceção de prefixo de ticker: termos como "MANA", "GARE",
+        # "PETR" devem matchar tickers MANA11, GARE11, PETR4 com confiança alta.
+        # Este caso regrediu na Task #152 quando o threshold foi endurecido.
+        # Critério estrito: termo é puramente alfabético com 4+ chars (formato típico
+        # de prefixo B3) e o ticker do banco começa com ele.
+        term_alpha = term.upper().strip()
+        if term_alpha.isalpha() and len(term_alpha) >= 4:
+            prefix_matches = db.query(Product).filter(
+                Product.ticker.ilike(f"{term_alpha}%"),
+                Product.status == 'ativo'
+            ).limit(3).all()
+            for p in prefix_matches:
+                results.append({
+                    'product_id': p.id,
+                    'name': p.name,
+                    'ticker': p.ticker,
+                    'product_type': (p.product_type or '').lower() or 'outro',
+                    'confidence': 0.95,
+                    'match_type': 'ticker_prefix'
+                })
+            if results:
+                return results
 
         name_matches = db.query(Product).filter(
             Product.name.ilike(f"%{term}%"),
@@ -246,6 +271,7 @@ class EntityResolver:
                 'product_id': p.id,
                 'name': p.name,
                 'ticker': p.ticker,
+                'product_type': (p.product_type or '').lower() or 'outro',
                 'confidence': conf,
                 'match_type': 'name_ilike'
             })
@@ -266,6 +292,7 @@ class EntityResolver:
                             'product_id': p.id,
                             'name': p.name,
                             'ticker': p.ticker,
+                            'product_type': (p.product_type or '').lower() or 'outro',
                             'confidence': 0.8,
                             'match_type': 'alias_match'
                         })

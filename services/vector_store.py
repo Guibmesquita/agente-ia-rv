@@ -135,6 +135,9 @@ KNOWN_METADATA_FIELDS = [
     'valid_until_dt',
     # Task #152 — versão do embedding (2 = gerado a partir de content_for_embedding markdown)
     'embedding_version',
+    # NOTA Task #153 — `product_type` e `product_id` NÃO entram aqui de propósito:
+    # não há colunas correspondentes em `document_embeddings`. Eles são propagados
+    # via `extra_metadata` (JSON) e re-hidratados em `_row_to_metadata`.
 ]
 
 FIELD_MAP_TO_COLUMN = {
@@ -1768,8 +1771,12 @@ class VectorStore:
                 rec = rec_map.get(prod.id)
                 material_name = mat_product_map.get(prod.id, "")
                 result.append({
+                    "product_id": prod.id,
                     "product_name": prod.name,
                     "ticker": prod.ticker or "",
+                    # Task #153 — tipo do produto exposto ao agente para
+                    # diferenciar ação x estruturada sobre a mesma ação.
+                    "product_type": (prod.product_type or "").lower() or "outro",
                     "manager": prod.manager or "",
                     "rating": rec.rating if rec else "",
                     "target_price": rec.target_price if rec else None,

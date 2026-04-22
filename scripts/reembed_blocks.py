@@ -128,7 +128,13 @@ def run(batch: int, sleep: float, product_id: Optional[int], dry_run: bool) -> d
                 continue
 
             try:
-                ingestor.index_material(mid)
+                # Task #153 — método correto é `index_approved_blocks` (não existe `index_material`).
+                ingestor.index_approved_blocks(
+                    material_id=mid,
+                    product_name=product.name,
+                    product_ticker=product.ticker,
+                    db=db,
+                )
             except Exception as e:
                 reindex_failed += 1
                 print(f"[REEMBED] Reindex falhou material {mid} — blocos NÃO marcados v{TARGET_VERSION}: {e}")

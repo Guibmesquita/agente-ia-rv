@@ -310,6 +310,29 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     except Exception as _e_com:
         pass
 
+    # Task #153 — fallback de product_type por product_id, para embeddings antigos
+    # que ainda não foram reindexados com o novo metadata. Sem isso, blocos
+    # legados teriam tag genérica [COMITÊ] em vez de [COMITÊ-ESTRUTURADA] etc.
+    _product_type_by_id: dict = {}
+    try:
+        if db:
+            from database.models import Product as _Prod
+            _ids_in_results = {
+                int(r.metadata.get("product_id"))
+                for r in raw_results
+                if r.metadata.get("product_id")
+                and str(r.metadata.get("product_id")).isdigit()
+            }
+            if _ids_in_results:
+                _rows = db.query(_Prod.id, _Prod.product_type).filter(
+                    _Prod.id.in_(_ids_in_results)
+                ).all()
+                _product_type_by_id = {
+                    int(rid): (pt or "").lower() for rid, pt in _rows
+                }
+    except Exception as _e_pt:
+        pass
+
     for r in raw_results:
         meta = r.metadata
         content = r.content
@@ -355,7 +378,34 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         _doc_pid = meta.get("product_id")
         _in_committee_entries = bool(_doc_pid and int(_doc_pid) in _committee_product_ids)
         is_comite_doc = _in_committee_entries
-        comite_tag = "[COMITÊ]" if is_comite_doc else "[NÃO-COMITÊ]"
+        # Task #153 — tag inclui o tipo do produto para o agente diferenciar
+        # ação de estrutura sobre essa ação. Ex.: [COMITÊ-ESTRUTURADA] vs [COMITÊ-AÇÃO].
+        # Lookup encadeado: 1) metadata do embedding (novos), 2) join por product_id (legados).
+        product_type_meta = (meta.get("product_type") or "").lower().strip()
+        if not product_type_meta and _doc_pid and _product_type_by_id:
+            try:
+                product_type_meta = _product_type_by_id.get(int(_doc_pid), "") or ""
+            except (TypeError, ValueError):
+                product_type_meta = ""
+        # Task #153 — whitelist ESTRITA: valores fora do dicionário conhecido
+        # caem para "OUTRO" para evitar injeção via metadado adulterado no banco.
+        _PT_WHITELIST = {
+            "acao": "AÇÃO",
+            "estruturada": "ESTRUTURADA",
+            "estrutura": "ESTRUTURADA",
+            "fundo": "FUNDO",
+            "fii": "FII",
+            "etf": "ETF",
+            "debenture": "DEBÊNTURE",
+        }
+        _PT_TAG = _PT_WHITELIST.get(product_type_meta, "OUTRO")
+        # Normaliza product_type_meta para downstream: só valores reconhecidos passam.
+        if product_type_meta and product_type_meta not in _PT_WHITELIST:
+            product_type_meta = ""
+        if is_comite_doc:
+            comite_tag = f"[COMITÊ-{_PT_TAG}]"
+        else:
+            comite_tag = f"[NÃO-COMITÊ-{_PT_TAG}]" if product_type_meta else "[NÃO-COMITÊ]"
 
         _doc_id_meta = str(meta.get("doc_id") or "")
         is_product_key_info = (
@@ -391,18 +441,33 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
                 except (TypeError, ValueError):
                     pass
 
-            if comite_tag == "[COMITÊ]":
+            # Task #153 — instrução explícita sobre tipo do produto evita
+            # que o agente confunda estrutura com ativo subjacente.
+            _type_clause = ""
+            if product_type_meta in ("estruturada", "estrutura"):
+                _type_clause = (
+                    " ATENÇÃO: este material descreve uma ESTRUTURA/DERIVATIVO — "
+                    "ao recomendar, deixe explícito que a recomendação é a estrutura, "
+                    "NÃO o ativo subjacente puro (ação/índice)."
+                )
+            elif product_type_meta == "acao":
+                _type_clause = " Tipo do produto: AÇÃO (ativo subjacente nu)."
+            elif product_type_meta:
+                _type_clause = f" Tipo do produto: {_PT_TAG}."
+
+            if is_comite_doc:
                 source_note = (
-                    f"TAG: [COMITÊ] | Ao citar, inclua: (Fonte: {material_name}{_page_suffix}). "
+                    f"TAG: {comite_tag} | Ao citar, inclua: (Fonte: {material_name}{_page_suffix}). "
                     f"Este material é uma recomendação formal do Comitê de Investimentos da SVN — "
-                    f"use framing de recomendação oficial na resposta."
+                    f"use framing de recomendação oficial na resposta.{_type_clause}"
                 )
             else:
                 source_note = (
-                    f"TAG: [NÃO-COMITÊ] | Ao citar, inclua: (Fonte: {material_name}{_page_suffix}). "
+                    f"TAG: {comite_tag} | Ao citar, inclua: (Fonte: {material_name}{_page_suffix}). "
                     f"Este material é INFORMATIVO — NÃO é uma recomendação formal da SVN. "
                     f"Você pode informar e analisar o ativo, mas se perguntado sobre recomendação, "
                     f"esclareça que este ativo não está no Comitê ativo da SVN e sugira consultar o broker."
+                    f"{_type_clause}"
                 )
 
         result_entry = {
@@ -410,6 +475,8 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             "material_name": material_name,
             "material_type": material_type,
             "comite_tag": comite_tag,
+            # Task #153 — campo dedicado para diferenciação acao x estruturada x fii
+            "product_type": product_type_meta or "outro",
             "product": meta.get("product_name", ""),
             "ticker": meta.get("products", ""),
             "content": content[:600],
