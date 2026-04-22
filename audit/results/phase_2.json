@@ -1,0 +1,549 @@
+{
+  "phase_2_1_retrieval": {
+    "total_queries": 26,
+    "found": 13,
+    "miss": 13,
+    "recall@3": 0.269,
+    "recall@6": 0.385,
+    "mrr": 0.282,
+    "details": [
+      {
+        "fact_id": "BTLG_DY",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual o dividend yield do BTLG11?",
+        "n_returned": 8,
+        "found_rank": 1,
+        "found_score": 0.81,
+        "top_score": 0.81,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 4018
+      },
+      {
+        "fact_id": "BTLG_DY",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "B",
+        "query": "BTLG11 tá pagando bem? quanto de DY?",
+        "n_returned": 8,
+        "found_rank": 1,
+        "found_score": 0.78,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 3424
+      },
+      {
+        "fact_id": "BTLG_DY",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "C",
+        "query": "qual o yield desse fundo?",
+        "n_returned": 0,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": null,
+        "top_preview": "",
+        "elapsed_ms": 1486
+      },
+      {
+        "fact_id": "BTLG_VAC",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual a vacância do BTLG11?",
+        "n_returned": 8,
+        "found_rank": 3,
+        "found_score": 0.65,
+        "top_score": 0.7,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 3055
+      },
+      {
+        "fact_id": "BTLG_VAC",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "B",
+        "query": "o BTLG11 tem muito espaço vazio nos imóveis?",
+        "n_returned": 8,
+        "found_rank": 1,
+        "found_score": 0.67,
+        "top_score": 0.67,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2100
+      },
+      {
+        "fact_id": "BTLG_VAC",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "C",
+        "query": "como tá a ocupação?",
+        "n_returned": 0,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": null,
+        "top_preview": "",
+        "elapsed_ms": 686
+      },
+      {
+        "fact_id": "BTLG_LTV",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual o LTV do BTLG11?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.65,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2788
+      },
+      {
+        "fact_id": "BTLG_LTV",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "B",
+        "query": "o BTLG11 tá muito alavancado?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.65,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2523
+      },
+      {
+        "fact_id": "BTLG_LOG",
+        "ticker": "BTLG11",
+        "block_type": "grafico",
+        "category": "qualitative",
+        "variant": "A",
+        "query": "qual a composição do portfólio do BTLG11 por tipo de ativo?",
+        "n_returned": 8,
+        "found_rank": 6,
+        "found_score": 0.78,
+        "top_score": 0.82,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2132
+      },
+      {
+        "fact_id": "BTLG_LOG",
+        "ticker": "BTLG11",
+        "block_type": "grafico",
+        "category": "qualitative",
+        "variant": "B",
+        "query": "o BTLG11 só tem galpão ou tem outras coisas?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.64,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2254
+      },
+      {
+        "fact_id": "BTLG_CRI",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual a taxa do CRI II do BTLG11?",
+        "n_returned": 8,
+        "found_rank": 8,
+        "found_score": 0.7,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2557
+      },
+      {
+        "fact_id": "BTLG_CRI",
+        "ticker": "BTLG11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "B",
+        "query": "quais CRIs o BTLG11 emitiu e a que taxa?",
+        "n_returned": 8,
+        "found_rank": 8,
+        "found_score": 0.7,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2978
+      },
+      {
+        "fact_id": "BTLG_TAXA",
+        "ticker": "BTLG11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual a taxa de administração do BTLG11?",
+        "n_returned": 8,
+        "found_rank": 7,
+        "found_score": 0.7,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII BTG Pactual Logística (BTLG11)\nGestora: BTG Pactual\nDocumento: Relatório gerencial BTGLG",
+        "elapsed_ms": 2271
+      },
+      {
+        "fact_id": "GARE_GUID",
+        "ticker": "GARE11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual o guidance de dividendos do GARE11?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII Guardian Real Estate (GARE11)\nGestora: Guardian Gestora\nDocumento: Relatório gerencial G",
+        "elapsed_ms": 2114
+      },
+      {
+        "fact_id": "GARE_GUID",
+        "ticker": "GARE11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "B",
+        "query": "quanto o GARE11 promete distribuir?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.6,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII Guardian Real Estate (GARE11)\nGestora: Guardian Gestora\nDocumento: Relatório gerencial G",
+        "elapsed_ms": 2825
+      },
+      {
+        "fact_id": "GARE_COTA",
+        "ticker": "GARE11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "A",
+        "query": "em quanto fechou a cota do GARE11 em novembro?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.7,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII Guardian Real Estate (GARE11)\nGestora: Guardian Gestora\nDocumento: Relatório gerencial G",
+        "elapsed_ms": 2684
+      },
+      {
+        "fact_id": "GARE_XPRI",
+        "ticker": "GARE11",
+        "block_type": "texto",
+        "category": "qualitative",
+        "variant": "A",
+        "query": "qual foi o resultado da venda do GARE11 pro XPRI?",
+        "n_returned": 8,
+        "found_rank": 1,
+        "found_score": 0.71,
+        "top_score": 0.71,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII Guardian Real Estate (GARE11)\nGestora: Guardian Gestora\nDocumento: Relatório gerencial G",
+        "elapsed_ms": 2605
+      },
+      {
+        "fact_id": "GARE_XPRI",
+        "ticker": "GARE11",
+        "block_type": "texto",
+        "category": "qualitative",
+        "variant": "B",
+        "query": "o GARE11 desalavancou? como?",
+        "n_returned": 8,
+        "found_rank": 5,
+        "found_score": 0.6,
+        "top_score": 0.6,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: FII Guardian Real Estate (GARE11)\nGestora: Guardian Gestora\nDocumento: Relatório gerencial G",
+        "elapsed_ms": 2189
+      },
+      {
+        "fact_id": "MANA_DY",
+        "ticker": "MANA11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "A",
+        "query": "qual o dividend yield do MANA11?",
+        "n_returned": 8,
+        "found_rank": 4,
+        "found_score": 0.733,
+        "top_score": 0.81,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório gerenc",
+        "elapsed_ms": 2097
+      },
+      {
+        "fact_id": "MANA_DY",
+        "ticker": "MANA11",
+        "block_type": "tabela",
+        "category": "numeric",
+        "variant": "B",
+        "query": "o MANA11 paga bem? quanto?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.6,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório geren",
+        "elapsed_ms": 1858
+      },
+      {
+        "fact_id": "MANA_RENT",
+        "ticker": "MANA11",
+        "block_type": "texto",
+        "category": "comparative",
+        "variant": "A",
+        "query": "qual a rentabilidade do MANA11 em 2025?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório gerenc",
+        "elapsed_ms": 1186
+      },
+      {
+        "fact_id": "MANA_RENT",
+        "ticker": "MANA11",
+        "block_type": "texto",
+        "category": "comparative",
+        "variant": "B",
+        "query": "o MANA11 bateu o IFIX?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.6,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório geren",
+        "elapsed_ms": 2129
+      },
+      {
+        "fact_id": "MANA_DIV",
+        "ticker": "MANA11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "A",
+        "query": "quanto o MANA11 distribuiu por cota em 2025?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.7,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório geren",
+        "elapsed_ms": 2826
+      },
+      {
+        "fact_id": "MANA_DIV",
+        "ticker": "MANA11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "B",
+        "query": "qual o dividendo mensal do MANA11?",
+        "n_returned": 8,
+        "found_rank": null,
+        "found_score": null,
+        "top_score": 0.78,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório geren",
+        "elapsed_ms": 2326
+      },
+      {
+        "fact_id": "MANA_COTI",
+        "ticker": "MANA11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "A",
+        "query": "quantos cotistas o MANA11 tem?",
+        "n_returned": 8,
+        "found_rank": 1,
+        "found_score": 0.68,
+        "top_score": 0.68,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório gerenc",
+        "elapsed_ms": 2138
+      },
+      {
+        "fact_id": "MANA_COTI",
+        "ticker": "MANA11",
+        "block_type": "texto",
+        "category": "numeric",
+        "variant": "B",
+        "query": "a base de cotistas do MANA11 cresceu?",
+        "n_returned": 8,
+        "found_rank": 1,
+        "found_score": 0.68,
+        "top_score": 0.68,
+        "top_preview": "[CONTEXTO GLOBAL]\nProduto: MANATÍ HEDGE FUND FII (MANA11)\nGestora: Manatí Capital Management\nDocumento: Relatório gerenc",
+        "elapsed_ms": 2007
+      }
+    ]
+  },
+  "phase_2_2_chunking": {
+    "26": {
+      "blocks_total": 22,
+      "by_type": {
+        "texto": 11,
+        "tabela": 7,
+        "grafico": 4
+      },
+      "len_min": 160,
+      "len_max": 2265,
+      "len_avg": 871,
+      "len_under_100": 0,
+      "len_over_2000": 1
+    },
+    "28": {
+      "blocks_total": 30,
+      "by_type": {
+        "texto": 18,
+        "tabela": 8,
+        "grafico": 4
+      },
+      "len_min": 185,
+      "len_max": 4212,
+      "len_avg": 1130,
+      "len_under_100": 0,
+      "len_over_2000": 3
+    },
+    "32": {
+      "blocks_total": 40,
+      "by_type": {
+        "texto": 21,
+        "tabela": 10,
+        "grafico": 9
+      },
+      "len_min": 118,
+      "len_max": 1806,
+      "len_avg": 757,
+      "len_under_100": 0,
+      "len_over_2000": 0
+    },
+    "36": {
+      "blocks_total": 43,
+      "by_type": {
+        "tabela": 14,
+        "texto": 24,
+        "grafico": 5
+      },
+      "len_min": 201,
+      "len_max": 3729,
+      "len_avg": 795,
+      "len_under_100": 0,
+      "len_over_2000": 2
+    },
+    "39": {
+      "blocks_total": 34,
+      "by_type": {
+        "texto": 21,
+        "tabela": 13
+      },
+      "len_min": 108,
+      "len_max": 2081,
+      "len_avg": 842,
+      "len_under_100": 0,
+      "len_over_2000": 1
+    }
+  },
+  "phase_2_3_entity": {
+    "cases": [
+      {
+        "case": "exact_ticker",
+        "query": "BTLG11",
+        "resolved_count": 1,
+        "resolved": [
+          {
+            "name": "FII BTG Pactual Logística",
+            "ticker": "BTLG11",
+            "confidence": 1.0,
+            "match_type": "ticker_exact"
+          }
+        ],
+        "elapsed_ms": 2
+      },
+      {
+        "case": "informal_name",
+        "query": "TG Renda",
+        "resolved_count": 1,
+        "resolved": [
+          {
+            "name": "Fundo de Investimento Imobiliário TG Renda Imobiliária Feeder Pré",
+            "ticker": "TGRI PRÉ",
+            "confidence": 0.85,
+            "match_type": "name_ilike"
+          }
+        ],
+        "elapsed_ms": 2
+      },
+      {
+        "case": "partial_ticker",
+        "query": "MANA",
+        "resolved_count": 1,
+        "resolved": [
+          {
+            "name": "MANATÍ HEDGE FUND FII",
+            "ticker": "MANA11",
+            "confidence": 0.6,
+            "match_type": "name_ilike"
+          }
+        ],
+        "elapsed_ms": 1
+      },
+      {
+        "case": "gestora",
+        "query": "BTG Pactual",
+        "resolved_count": 1,
+        "resolved": [
+          {
+            "name": "FII BTG Pactual Logística",
+            "ticker": "BTLG11",
+            "confidence": 0.85,
+            "match_type": "name_ilike"
+          }
+        ],
+        "elapsed_ms": 1
+      },
+      {
+        "case": "unknown",
+        "query": "XPTO99",
+        "resolved_count": 0,
+        "resolved": [],
+        "elapsed_ms": 2
+      },
+      {
+        "case": "ambiguous",
+        "query": "fundo",
+        "resolved_count": 2,
+        "resolved": [
+          {
+            "name": "Fundo de Investimento Imobiliário TG Renda Imobiliária Feeder Pré",
+            "ticker": "TGRI PRÉ",
+            "confidence": 0.9,
+            "match_type": "name_ilike"
+          },
+          {
+            "name": "test_upload_fundo",
+            "ticker": null,
+            "confidence": 0.85,
+            "match_type": "name_ilike"
+          }
+        ],
+        "elapsed_ms": 2
+      },
+      {
+        "case": "multi_entity",
+        "query": "compare BTLG11 com MANA11",
+        "resolved_count": 2,
+        "resolved": [
+          {
+            "name": "FII BTG Pactual Logística",
+            "ticker": "BTLG11",
+            "confidence": 1.0,
+            "match_type": "ticker_exact"
+          },
+          {
+            "name": "MANATÍ HEDGE FUND FII",
+            "ticker": "MANA11",
+            "confidence": 1.0,
+            "match_type": "ticker_exact"
+          }
+        ],
+        "elapsed_ms": 4
+      }
+    ]
+  }
+}

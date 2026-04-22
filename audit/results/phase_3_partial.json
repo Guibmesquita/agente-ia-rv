@@ -1,0 +1,44 @@
+{
+  "_note": "Phase 3 abortado a 4/12 perguntas — limite TPM 30000 da OpenAI estourado durante a auditoria. Resultados parciais transcritos do log.",
+  "rate_limit_observed": {
+    "limit_tpm": 30000,
+    "tokens_used_per_call": "~25k-31k (system prompt + KB context + tools + history)",
+    "implication": "Cada chamada do agente já queima ~85% do orçamento TPM. Em produção sob carga concorrente, respostas degradam para fallback genérico."
+  },
+  "results": [
+    {
+      "id": "KB_NUM_DY", "query": "qual o dividend yield do BTLG11?",
+      "elapsed_ms": 35438,
+      "outcome": "FAIL_RATE_LIMIT",
+      "response": "Desculpe, não foi possível processar sua mensagem no momento.",
+      "context_used": "EntityResolver=BTLG11 (5 blocos), VectorStore híbrido=16 finais, visual_prefetch=4 graficos, tool=lookup_fii_public",
+      "rate_limit_at_iteration": 2
+    },
+    {
+      "id": "KB_NUM_GARE_GUID", "query": "qual o guidance de dividendos do GARE11?",
+      "elapsed_ms": 19390,
+      "outcome": "WRONG_SOURCE",
+      "response_excerpt": "O GARE11 apresenta um Dividend Yield de 11,81% (Fonte: FundsExplorer). Esses dados são públicos e podem não refletir uma...",
+      "expected_fact": "Guidance R$ 0,083–0,090 por cota (KB material 28, block 126)",
+      "tool_called": "lookup_fii_public (web)",
+      "kb_tool_called": false,
+      "diagnosis": "Pergunta estratégica sobre guidance da gestora foi roteada para FundsExplorer em vez de search_knowledge_base. Resposta tecnicamente correta sobre DY público mas IGNORA o guidance específico que está na KB."
+    },
+    {
+      "id": "KB_THESIS_MANA", "query": "qual a tese de investimento do MANA11?",
+      "elapsed_ms": 25658,
+      "outcome": "FAIL_RATE_LIMIT",
+      "response": "Desculpe, não foi possível processar sua mensagem no momento.",
+      "rate_limit_at_iteration": 1
+    },
+    {
+      "id": "KB_RISK_BTLG", "query": "quais os riscos do BTLG11?",
+      "elapsed_ms": 26811,
+      "outcome": "OK_PARTIAL",
+      "response_excerpt": "O BTLG11, um fundo de investimento imobiliário focado no segmento de logística, possui alguns riscos associados, que inc...",
+      "tool_called": "search_knowledge_base",
+      "iterations": 2,
+      "diagnosis": "Resposta razoável; KB acionada corretamente. Visual prefetch acumulou 4 candidatos extras (~600+800 chars cada) inflando contexto."
+    }
+  ]
+}

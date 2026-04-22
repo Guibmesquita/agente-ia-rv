@@ -1,0 +1,533 @@
+You are conducting a deep expert audit of the RAG V3.2 + Agentic Pipeline V2 
+system of the Stevan agent. Your goal is NOT to make changes yet — your goal is 
+to run structured tests, measure quality, and produce a precise improvement report.
+
+You will act as three specialists simultaneously throughout this audit:
+
+  SPECIALIST A — RAG Engineer
+  Expert in embedding quality, retrieval pipelines, vector search, chunking 
+  strategies, reranking, and context window optimization.
+
+  SPECIALIST B — Financial Domain Expert  
+  Expert in Brazilian variable income products: FIIs, ações, ETFs, COEs, 
+  derivativos estruturados, debêntures, CRIs, CRAs. Knows exactly what 
+  information a financial advisor needs and what "correct" looks like.
+
+  SPECIALIST C — QA Engineer
+  Expert in adversarial testing, edge cases, failure mode analysis, 
+  and systematic benchmarking of AI systems.
+
+Do not start implementing changes. Run the full audit protocol below and 
+produce only a report at the end.
+
+---
+
+## PHASE 0 — SYSTEM RECONNAISSANCE (before any test)
+
+Read and fully understand:
+1. services/semantic_search.py — full file, every class and method
+2. services/document_processor.py — full file
+3. services/vector_store.py — full file
+4. services/openai_agent.py — full file
+5. services/agent_tools.py — full file
+6. services/query_rewriter.py — full file (if exists)
+7. The DocumentEmbedding table schema (especially all metadata columns)
+8. The ContentBlock table schema (especially block_type and semantic_tags)
+9. The Product table schema (especially key_info and name_aliases)
+
+From this reading, document:
+- Exact chunking strategy: how is text split into ContentBlocks? What is the 
+  typical chunk size in tokens/characters?
+- Exact embedding input format: what text is sent to text-embedding-3-large?
+- Exact scoring formula in CompositeScorer (all 6 weights, all boost conditions)
+- How system prompt is assembled for the agent
+- How search results are formatted before injection into GPT-4o context
+- Maximum context injected from knowledge base (number of chunks, character limit)
+- How web search results (Tavily) are integrated with KB results
+- Current similarity_threshold value(s)
+- Whether any reranking step exists beyond CompositeScorer
+
+Record all findings in a "System Map" section of your report.
+
+---
+
+## PHASE 1 — KNOWLEDGE BASE RECONNAISSANCE
+
+### 1.1 — Inventory the existing content
+
+Query the database:
+
+```sql
+-- Material overview
+SELECT 
+  m.id,
+  m.name,
+  m.material_type,
+  m.publish_status,
+  m.is_indexed,
+  m.is_committee_active,
+  COUNT(cb.id) as block_count,
+  COUNT(de.doc_id) as embedding_count,
+  array_agg(DISTINCT p.ticker) as linked_tickers
+FROM materials m
+LEFT JOIN content_blocks cb ON cb.material_id = m.id
+LEFT JOIN document_embeddings de ON de.material_id::int = m.id
+LEFT JOIN material_product_links mpl ON mpl.material_id = m.id
+LEFT JOIN products p ON p.id = mpl.product_id
+WHERE m.publish_status = 'publicado' AND m.is_indexed = true
+GROUP BY m.id, m.name, m.material_type, m.publish_status, 
+         m.is_indexed, m.is_committee_active
+ORDER BY block_count DESC;
+```
+
+```sql
+-- ContentBlock type distribution
+SELECT block_type, COUNT(*) as count, 
+       AVG(LENGTH(content)) as avg_content_length,
+       MIN(LENGTH(content)) as min_length,
+       MAX(LENGTH(content)) as max_length
+FROM content_blocks
+GROUP BY block_type;
+```
+
+```sql
+-- Embedding metadata completeness
+SELECT 
+  COUNT(*) as total_embeddings,
+  COUNT(CASE WHEN product_ticker IS NOT NULL AND product_ticker != '' THEN 1 END) as with_ticker,
+  COUNT(CASE WHEN gestora IS NOT NULL AND gestora != '' THEN 1 END) as with_gestora,
+  COUNT(CASE WHEN valid_until IS NOT NULL THEN 1 END) as with_expiry,
+  AVG(LENGTH(content)) as avg_chunk_length
+FROM document_embeddings
+WHERE publish_status = 'publicado';
+```
+
+```sql
+-- Products inventory
+SELECT id, name, ticker, product_type, 
+       (key_info IS NOT NULL AND key_info != '{}' AND key_info != 'null') as has_key_info,
+       jsonb_array_length(COALESCE(name_aliases::jsonb, '[]'::jsonb)) as alias_count
+FROM products
+WHERE status = 'ativo'
+ORDER BY product_type, ticker;
+```
+
+### 1.2 — Select test targets
+
+From the inventory above, select test targets covering:
+- At least 2 FIIs with the most blocks
+- At least 1 ação
+- At least 1 estruturada/COE (if exists)
+- At least 1 material do tipo 'comite' 
+- The material with the most tabela-type blocks
+- The material with the most grafico-type blocks
+
+For each selected target, read the actual ContentBlock content from the database:
+
+```sql
+SELECT id, block_type, content, source_page, semantic_tags, confidence_score
+FROM content_blocks
+WHERE material_id = {target_material_id}
+ORDER BY source_page, id;
+```
+
+From reading this content, SPECIALIST B must manually extract:
+- 5 specific facts per material (exact numbers, exact statements, exact dates)
+- These facts must come from diverse block types: at least 1 from a tabela block, 
+  1 from a grafico description, 1 from body text
+- Facts should include: a specific yield/return figure, a specific risk statement, 
+  a specific comparative claim, a specific term/prazo, a specific manager/issuer detail
+
+Document all selected facts in a "Ground Truth Fact Bank" with:
+  - Fact text (exact)
+  - Source: material name, block ID, page number, block type
+  - Category: numeric | qualitative | comparative | temporal
+
+This Ground Truth Fact Bank is the benchmark for all retrieval tests.
+
+---
+
+## PHASE 2 — RETRIEVAL QUALITY TESTS
+
+For each test below, do NOT call the WhatsApp agent. Instead, call the 
+EnhancedSearch pipeline directly (instantiate EnhancedSearch and call .search()) 
+to isolate retrieval quality from generation quality.
+
+Write a test script: audit/test_retrieval.py
+
+### 2.1 — Direct fact retrieval tests (15 tests minimum)
+
+For each fact in the Ground Truth Fact Bank, formulate 3 query variants:
+- Variant A: Direct/explicit (ex: "qual o dividend yield do BTLG11?")
+- Variant B: Natural language (ex: "BTLG11 tá pagando bem? quanto de DY?")  
+- Variant C: Implicit/contextual (ex: "esse fundo de logística vale a pena?")
+  — for Variant C, pre-load the conversation context with the ticker so 
+    ConversationContextManager has it
+
+For each query, record:
+- Did the chunk containing the ground truth fact appear in results? (yes/no)
+- If yes: what rank position? (1st, 2nd... 8th)
+- Composite score of the ground truth chunk
+- composite score of top-ranked chunk
+- similarity_threshold: did the ground truth chunk pass it?
+- Which retrieval layer found it: EntityResolver (layer 0), multi-query vector, 
+  direct ticker search, fuzzy fallback, or not found at all
+
+Calculate and report:
+- Recall@3: % of ground truth facts found in top 3 results
+- Recall@6: % found in top 6
+- MRR (Mean Reciprocal Rank): average of 1/rank for found facts
+- Layer distribution: which layer is doing most of the work?
+
+### 2.2 — Chunking quality tests
+
+For each material in the test set, run these diagnostics:
+
+**Fragmentation test:** 
+For a fact that spans multiple sentences (or a table row + its header), 
+check if it was split across multiple chunks. If so, do both chunks score 
+high together, or does only one appear in results?
+
+**Chunk length distribution:**
+Plot (or list) the character lengths of all chunks for the material.
+Flag chunks shorter than 100 chars (likely fragmentation artifacts) and 
+longer than 2000 chars (likely too broad for precise retrieval).
+
+**Table block quality test:**
+For each tabela-type block, verify:
+- Is the JSON structure complete (has headers and rows)?
+- Is the converted Markdown representation readable and correct?
+- Run a query that should retrieve a specific cell value from this table.
+  Does the retrieval system find it?
+
+### 2.3 — Entity resolution tests
+
+Test EntityResolver specifically with these query types:
+- Exact ticker: "BTLG11" → should resolve with confidence 1.0
+- Informal name: "TG Core" or "TG Genial" (aliases) → should resolve via aliases
+- Partial ticker: "PETR" → should resolve PETR3 and PETR4 via prefix match
+- Gestora name: "Bresco" or whichever gestoras exist → should resolve products
+- Unknown product: "XPTO99" → should return empty cleanly (no false positives)
+- Ambiguous term: "fundo" (generic) → should NOT create false matches
+- Multi-entity: "compare BTLG11 com HGLG11" → should resolve both
+
+For each test, record:
+- Resolved products (list)
+- Confidence scores
+- Match type (exact/ilike/prefix/name/alias)
+- False positives if any
+- Time taken (ms)
+
+### 2.4 — Semantic boundary tests (SPECIALIST C adversarial battery)
+
+These tests are designed to find failure modes:
+
+**Cross-contamination test:**
+Ask about Product A using the gestora of Product B. Example: 
+"Como é a gestão da [gestora_of_B] no [ticker_A]?"
+Expected: results should be from ticker_A, not ticker_B
+Failure: chunks from ticker_B appear due to gestora match dominating scoring
+
+**Temporal confusion test:**
+If materials have valid_from/valid_until dates, ask:
+"Qual o dividend yield atual do [ticker]?" for a product with an expired material
+Expected: expired chunks filtered out
+Failure: expired chunks appear with stale data
+
+**Negative knowledge test:**
+Ask about a product that EXISTS in the products table but has NO content blocks 
+(no material linked or no embeddings). Example: create this condition if it 
+doesn't exist naturally.
+Expected: agent acknowledges limited information
+Failure: agent fabricates or returns wrong product's data
+
+**Committee isolation test:**
+If any material has is_committee_active=True AND has a MaterialProductLink with 
+excluded_from_committee=True for some product:
+- Query that excluded product
+- Expected: comite_tag = [NÃO-COMITÊ] on those chunks
+- Failure: chunks tagged [COMITÊ] despite exclusion
+
+**Threshold sensitivity test:**
+For the similarity_threshold currently set (likely 0.8):
+- Find the ground truth chunk with the LOWEST composite score (hardest to retrieve)
+- Record its actual vector similarity distance
+- If it falls below threshold: it's being silently dropped — that's a critical gap
+
+### 2.5 — Query rewriting quality test
+
+If services/query_rewriter.py exists and is active:
+For each of the 3 query variants per fact (from 2.1), record:
+- Original query
+- Rewritten query(ies) produced
+- Whether rewriting improved or degraded retrieval rank
+
+---
+
+## PHASE 3 — FULL AGENT RESPONSE QUALITY TESTS
+
+Now test the complete pipeline including GPT-4o generation. Use the agent's 
+generate_response_v2 function or equivalent directly — do NOT send real WhatsApp 
+messages. Create a test phone number / assessor in the DB if needed.
+
+Write a test script: audit/test_agent_responses.py
+
+For each of the following question categories, send the question, capture the 
+full response, and have SPECIALIST B evaluate it:
+
+### 3.1 — Knowledge base questions (10 questions)
+
+Select 10 questions derived from your Ground Truth Fact Bank, covering:
+- 2 questions with a specific numeric fact (yield, return, price target)
+- 2 questions asking for investment thesis/rationale  
+- 2 questions about risks
+- 2 comparative questions (product A vs product B)
+- 1 question about a tabela-type block (a specific line in a table)
+- 1 question about a grafico-type block (what a chart shows)
+
+For each response, SPECIALIST B evaluates (score 0-3 for each):
+- Factual accuracy: Does the response contain the ground truth fact? (0=missing, 
+  1=partially there, 2=present but imprecise, 3=exact and correct)
+- Completeness: Is the response missing important context?
+- Hallucination check: Does the response state anything NOT in the source chunks?
+  Mark any hallucinated claim explicitly.
+- Citation quality: Is the source material named?
+- Practical utility: Would this answer actually help a financial advisor?
+
+### 3.2 — Web search questions (6 questions)
+
+These should trigger search_web and/or lookup_fii_public:
+- "Qual a cotação atual do [ticker from test set]?"
+- "Qual o DY atual do [FII ticker]?"
+- "Como está o IFIX hoje?"
+- "Qual a Selic atual?"
+- "Últimas notícias sobre [company behind an ação in test set]"
+- "P/VP atual do [FII ticker]"
+
+For each response, record:
+- Was search_web activated? (yes/no)
+- Was lookup_fii_public activated for FII queries? (yes/no)
+- Was the data retrieved actually current/plausible?
+- Was KB also queried in parallel for qualitative context?
+- Any sign of stale data from KB mixed with fresh web data without clear separation?
+
+### 3.3 — Hybrid questions (4 questions)
+
+Questions that should use BOTH KB and web:
+- "Vale a pena comprar [FII ticker] agora? Me dá a tese e o DY atual."
+- "O [FII ticker] ainda está barato? Me fala do P/VP e da tese de gestão."
+- "Compara [ticker A] com [ticker B] — qual tem melhor DY e qual tem melhor tese?"
+- "Qual é a recomendação do comitê pra [product in committee] e como está o 
+   preço hoje?"
+
+For each hybrid response:
+- Did both tools fire?
+- Is KB-sourced content clearly differentiated from web-sourced content?
+- Is the committee tag ([COMITÊ] vs [NÃO-COMITÊ]) being respected in language?
+- Is the response useful as a sales tool for the advisor?
+
+### 3.4 — Edge case questions (5 questions)
+
+- "Me fala de [ticker that exists in products but has no content blocks]"
+- "Qual é o [metric] do [ticker] em [month/year before valid_from of its material]?"
+- "Me compara todos os FIIs da carteira" (broad/unspecific — tests scope handling)
+- "Quanto rende o COE do [company]?" — ask about a structured product, 
+  if payoff diagram exists check if it gets offered
+- "Me manda o material do [product]" — tests send_document tool activation
+
+---
+
+## PHASE 4 — WEB SEARCH INTEGRATION AUDIT
+
+Read the web search configuration in agent_tools.py and wherever Tavily is called.
+
+Document:
+- Tavily search depth setting (basic vs advanced)
+- Source whitelist (if any)
+- Max results requested
+- How results are formatted before injection into GPT-4o context
+- Whether web results are deduplicated against KB results
+- Token budget allocated to web results vs KB results
+
+Run these specific web integration tests:
+
+**Staleness contamination test:**
+Ask a question where the KB has old data AND the web has fresh data.
+Example: "Qual foi o último rendimento do [FII]?"
+Does the agent:
+(a) Use the web data and note it's more current? ✓
+(b) Use KB data without noting it may be stale? ✗
+(c) Contradict itself by mixing both? ✗✗
+
+**Source reliability test:**
+For a web search result, check what source domains appear. Are they 
+from reliable financial sources (FundsExplorer, B3, InfoMoney, Valor, 
+Status Invest) or from low-quality sources?
+
+**No-result handling test:**
+Query something that will return no KB results AND no useful web results.
+Does the agent say it doesn't know cleanly, or does it hallucinate?
+
+---
+
+## PHASE 5 — PERFORMANCE AND COST AUDIT
+
+For each search executed in Phases 2 and 3, record timing. Then calculate:
+
+- Average retrieval time (EnhancedSearch.search() only, ms)
+- Average total agent response time (ms)
+- Estimated token consumption per query:
+  - System prompt tokens
+  - KB context tokens (chunks injected)
+  - Web search result tokens
+  - Total context tokens per query
+  - Approximate cost per query in USD
+
+Query the cost_tracking table if it exists:
+```sql
+SELECT operation_type, 
+       AVG(tokens_used) as avg_tokens,
+       AVG(cost_usd) as avg_cost_usd,
+       COUNT(*) as sample_count
+FROM cost_tracking
+GROUP BY operation_type
+ORDER BY avg_cost_usd DESC;
+```
+
+Flag any operation consuming disproportionate tokens.
+
+---
+
+## PHASE 6 — CRITICAL ANALYSIS AND IMPROVEMENT REPORT
+
+This is the most important phase. After completing all tests above, each 
+specialist produces their critical assessment.
+
+### SPECIALIST A (RAG Engineer) must evaluate and score (1-10):
+
+For each item, give a score AND a specific finding from the tests:
+
+1. **Chunking strategy** — Are chunks the right size? Are logical units 
+   (a table, a thesis paragraph, a risk section) kept together or fragmented?
+
+2. **Embedding input quality** — Is the metadata prefix (Produto/Gestora/Tipo) 
+   adding signal or noise? Is the content being embedded the best representation 
+   of what the chunk is about?
+
+3. **Retrieval completeness** — What is the Recall@6 across all tests? 
+   Are facts being dropped due to threshold? Are some block types systematically 
+   under-retrieved?
+
+4. **Score composition** — Are the 6-factor weights optimal for this domain? 
+   Is gestora_match (0.10) appropriate or should ticker_match dominate more? 
+   Is recency_score (0.05) too low given that financial data ages quickly?
+
+5. **Context assembly** — Are the right chunks being sent to GPT-4o? Is there 
+   redundancy (same info in multiple chunks consuming context)? Is there 
+   important context being cut (6-chunk limit may be too low for complex queries)?
+
+6. **Reranking** — Does the system need a cross-encoder or LLM-based reranker 
+   step between retrieval and generation?
+
+7. **Query expansion** — Is multi-query expansion (up to 3 queries) generating 
+   genuinely different semantic angles, or near-duplicates?
+
+8. **Table retrieval** — Are tabela-type blocks being retrieved as effectively 
+   as text blocks? Tables often contain the most precise financial data.
+
+9. **Threshold calibration** — Is 0.8 similarity threshold too aggressive? 
+   What % of ground truth facts fell below it?
+
+10. **Missing capabilities** — What retrieval techniques exist in the literature 
+    that this system lacks? (e.g., HyDE, parent-child chunking, metadata filtering 
+    at query time, hybrid BM25+vector)
+
+### SPECIALIST B (Financial Domain Expert) must evaluate and score (1-10):
+
+1. **Yield/return data accuracy** — When asked about DY or expected return, 
+   does the agent give the correct figure from the material?
+
+2. **Investment thesis quality** — Does the agent capture the CORE thesis 
+   or just surface-level information?
+
+3. **Risk communication** — Are risks presented with appropriate specificity 
+   or generically?
+
+4. **Comparative analysis quality** — When comparing two products, does the 
+   agent give substantive differentiation or vague statements?
+
+5. **Committee language discipline** — Does the agent correctly use formal 
+   recommendation language ONLY for [COMITÊ] products?
+
+6. **Temporal awareness** — Does the agent flag when KB data may be stale and 
+   proactively complement with web?
+
+7. **Table data utilization** — When a specific number from a table is asked, 
+   does the agent retrieve and present it precisely?
+
+8. **Web data integration** — For live market data, is the information accurate, 
+   current, and well-sourced?
+
+9. **Practical advisor utility** — Would a financial advisor trust and use these 
+   responses in a client conversation?
+
+10. **Missing financial context** — What financial data or context that a good 
+    advisor needs is consistently absent from responses?
+
+### SPECIALIST C (QA Engineer) must produce:
+
+**Failure mode catalog** — List every failure found with:
+- Failure type (hallucination | retrieval miss | threshold drop | contamination | 
+  staleness | entity confusion | committee violation | table blindness | other)
+- Severity (Critical=data error that could mislead advisor | High=missing key info | 
+  Medium=suboptimal but not harmful | Low=cosmetic)
+- Reproduction steps (exact query that triggers it)
+- Root cause hypothesis
+
+**Regression risk assessment:**
+For each proposed improvement identified by Specialists A and B:
+- What is the risk of degrading something that currently works?
+- What test should be run to confirm the improvement didn't break anything?
+
+---
+
+## FINAL DELIVERABLE — IMPROVEMENT ROADMAP
+
+Produce a prioritized list of improvements in this exact format:
+
+### PRIORITY 1 — Critical (fix before next release)
+For each item:
+- **Problem:** [specific finding from tests]
+- **Evidence:** [specific test result, query, score that proves the problem]
+- **Root cause:** [which file/function/parameter is responsible]
+- **Proposed fix:** [specific technical change]
+- **Expected impact:** [what metric should improve and by how much]
+- **Regression risk:** [what to watch out for]
+
+### PRIORITY 2 — High Impact (significant quality gains)
+[same format]
+
+### PRIORITY 3 — Medium Impact (incremental improvements)
+[same format]
+
+### PRIORITY 4 — Research / Experimental (worth prototyping)
+[same format]
+
+---
+
+## IMPORTANT CONSTRAINTS FOR THIS AUDIT
+
+1. DO NOT modify any production files during this audit
+2. All test scripts go in a new directory: audit/
+3. All test results and logs go in: audit/results/
+4. The final report goes in: audit/RAG_AUDIT_REPORT.md
+5. If the database has no indexed materials yet, document that as a 
+   critical blocker and audit what CAN be tested (schema, pipeline logic, 
+   prompt quality) with mock data
+6. Be brutally honest — the purpose of this audit is to find every weakness, 
+   not to validate that the system is good
+7. Every score below 7/10 MUST have a specific test result as evidence
+8. Every proposed improvement MUST reference a specific finding, not a 
+   general best practice
+
+Begin with Phase 0. Report your System Map findings before proceeding to Phase 1.

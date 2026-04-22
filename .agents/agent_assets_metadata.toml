@@ -6,3 +6,21 @@ id = "2H9JHHdc5JTTdALpFGDSN"
 uri = "file://docs/base_conhecimento.md"
 type = "text"
 title = "Base de Conhecimento do Agente Stevan"
+
+[[outputs]]
+id = "-HesYqkG5TVTcvLLT6x88"
+uri = "file://audit/RAG_AUDIT_REPORT.md"
+type = "text"
+title = "Relatório de Auditoria RAG V3.2 + Pipeline V2"
+
+[[outputs]]
+id = "l8Ld3JzDqkAEkkgvZ_xfX"
+uri = "file://audit/results/phase_2.json"
+type = "unspecified"
+title = "Resultados Fase 2 — Retrieval"
+
+[[outputs]]
+id = "nhVJ4fAJk4bi1ztAKY-Kp"
+uri = "file://audit/results/phase_3_partial.json"
+type = "unspecified"
+title = "Resultados Fase 3 — Respostas do Agente (parcial)"
