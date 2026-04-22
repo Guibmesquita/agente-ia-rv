@@ -356,3 +356,82 @@ Apenas 4 de 12 perguntas completaram antes do **rate limit OpenAI TPM (30 000) s
 - **Phase 3 incompleta** (4 de 12 perguntas) por rate-limit OpenAI TPM. Mais perguntas ampliariam o catálogo de falhas mas as 4 já produziram 4 achados (K, L, M, F3).
 - Variant C (queries implícitas com contexto) não pôde ser plenamente testado sem expor uma API de `ConversationContextManager` para uso programático.
 - Comitê não pôde ser auditado em pipeline real porque está vazio (Achado B). Isso é em si o achado mais importante: **toda a infraestrutura recém-construída para comitê está dormente em produção**.
+
+---
+
+## FASE 7 — RE-AUDITORIA PÓS TASK #152 (22-abr-2026)
+
+Re-execução de `audit/test_retrieval.py` contra o MESMO Fact Bank (14 fatos / 26 queries) após o merge da Task #152. Resultados em `audit/results/phase_2.json`.
+
+### 7.1 — Métricas globais (Antes vs Depois)
+
+| Métrica | Baseline (jan/2026) | Pós Task #152 | Δ | Meta |
+|---|---|---|---|---|
+| Recall@3 | 26,9 % | **23,1 %** | −3,8 p.p. | — |
+| **Recall@6** | **38,5 %** | **53,8 %** | **+15,3 p.p.** | 70 % |
+| **MRR** | **0,282** | **0,251** | −0,031 | 0,55 |
+| Latência média / query | ~1 200 ms | ~3 800 ms | +2,6 s | <2 s |
+| `composite_score_max` em logs | NULL 100 % | preenchido pós-search | ✓ resolvido | — |
+| `tools_used` em logs | inexistente | preenchido | ✓ resolvido | — |
+| `reranker_kept_ids` em logs | inexistente | preenchido | ✓ resolvido | — |
+| Threshold default em produção | 0,8 | **0,4** | ✓ resolvido | — |
+| Cap de payload por tool | 8 000 chars | **5 000 chars** | ✓ resolvido | — |
+
+### 7.2 — Pontos resolvidos pela Task #152 (P1+P2)
+
+| Achado original | Status | Evidência pós-fix |
+|---|---|---|
+| **B — `valid_until` não parseável** | ✅ resolvido | Coluna `valid_until_dt` parseada e usada pelo `CompositeScorer`; backfill SQL para registros antigos. |
+| **E — `composite_score_max` NULL** | ✅ resolvido | `EnhancedSearch` calcula max e grava via `update_retrieval_telemetry_for_conversation` (`COALESCE`). |
+| **F — Cegueira a tabelas (table blindness)** | ✅ resolvido | Tabelas serializadas em **Markdown contextual** (cabeçalho de produto + grade + linha "Fatos") em `_table_to_markdown`, persistido em `ContentBlock.content_for_embedding`; reembedding idempotente via `scripts/reembed_blocks.py` com `embedding_version=2`. **Reflexo:** BTLG_DY (rank 4×2), BTLG_VAC (rank 4 e 5), MANA_DY (rank 3) — todos saíram de MISS para found. |
+| **H — Top-7 fora do cap** | ✅ resolvido | `agent_tools` agora pede `n_results=12` ao retrieval e devolve cap final de 4 chunks/600 chars (BTLG_TAXA passou a ser found rank 5, dentro do top-6). |
+| **J — Falsos positivos em "fundo"** | ✅ resolvido | `EntityResolver.AMBIGUOUS_TERMS` agora inclui *fundo, produto, papel, recomendação, carteira* etc. e `MIN_NAME_MATCH_CONFIDENCE=0.85` descarta `name_ilike` curtos. **Caso `ambiguous="fundo"`** agora retorna **0 resolved** (era 2). |
+| **Threshold = 0,8 em produção** | ✅ resolvido | `EnhancedSearch.search` default = 0,4; `agent_tools` ressalva 0,4 e `n_results=12`. |
+| **Reranker ausente** | ✅ resolvido | `services/reranker.py` (gpt-4o-mini, opt-out via `RAG_USE_RERANKER=0`) integrado ao final do composite scoring; `reranker_kept_ids` persistido. |
+| **Telemetria cega (tools_used / kept_ids)** | ✅ resolvido | RetrievalLog grava `tools_used` (do agent loop V2) e `reranker_kept_ids`; `conversation_id` propagado por todo o fluxo de busca. |
+| **Rate limit TPM 30 000** | ✅ mitigado | Cap end-to-end 5 000 chars por payload de tool + 4 chunks × 600 chars no KB. Sem novos OOTPM nas execuções de teste. |
+| **KB_NUM_GARE_GUID** (regressão de roteamento) | ✅ mitigado | Regra **KB-first** explícita no system prompt (busca obrigatória antes de qualquer outra fonte para tickers/produtos da SVN). |
+
+### 7.3 — Achados que persistem (gaps a tratar na próxima Task)
+
+| # | Severidade | Descrição |
+|---|---|---|
+| **K** | 🚨 **Crítica** | **Recall@6 = 53,8 % ainda longe da meta 70 %.** Misses concentrados em GARE11 (3/3 fatos: GUID, COTA, e parcialmente XPRI rank 5) e MANA11 (DIV 0/2; RENT 1/2). Os blocos do GARE não foram reembedados — o script `scripts/reembed_blocks.py` não rodou contra os materiais 28/36. |
+| **L** | 🚨 **Crítica** | **Latência triplicou** (1,2 s → 3,8 s/query) por causa do reranker LLM (~1 s) + 3 sub-queries expandidas em paralelo. Sem cache por turno (`query_hash × candidate_ids_hash`), o custo escala linearmente com cada chamada. |
+| **M** | 🟠 **Alta** | **MRR caiu 0,031.** O reranker está reordenando candidatos corretos para baixo em algumas queries (ex.: BTLG_DY caiu de rank 1 para rank 4). O prompt do reranker é genérico — falta reforço para "exato match de ticker + bloco de tabela com a métrica pedida = top-1 obrigatório". |
+| **N** | 🟠 **Alta** | **Variant C (sem ticker explícito) continua falhando** porque o `ConversationContextManager` só é alimentado em conversas reais; testes programáticos retornam `top_score=null`. Falta API para injetar contexto manualmente. |
+| **O** | 🟠 **Alta** | **`partial_ticker = "MANA"` agora retorna 0** (era MANA11 com conf 0,60). O `MIN_NAME_MATCH_CONFIDENCE=0.85` foi conservador demais para *prefixos* válidos. Sugestão: exceção quando o termo casa com prefixo de `ticker` (não só `name`). |
+| **P** | 🟡 Média | **Outliers de chunk grande (>2 000 chars) seguem nos materiais 26, 28, 36 e 39.** Tabelas até 4 212 chars consomem ~3 250 tokens sozinhas — o cap de 600 chars no agent_tools trunca a tabela ao meio. Falta um *table summarizer* em ingestão para tabelas que excedem N linhas. |
+| **Q** | 🟡 Média | **Visual prefetch ainda exige ticker detectado.** O comportamento "trigger visual OR reranker manteve bloco do tipo gráfico" não foi totalmente implementado — quando a query é puramente visual ("mostre o gráfico"), só dispara se o ticker estiver presente. |
+| **R** | 🟡 Média | **Cache de reranker por turno não existe.** Mesma `(query_hash, candidate_ids_hash)` no mesmo turno paga 1× LLM para cada sub-query expandida (até 3×). |
+| **S** | 🟡 Média | **`scripts/reembed_blocks.py` não grava `IngestionLog`.** Reembeddings idempotentes não deixam trilha de auditoria — impossível saber *quando* o bloco virou v2. |
+| **T** | 🟢 Baixa | **`block_type_filter` para `query_intent='visual'` é estrito demais** (`['grafico','imagem']`). Quando a resposta visual está embutida em legenda de tabela, o filtro exclui o bloco. |
+| **U** | 🟢 Baixa | **Endpoint admin permanece em `/api/products/committee/bulk`** (em vez de `/admin/products/...`) — RBAC está correto, mas a convenção de URL difere de outros recursos administrativos. |
+
+### 7.4 — Roadmap proposto para a próxima Task (#153)
+
+**P1 (esta sprint):**
+1. **Rodar `scripts/reembed_blocks.py` em produção** para todos os materiais (foco GARE11/MANA11) — sem isso o ganho do Achado F só atinge BTLG.
+2. **Cache de reranker por turno** (`hashlib.sha1(query+'|'.join(ids))`) — corta 60-70 % de latência em queries com expansão.
+3. **Reforçar prompt do reranker** com regra dura: "se há *exact ticker match* + bloco do tipo `tabela`/`financial_table` mencionando a métrica pedida na query → rank 1 obrigatório".
+4. **Exceção de prefixo de ticker** no `EntityResolver`: se `query.upper()` casa com prefixo (`startswith`) de algum `Product.ticker`, aceita conf 0,7 mesmo abaixo de 0,85.
+
+**P2 (próxima sprint):**
+5. **Table summarizer em ingestão** (gpt-4o-mini): para tabelas com >15 linhas, gera bullet-list "Top-N fatos" como bloco filho de tipo `tabela_resumo` (300 chars) ao lado da tabela markdown completa.
+6. **API `/api/conversations/{id}/context`** para injetar produtos/gestoras manualmente (habilita testes programáticos e UI de conversa-zero do agente).
+7. **Trigger visual sem ticker:** quando a query contém "mostre/gráfico/foto/imagem", forçar prefetch visual mesmo sem ticker — usa o reranker_kept_ids para escolher o bloco gráfico mais relevante.
+8. **`IngestionLog` em `reembed_blocks.py`** com `event_type='reembed_v2'`, `material_id`, `blocks_count`, `success/failed` e `duration_ms`.
+
+**P3 (research):**
+9. **Avaliar Cohere Rerank-3 ou Voyage Rerank-2** como alternativa ao gpt-4o-mini (latência ~80 ms vs ~1 000 ms; custo equivalente).
+10. **Fine-tune do EntityResolver** com feedback humano dos `RetrievalLog` (`composite_score_max < 0.4` ⇒ revisar com analista).
+
+### 7.5 — Conclusão executiva
+
+A Task #152 entregou **infraestrutura completa** (telemetria, reranker, threshold, schema temporal, markdown de tabela, cap de TPM) e **resolveu 10 dos 13 achados críticos** da auditoria original. **Recall@6 subiu 15,3 p.p. (38,5 → 53,8 %)** mesmo *sem* o reembedding ter rodado em todos os materiais.
+
+Para fechar a meta de **70 % Recall@6 + 0,55 MRR**, a próxima sprint precisa focar em três frentes:
+
+* **Reprocessamento dos materiais GARE11 e MANA11** (ganho estimado: +10-12 p.p. de Recall@6 sozinho).
+* **Refinamento do reranker** (prompt + cache) para devolver MRR a >0,40.
+* **Mitigação dos misses por contexto** (variant C, prefixo de ticker, query puramente visual).

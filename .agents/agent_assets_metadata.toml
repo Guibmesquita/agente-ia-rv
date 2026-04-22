@@ -11,13 +11,13 @@ title = "Base de Conhecimento do Agente Stevan"
 id = "-HesYqkG5TVTcvLLT6x88"
 uri = "file://audit/RAG_AUDIT_REPORT.md"
 type = "text"
-title = "Relatório de Auditoria RAG V3.2 + Pipeline V2"
+title = "Auditoria RAG — Pós Task #152 (Antes vs Depois)"
 
 [[outputs]]
 id = "l8Ld3JzDqkAEkkgvZ_xfX"
 uri = "file://audit/results/phase_2.json"
 type = "unspecified"
-title = "Resultados Fase 2 — Retrieval"
+title = "Resultados brutos da re-auditoria (Phase 2)"
 
 [[outputs]]
 id = "nhVJ4fAJk4bi1ztAKY-Kp"
