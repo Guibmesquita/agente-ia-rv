@@ -6751,7 +6751,8 @@ async def link_products_and_queue(
                         f"[STRUCTURE_GUARD] layer=link_and_queue "
                         f"filename={_material_filename_str!r} "
                         f"matched_product=None "
-                        f"decision=force_create_as_estruturada "
+                        f"decision=create_new "
+                        f"action=force_type_estruturada "
                         f"reason={cp_structure_reason!r} "
                         f"original_type={product_type_db!r}"
                     )
