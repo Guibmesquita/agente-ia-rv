@@ -6741,6 +6741,24 @@ async def link_products_and_queue(
                     ticker=cp.get("ticker"),
                     name=cp.get("name"),
                 )
+                # STRUCTURE GUARD — quando o material é estrutura (detectado por
+                # filename/material name/underlying), forçamos product_type='estruturada'
+                # mesmo se a IA classificou como ação. Sem isso, o produto novo
+                # criado para "POP de RAPT4" sairia como `acao` e voltaríamos ao
+                # bug de captura na próxima vez que alguém buscar por RAPT4.
+                if cp_is_structure_flag and product_type_db != "estruturada":
+                    print(
+                        f"[STRUCTURE_GUARD] layer=link_and_queue "
+                        f"filename={_material_filename_str!r} "
+                        f"action=force_create_as_estruturada "
+                        f"original_type={product_type_db!r} "
+                        f"reason={cp_structure_reason!r}"
+                    )
+                    product_type_db = "estruturada"
+                    if not category:
+                        category = "estruturada"
+                    if not product_type:
+                        product_type = "Estruturada"
 
                 cnpj = (cp.get("cnpj") or "").strip() or None
                 underlying_ticker = (cp.get("underlying_ticker") or "").strip().upper() or None
