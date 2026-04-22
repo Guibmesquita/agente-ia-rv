@@ -995,6 +995,7 @@ class VectorStore:
         conversation_id: Optional[str],
         tools_used: Optional[List[str]] = None,
         reranker_kept_ids: Optional[List[str]] = None,
+        composite_score_max: Optional[float] = None,
         within_seconds: int = 120,
     ) -> int:
         """
@@ -1006,7 +1007,7 @@ class VectorStore:
         """
         if not conversation_id:
             return 0
-        if not tools_used and not reranker_kept_ids:
+        if not tools_used and not reranker_kept_ids and composite_score_max is None:
             return 0
         import json
 
@@ -1024,6 +1025,11 @@ class VectorStore:
                 "OR reranker_kept_ids = '[]' THEN :kept ELSE reranker_kept_ids END"
             )
             params["kept"] = json.dumps(list(dict.fromkeys(reranker_kept_ids)))
+        if composite_score_max is not None:
+            sets.append(
+                "composite_score_max = COALESCE(composite_score_max, :csm)"
+            )
+            params["csm"] = float(composite_score_max)
 
         try:
             from database.database import SessionLocal

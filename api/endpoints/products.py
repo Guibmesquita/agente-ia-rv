@@ -1856,13 +1856,15 @@ async def bulk_set_committee(
     if not product_ids and not tickers_norm:
         raise HTTPException(status_code=400, detail="Informe 'product_ids' e/ou 'tickers'")
 
+    from sqlalchemy import func as _sql_func
     q = db.query(Product)
+    ticker_pred = _sql_func.upper(Product.ticker).in_(tickers_norm) if tickers_norm else None
     if product_ids and tickers_norm:
-        q = q.filter(or_(Product.id.in_(product_ids), Product.ticker.in_(tickers_norm)))
+        q = q.filter(or_(Product.id.in_(product_ids), ticker_pred))
     elif product_ids:
         q = q.filter(Product.id.in_(product_ids))
     else:
-        q = q.filter(Product.ticker.in_(tickers_norm))
+        q = q.filter(ticker_pred)
     products = q.all()
 
     found_ids = {p.id for p in products}

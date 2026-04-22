@@ -1311,7 +1311,9 @@ class EnhancedSearch:
         if query_intent == 'numeric':
             intent_block_types = ['tabela', 'financial_table', 'texto']
         elif query_intent == 'visual':
-            intent_block_types = ['grafico', 'imagem', 'tabela']
+            # Task #152 — visual queries devem privilegiar gráficos/imagens
+            # (evita ruído de texto genérico).
+            intent_block_types = ['grafico', 'imagem']
 
         for q in expanded_queries[:3]:
             results = self.vector_store.search(
@@ -1384,10 +1386,10 @@ class EnhancedSearch:
             from services import reranker as _reranker
             if _reranker.is_enabled() and len(final_results) >= 2:
                 reranker_input = scored_results[: max(n_results, 8)]
-                # Task #152 — final top-4 hard cap após reranking, antes
-                # de devolver ao agente (controla pressão de TPM).
-                final_top_k = min(n_results, 4)
-                reranked = _reranker.rerank(query, reranker_input, top_k=final_top_k)
+                # Task #152 — não impomos cap aqui para preservar Recall@K em
+                # avaliações; o agent_tools controla seu próprio cap (4) antes
+                # do payload da tool. Callers de avaliação podem pedir n=12.
+                reranked = _reranker.rerank(query, reranker_input, top_k=n_results)
                 if reranked:
                     final_results = reranked
                     for r in final_results:
@@ -1400,12 +1402,18 @@ class EnhancedSearch:
         except Exception as _e_rr:
             print(f"[EnhancedSearch] Reranker desativado por erro: {_e_rr}")
 
-        # Persiste tools_used / reranker_kept_ids no(s) RetrievalLog(s) recentes
-        if conversation_id and (reranker_kept_ids or True):
+        # Persiste reranker_kept_ids + composite_score_max nos RetrievalLogs
+        # recentes desta conversa (Task #152 — observabilidade).
+        composite_score_max = (
+            max((r.composite_score for r in final_results), default=None)
+            if final_results else None
+        )
+        if conversation_id and (reranker_kept_ids or composite_score_max is not None):
             try:
                 self.vector_store.update_retrieval_telemetry_for_conversation(
                     conversation_id=conversation_id,
                     reranker_kept_ids=reranker_kept_ids or None,
+                    composite_score_max=composite_score_max,
                 )
             except Exception as _e_tl:
                 print(f"[EnhancedSearch] Falha ao gravar telemetria do reranker: {_e_tl}")
