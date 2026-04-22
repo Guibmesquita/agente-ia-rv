@@ -955,6 +955,8 @@ class ContentBlock(Base):
     order = Column(Integer, default=0)
     current_version = Column(Integer, default=1)
     visual_description = Column(Text, nullable=True)
+    content_for_embedding = Column(Text, nullable=True)  # Texto otimizado p/ embedding (markdown de tabela, etc.)
+    embedding_version = Column(Integer, default=1)  # Versão do embedding (2 = re-embedado com markdown)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -1157,6 +1159,8 @@ class RetrievalLog(Base):
     web_search_used = Column(Boolean, default=False)          # se web search foi ativada
     blocks_with_scores = Column(Text, nullable=True)          # JSON: [{block_id, score, block_type}]
     is_comparative = Column(Boolean, default=False)           # se foi query comparativa multi-entidade
+    tools_used = Column(Text, nullable=True)                  # JSON array: ["search_knowledge_base", "search_web"]
+    reranker_kept_ids = Column(Text, nullable=True)           # JSON array: block_ids retidos pelo reranker LLM
     
     user = relationship("User", foreign_keys=[user_id])
 
@@ -1331,6 +1335,8 @@ class DocumentEmbedding(Base):
     keywords = Column(Text, nullable=True)
     strategy = Column(String(500), nullable=True)
     valid_until = Column(String(100), nullable=True)
+    valid_until_dt = Column(DateTime, nullable=True, index=True)  # Timestamp parseado de valid_until
+    embedding_version = Column(Integer, default=1, index=True)  # 2 = embedding gerado com content_for_embedding
     created_at_source = Column(String(100), nullable=True)
     block_id = Column(String(100), nullable=True, index=True)
     material_id = Column(String(100), nullable=True)

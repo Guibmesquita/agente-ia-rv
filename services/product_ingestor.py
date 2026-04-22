@@ -1146,8 +1146,19 @@ class ProductIngestor:
                 try:
                     table_data = json.loads(block.content)
                     financial_metrics_detected = table_data.pop("_financial_metrics_detected", [])
-                    text_repr = self._table_to_text(table_data)
-                    content_for_indexing = f"Tabela: {block.title}\n{text_repr}"
+                    # Markdown legível com cabeçalho contextual (Task #152)
+                    md_repr = self._table_to_markdown(
+                        table_data,
+                        title=block.title,
+                        product_name=product_name,
+                        product_ticker=product_ticker
+                    )
+                    content_for_indexing = md_repr
+                    # Persiste no bloco para reembedding idempotente
+                    try:
+                        block.content_for_embedding = md_repr
+                    except Exception:
+                        pass
                 except json.JSONDecodeError as e:
                     print(
                         f"[INGESTOR] Bloco TABLE {block.id} tem JSON inválido: {e}. "
@@ -1164,8 +1175,14 @@ class ProductIngestor:
             chunk_id = f"product_block_{block.id}"
             
             valid_until_str = ""
+            valid_until_dt_iso = ""
             if material.valid_until:
                 valid_until_str = material.valid_until.isoformat()
+                # Task #152 — propaga datetime parseado para o CompositeScorer (recência)
+                try:
+                    valid_until_dt_iso = material.valid_until.isoformat()
+                except Exception:
+                    valid_until_dt_iso = ""
             
             created_at_str = ""
             if material.created_at:
@@ -1191,6 +1208,7 @@ class ProductIngestor:
                 "products": product_ticker.upper() if product_ticker else product_name.upper(),
                 "publish_status": material.publish_status or "rascunho",
                 "valid_until": valid_until_str,
+                "valid_until_dt": valid_until_dt_iso or None,
                 "created_at": created_at_str,
                 "tags": tags_str,
                 "categories": categories_str
@@ -1316,6 +1334,65 @@ class ProductIngestor:
                 lines.append(", ".join(facts))
         
         return "\n".join(lines)
+
+    def _table_to_markdown(
+        self,
+        table_data: Dict,
+        title: Optional[str] = None,
+        product_name: Optional[str] = None,
+        product_ticker: Optional[str] = None,
+    ) -> str:
+        """
+        Serializa uma tabela como markdown legível com título contextual.
+        Formato:
+            Tabela: <título> — <Produto (TICKER)>
+            | col1 | col2 | col3 |
+            | --- | --- | --- |
+            | v1 | v2 | v3 |
+            ...
+            Fatos: col1=v1; col2=v2; col3=v3
+        Esta representação melhora drasticamente o recall do RAG sobre tabelas
+        comparada ao JSON cru ou ao texto pipe-único.
+        """
+        headers = table_data.get("headers", []) or []
+        rows = table_data.get("rows", []) or []
+
+        ctx_parts = []
+        if title:
+            ctx_parts.append(f"Tabela: {title}")
+        if product_ticker or product_name:
+            label = product_ticker or product_name
+            if product_ticker and product_name and product_ticker.upper() != product_name.upper():
+                label = f"{product_name} ({product_ticker})"
+            ctx_parts.append(f"Produto: {label}")
+        header_line = " — ".join(ctx_parts) if ctx_parts else "Tabela"
+
+        lines: List[str] = [header_line, ""]
+
+        if headers:
+            clean_headers = [str(h).strip() or f"col{i+1}" for i, h in enumerate(headers)]
+            lines.append("| " + " | ".join(clean_headers) + " |")
+            lines.append("| " + " | ".join(["---"] * len(clean_headers)) + " |")
+            for row in rows:
+                cells = [str(c).strip() if c is not None else "" for c in row]
+                while len(cells) < len(clean_headers):
+                    cells.append("")
+                lines.append("| " + " | ".join(cells[: len(clean_headers)]) + " |")
+
+            lines.append("")
+            lines.append("Fatos por linha:")
+            for row in rows:
+                facts = []
+                for i, cell in enumerate(row):
+                    if i < len(clean_headers) and cell not in (None, ""):
+                        facts.append(f"{clean_headers[i]}={cell}")
+                if facts:
+                    lines.append("- " + "; ".join(facts))
+        else:
+            for row in rows:
+                lines.append(" | ".join(str(c) for c in row if c not in (None, "")))
+
+        return "\n".join(lines).strip()
     
 
 

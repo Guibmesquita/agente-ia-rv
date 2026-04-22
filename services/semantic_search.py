@@ -135,7 +135,14 @@ class EntityResolver:
         'ifix', 'dolar', 'dólar', 'dollar', 's&p', 's&p500', 'sp500',
         'di', 'pre', 'pos', 'coe', 'lci', 'lca', 'cdb', 'cri', 'cra',
         'fii', 'fidc', 'fiagro', 'etf', 'bdr',
+        # Task #152 — termos genéricos que NÃO devem virar produto
+        'fundo', 'fundos', 'produto', 'produtos', 'ativo', 'ativos',
+        'papel', 'papeis', 'papéis', 'cota', 'cotas',
+        'recomendação', 'recomendacao', 'recomendações', 'recomendacoes',
+        'carteira', 'comitê', 'comite', 'oferta', 'ofertas',
     }
+
+    MIN_NAME_MATCH_CONFIDENCE = 0.85
 
     @classmethod
     def resolve(cls, query: str, db=None) -> List[Dict[str, Any]]:
@@ -232,6 +239,9 @@ class EntityResolver:
                 conf = 0.85
             else:
                 conf = 0.6
+            # Task #152 — corte de baixa confiança para evitar falsos positivos
+            if conf < cls.MIN_NAME_MATCH_CONFIDENCE:
+                continue
             results.append({
                 'product_id': p.id,
                 'name': p.name,
@@ -1029,32 +1039,47 @@ class CompositeScorer:
     
     @staticmethod
     def _calculate_recency_score(metadata: Dict) -> float:
-        """Score de recência baseado em created_at ou valid_until."""
+        """
+        Score de recência (Task #152):
+        - Se houver `valid_until_dt` (data parseada de validade), penaliza fortemente
+          documentos vencidos (score 0.05) e dá score alto para os ainda vigentes.
+        - Caso contrário, usa created_at / created_at_source / valid_until (string)
+          decaindo linearmente em 730 dias.
+        """
         from datetime import datetime, timezone
-        
+
+        now = datetime.now(timezone.utc)
+
+        def _parse(value) -> Optional[datetime]:
+            if not value:
+                return None
+            try:
+                if isinstance(value, datetime):
+                    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+                if isinstance(value, str):
+                    if 'T' in value:
+                        d = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    else:
+                        d = datetime.strptime(value[:10], "%Y-%m-%d")
+                        d = d.replace(tzinfo=timezone.utc)
+                    return d
+            except Exception:
+                return None
+            return None
+
+        valid_until_dt = _parse(metadata.get("valid_until_dt"))
+        if valid_until_dt is not None:
+            if valid_until_dt < now:
+                return 0.05
+            days_to_expiry = max(0, (valid_until_dt - now).days)
+            return max(0.6, min(1.0, 1.0 - (days_to_expiry / 730)))
+
         date_str = metadata.get("created_at") or metadata.get("created_at_source") or metadata.get("valid_until")
-        if not date_str:
+        doc_date = _parse(date_str)
+        if doc_date is None:
             return 0.5
-        
-        try:
-            if isinstance(date_str, str):
-                if 'T' in date_str:
-                    doc_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                else:
-                    doc_date = datetime.strptime(date_str[:10], "%Y-%m-%d")
-                    doc_date = doc_date.replace(tzinfo=timezone.utc)
-            elif isinstance(date_str, datetime):
-                doc_date = date_str if date_str.tzinfo else date_str.replace(tzinfo=timezone.utc)
-            else:
-                return 0.5
-            
-            now = datetime.now(timezone.utc)
-            days_old = (now - doc_date).days
-            
-            recency_score = max(0.2, 1.0 - (days_old / 730))
-            return recency_score
-        except Exception:
-            return 0.5
+        days_old = (now - doc_date).days
+        return max(0.2, 1.0 - (days_old / 730))
 
 
 # =============================================================================
@@ -1337,12 +1362,33 @@ class EnhancedSearch:
         
         # COMPOSITE SCORING com boost orientado por intenção
         scored_results = CompositeScorer.score_results(all_results, tokens, context, query_intent=query_intent)
-        
+
         # Para comparativas: garantir pelo menos 1 bloco por entidade no resultado final
         if is_comparative and len(tokens.possible_tickers) >= 2:
             final_results = self._ensure_entity_coverage(scored_results, tokens.possible_tickers, n_results)
         else:
             final_results = scored_results[:n_results]
+
+        # Task #152 — Reranker LLM opt-in (RAG_USE_RERANKER=1)
+        try:
+            from services import reranker as _reranker
+            if _reranker.is_enabled() and len(final_results) >= 2:
+                reranker_input = scored_results[: max(n_results, 8)]
+                reranked = _reranker.rerank(query, reranker_input, top_k=n_results)
+                if reranked:
+                    final_results = reranked
+                    if conversation_id:
+                        try:
+                            kept_ids = []
+                            for r in final_results:
+                                bid = r.metadata.get("block_id") if hasattr(r, "metadata") else None
+                                if bid is not None:
+                                    kept_ids.append(str(bid))
+                            self._kept_ids_cache = kept_ids
+                        except Exception:
+                            pass
+        except Exception as _e_rr:
+            print(f"[EnhancedSearch] Reranker desativado por erro: {_e_rr}")
         
         # Anotar metadata de intent em cada resultado para uso no agente
         for r in final_results:

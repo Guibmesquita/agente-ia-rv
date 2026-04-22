@@ -265,9 +265,9 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     enhanced = EnhancedSearch(vector_store)
     raw_results = enhanced.search(
         query=query,
-        n_results=8,
+        n_results=12,
         conversation_id=conversation_id,
-        similarity_threshold=0.8,
+        similarity_threshold=0.4,
         db=db
     )
 
@@ -285,7 +285,7 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             }
             for r in raw_results
         ]
-        filtered = filter_expired_results(raw_dicts, db)[:6]
+        filtered = filter_expired_results(raw_dicts, db)[:4]
         filtered_ids = {d.get("metadata", {}).get("block_id") for d in filtered}
         if filtered_ids:
             raw_results = [
@@ -295,7 +295,7 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         else:
             raw_results = []
     else:
-        raw_results = raw_results[:6]
+        raw_results = raw_results[:4]
 
     results = []
     materials_with_pdf = set()
@@ -323,7 +323,7 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
                     int_bid = int(str(block_id_raw).split("_")[-1]) if "_" in str(block_id_raw) else int(block_id_raw)
                     block = db.query(CB.content).filter(CB.id == int_bid).first()
                     if block:
-                        content = get_rich_content(block.content, r.content, max_chars=800)
+                        content = get_rich_content(block.content, r.content, max_chars=600)
             except Exception:
                 pass
 

@@ -271,6 +271,20 @@ Combine na resposta, diferenciando claramente o que vem de cada fonte."""
 def _get_tool_usage_rules() -> str:
     return """=== REGRAS DE USO DAS TOOLS ===
 
+REGRA KB-FIRST (INEGOCIÁVEL — Task #152):
+Para QUALQUER pergunta sobre produtos da SVN — incluindo COE, derivativos, FIIs internos,
+research, taxas, prazos, garantias, indexador, payoff, gestora, tese, vencimento, código de
+oferta (ex.: KB_NUM_GARE_GUID, RENT_TXJURO, CODE_*), ticker, nome de fundo ou termo
+estratégico — você DEVE chamar `search_knowledge_base` ANTES de qualquer outra tool, e
+ANTES de responder a partir do conhecimento geral do modelo.
+- Só recorra a `search_web` se a pergunta exigir explicitamente dado de mercado em tempo real
+  (cotação ao vivo, índices, câmbio, notícia do dia) OU se a busca na base retornar vazio.
+- Só recorra a `lookup_fii_public` para FIIs públicos NÃO cobertos pela base interna.
+- NUNCA responda "não tenho esse dado" sem antes chamar `search_knowledge_base` pelo menos
+  uma vez com termos extraídos da pergunta (códigos, tickers, nomes, sinônimos).
+- Se o usuário citar um código que parece interno (qualquer combinação alfanumérica com
+  underscores, hífens, ou padrão tipo XXXX00), assuma que é da base interna e busque.
+
 REGRA CRÍTICA — DADOS NUMÉRICOS (INEGOCIÁVEL):
 NUNCA cite valores numéricos específicos — como dividend yield, DY, P/VP, rentabilidade,
 vacância, taxa de administração, taxa de performance, preço da cota, distribuição por cota,

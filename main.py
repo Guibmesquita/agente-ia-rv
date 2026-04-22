@@ -175,6 +175,38 @@ def _apply_incremental_migrations():
         "ALTER TABLE retrieval_logs ADD COLUMN IF NOT EXISTS web_search_used BOOLEAN DEFAULT FALSE",
         "ALTER TABLE retrieval_logs ADD COLUMN IF NOT EXISTS blocks_with_scores TEXT",
         "ALTER TABLE retrieval_logs ADD COLUMN IF NOT EXISTS is_comparative BOOLEAN DEFAULT FALSE",
+        # Task #152 — RAG V3.3: telemetria, markdown-tables, reranker
+        "ALTER TABLE retrieval_logs ADD COLUMN IF NOT EXISTS tools_used TEXT",
+        "ALTER TABLE retrieval_logs ADD COLUMN IF NOT EXISTS reranker_kept_ids TEXT",
+        "ALTER TABLE content_blocks ADD COLUMN IF NOT EXISTS content_for_embedding TEXT",
+        "ALTER TABLE content_blocks ADD COLUMN IF NOT EXISTS embedding_version INTEGER DEFAULT 1",
+        "ALTER TABLE document_embeddings ADD COLUMN IF NOT EXISTS valid_until_dt TIMESTAMP",
+        "ALTER TABLE document_embeddings ADD COLUMN IF NOT EXISTS embedding_version INTEGER DEFAULT 1",
+        "CREATE INDEX IF NOT EXISTS ix_document_embeddings_valid_until_dt ON document_embeddings(valid_until_dt)",
+        "CREATE INDEX IF NOT EXISTS ix_document_embeddings_embedding_version ON document_embeddings(embedding_version)",
+        # Backfill valid_until_dt a partir das strings parseáveis (DD/MM/YYYY ou YYYY-MM-DD)
+        """UPDATE document_embeddings
+           SET valid_until_dt = CASE
+               WHEN valid_until ~ '^\\d{4}-\\d{2}-\\d{2}' THEN to_timestamp(substring(valid_until from 1 for 10), 'YYYY-MM-DD')
+               WHEN valid_until ~ '^\\d{2}/\\d{2}/\\d{4}' THEN to_timestamp(substring(valid_until from 1 for 10), 'DD/MM/YYYY')
+               ELSE NULL
+           END
+           WHERE valid_until_dt IS NULL AND valid_until IS NOT NULL AND valid_until != ''""",
+        # Backfill material_product_links a partir de document_embeddings.product_ticker × products.ticker
+        """INSERT INTO material_product_links (material_id, product_id, excluded_from_committee, created_at)
+           SELECT DISTINCT
+               de.material_id::INTEGER AS material_id,
+               p.id AS product_id,
+               FALSE AS excluded_from_committee,
+               NOW() AS created_at
+           FROM document_embeddings de
+           JOIN products p ON UPPER(p.ticker) = UPPER(de.product_ticker)
+           WHERE de.material_id IS NOT NULL
+             AND de.material_id ~ '^\\d+$'
+             AND de.product_ticker IS NOT NULL
+             AND de.product_ticker != ''
+             AND EXISTS (SELECT 1 FROM materials m WHERE m.id = de.material_id::INTEGER)
+           ON CONFLICT ON CONSTRAINT uq_material_product_link DO NOTHING""",
         """CREATE TABLE IF NOT EXISTS material_files (
             id SERIAL PRIMARY KEY,
             material_id INTEGER NOT NULL UNIQUE REFERENCES materials(id) ON DELETE CASCADE,
@@ -470,14 +502,25 @@ def _apply_incremental_migrations():
              AND (category IS NULL OR category = '' OR category = 'FII')""",
     ]
     db = SessionLocal()
+    ok = 0
+    failed = 0
     try:
         for sql in migrations:
-            db.execute(sql_text(sql))
-        db.commit()
-        print(f"[INIT] Migrações incrementais aplicadas: {len(migrations)} instruções")
-    except Exception as e:
-        db.rollback()
-        print(f"[INIT] Aviso: erro em migração incremental: {e}")
+            # Cada instrução em sua própria transação para que uma falha não anule
+            # todo o lote (Task #152). Erros são logados com o trecho da SQL.
+            try:
+                db.execute(sql_text(sql))
+                db.commit()
+                ok += 1
+            except Exception as stmt_err:
+                db.rollback()
+                failed += 1
+                snippet = " ".join(sql.split())[:140]
+                print(f"[INIT] Migração falhou (continuando): {stmt_err} | SQL: {snippet}")
+        print(
+            f"[INIT] Migrações incrementais aplicadas: {ok} OK, {failed} falharam "
+            f"de {len(migrations)} instruções"
+        )
     finally:
         db.close()
 

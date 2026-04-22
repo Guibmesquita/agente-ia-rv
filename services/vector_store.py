@@ -130,7 +130,9 @@ KNOWN_METADATA_FIELDS = [
     'product_name', 'product_ticker', 'gestora', 'category', 'source',
     'title', 'block_type', 'material_type', 'publish_status', 'topic',
     'concepts', 'keywords', 'strategy', 'valid_until', 'structure_slug',
-    'tab', 'has_diagram', 'diagram_image_path'
+    'tab', 'has_diagram', 'diagram_image_path',
+    # Task #152 — data parseada de validade, usada pelo CompositeScorer
+    'valid_until_dt',
 ]
 
 FIELD_MAP_TO_COLUMN = {
@@ -476,7 +478,8 @@ class VectorStore:
         return 'conceptual'
     
     def search(self, query: str, n_results: int = 3, product_filter: str = None, 
-               similarity_threshold: float = 1.5, query_type: str = None) -> List[dict]:
+               similarity_threshold: float = 1.5, query_type: str = None,
+               block_type_filter: Optional[List[str]] = None) -> List[dict]:
         """
         Busca documentos relevantes para a consulta usando ranking híbrido inteligente.
         
@@ -574,45 +577,53 @@ class VectorStore:
         else:
             order_clause = "embedding <=> :query_vec"
 
+        # Filtro de block_type opcional (Task #152 — vinculado a query_intent)
+        block_type_clause = ""
+        block_type_params: dict = {}
+        if block_type_filter:
+            placeholders = []
+            for i, bt in enumerate(block_type_filter):
+                key = f"bt_{i}"
+                placeholders.append(f":{key}")
+                block_type_params[key] = bt
+            block_type_clause = f" AND block_type IN ({', '.join(placeholders)})"
+            print(f"[VECTOR_STORE] Filtro block_type ativo: {block_type_filter}")
+
         db = SessionLocal()
         try:
+            base_params = {'query_vec': embedding_str, 'fetch_count': fetch_count}
+            base_params.update(block_type_params)
             if product_filter:
                 try:
+                    params = {**base_params, 'product_filter': product_filter.upper()}
                     rows = db.execute(sql_text(
                         f"SELECT *, (embedding <=> :query_vec) as distance "
                         f"FROM document_embeddings "
                         f"WHERE product_ticker = :product_filter "
                         f"{PUBLISH_STATUS_FILTER} "
+                        f"{block_type_clause} "
                         f"ORDER BY {order_clause} "
                         f"LIMIT :fetch_count"
-                    ), {
-                        'query_vec': embedding_str,
-                        'product_filter': product_filter.upper(),
-                        'fetch_count': fetch_count
-                    }).fetchall()
+                    ), params).fetchall()
                 except Exception as e:
                     print(f"[VECTOR_STORE] Erro com filtro, buscando sem filtro: {e}")
                     rows = db.execute(sql_text(
                         f"SELECT *, (embedding <=> :query_vec) as distance "
                         f"FROM document_embeddings "
                         f"WHERE 1=1 {PUBLISH_STATUS_FILTER} "
+                        f"{block_type_clause} "
                         f"ORDER BY {order_clause} "
                         f"LIMIT :fetch_count"
-                    ), {
-                        'query_vec': embedding_str,
-                        'fetch_count': fetch_count
-                    }).fetchall()
+                    ), base_params).fetchall()
             else:
                 rows = db.execute(sql_text(
                     f"SELECT *, (embedding <=> :query_vec) as distance "
                     f"FROM document_embeddings "
                     f"WHERE 1=1 {PUBLISH_STATUS_FILTER} "
+                    f"{block_type_clause} "
                     f"ORDER BY {order_clause} "
                     f"LIMIT :fetch_count"
-                ), {
-                    'query_vec': embedding_str,
-                    'fetch_count': fetch_count
-                }).fetchall()
+                ), base_params).fetchall()
             print(f"[VECTOR_STORE] SQL retornou {len(rows)} rows (fetch_count={fetch_count}, query_type={effective_query_type})")
         finally:
             db.close()
@@ -910,7 +921,9 @@ class VectorStore:
         composite_score_max: float = None,
         web_search_used: bool = False,
         blocks_with_scores: list = None,
-        is_comparative: bool = False
+        is_comparative: bool = False,
+        tools_used: Optional[list] = None,
+        reranker_kept_ids: Optional[list] = None
     ) -> None:
         """
         Loga a busca para observabilidade.
@@ -949,7 +962,9 @@ class VectorStore:
                     composite_score_max=composite_score_max,
                     web_search_used=web_search_used,
                     blocks_with_scores=json.dumps(blocks_with_scores or []),
-                    is_comparative=is_comparative
+                    is_comparative=is_comparative,
+                    tools_used=json.dumps(tools_used or []),
+                    reranker_kept_ids=json.dumps(reranker_kept_ids or [])
                 )
                 db.add(log_entry)
                 db.commit()
@@ -958,6 +973,45 @@ class VectorStore:
         except Exception as e:
             print(f"[RETRIEVAL] Warning: Failed to persist log: {e}")
     
+    def update_tools_used_for_conversation(
+        self,
+        conversation_id: Optional[str],
+        tools_used: List[str],
+        within_seconds: int = 120,
+    ) -> int:
+        """
+        Atualiza retrieval_logs recentes desta conversa com a lista de ferramentas
+        usadas pelo agente no turno (Task #152 — observabilidade de tools_used).
+        Retorna o número de linhas atualizadas.
+        """
+        if not conversation_id or not tools_used:
+            return 0
+        import json
+        try:
+            from database.database import SessionLocal
+            db = SessionLocal()
+            try:
+                res = db.execute(
+                    sql_text(
+                        "UPDATE retrieval_logs SET tools_used = :tools "
+                        "WHERE conversation_id = :cid "
+                        "AND created_at >= NOW() - (:secs || ' seconds')::interval "
+                        "AND (tools_used IS NULL OR tools_used = '' OR tools_used = '[]')"
+                    ),
+                    {
+                        "tools": json.dumps(list(dict.fromkeys(tools_used))),
+                        "cid": conversation_id,
+                        "secs": str(within_seconds),
+                    },
+                )
+                db.commit()
+                return res.rowcount or 0
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[RETRIEVAL] Warning: update_tools_used falhou: {e}")
+            return 0
+
     def _calculate_recency_score(self, created_at_str: str, now: 'datetime') -> float:
         """
         Calcula score de recência (0-1).

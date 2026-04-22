@@ -1820,6 +1820,66 @@ async def toggle_product_committee(
     }
 
 
+@router.post("/committee/bulk")
+async def bulk_set_committee(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Define em lote a flag is_committee para múltiplos produtos (Task #152).
+
+    Body:
+        {
+          "product_ids": [int, ...],
+          "is_committee": true | false
+        }
+
+    Retorna a lista de produtos efetivamente alterados, ignorando IDs
+    inexistentes ou que já estavam no estado desejado.
+    """
+    if current_user.role not in ["admin", "gestao_rv"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    raw_ids = payload.get("product_ids") or []
+    target = payload.get("is_committee")
+    if target is None or not isinstance(target, bool):
+        raise HTTPException(status_code=400, detail="Campo 'is_committee' (bool) obrigatório")
+    try:
+        product_ids = [int(x) for x in raw_ids if x is not None]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="'product_ids' deve ser lista de inteiros")
+    if not product_ids:
+        raise HTTPException(status_code=400, detail="'product_ids' não pode estar vazio")
+
+    products = db.query(Product).filter(Product.id.in_(product_ids)).all()
+    found_ids = {p.id for p in products}
+    not_found = [pid for pid in product_ids if pid not in found_ids]
+
+    updated, unchanged = [], []
+    for p in products:
+        if bool(getattr(p, "is_committee", False)) == target:
+            unchanged.append(p.id)
+            continue
+        p.is_committee = target
+        updated.append({"id": p.id, "name": p.name, "is_committee": target})
+    db.commit()
+
+    print(
+        f"[BULK COMMITTEE] {current_user.username} setou is_committee={target} em "
+        f"{len(updated)} produtos; {len(unchanged)} já estavam; {len(not_found)} não encontrados"
+    )
+
+    return {
+        "success": True,
+        "is_committee": target,
+        "updated": updated,
+        "unchanged_ids": unchanged,
+        "not_found_ids": not_found,
+        "total_requested": len(product_ids),
+    }
+
+
 # ==================== Materials Endpoints ====================
 
 @router.post("/{product_id}/materials")

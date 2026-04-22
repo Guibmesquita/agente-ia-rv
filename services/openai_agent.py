@@ -3278,6 +3278,17 @@ INSTRUÇÕES IMPORTANTES:
                     f"[V2] Resposta final — {iterations} iteração(ões), {elapsed_ms}ms total, {len(tool_calls_log)} tool calls"
                 )
 
+                # Task #152 — propaga tools_used para o RetrievalLog desta conversa
+                try:
+                    _vs_log = get_vector_store()
+                    if _vs_log:
+                        _vs_log.update_tools_used_for_conversation(
+                            conversation_id=conversation_id,
+                            tools_used=[tc["name"] for tc in tool_calls_log],
+                        )
+                except Exception as _e_tools:
+                    print(f"[V2] Aviso: falha ao gravar tools_used: {_e_tools}")
+
                 action_tool_calls = [
                     tc
                     for tc in tool_calls_log
@@ -3408,6 +3419,17 @@ INSTRUÇÕES IMPORTANTES:
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         print(f"[V2] MAX_ITERATIONS atingido ({MAX_ITERATIONS}) — {elapsed_ms}ms total")
+
+        # Task #152 — propaga tools_used (max iterations path)
+        try:
+            _vs_log = get_vector_store()
+            if _vs_log:
+                _vs_log.update_tools_used_for_conversation(
+                    conversation_id=conversation_id,
+                    tools_used=[tc["name"] for tc in tool_calls_log],
+                )
+        except Exception as _e_tools:
+            print(f"[V2] Aviso: falha ao gravar tools_used (max-iter): {_e_tools}")
 
         try:
             api_kwargs_final = {
