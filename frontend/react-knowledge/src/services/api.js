@@ -97,6 +97,11 @@ export const materialsAPI = {
       method: 'DELETE',
     }),
 
+  deleteById: (materialId) =>
+    fetchAPI(`/products/materials/${materialId}`, {
+      method: 'DELETE',
+    }),
+
   uploadPDF: (productId, materialId, file) => {
     const formData = new FormData();
     formData.append('file', file);

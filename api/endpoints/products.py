@@ -2097,39 +2097,38 @@ async def get_material(
     }
 
 
-@router.delete("/{product_id}/materials/{material_id}")
-async def delete_material(
-    product_id: int,
-    material_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Remove um material e todos seus blocos."""
-    if current_user.role not in ["admin", "gestao_rv", "broker"]:
-        raise HTTPException(status_code=403, detail="Acesso negado")
-    
+async def _delete_material_impl(db: Session, material_id: int, username: str) -> dict:
+    """Lógica de exclusão de material reutilizável pelos dois endpoints de delete."""
+    from database.models import (
+        PersistentQueueItem, DocumentProcessingJob, DocumentPageResult,
+        PendingReviewItem, BlockVersion, IngestionLog, MaterialProductLink,
+        MaterialFile,
+    )
     material = db.query(Material).options(
         joinedload(Material.blocks)
-    ).filter(
-        Material.id == material_id,
-        Material.product_id == product_id
-    ).first()
+    ).filter(Material.id == material_id).first()
 
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
-    print(f"[DELETE MATERIAL] Iniciando exclusão de '{material.name}' (id={material_id}, product_id={product_id}) por {current_user.username} — {len(material.blocks)} blocos")
+    print(
+        f"[DELETE MATERIAL] Iniciando exclusão de '{material.name}' "
+        f"(id={material_id}, product_id={material.product_id}) por {username} "
+        f"— {len(material.blocks)} blocos"
+    )
 
     vector_store = VectorStore()
     for block in material.blocks:
         vector_store.delete_document(f"product_block_{block.id}")
     print(f"[DELETE MATERIAL] {len(material.blocks)} embeddings removidos do vector store")
 
+    # Remove itens de fila
     n = db.query(PersistentQueueItem).filter(
         PersistentQueueItem.material_id == material_id
     ).delete()
     print(f"[DELETE MATERIAL] {n} queue_items removidos")
 
+    # Remove jobs de processamento e seus resultados por página
     job_ids = [
         j.id for j in db.query(DocumentProcessingJob.id).filter(
             DocumentProcessingJob.material_id == material_id
@@ -2146,7 +2145,7 @@ async def delete_material(
     ).delete()
     print(f"[DELETE MATERIAL] {n} processing_jobs removidos")
 
-    # FK sem CASCADE — limpeza manual obrigatória antes de db.delete(material).
+    # FK sem CASCADE — limpeza manual de blocos filhos
     block_ids = [b.id for b in material.blocks]
     if block_ids:
         n = db.query(PendingReviewItem).filter(
@@ -2158,15 +2157,62 @@ async def delete_material(
         ).delete(synchronize_session=False)
         print(f"[DELETE MATERIAL] {n} block_versions removidos")
 
+    # Logs de ingestão
     n = db.query(IngestionLog).filter(
         IngestionLog.material_id == material_id
     ).delete(synchronize_session=False)
     print(f"[DELETE MATERIAL] {n} ingestion_logs removidos")
 
+    # Vínculos multi-produto
+    n = db.query(MaterialProductLink).filter(
+        MaterialProductLink.material_id == material_id
+    ).delete(synchronize_session=False)
+    print(f"[DELETE MATERIAL] {n} material_product_links removidos")
+
+    # Arquivo binário salvo no banco
+    n = db.query(MaterialFile).filter(
+        MaterialFile.material_id == material_id
+    ).delete(synchronize_session=False)
+    print(f"[DELETE MATERIAL] {n} material_files (BYTEA) removidos")
+
+    name = material.name
     db.delete(material)
     db.commit()
-    print(f"[DELETE MATERIAL] Material '{material.name}' deletado do banco")
+    print(f"[DELETE MATERIAL] Material '{name}' deletado do banco")
     return {"success": True}
+
+
+@router.delete("/materials/{material_id}")
+async def delete_material_by_id(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove um material pelo seu ID sem exigir product_id.
+    Usado quando o material não tem produto vinculado (product_id = null).
+    """
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    return await _delete_material_impl(db, material_id, current_user.username)
+
+
+@router.delete("/{product_id}/materials/{material_id}")
+async def delete_material(
+    product_id: int,
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove um material e todos seus blocos (requer product_id por compatibilidade)."""
+    if current_user.role not in ["admin", "gestao_rv", "broker"]:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    mat = db.query(Material).filter(
+        Material.id == material_id,
+        Material.product_id == product_id,
+    ).first()
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    return await _delete_material_impl(db, material_id, current_user.username)
 
 
 class MaterialTypeUpdate(BaseModel):

@@ -101,7 +101,7 @@ function getMaterialStatus(material) {
   return null;
 }
 
-function MaterialSection({ material, productId, onRefresh, onUnlink }) {
+function MaterialSection({ material, productId, onRefresh, onUnlink, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [showVersions, setShowVersions] = useState(null);
   const [versions, setVersions] = useState([]);
@@ -418,9 +418,18 @@ function MaterialSection({ material, productId, onRefresh, onUnlink }) {
             <button
               onClick={(e) => { e.stopPropagation(); onUnlink(); }}
               className="p-1.5 rounded hover:bg-red-50 text-muted hover:text-red-500 transition-colors"
-              title="Desassociar este material do produto"
+              title="Desassociar este material do produto (não exclui)"
             >
               <Unlink className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="p-1.5 rounded hover:bg-red-100 text-muted hover:text-red-600 transition-colors"
+              title="Excluir este material permanentemente (remove blocos e embeddings)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -790,6 +799,21 @@ export function ProductDetail() {
                   material={material}
                   productId={id}
                   onRefresh={loadProduct}
+                  onDelete={async () => {
+                    if (!window.confirm(
+                      `Excluir permanentemente «${material.name}»?\n\n` +
+                      `Esta ação REMOVE o material, todos os seus blocos e embeddings do banco.\n` +
+                      `Diferente de "Desvincular", o documento não poderá ser recuperado.\n\n` +
+                      `Deseja continuar?`
+                    )) return;
+                    try {
+                      await materialsAPI.deleteById(material.id);
+                      addToast('Material excluído permanentemente', 'success');
+                      loadProduct();
+                    } catch (err) {
+                      addToast(`Erro ao excluir: ${err.message}`, 'error');
+                    }
+                  }}
                   onUnlink={async () => {
                     // Mensagem de confirmação adapta-se ao tipo de vínculo:
                     // - secundário: simples remoção da junção

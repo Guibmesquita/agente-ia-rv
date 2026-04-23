@@ -245,28 +245,29 @@ export function SmartUpload() {
     }
   };
 
-  const handleDiscardPending = async (materialId, productId) => {
+  const handleDiscardPending = async (materialId) => {
     const confirmed = await openConfirm({
       title: 'Descartar Upload',
-      message: 'Deseja descartar este upload? O arquivo e os blocos serão removidos.',
+      message: 'Deseja descartar este upload? O arquivo e os blocos serão removidos permanentemente.',
       confirmText: 'Descartar',
       type: 'danger',
     });
     if (!confirmed) return;
-    
+
     try {
-      const response = await fetch(`/api/products/${productId}/materials/${materialId}`, {
+      const response = await fetch(`/api/products/materials/${materialId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
       });
       if (response.ok) {
         addToast('Upload descartado', 'success');
         loadUnifiedPending();
       } else {
-        throw new Error('Falha ao descartar');
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || 'Falha ao descartar');
       }
     } catch (err) {
-      addToast('Erro ao descartar', 'error');
+      addToast(`Erro ao descartar: ${err.message}`, 'error');
     }
   };
 
@@ -1151,7 +1152,7 @@ export function SmartUpload() {
                           </Button>
                         )}
                         <button
-                          onClick={() => handleDiscardPending(m.id, m.product_id)}
+                          onClick={() => handleDiscardPending(m.id)}
                           className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
                           title={m.has_success_duplicate ? 'Descartar duplicata' : 'Descartar'}
                         >
