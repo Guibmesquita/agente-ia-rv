@@ -645,13 +645,6 @@ class ProductIngestor:
                     )
                 ).delete(synchronize_session=False)
                 db.query(DocumentProcessingJob).filter(DocumentProcessingJob.material_id == material_id).delete(synchronize_session=False)
-                # Limpa PersistentQueueItem antes de deletar o material para evitar
-                # psycopg2.errors.ForeignKeyViolation (FK upload_queue_items.material_id
-                # sem CASCADE). Registra antes de deletar para rastreabilidade.
-                from database.models import PersistentQueueItem as _PQI_inner
-                _pqi_deleted = db.query(_PQI_inner).filter(_PQI_inner.material_id == material_id).delete(synchronize_session=False)
-                if _pqi_deleted:
-                    print(f"[SMART_UPLOAD] {_pqi_deleted} PersistentQueueItem(s) removidos antes de deletar material placeholder {material_id}")
                 db.delete(original_material)
                 db.commit()
                 print(f"[SMART_UPLOAD] Material placeholder {material_id} removido - todos os blocos foram redistribuídos")
@@ -1004,13 +997,6 @@ class ProductIngestor:
                     )
                 ).delete(synchronize_session=False)
                 db.query(DPJ2).filter(DPJ2.material_id == material_id).delete(synchronize_session=False)
-                # Limpa PersistentQueueItem antes de deletar o material para evitar
-                # psycopg2.errors.ForeignKeyViolation (FK upload_queue_items.material_id
-                # sem CASCADE). Registra para rastreabilidade.
-                from database.models import PersistentQueueItem as _PQI2
-                _pqi2_deleted = db.query(_PQI2).filter(_PQI2.material_id == material_id).delete(synchronize_session=False)
-                if _pqi2_deleted:
-                    log(f"{_pqi2_deleted} PersistentQueueItem(s) removidos antes de deletar material placeholder", "info")
                 db.delete(original_material)
                 db.commit()
                 log("Material placeholder removido - blocos redistribuídos para produtos identificados")

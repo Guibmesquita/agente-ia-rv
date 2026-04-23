@@ -1248,7 +1248,7 @@ class PersistentQueueItem(Base):
     upload_id = Column(String(100), unique=True, nullable=False, index=True)
     file_path = Column(String(500), nullable=False)
     filename = Column(String(255), nullable=False)
-    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, index=True)
+    material_id = Column(Integer, ForeignKey("materials.id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String(255), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     material_type = Column(String(50), default="outro")
