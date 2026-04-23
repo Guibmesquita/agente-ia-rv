@@ -437,13 +437,34 @@ class UploadQueue:
         from services.structure_keywords import find_structure_keyword
         return find_structure_keyword(*texts)
 
+    @classmethod
+    def _detect_swap_in_name(cls, *texts) -> Optional[str]:
+        """Retorna a primeira keyword de troca/swap encontrada nos textos
+        (ex.: 'troca', 'rotação', 'pair trade', 'swap'), ou None se nenhuma casar.
+
+        Usado para evitar que material "Troca PETR4 por VALE3.pdf" caia nas
+        ações PETR4 ou VALE3 já cadastradas — ele é UMA recomendação tática
+        (operação de troca), não duas análises individuais.
+        """
+        from services.swap_keywords import find_swap_keyword
+        return find_swap_keyword(*texts)
+
     def _auto_create_product(self, db, fund_name, ticker, gestora, document_type=None,
                              filename_hint=None, material_name=None):
         from database.models import Product, ProductStatus
         from services.product_resolver import ProductResolver
         from services.product_type_inference import coerce_product_type
         import json
-        if not fund_name and not ticker:
+
+        # Detecta se o material é sobre uma TROCA/SWAP (recomendação tática
+        # de substituir A por B). Para swap, ticker é OPCIONAL — a operação
+        # não tem ticker próprio. Por isso a checagem `if not fund_name and
+        # not ticker: return None` precisa vir DEPOIS de `swap_kw`.
+        swap_kw = self._detect_swap_in_name(
+            fund_name, document_type, filename_hint, material_name,
+        )
+
+        if not fund_name and not ticker and not swap_kw:
             return None
 
         # Detecta se o material é sobre uma ESTRUTURA (POP/Collar/Fence...).
@@ -464,11 +485,25 @@ class UploadQueue:
             gestora=gestora,
         )
 
-        if result.matched_product_id and not structure_kw:
+        if result.matched_product_id and not structure_kw and not swap_kw:
             matched = db.query(Product).filter(Product.id == result.matched_product_id).first()
             if matched:
                 logger.info(f"[AutoCreate] ProductResolver encontrou match: {matched.name} (id={matched.id}, tipo={result.match_type})")
                 return matched
+
+        # Quando é SWAP/troca, evitamos cair na ação subjacente (mesmo padrão
+        # da guarda de estrutura): só reusa match se ele também for `swap`.
+        if result.matched_product_id and swap_kw:
+            matched = db.query(Product).filter(Product.id == result.matched_product_id).first()
+            if matched and (matched.product_type or "").lower() == "swap":
+                logger.info(f"[AutoCreate] Match em produto-swap existente: {matched.name} (id={matched.id})")
+                return matched
+            if matched:
+                logger.info(
+                    f"[AutoCreate] Material parece troca/swap ({swap_kw!r}) mas resolver "
+                    f"matched produto não-swap {matched.name} (type={matched.product_type!r}). "
+                    f"Criando produto-swap novo em vez de reusar."
+                )
 
         # Quando é estrutura, evitamos cair na ação nua: só reusa match se ele
         # também for `estruturada`. Caso contrário, criamos um produto novo do
@@ -485,24 +520,37 @@ class UploadQueue:
                     f"Criando produto estruturado novo em vez de reusar."
                 )
 
-        if ticker and not structure_kw:
+        if ticker and not structure_kw and not swap_kw:
             existing = db.query(Product).filter(Product.ticker == ticker).first()
             if existing:
                 logger.info(f"[AutoCreate] Produto já existe com ticker {ticker}: {existing.name} (id={existing.id})")
                 return existing
 
-        # Monta o nome do produto. Para estruturas, o nome humano é mais útil
-        # que o ticker do underlying ("POP sobre BEEF3" vs apenas "BEEF3").
-        if structure_kw and ticker:
+        # Monta o nome do produto.
+        # SWAP: nome humano é a operação inteira ("Troca: PETR4 → VALE3").
+        # Estrutura: "POP sobre BEEF3" é mais útil que apenas "BEEF3".
+        if swap_kw:
+            product_name = (
+                fund_name
+                or material_name
+                or filename_hint
+                or (f"{swap_kw.title()} envolvendo {ticker}" if ticker else "Troca de ativos")
+            )
+            # Para swap NÃO anexamos "(TICKER)" — a operação não tem ticker próprio
+            # e o nome já carrega a semântica (ex.: "Troca: PETR4 → VALE3").
+        elif structure_kw and ticker:
             product_name = fund_name or f"{structure_kw.upper()} sobre {ticker}"
         else:
             product_name = fund_name or ticker
             if ticker and ticker not in (product_name or ""):
                 product_name = f"{product_name} ({ticker})"
 
-        # Infere `product_type` canônico via helper compartilhado. Para estruturas,
-        # forçamos o tipo (a heurística por ticker confundiria BEEF3 com ação).
-        if structure_kw:
+        # Infere `product_type` canônico via helper compartilhado. Para estruturas
+        # e swaps, forçamos o tipo (a heurística por ticker confundiria os ativos
+        # subjacentes — BEEF3 viraria ação, PETR4/VALE3 também).
+        if swap_kw:
+            product_type = "swap"
+        elif structure_kw:
             product_type = "estruturada"
         else:
             product_type = coerce_product_type(
@@ -510,6 +558,15 @@ class UploadQueue:
                 name=product_name,
                 description=fund_name or document_type,
             )
+
+        # Para swap, NÃO persistimos o ticker do underlying no produto-swap —
+        # isso reintroduziria o bug de captura em buscas por ticker. O nome
+        # carrega a semântica ("Troca: PETR4 → VALE3"); os tickers individuais
+        # devem ser referenciados em key_info/aliases, não no campo ticker.
+        if swap_kw:
+            ticker_to_persist = None
+        else:
+            ticker_to_persist = ticker
 
         category = product_type if product_type and product_type != "outro" else "fii"
 
@@ -522,7 +579,7 @@ class UploadQueue:
         try:
             new_product = Product(
                 name=product_name,
-                ticker=ticker,
+                ticker=ticker_to_persist,
                 manager=gestora,
                 category=category,
                 product_type=product_type,
@@ -532,6 +589,11 @@ class UploadQueue:
                     f"Produto criado automaticamente a partir de upload de documento "
                     f"({document_type or 'N/A'}). Tipo inferido: {product_type}."
                     + (f" Estrutura detectada: {structure_kw.upper()}." if structure_kw else "")
+                    + (
+                        f" Operação de troca/swap detectada: {swap_kw.upper()}"
+                        + (f" (ativo subjacente referenciado: {ticker})." if ticker else ".")
+                        if swap_kw else ""
+                    )
                 ),
             )
             db.add(new_product)
@@ -539,14 +601,15 @@ class UploadQueue:
             db.refresh(new_product)
             logger.info(
                 f"[AutoCreate] Produto criado: {new_product.name} "
-                f"(ticker={ticker}, id={new_product.id}, type={product_type}, "
-                f"aliases={aliases})"
+                f"(ticker={ticker_to_persist}, id={new_product.id}, type={product_type}, "
+                f"aliases={aliases}, swap_kw={swap_kw!r}, structure_kw={structure_kw!r})"
             )
             return new_product
         except Exception as e:
             db.rollback()
-            if ticker:
-                existing = db.query(Product).filter(Product.ticker == ticker).first()
+            # Para swap, ticker não é persistido — não há fallback por ticker possível.
+            if ticker_to_persist:
+                existing = db.query(Product).filter(Product.ticker == ticker_to_persist).first()
                 if existing:
                     # Quando o material é estrutura, NÃO devolvemos a ação nua
                     # mesmo que ela exista por race condition — isso reintroduziria
@@ -556,8 +619,9 @@ class UploadQueue:
                     ):
                         logger.warning(
                             f"[AutoCreate] Erro na criação ({e}); fallback ignorado porque "
-                            f"o produto existente (ticker {ticker}) é {existing.product_type!r}, "
-                            f"mas o material é estrutura ({structure_kw!r})."
+                            f"o produto existente (ticker {ticker_to_persist}) é "
+                            f"{existing.product_type!r}, mas o material é estrutura "
+                            f"({structure_kw!r})."
                         )
                         return None
                     logger.info(f"[AutoCreate] Produto já existia (concurrent): {existing.name}")
@@ -614,13 +678,30 @@ class UploadQueue:
             primary_product is not None
             and (primary_product.product_type or "").lower() in ("estruturada", "estrutura", "estruturado")
         )
+        primary_is_swap = (
+            primary_product is not None
+            and (primary_product.product_type or "").lower() == "swap"
+        )
         material_looks_like_structure = bool(
             self._detect_structure_in_name(
                 getattr(metadata, "fund_name", None),
                 getattr(mat, "name", None),
             )
         )
-        skip_auto_create = primary_is_structure or material_looks_like_structure
+        # Quando o material é troca/swap, tickers extras detectados são os
+        # PRÓPRIOS ativos da troca (PETR4 e VALE3 em "Troca PETR4 por VALE3").
+        # Não devemos criar/linkar produtos-ação individuais para eles —
+        # isso fragmentaria a recomendação no RAG.
+        material_looks_like_swap = bool(
+            self._detect_swap_in_name(
+                getattr(metadata, "fund_name", None),
+                getattr(mat, "name", None),
+            )
+        )
+        skip_auto_create = (
+            primary_is_structure or material_looks_like_structure
+            or primary_is_swap or material_looks_like_swap
+        )
 
         created_count = 0
         for ticker in additional:
@@ -770,6 +851,47 @@ class UploadQueue:
                     _meta_fund_name,
                     _meta_doc_type,
                 )
+                preexisting_swap_kw = self._detect_swap_in_name(
+                    item.filename,
+                    mat.name,
+                    getattr(mat, "source_filename", None),
+                    _meta_fund_name,
+                    _meta_doc_type,
+                )
+                if preexisting_swap_kw:
+                    linked = db.query(Product).filter(Product.id == mat.product_id).first()
+                    linked_type = (linked.product_type or "").lower() if linked else ""
+                    if linked and linked_type != "swap":
+                        msg = (
+                            f"[SWAP_GUARD] layer=worker filename={item.filename!r} "
+                            f"matched_product={{id:{linked.id}, name:{linked.name!r}, "
+                            f"type:{linked.product_type!r}}} decision=rejected "
+                            f"reason='material parece troca/swap ({preexisting_swap_kw!r}) "
+                            f"mas vínculo é {linked.product_type or 'sem tipo'}'"
+                        )
+                        print(msg)
+                        logger.warning(msg)
+                        item.add_log(
+                            f"Vínculo descartado: material parece troca/swap "
+                            f"({preexisting_swap_kw!r}) mas estava ligado a "
+                            f"{linked.name} ({linked_type or 'sem tipo'}). "
+                            f"Criaremos um produto-swap novo.",
+                            "warning",
+                        )
+                        try:
+                            from database.models import MaterialProductLink as _MPL
+                            db.query(_MPL).filter(
+                                _MPL.material_id == mat.id,
+                                _MPL.product_id == linked.id,
+                            ).delete()
+                        except Exception as link_del_err:
+                            logger.warning(
+                                f"[UPLOAD_WORKER] Falha ao remover MaterialProductLink "
+                                f"antigo (swap guard): {link_del_err}"
+                            )
+                        mat.product_id = None
+                        db.commit()
+
                 if preexisting_struct_kw:
                     linked = db.query(Product).filter(Product.id == mat.product_id).first()
                     linked_type = (linked.product_type or "").lower() if linked else ""

@@ -1881,6 +1881,9 @@ export function SmartUpload() {
                           'Ação': 'bg-green-50 text-green-700 border-green-200',
                           'Acao': 'bg-green-50 text-green-700 border-green-200',
                           Estruturada: 'bg-orange-50 text-orange-700 border-orange-200',
+                          Swap: 'bg-rose-50 text-rose-700 border-rose-200',
+                          swap: 'bg-rose-50 text-rose-700 border-rose-200',
+                          Troca: 'bg-rose-50 text-rose-700 border-rose-200',
                           Fundo: 'bg-purple-50 text-purple-700 border-purple-200',
                           'Fundo Multimercado': 'bg-purple-50 text-purple-700 border-purple-200',
                           'Fundo de Renda Fixa': 'bg-purple-50 text-purple-700 border-purple-200',
@@ -1899,6 +1902,17 @@ export function SmartUpload() {
 
                         const hasType = !!(p.product_type && String(p.product_type).trim());
                         const willCreateNew = !p.exists_in_db;
+                        // SWAP: produto-troca (recomendação tática de substituir A por B).
+                        // Sinalizado pela pré-análise via `is_swap_candidate` ou pela
+                        // própria classificação `product_type='Swap'`. UI usa o ícone 🔄
+                        // e exibe os ativos envolvidos para deixar a operação explícita.
+                        const isSwap = !!(
+                          p.is_swap_candidate
+                          || String(p.product_type || '').toLowerCase() === 'swap'
+                        );
+                        const swapTickers = Array.isArray(p.underlying_tickers)
+                          ? p.underlying_tickers.filter(Boolean)
+                          : [];
 
                         const deep = p.deep_info || {};
                         const hasDeep = Object.values(deep).some(v => v && (typeof v !== 'object' || (Array.isArray(v) && v.length)));
@@ -1971,9 +1985,28 @@ export function SmartUpload() {
 
                             {/* Faixa de DESTINO: deixa explícito se vai criar produto novo
                                 ou vincular a um existente. Permite ao usuário corrigir
-                                um match equivocado (ex.: POP de MYPK3 batendo na ação MYPK3). */}
+                                um match equivocado (ex.: POP de MYPK3 batendo na ação MYPK3,
+                                ou Troca PETR4↔VALE3 batendo na ação PETR4). */}
                             {p.selected && (
                               willCreateNew ? (
+                                isSwap ? (
+                                  <div className="border-t border-border/50 px-3 py-2 bg-rose-50/70 flex items-center gap-2 text-xs flex-wrap">
+                                    <span className="text-base leading-none flex-shrink-0" aria-hidden>🔄</span>
+                                    <span className="text-rose-800">
+                                      Vai <strong>criar produto-swap novo</strong>
+                                      {swapTickers.length >= 2 && (
+                                        <> agrupando <strong>{swapTickers.join(' ↔ ')}</strong></>
+                                      )}
+                                      . O material <strong>NÃO</strong> será vinculado às fichas individuais
+                                      desses ativos — fica apenas na ficha do produto-swap.
+                                    </span>
+                                    {p.rejected_match_reason && (
+                                      <span className="text-rose-700/80 italic ml-1" title={p.rejected_match_reason}>
+                                        (match com ativo individual descartado)
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
                                 <div className="border-t border-border/50 px-3 py-2 bg-emerald-50/60 flex items-center gap-2 text-xs">
                                   <PlusCircle className="w-3.5 h-3.5 text-emerald-700 flex-shrink-0" />
                                   <span className="text-emerald-800">
@@ -1987,6 +2020,7 @@ export function SmartUpload() {
                                     </span>
                                   )}
                                 </div>
+                                )
                               ) : (
                                 <div className="border-t border-border/50 px-3 py-2 bg-blue-50/70 flex items-center gap-2 text-xs flex-wrap">
                                   <Link2 className="w-3.5 h-3.5 text-blue-700 flex-shrink-0" />

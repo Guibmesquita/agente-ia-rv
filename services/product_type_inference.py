@@ -18,6 +18,7 @@ from typing import Optional
 VALID_PRODUCT_TYPES: set[str] = {
     "acao",
     "estruturada",
+    "swap",
     "fundo",
     "fii",
     "etf",
@@ -53,7 +54,23 @@ PRODUCT_TYPE_ALIASES: dict[str, str] = {
     "pop": "estruturada",
     "collar": "estruturada",
     "coe": "estruturada",
-    "swap": "estruturada",
+    # Troca / swap / pair trade — categoria própria a partir da Task #170.
+    # Antes era mapeada para 'estruturada', mas semanticamente é uma
+    # recomendação tática (substituir A por B), não um derivativo.
+    "swap": "swap",
+    "troca": "swap",
+    "trocar": "swap",
+    "rotação": "swap",
+    "rotacao": "swap",
+    "substituição": "swap",
+    "substituicao": "swap",
+    "substituir": "swap",
+    "pair trade": "swap",
+    "pairs trade": "swap",
+    "pairs trading": "swap",
+    "long short": "swap",
+    "long-short": "swap",
+    "rebalanceamento": "swap",
     "outro": "outro",
     "outros": "outro",
 }
@@ -110,7 +127,15 @@ def infer_product_type(
         return "fii"
     if re.search(r"\b(deb[êe]nture|cra|cri)\b", blob):
         return "debenture"
-    if re.search(r"\b(pop|collar|coe|estruturad\w*|derivativo|swap)\b", blob):
+    # Swap / troca / pair trade — checar ANTES de estruturada porque o termo
+    # "swap" historicamente caía em estruturada e perdia a semântica de troca.
+    if re.search(
+        r"\b(swap|troca|trocar|rota[çc][ãa]o|substitui[çc][ãa]o|substituir|"
+        r"pair[- ]?trad\w*|long[- ]?short|rebalanceamento)\b",
+        blob,
+    ):
+        return "swap"
+    if re.search(r"\b(pop|collar|coe|estruturad\w*|derivativo)\b", blob):
         return "estruturada"
     if re.search(r"\b(fundo|multimercado)\b", blob):
         return "fundo"

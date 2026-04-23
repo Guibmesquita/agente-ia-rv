@@ -5346,7 +5346,8 @@ async def _identify_products_with_ai(text: str, filename: str) -> list:
             "- BDRs: 4 letras + 34 ou 35 (ex: AAPL34, MSFT34)\n\n"
             "TIPOS DE INSTRUMENTO VÁLIDOS (use exatamente um destes em product_type):\n"
             "FII, FIA, FIC-FIA, FIDC, CRI, CRA, Debênture, ETF, BDR, Ação, "
-            "Fundo Multimercado, Fundo de Renda Fixa, POP, Collar, COE, LCI, LCA, Estruturada\n\n"
+            "Fundo Multimercado, Fundo de Renda Fixa, POP, Collar, COE, LCI, LCA, "
+            "Estruturada, Swap\n\n"
             "REGRA FUNDAMENTAL — PRODUTOS ESTRUTURADOS (CRÍTICO):\n"
             "Quando o documento descreve uma OPERAÇÃO ESTRUTURADA (POP, Collar, COE, Fence, "
             "Reverse Convertible, Knock-out, etc.) sobre um ativo-base, o PRODUTO em si é a "
@@ -5378,11 +5379,29 @@ async def _identify_products_with_ai(text: str, filename: str) -> list:
             "   Trava/Borboleta/Reverse Convertible/Knock-out, considere DEFINITIVO que o documento\n"
             "   descreve uma ESTRUTURA sobre o ativo cujo ticker aparece no filename — mesmo quando\n"
             "   o texto extraído fala apenas da empresa subjacente. NUNCA emita só a ação.\n\n"
+            "REGRA FUNDAMENTAL — TROCA / SWAP / PAIR TRADE (CRÍTICO):\n"
+            "Quando o documento recomenda TROCAR / SUBSTITUIR um ativo por outro (ex.: 'Trocar PETR4 por\n"
+            "VALE3', 'Rotação de carteira: sair de A, entrar em B', 'Pair trade long VALE3 / short PETR4',\n"
+            "'Substituição de ITUB4 por BBDC4'), o PRODUTO em si é a OPERAÇÃO DE TROCA, NÃO os ativos\n"
+            "individuais. Sinais inequívocos no filename ou texto: 'troca', 'trocar', 'rotação',\n"
+            "'rotacao', 'substituição', 'substituir', 'pair trade', 'pairs trading', 'long short',\n"
+            "'long-short', 'rebalanceamento', 'swap'.\n"
+            "Quando QUALQUER um desses sinais estiver presente:\n"
+            "  - product_type DEVE ser 'Swap' (NUNCA 'Ação' nem o tipo individual de A ou B)\n"
+            "  - Emita UMA ÚNICA entrada com name = 'Troca: <A> → <B>' (ou 'Rotação: <A> → <B>')\n"
+            "  - ticker = null (a operação não tem ticker próprio)\n"
+            "  - underlying_tickers = ['<A>', '<B>', ...] (lista com TODOS os ativos envolvidos)\n"
+            "  - NUNCA emita uma entrada separada para A e outra para B — eles fazem parte da\n"
+            "    mesma operação tática; vincular separadamente fragmenta a recomendação no RAG\n"
+            "  - Se houver MAIS de uma troca no mesmo documento, emita uma entrada por troca\n\n"
             "Responda APENAS com JSON válido, sem texto adicional.\n"
             'Formato: {"products": [{"ticker": "MXRF11", "name": "Maxi Renda FII", '
             '"product_type": "FII", "gestora": "XP Asset", "cnpj": null, "underlying_ticker": null}, '
             '{"ticker": "POP_BEEF3_DEZ28", "name": "POP sobre BEEF3", "product_type": "POP", '
-            '"gestora": null, "cnpj": null, "underlying_ticker": "BEEF3"}, ...]}'
+            '"gestora": null, "cnpj": null, "underlying_ticker": "BEEF3"}, '
+            '{"ticker": null, "name": "Troca: PETR4 → VALE3", "product_type": "Swap", '
+            '"gestora": null, "cnpj": null, "underlying_ticker": null, '
+            '"underlying_tickers": ["PETR4", "VALE3"]}, ...]}'
         )
         user_msg = f"Documento: {filename}\n\nTexto do documento:\n{text}"
         resp = client.chat.completions.create(
@@ -5441,6 +5460,18 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
     # Procuramos por palavra-inteira no `product_type` e no `name` que a IA devolveu.
     # Fonte única da verdade compartilhada com o worker (services/upload_queue.py).
     from services.structure_keywords import STRUCTURE_KEYWORDS as _STRUCTURE_KEYWORDS_AI
+    # Lista canônica de palavras-chave de TROCA/SWAP (recomendação tática de
+    # substituir A por B). Compartilhada com worker e link_products_and_queue.
+    from services.swap_keywords import (
+        SWAP_KEYWORDS as _SWAP_KEYWORDS_AI,
+        find_swap_keyword as _find_swap_keyword,
+    )
+
+    # Detecção de SWAP via filename (sinal de primeira classe). Quando o
+    # filename diz "Troca PETR4 por VALE3.pdf" e a IA mesmo assim devolveu
+    # 2 produtos separados (PETR4, VALE3), faremos um MERGE pós-processamento
+    # para criar UM ÚNICO produto-swap em vez de 2 vínculos fragmentados.
+    filename_swap_kw = _find_swap_keyword(filename_lower)
 
     def _candidate_is_structure(product_type_raw: str | None, name_raw: str | None,
                                 underlying_ticker_raw: str | None) -> tuple[bool, str | None]:
@@ -5458,6 +5489,24 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
                 return True, f"filename '{filename_basename}' contém '{kw}'"
         return False, None
 
+    def _candidate_is_swap(product_type_raw: str | None, name_raw: str | None,
+                           ai_underlying_tickers_raw) -> tuple[bool, str | None]:
+        """Retorna (é_swap, motivo). Inclui filename como sinal de primeira classe.
+
+        Critérios:
+          - IA emitiu `underlying_tickers` (lista) — sinal explícito de troca; OU
+          - product_type/name contém keyword swap; OU
+          - filename contém keyword swap (rede de segurança quando IA não captou).
+        """
+        if isinstance(ai_underlying_tickers_raw, list) and len(ai_underlying_tickers_raw) >= 2:
+            return True, f"underlying_tickers={ai_underlying_tickers_raw}"
+        kw = _find_swap_keyword(product_type_raw, name_raw)
+        if kw:
+            return True, f"AI sinalizou '{kw}' em product_type/name"
+        if filename_swap_kw:
+            return True, f"filename '{filename_basename}' contém '{filename_swap_kw}'"
+        return False, None
+
     def _is_structure_match(prod) -> bool:
         if not prod:
             return False
@@ -5467,6 +5516,16 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
             name=getattr(prod, "name", None),
         )
         return (coerced or "").lower() == "estruturada"
+
+    def _is_swap_match(prod) -> bool:
+        if not prod:
+            return False
+        coerced = coerce_product_type(
+            raw=getattr(prod, "product_type", None),
+            ticker=getattr(prod, "ticker", None),
+            name=getattr(prod, "name", None),
+        )
+        return (coerced or "").lower() == "swap"
 
     result = []
     seen_pairs = set()
@@ -5478,6 +5537,15 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
         gestora = (ap.get("gestora") or "").strip() or None
         cnpj = (ap.get("cnpj") or "").strip() or None
         underlying_ticker = (ap.get("underlying_ticker") or "").strip().upper() or None
+        # underlying_tickers (lista) é exclusivo de SWAP — IA emite quando reconhece troca.
+        ai_underlying_tickers_raw = ap.get("underlying_tickers") or []
+        underlying_tickers: list[str] = []
+        if isinstance(ai_underlying_tickers_raw, list):
+            underlying_tickers = [
+                (t or "").strip().upper()
+                for t in ai_underlying_tickers_raw
+                if (t or "").strip()
+            ]
 
         if not ticker and not name:
             continue
@@ -5490,6 +5558,10 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
         # Candidato é estrutura? (procura palavra-inteira no product_type, name E filename).
         candidate_is_structure, structure_reason = _candidate_is_structure(
             product_type, name, underlying_ticker
+        )
+        # Candidato é SWAP? (troca/rotação/pair trade). Filename é sinal forte.
+        candidate_is_swap, swap_reason = _candidate_is_swap(
+            product_type, name, underlying_tickers
         )
 
         matched_product = None
@@ -5579,6 +5651,25 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
                 f"reason='match também é estruturada'"
             )
 
+        # GUARDA SWAP: candidato é troca/rotação, mas o match achado NÃO é swap.
+        # Mesmo padrão da guarda de estrutura. Crítico para evitar que
+        # "Troca PETR4 por VALE3.pdf" caia na ação PETR4 já cadastrada.
+        if matched_product and candidate_is_swap and not _is_swap_match(matched_product):
+            rejected_match_reason = (
+                f"Candidato é troca/swap ({swap_reason or product_type or 'troca'})"
+                f" mas o produto existente {matched_product.name}"
+                f" ({matched_product.ticker or '?'}) é"
+                f" {matched_product.product_type or 'sem tipo'}."
+            )
+            print(
+                f"[SWAP_GUARD] layer=pre_analyze filename={filename_basename!r} "
+                f"matched_product={{id:{matched_product.id}, name:{matched_product.name!r}, "
+                f"type:{matched_product.product_type!r}}} decision=rejected "
+                f"reason={rejected_match_reason!r}"
+            )
+            matched_product = None
+            match_confidence = None
+
         # Tipo a apresentar ao usuário: prefere o tipo REAL do produto matched
         # (fonte da verdade); se não houver match, mostra o que a IA inferiu.
         if matched_product and matched_product.product_type:
@@ -5594,6 +5685,7 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
             "gestora": gestora,
             "cnpj": cnpj,
             "underlying_ticker": underlying_ticker,
+            "underlying_tickers": underlying_tickers or None,
             "product_id": matched_product.id if matched_product else None,
             "exists_in_db": matched_product is not None,
             "match_confidence": match_confidence,
@@ -5601,9 +5693,72 @@ def _match_products_to_db(db: Session, ai_products: list, filename: str | None =
             "existing_product_ticker": matched_product.ticker if matched_product else None,
             "existing_product_type": matched_product.product_type if matched_product else None,
             "is_structure_candidate": candidate_is_structure,
+            "is_swap_candidate": candidate_is_swap,
             "rejected_match_reason": rejected_match_reason,
             "selected": True,
         })
+
+    # ─────────────────────────────────────────────────────────────────────
+    # MERGE PÓS-PROCESSAMENTO (rede de segurança SWAP).
+    # Se o filename indica troca/swap E a IA mesmo assim devolveu múltiplas
+    # entradas individuais (em vez de UMA entrada-swap com underlying_tickers),
+    # consolidamos todas em UM produto-swap único. Isso evita o cenário em
+    # que "Troca PETR4 por VALE3.pdf" cria 2 vínculos (PETR4, VALE3) e
+    # fragmenta a recomendação no RAG — o material é UMA operação tática,
+    # não duas análises independentes.
+    # ─────────────────────────────────────────────────────────────────────
+    # Já existe uma entrada-swap "real" (não apenas flag herdado do filename)?
+    # Critério: product_type explicitamente 'swap' OU underlying_tickers já preenchido
+    # (sinal de que a IA — ou um merge anterior — já criou a entrada consolidada).
+    # NÃO usamos `is_swap_candidate` aqui porque ele fica True para CADA entrada
+    # quando o filename tem "troca", o que bloquearia o merge desnecessariamente.
+    has_existing_swap_entry = any(
+        (
+            (r.get("product_type") or "").strip().lower() == "swap"
+            or (isinstance(r.get("underlying_tickers"), list)
+                and len(r.get("underlying_tickers") or []) >= 2)
+        )
+        for r in result
+    )
+    if filename_swap_kw and len(result) >= 2 and not has_existing_swap_entry:
+        merged_tickers: list[str] = []
+        for r in result:
+            t = (r.get("ticker") or "").strip().upper()
+            if t and t not in merged_tickers:
+                merged_tickers.append(t)
+        if len(merged_tickers) >= 2:
+            arrow = " → ".join(merged_tickers)
+            merged_entry = {
+                "ticker": None,
+                "name": f"Troca: {arrow}",
+                "product_type": "Swap",
+                "ai_product_type": None,
+                "gestora": None,
+                "cnpj": None,
+                "underlying_ticker": None,
+                "underlying_tickers": merged_tickers,
+                "product_id": None,
+                "exists_in_db": False,
+                "match_confidence": None,
+                "existing_product_name": None,
+                "existing_product_ticker": None,
+                "existing_product_type": None,
+                "is_structure_candidate": False,
+                "is_swap_candidate": True,
+                "rejected_match_reason": (
+                    f"Filename indica troca ('{filename_swap_kw}') — "
+                    f"{len(merged_tickers)} ativos individuais consolidados em UM produto-swap "
+                    f"para preservar a semântica da operação."
+                ),
+                "selected": True,
+            }
+            print(
+                f"[SWAP_GUARD] layer=pre_analyze filename={filename_basename!r} "
+                f"action=merge merged_count={len(result)} "
+                f"merged_tickers={merged_tickers} decision=created_swap_entry"
+            )
+            result = [merged_entry]
+
     return result
 
 
@@ -6583,6 +6738,10 @@ async def link_products_and_queue(
     # Fonte única da verdade compartilhada com o worker (services/upload_queue.py)
     # e com _candidate_is_structure (mesmo arquivo, função pre-analyze).
     from services.structure_keywords import STRUCTURE_KEYWORDS as _STRUCTURE_KEYWORDS_CONFIRM
+    from services.swap_keywords import (
+        SWAP_KEYWORDS as _SWAP_KEYWORDS_CONFIRM,
+        find_swap_keyword as _find_swap_keyword_cp,
+    )
 
     # Sinais derivados do MATERIAL (filename + nome) — se o usuário enviou
     # "POP RAPT4.pdf" e a IA não captou "POP" no texto, ainda queremos
@@ -6617,6 +6776,30 @@ async def link_products_and_queue(
                 return True, f"filename/material '{_material_filename_str or _material_name_str}' contém '{kw}'"
         return False, None
 
+    def _cp_is_swap(cp_dict) -> tuple[bool, str | None]:
+        """Retorna (é_swap, motivo). Inclui filename/material.name + underlying_tickers."""
+        ut = cp_dict.get("underlying_tickers")
+        if isinstance(ut, list) and len(ut) >= 2:
+            return True, f"underlying_tickers={ut}"
+        # Flag explícita propagada pela pré-análise (caso o frontend a tenha mantido)
+        if cp_dict.get("is_swap_candidate"):
+            return True, "pre_analyze flagged is_swap_candidate"
+        kw = _find_swap_keyword_cp(
+            cp_dict.get("product_type"),
+            cp_dict.get("ai_product_type"),
+            cp_dict.get("name"),
+        )
+        if kw:
+            return True, f"AI sinalizou '{kw}'"
+        if _material_signal_lower:
+            mkw = _find_swap_keyword_cp(_material_signal_lower)
+            if mkw:
+                return (
+                    True,
+                    f"filename/material '{_material_filename_str or _material_name_str}' contém '{mkw}'",
+                )
+        return False, None
+
     created_products = []
     for cp in confirmed_products:
         # `force_new` = usuário clicou em "Criar novo em vez de vincular" no SmartUpload.
@@ -6630,6 +6813,9 @@ async def link_products_and_queue(
         # estrutura (filename "POP RAPT4.pdf" + ação RAPT4 cadastrada),
         # descartamos o pid e caímos na criação do produto-estrutura novo.
         cp_is_structure_flag, cp_structure_reason = _cp_is_structure(cp)
+        # Idem para SWAP/troca: se pid aponta para ação mas material é troca,
+        # descartamos para forçar criação de produto-swap novo.
+        cp_is_swap_flag, cp_swap_reason = _cp_is_swap(cp)
         if pid and cp_is_structure_flag:
             existing_for_pid = db.query(Product).filter(Product.id == pid).first()
             existing_type = (
@@ -6649,20 +6835,48 @@ async def link_products_and_queue(
                 cp["force_new"] = True
                 force_new = True
 
+        if pid and cp_is_swap_flag:
+            existing_for_pid = db.query(Product).filter(Product.id == pid).first()
+            existing_type = (
+                (existing_for_pid.product_type or "").lower() if existing_for_pid else ""
+            )
+            if existing_for_pid and existing_type != "swap":
+                print(
+                    f"[SWAP_GUARD] layer=link_and_queue "
+                    f"filename={_material_filename_str!r} "
+                    f"matched_product={{id:{existing_for_pid.id}, "
+                    f"name:{existing_for_pid.name!r}, type:{existing_for_pid.product_type!r}}} "
+                    f"decision=rejected reason={cp_swap_reason!r}"
+                )
+                pid = None
+                cp["force_new"] = True
+                force_new = True
+
         if not pid:
             ticker = (cp.get("ticker") or "").strip().upper() or None
             name = (cp.get("name") or "").strip() or None
-            if not ticker and not name:
+            # Para SWAP, ticker é OPCIONAL (a operação não tem ticker próprio).
+            # Para os demais tipos, exigimos ticker OU name.
+            if not ticker and not name and not cp_is_swap_flag:
                 continue
+            # Se é swap mas não veio name, sintetiza a partir de underlying_tickers.
+            if cp_is_swap_flag and not name:
+                ut_list = cp.get("underlying_tickers") or []
+                if isinstance(ut_list, list) and len(ut_list) >= 2:
+                    arrow = " → ".join(t.strip().upper() for t in ut_list if (t or "").strip())
+                    name = f"Troca: {arrow}" if arrow else None
+                if not name and not ticker:
+                    continue
 
             # Já avaliamos acima quando havia pid; recalcular para o caso `pid` ausente.
             cp_is_structure = cp_is_structure_flag
+            cp_is_swap = cp_is_swap_flag
 
             existing = None
-            # Quando o usuário forçou "criar novo" OU quando o item é estrutura,
+            # Quando o usuário forçou "criar novo" OU quando o item é estrutura/swap,
             # NÃO procuramos produto pré-existente por ticker/nome — isso reintroduziria
-            # o bug "POP de MYPK3 cai na ação MYPK3".
-            if not force_new and not cp_is_structure:
+            # o bug "POP de MYPK3 cai na ação MYPK3" (e equivalente para troca).
+            if not force_new and not cp_is_structure and not cp_is_swap:
                 if ticker:
                     existing = db.query(Product).filter(
                         Product.ticker == ticker,
@@ -6690,6 +6904,8 @@ async def link_products_and_queue(
                     "fundo de renda fixa": "Fundo de Renda Fixa",
                     "pop": "POP", "collar": "Collar", "coe": "COE",
                     "estruturada": "Estruturada", "estruturado": "Estruturada",
+                    "swap": "Swap", "troca": "Swap", "rotação": "Swap",
+                    "rotacao": "Swap", "pair trade": "Swap",
                     "lci": "LCI", "lca": "LCA", "fidc": "FIDC",
                 }
                 product_type = (
@@ -6707,6 +6923,7 @@ async def link_products_and_queue(
                     "Fundo de Renda Fixa": "renda_fixa",
                     "POP": "estruturada", "Collar": "estruturada",
                     "COE": "estruturada", "Estruturada": "estruturada",
+                    "Swap": "swap",
                     "LCI": "renda_fixa", "LCA": "renda_fixa",
                     "FIDC": "renda_fixa",
                 }
@@ -6720,6 +6937,7 @@ async def link_products_and_queue(
                     "Fundo Multimercado": "outro", "Fundo de Renda Fixa": "outro",
                     "POP": "estruturada", "Collar": "estruturada", "COE": "estruturada",
                     "Estruturada": "estruturada",
+                    "Swap": "swap",
                     "LCI": "outro", "LCA": "outro", "FIDC": "outro",
                 }
                 product_type_db = type_to_db_field.get(product_type, "outro") if product_type else None
@@ -6748,6 +6966,26 @@ async def link_products_and_queue(
                         category = "estruturada"
                     if not product_type:
                         product_type = "Estruturada"
+
+                # SWAP GUARD — análogo ao STRUCTURE GUARD acima. Garante que
+                # produto-swap criado nasça com product_type='swap' mesmo se a
+                # IA classificou como Ação (caso comum quando o filename é o
+                # único sinal de troca).
+                if cp_is_swap_flag and product_type_db != "swap":
+                    print(
+                        f"[SWAP_GUARD] layer=link_and_queue "
+                        f"filename={_material_filename_str!r} "
+                        f"matched_product=None "
+                        f"decision=create_new "
+                        f"action=force_type_swap "
+                        f"reason={cp_swap_reason!r} "
+                        f"original_type={product_type_db!r}"
+                    )
+                    product_type_db = "swap"
+                    if not category:
+                        category = "swap"
+                    if not product_type:
+                        product_type = "Swap"
 
                 cnpj = (cp.get("cnpj") or "").strip() or None
                 underlying_ticker = (cp.get("underlying_ticker") or "").strip().upper() or None

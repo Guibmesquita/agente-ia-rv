@@ -457,6 +457,162 @@ def test_remediation_script_imports_and_uses_correct_model_fields():
     )
 
 
+# =========================================================================== #
+# Suite SWAP — guarda anti-captura para troca/rotação de ativos.
+#
+# Mesmo padrão da suite de estrutura, mas para o cenário "Trocar PETR4 por
+# VALE3.pdf": NÃO devemos vincular o material à ação PETR4 nem à ação VALE3
+# já cadastradas — o material descreve UMA operação tática (swap), não duas
+# análises individuais. Ele deve ir para um único produto-swap.
+# =========================================================================== #
+
+
+def test_swap_keyword_helper_finds_canonical_terms():
+    """Sanity da fonte da verdade compartilhada (services/swap_keywords)."""
+    from services.swap_keywords import find_swap_keyword
+    assert find_swap_keyword("Troca PETR4 por VALE3") is not None
+    assert find_swap_keyword("Sugestão de rotação setorial") is not None
+    assert find_swap_keyword("Pair trade entre ITUB4 e BBDC4") is not None
+    assert find_swap_keyword("Análise fundamentalista de PETR4") is None
+    assert find_swap_keyword(None, None) is None
+
+
+def test_matcher_rejects_swap_against_acao_via_filename():
+    """Filename "Troca PETR4 por VALE3.pdf" + IA disse "Ação" para PETR4 +
+    PETR4 ação cadastrada. Deve rejeitar o match para a ação e marcar como
+    candidato swap."""
+    from api.endpoints.products import _match_products_to_db
+
+    db, _ = _make_db_with_product({
+        "id": 555, "ticker": "PETR4", "name": "Petrobras",
+        "product_type": "acao", "name_aliases": "[]",
+    })
+    ai = [{"ticker": "PETR4", "name": "Petrobras", "product_type": "Ação",
+           "underlying_ticker": None}]
+    res = _match_products_to_db(db, ai, filename="Troca PETR4 por VALE3.pdf")
+    assert res, "deve devolver pelo menos 1 candidato"
+    # O matcher fez merge pós-processamento ou rejeitou — em ambos os casos
+    # o resultado NÃO pode estar vinculado à ação PETR4.
+    for entry in res:
+        assert not entry.get("exists_in_db"), (
+            f"swap NÃO deve vincular à ação PETR4 cadastrada; entry={entry}"
+        )
+    # Pelo menos um dos resultados deve estar marcado como swap.
+    assert any(
+        e.get("is_swap_candidate")
+        or (e.get("product_type") or "").lower() == "swap"
+        for e in res
+    ), f"nenhum candidato marcado como swap; res={res}"
+
+
+def test_matcher_merges_two_acoes_into_one_swap_when_filename_signals_troca():
+    """IA devolveu 2 entradas separadas (PETR4 e VALE3) mas filename indica
+    troca. O merge pós-processamento deve consolidar em UM produto-swap único
+    com underlying_tickers=[PETR4, VALE3]."""
+    from api.endpoints.products import _match_products_to_db
+
+    mock_db = MagicMock()
+    # Sem produtos pré-existentes — força o caminho "criar novo" para ambos.
+    mock_db.query.return_value.filter.return_value.first.return_value = None
+    mock_db.query.return_value.filter.return_value.all.return_value = []
+
+    ai = [
+        {"ticker": "PETR4", "name": "Petrobras", "product_type": "Ação"},
+        {"ticker": "VALE3", "name": "Vale", "product_type": "Ação"},
+    ]
+    res = _match_products_to_db(mock_db, ai, filename="Troca PETR4 por VALE3.pdf")
+    assert len(res) == 1, (
+        f"merge deveria consolidar 2 entradas em 1 produto-swap; got {len(res)}: {res}"
+    )
+    swap_entry = res[0]
+    assert (swap_entry.get("product_type") or "").lower() == "swap", (
+        f"produto consolidado deveria ser tipo swap; got {swap_entry.get('product_type')!r}"
+    )
+    assert swap_entry.get("ticker") is None, (
+        f"produto-swap NÃO deve carregar ticker individual; got {swap_entry.get('ticker')!r}"
+    )
+    ut = swap_entry.get("underlying_tickers") or []
+    assert "PETR4" in ut and "VALE3" in ut, (
+        f"underlying_tickers deve listar ambos os ativos; got {ut!r}"
+    )
+    assert swap_entry.get("is_swap_candidate") is True
+
+
+def test_auto_create_product_creates_swap_without_ticker():
+    """Worker behavioral: filename "Troca PETR4 por VALE3.pdf" deve criar
+    UM produto-swap com ticker=NULL, mesmo que o resolver tenha matched a
+    ação PETR4 (cenário do bug)."""
+    from database.models import Product, ProductStatus
+    from services.upload_queue import UploadQueue
+
+    db = _sqlite_session()
+    try:
+        existing_acao = Product(
+            name="Petrobras",
+            ticker="PETR4",
+            product_type="acao",
+            category="acao",
+            status=ProductStatus.ACTIVE.value,
+            name_aliases="[]",
+        )
+        db.add(existing_acao)
+        db.commit()
+        db.refresh(existing_acao)
+
+        from services.product_resolver import ResolverResult
+
+        def _fake_resolve(self, fund_name=None, ticker=None, gestora=None, **kw):
+            return ResolverResult(
+                matched_product_id=existing_acao.id,
+                matched_product_name=existing_acao.name,
+                matched_product_ticker=existing_acao.ticker,
+                match_type="ticker_exact",
+                match_confidence=1.0,
+            )
+
+        queue = UploadQueue.__new__(UploadQueue)
+        with patch("services.product_resolver.ProductResolver.resolve", _fake_resolve):
+            new_product = queue._auto_create_product(
+                db=db,
+                fund_name="Troca PETR4 por VALE3",
+                ticker="PETR4",
+                gestora=None,
+                document_type=None,
+                filename_hint="Troca_PETR4_por_VALE3.pdf",
+                material_name="Troca PETR4 por VALE3",
+            )
+
+        assert new_product is not None
+        assert new_product.id != existing_acao.id, (
+            "não pode reaproveitar a ação PETR4; deveria ter criado produto-swap novo"
+        )
+        assert (new_product.product_type or "").lower() == "swap", (
+            f"produto deveria ter product_type='swap'; got {new_product.product_type!r}"
+        )
+        assert new_product.ticker is None, (
+            f"produto-swap NÃO deve persistir ticker (evita captura futura); "
+            f"got ticker={new_product.ticker!r}"
+        )
+    finally:
+        db.close()
+
+
+def test_swap_guard_log_present_in_source():
+    """Source-level: o log [SWAP_GUARD] precisa existir no worker (auditoria
+    paralela ao [STRUCTURE_GUARD]). Pega regressão se alguém remover o bloco."""
+    src = (ROOT / "services" / "upload_queue.py").read_text(encoding="utf-8")
+    assert "[SWAP_GUARD] layer=worker" in src, (
+        "worker precisa logar guard de swap para auditoria/observabilidade"
+    )
+    src_api = (ROOT / "api" / "endpoints" / "products.py").read_text(encoding="utf-8")
+    assert "[SWAP_GUARD] layer=pre_analyze" in src_api, (
+        "pre-analyze precisa logar guard de swap"
+    )
+    assert "[SWAP_GUARD] layer=link_and_queue" in src_api, (
+        "link_and_queue precisa logar guard de swap"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Standalone runner (para ambientes sem pytest)
 # --------------------------------------------------------------------------- #
