@@ -1109,6 +1109,15 @@ class UploadQueue:
                     )
                     item.additional_tickers = metadata.additional_tickers or []
 
+                    # CRÍTICO: captura se o material já tem produto CONFIRMADO pelo usuário.
+                    # O guard acima (linhas 832-931) pode ter zerado product_id quando detectou
+                    # captura errada (estrutura linkada a ação). Se product_id ainda está setado
+                    # aqui, o usuário confirmou explicitamente esse vínculo na tela do SmartUpload
+                    # OU o vínculo sobreviveu ao guard — em ambos os casos o resolver NÃO deve
+                    # sobrescrever. Bug corrigido: "WEGE3 material criou novo produto mas o worker
+                    # re-linkava para 'Research WEGE3' existente via ProductResolver".
+                    _confirmed_product_id = mat.product_id  # None se guard zerou, int se confirmado
+
                     if metadata.ticker or metadata.fund_name:
                         from services.product_resolver import get_product_resolver
                         resolver = get_product_resolver(db)
@@ -1165,7 +1174,29 @@ class UploadQueue:
                                     match_confidence=0.0,
                                 )
 
-                        if resolve_result.is_confident:
+                        # Se o material já veio com produto confirmado pelo usuário (SmartUpload),
+                        # respeitamos o vínculo e não deixamos o resolver sobrescrever.
+                        if _confirmed_product_id is not None:
+                            confirmed_prod = db.query(Product).filter(
+                                Product.id == _confirmed_product_id
+                            ).first()
+                            if confirmed_prod:
+                                item.product_name = confirmed_prod.name
+                                item.product_ticker = confirmed_prod.ticker
+                                item.add_log(
+                                    f"Produto já confirmado pelo usuário: {confirmed_prod.name} "
+                                    f"({confirmed_prod.ticker or 'sem ticker'}) — resolver não sobrescreve.",
+                                    "info"
+                                )
+                                logger.info(
+                                    f"[UploadQueue] Produto id={_confirmed_product_id} "
+                                    f"confirmado pelo usuário — ignorando resultado do resolver "
+                                    f"(would have matched: {resolve_result.matched_product_name!r})."
+                                )
+                            # Mesmo sem sobrescrever produto, ainda criamos links adicionais
+                            # para tickers secundários encontrados nos metadados.
+
+                        elif resolve_result.is_confident:
                             mat.product_id = resolve_result.matched_product_id
                             mat.processing_status = "processing"
                             db.commit()
