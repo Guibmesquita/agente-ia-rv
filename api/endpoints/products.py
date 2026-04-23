@@ -4499,6 +4499,8 @@ async def resume_upload(
     file_path_to_use = None
     start_from_zero = False
     
+    # Permite reprocessar materiais com status 'failed' mesmo sem job,
+    # ou quando o job está travado em 'processing' por mais de 30 min.
     if job:
         if job.status == ProcessingJobStatus.PROCESSING.value:
             from datetime import timedelta
@@ -4512,12 +4514,21 @@ async def resume_upload(
             job.error_message = "Processamento interrompido (travado em processing)"
             db.commit()
             print(f"[RESUME] Job {job.id} (material {material_id}) transicionado de 'processing' para 'failed' (travado)")
+        elif job.status == ProcessingJobStatus.COMPLETED.value:
+            # Job concluído mas material com erro — trata como reprocessamento do zero.
+            start_from_zero = True
         elif job.status not in [ProcessingJobStatus.PAUSED.value, ProcessingJobStatus.FAILED.value]:
             raise HTTPException(status_code=400, detail=f"Job não pode ser retomado (status: {job.status})")
-        
+
         if job.file_path and os.path.exists(job.file_path):
             file_path_to_use = job.file_path
         elif material.source_file_path and os.path.exists(material.source_file_path):
+            file_path_to_use = material.source_file_path
+            start_from_zero = True
+    elif material.processing_status in ("failed", "error"):
+        # Sem job mas material falho — pode acontecer quando o startup marcou como falho
+        # antes de criar um job. Permitimos reprocessar do zero.
+        if material.source_file_path and os.path.exists(material.source_file_path):
             file_path_to_use = material.source_file_path
             start_from_zero = True
     else:

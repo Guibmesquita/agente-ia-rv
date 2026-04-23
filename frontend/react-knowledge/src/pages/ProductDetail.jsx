@@ -348,6 +348,22 @@ function MaterialSection({ material, productId, onRefresh, onUnlink }) {
             </span>
           )}
           {materialStatus && <StatusBadge status={materialStatus} />}
+          {(material.processing_status === 'failed' || material.processing_status === 'error') && (
+            <span
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                         bg-red-100 text-red-700 font-medium border border-red-200 cursor-help max-w-[220px]"
+              title={material.processing_error
+                ? `Erro no processamento:\n${material.processing_error}`
+                : 'Erro no processamento — tente reprocessar o material'}
+            >
+              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">
+                {material.processing_error
+                  ? material.processing_error.substring(0, 60) + (material.processing_error.length > 60 ? '…' : '')
+                  : 'Falha no processamento'}
+              </span>
+            </span>
+          )}
           {material.publish_status === 'publicado' && material.is_indexed ? (
             <span
               className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full

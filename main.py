@@ -647,36 +647,57 @@ def _resume_interrupted_uploads():
                 DocumentProcessingJob.status.in_(["processing", "pending"])
             ).first()
 
+            # Resolve o caminho do arquivo — primeiro no disco, depois restaura do banco.
+            resolved_file_path = None
             if job and job.file_path and os.path.exists(job.file_path):
-                resume_page = job.last_processed_page or 0
-                print(f"[INIT] Material '{mat.name}' (id={mat.id}): retomando da página {resume_page}/{job.total_pages}")
+                resolved_file_path = job.file_path
+            elif mat.source_file_path and os.path.exists(mat.source_file_path):
+                resolved_file_path = mat.source_file_path
+            else:
+                # Tenta restaurar o PDF do banco de dados (material_files).
+                try:
+                    from api.endpoints.products import _restore_pdf_from_db
+                    restored = _restore_pdf_from_db(db, mat.id)
+                    if restored:
+                        resolved_file_path = restored
+                        if job:
+                            job.file_path = restored
+                            db.commit()
+                        print(f"[INIT] PDF de '{mat.name}' restaurado do banco: {restored}")
+                except Exception as restore_err:
+                    print(f"[INIT] Falha ao restaurar PDF do banco para material {mat.id}: {restore_err}")
+
+            if resolved_file_path:
+                resume_page = (job.last_processed_page or 0) if job else 0
+                print(f"[INIT] Material '{mat.name}' (id={mat.id}): retomando da página {resume_page}/{getattr(job, 'total_pages', '?')}")
 
                 mat.processing_status = "pending"
-                job.status = ProcessingJobStatus.PENDING.value if hasattr(ProcessingJobStatus, 'PENDING') else "pending"
+                if job:
+                    job.status = ProcessingJobStatus.PENDING.value if hasattr(ProcessingJobStatus, 'PENDING') else "pending"
                 db.commit()
 
                 from services.upload_queue import upload_queue, UploadQueueItem
                 queue_item = UploadQueueItem(
                     upload_id=f"resume_{mat.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-                    file_path=job.file_path,
+                    file_path=resolved_file_path,
                     filename=mat.source_filename or mat.name,
                     material_id=mat.id,
                     name=mat.name,
                     user_id=None,
                     is_resume=True,
                     resume_from_page=resume_page,
-                    existing_job_id=job.id,
+                    existing_job_id=job.id if job else None,
                 )
                 upload_queue.add(queue_item)
                 print(f"[INIT] Material '{mat.name}' enfileirado para retomada.")
             else:
                 mat.processing_status = "failed"
-                mat.processing_error = "Processamento interrompido e arquivo não disponível para retomada"
+                mat.processing_error = "Arquivo PDF não encontrado no disco nem no banco — faça upload novamente."
                 if job:
                     job.status = "failed"
                     job.error_message = mat.processing_error
                 db.commit()
-                print(f"[INIT] Material '{mat.name}' (id={mat.id}): marcado como falho (arquivo não disponível).")
+                print(f"[INIT] Material '{mat.name}' (id={mat.id}): marcado como falho (PDF indisponível).")
     finally:
         db.close()
 

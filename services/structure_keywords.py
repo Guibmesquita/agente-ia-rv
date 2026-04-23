@@ -44,9 +44,12 @@ def find_structure_keyword(*texts: Optional[str],
     Aceita múltiplos textos (filename, material.name, fund_name, document_type, ...)
     e os concatena antes da busca.
     """
-    joined = " ".join(t for t in texts if t).lower()
-    if not joined:
+    raw = " ".join(t for t in texts if t).lower()
+    if not raw:
         return None
+    # Normaliza underscores → espaços antes do regex com \b, pois "_" é
+    # caractere de palavra e impede \b de separar "pop" em "pop_mypk3".
+    joined = raw.replace("_", " ")
     for kw in keywords:
         if re.search(rf"\b{re.escape(kw)}\b", joined):
             return kw
