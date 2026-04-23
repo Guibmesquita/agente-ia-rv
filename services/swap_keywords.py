@@ -49,6 +49,12 @@ def find_swap_keyword(*texts: Optional[str],
 
     Aceita múltiplos textos (filename, material.name, fund_name,
     document_type, ai_product_type, ...) e os concatena antes da busca.
+
+    Além das keywords diretas, detecta o padrão tático "VENDER … COMPRAR"
+    (ambas as palavras presentes no mesmo texto), que indica claramente uma
+    operação de troca entre dois ativos (e.g. "VENDER_MXRF11_COMPRAR_MCCE11").
+    "vender" e "comprar" isoladamente são genéricas demais para entrar nos
+    SWAP_KEYWORDS, mas a presença SIMULTÂNEA de ambas é diagnóstica.
     """
     raw = " ".join(t for t in texts if t).lower()
     if not raw:
@@ -59,6 +65,9 @@ def find_swap_keyword(*texts: Optional[str],
     for kw in keywords:
         if re.search(rf"\b{re.escape(kw)}\b", joined):
             return kw
+    # Padrão especial: "vender" E "comprar" ambos presentes → troca tática
+    if re.search(r"\bvender\b", joined) and re.search(r"\bcomprar\b", joined):
+        return "vender+comprar"
     return None
 
 

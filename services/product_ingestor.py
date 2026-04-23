@@ -645,6 +645,13 @@ class ProductIngestor:
                     )
                 ).delete(synchronize_session=False)
                 db.query(DocumentProcessingJob).filter(DocumentProcessingJob.material_id == material_id).delete(synchronize_session=False)
+                # Limpa PersistentQueueItem antes de deletar o material para evitar
+                # psycopg2.errors.ForeignKeyViolation (FK upload_queue_items.material_id
+                # sem CASCADE). Registra antes de deletar para rastreabilidade.
+                from database.models import PersistentQueueItem as _PQI_inner
+                _pqi_deleted = db.query(_PQI_inner).filter(_PQI_inner.material_id == material_id).delete(synchronize_session=False)
+                if _pqi_deleted:
+                    print(f"[SMART_UPLOAD] {_pqi_deleted} PersistentQueueItem(s) removidos antes de deletar material placeholder {material_id}")
                 db.delete(original_material)
                 db.commit()
                 print(f"[SMART_UPLOAD] Material placeholder {material_id} removido - todos os blocos foram redistribuídos")
@@ -746,7 +753,41 @@ class ProductIngestor:
         }
         
         block_order = 0
-        
+
+        # SWAP GUARD: materiais vinculados a um produto do tipo "swap" descrevem
+        # uma operação de troca entre dois ativos (e.g. MXRF11 → MCCE11).
+        # O conteúdo NÃO deve ser redistribuído para os produtos individuais —
+        # isso fragmenta a recomendação no RAG e, pior, deixa o material original
+        # com 0 blocos → ingestor deleta o registro → ForeignKeyViolation na FK
+        # PersistentQueueItem.material_id (sem CASCADE).
+        # Quando `_is_swap_material` é True, `target_material_id` fica sempre
+        # igual a `material_id` — sem criação de materiais derivados.
+        _is_swap_material = False
+        try:
+            _mat_obj = db.query(Material).filter(Material.id == material_id).first()
+            if _mat_obj and _mat_obj.product_id:
+                _primary_prod = db.query(Product).filter(Product.id == _mat_obj.product_id).first()
+                if _primary_prod and (_primary_prod.product_type or "").lower() == "swap":
+                    _is_swap_material = True
+                    log(
+                        f"[SWAP_GUARD] Material {material_id} vinculado a produto swap "
+                        f"'{_primary_prod.name}' — desabilitando redistribuição multi-produto.",
+                        "info"
+                    )
+            if not _is_swap_material:
+                # Fallback: checar pelo nome do documento/material
+                from services.swap_keywords import find_swap_keyword
+                _swap_kw = find_swap_keyword(document_title, _mat_obj.name if _mat_obj else None)
+                if _swap_kw:
+                    _is_swap_material = True
+                    log(
+                        f"[SWAP_GUARD] Material {material_id} detectado como swap via keyword "
+                        f"'{_swap_kw}' no título — desabilitando redistribuição multi-produto.",
+                        "info"
+                    )
+        except Exception as _sg_err:
+            log(f"[SWAP_GUARD] Erro ao verificar tipo de material (ignorado): {_sg_err}", "warning")
+
         existing_blocks = db.query(ContentBlock).filter(
             ContentBlock.material_id == material_id
         ).count()
@@ -802,8 +843,20 @@ class ProductIngestor:
                             break
             
             target_material_id = material_id
-            
-            if matched_product:
+
+            if _is_swap_material:
+                # Material de swap: nunca redireciona blocos para ativos individuais.
+                # Registra o produto detectado na página para fins de log, mas não
+                # redistribui — todo o conteúdo fica no produto swap original.
+                if matched_product:
+                    log(
+                        f"Página {page_num}: ticker '{matched_product.ticker or matched_product.name}' "
+                        f"detectado mas redistribuição ignorada (material swap).",
+                        "info"
+                    )
+                else:
+                    log(f"Página {page_num}: sem produto identificado (material swap)", "info")
+            elif matched_product:
                 log(f"Página {page_num}: Produto identificado - {matched_product.ticker or matched_product.name}", "success")
                 existing_material = db.query(Material).filter(
                     Material.product_id == matched_product.id,
@@ -951,6 +1004,13 @@ class ProductIngestor:
                     )
                 ).delete(synchronize_session=False)
                 db.query(DPJ2).filter(DPJ2.material_id == material_id).delete(synchronize_session=False)
+                # Limpa PersistentQueueItem antes de deletar o material para evitar
+                # psycopg2.errors.ForeignKeyViolation (FK upload_queue_items.material_id
+                # sem CASCADE). Registra para rastreabilidade.
+                from database.models import PersistentQueueItem as _PQI2
+                _pqi2_deleted = db.query(_PQI2).filter(_PQI2.material_id == material_id).delete(synchronize_session=False)
+                if _pqi2_deleted:
+                    log(f"{_pqi2_deleted} PersistentQueueItem(s) removidos antes de deletar material placeholder", "info")
                 db.delete(original_material)
                 db.commit()
                 log("Material placeholder removido - blocos redistribuídos para produtos identificados")
