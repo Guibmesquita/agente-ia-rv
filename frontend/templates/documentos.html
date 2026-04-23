@@ -763,7 +763,13 @@
                         const doc = allDocuments.find(d => d.id === id);
                         if (!doc) continue;
                         try {
-                            const response = await fetch(`/api/products/${doc.product_id}/materials/${id}`, {
+                            // Materiais sem produto primário (product_id=null) usam o
+                            // endpoint sem product_id para evitar URL /api/products/null/...
+                            const pid = doc.product_id;
+                            const url = (!pid || isNaN(parseInt(pid)))
+                                ? `/api/products/materials/${id}`
+                                : `/api/products/${pid}/materials/${id}`;
+                            const response = await fetch(url, {
                                 method: 'DELETE',
                                 credentials: 'include'
                             });
@@ -787,18 +793,27 @@
                 true,
                 async () => {
                     try {
-                        const response = await fetch(`/api/products/${productId}/materials/${materialId}`, {
+                        // Quando product_id é null/NaN (material conceitual sem produto
+                        // primário), usa o endpoint sem product_id no path para evitar
+                        // URL inválida (/api/products/NaN/...) que retorna 422.
+                        const url = (!productId || isNaN(productId))
+                            ? `/api/products/materials/${materialId}`
+                            : `/api/products/${productId}/materials/${materialId}`;
+                        const response = await fetch(url, {
                             method: 'DELETE',
                             credentials: 'include'
                         });
-                        if (!response.ok) throw new Error('Erro ao excluir');
+                        if (!response.ok) {
+                            const errData = await response.json().catch(() => ({}));
+                            throw new Error(errData.detail || `HTTP ${response.status}`);
+                        }
                         toast.success('Documento excluído com sucesso!');
                         selectedIds.delete(materialId);
                         updateSelectionBar();
                         loadDocuments();
                     } catch (error) {
-                        console.error('Erro:', error);
-                        toast.error('Erro ao excluir documento');
+                        console.error('Erro ao excluir documento:', error);
+                        toast.error(`Erro ao excluir documento: ${error.message}`);
                     }
                 }
             );

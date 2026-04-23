@@ -2207,8 +2207,18 @@ async def _delete_material_impl(db: Session, material_id: int, username: str) ->
     print(f"[DELETE MATERIAL] {n} material_files (BYTEA) removidos")
 
     name = material.name
-    db.delete(material)
-    db.commit()
+    try:
+        db.delete(material)
+        db.commit()
+    except Exception as commit_err:
+        db.rollback()
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[DELETE MATERIAL] ERRO ao commitar deleção de '{name}' (id={material_id}): {commit_err}\n{tb}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao deletar material: {type(commit_err).__name__}: {commit_err}"
+        )
     print(f"[DELETE MATERIAL] Material '{name}' deletado do banco")
     return {"success": True}
 
