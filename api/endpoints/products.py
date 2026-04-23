@@ -900,8 +900,26 @@ async def unlink_material_from_product(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Remove o vínculo de um material com este produto (via MaterialProductLink).
-    Não é possível desvincular o material primário (product_id direto).
+    Remove o vínculo de um material com um produto.
+
+    Cobre dois cenários:
+
+    1. Vínculo SECUNDÁRIO (linha em `MaterialProductLink`): apenas remove a linha
+       da junção. O material continua linkado ao seu produto primário.
+
+    2. Vínculo PRIMÁRIO (`material.product_id == product_id`): este é o caso de
+       correção de captura errada (ex.: material "POP RAPT4.pdf" caiu na ação
+       RAPT4 e o usuário precisa libertá-lo para vinculá-lo ao produto-estrutura
+       correto). Tratamento:
+         - Se houver outro vínculo SECUNDÁRIO em `MaterialProductLink`, o mais
+           antigo é PROMOVIDO a primário (recebe `material.product_id`) e a
+           respectiva linha de junção é apagada para evitar duplicidade.
+         - Caso contrário, `material.product_id` é setado como NULL e o material
+           passa a ser CONCEITUAL (sem produto vinculado), aparecendo na lista
+           "materiais conceituais" para ser religado manualmente. NÃO deletamos
+           o material — só desfazemos o vínculo errado.
+       Em ambos os subcasos, removemos qualquer linha de junção residual entre
+       o material e o produto que está sendo desvinculado.
     """
     from database.models import MaterialProductLink
 
@@ -916,28 +934,81 @@ async def unlink_material_from_product(
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
-    # Impede desvinculação do material primário — use DELETE /materials/{id} para isso
-    if material.product_id == product_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Este material é o documento primário deste produto. Use a exclusão direta do material para removê-lo.",
-        )
+    is_primary = (material.product_id == product_id)
 
-    link = db.query(MaterialProductLink).filter(
+    # Sempre tenta remover a linha de junção (existir ou não — é idempotente).
+    junction_link = db.query(MaterialProductLink).filter(
         MaterialProductLink.material_id == material_id,
         MaterialProductLink.product_id == product_id,
     ).first()
-    if not link:
+
+    # Se NÃO é primário e NÃO há junction, não há vínculo algum a remover.
+    if not is_primary and not junction_link:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado")
 
-    db.delete(link)
+    promoted_to_primary_id: int | None = None
+
+    if is_primary:
+        # Procura outro vínculo (junction) que possamos promover a primário,
+        # evitando que o material vire conceitual quando há outros candidatos.
+        # Excluímos o vínculo com o produto que estamos removendo.
+        next_link = (
+            db.query(MaterialProductLink)
+            .filter(
+                MaterialProductLink.material_id == material_id,
+                MaterialProductLink.product_id != product_id,
+            )
+            .order_by(MaterialProductLink.created_at.asc())
+            .first()
+        )
+        if next_link:
+            promoted_to_primary_id = next_link.product_id
+            material.product_id = next_link.product_id
+            # Remove a junction promovida (agora é primário, não secundário)
+            db.delete(next_link)
+        else:
+            # Sem candidatos — material vira conceitual.
+            material.product_id = None
+
+    if junction_link:
+        db.delete(junction_link)
+
     db.commit()
 
     print(
-        f"[UNLINK_MATERIAL] Material id={material_id} desvinculado do produto id={product_id} "
-        f"por user={current_user.email}"
+        f"[UNLINK_MATERIAL] material_id={material_id} product_id={product_id} "
+        f"was_primary={is_primary} promoted_to={promoted_to_primary_id} "
+        f"user={current_user.email}"
     )
-    return {"success": True, "message": "Material desvinculado com sucesso"}
+
+    if is_primary and promoted_to_primary_id is not None:
+        promoted = db.query(Product).filter(Product.id == promoted_to_primary_id).first()
+        promoted_name = promoted.name if promoted else f"#{promoted_to_primary_id}"
+        return {
+            "success": True,
+            "was_primary": True,
+            "promoted_to_primary_id": promoted_to_primary_id,
+            "message": (
+                f"Material desvinculado de «{product.name}» e promovido para o "
+                f"produto «{promoted_name}» como primário."
+            ),
+        }
+    if is_primary:
+        return {
+            "success": True,
+            "was_primary": True,
+            "became_conceptual": True,
+            "message": (
+                f"Material desvinculado de «{product.name}». Como não havia outro "
+                f"vínculo, ficou como material conceitual (sem produto). "
+                f"Acesse a lista de materiais para revinculá-lo ao produto correto."
+            ),
+        }
+    return {
+        "success": True,
+        "was_primary": False,
+        "message": "Material desvinculado com sucesso",
+    }
 
 
 @router.put("/{product_id}")

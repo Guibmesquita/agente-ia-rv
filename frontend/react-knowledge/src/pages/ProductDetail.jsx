@@ -774,15 +774,37 @@ export function ProductDetail() {
                   material={material}
                   productId={id}
                   onRefresh={loadProduct}
-                  onUnlink={material.is_multi_product_link ? async () => {
+                  onUnlink={async () => {
+                    // Mensagem de confirmação adapta-se ao tipo de vínculo:
+                    // - secundário: simples remoção da junção
+                    // - primário: avisa que material vai virar conceitual
+                    //   (ou ser promovido a outro produto, se houver vínculo
+                    //   secundário disponível). Backend escolhe o destino.
+                    const isPrimary = !material.is_multi_product_link;
+                    const productName = product?.name || 'este produto';
+                    const confirmMsg = isPrimary
+                      ? (
+                        `Tem certeza que deseja desvincular «${material.name}» de «${productName}»?\n\n` +
+                        `Este material está vinculado como PRIMÁRIO.\n\n` +
+                        `Após a desvinculação:\n` +
+                        `• Se houver outro produto vinculado a este material, ele será promovido a primário.\n` +
+                        `• Caso contrário, o material ficará como conceitual (sem produto) e poderá ser religado depois.\n\n` +
+                        `O material NÃO será excluído.`
+                      )
+                      : (
+                        `Desvincular «${material.name}» de «${productName}»?\n\n` +
+                        `O material continuará vinculado ao seu produto primário.`
+                      );
+                    if (!window.confirm(confirmMsg)) return;
                     try {
-                      await productsAPI.unlinkMaterial(id, material.id);
-                      addToast('Material desassociado com sucesso', 'success');
+                      const res = await productsAPI.unlinkMaterial(id, material.id);
+                      const msg = (res && res.message) || 'Material desvinculado com sucesso';
+                      addToast(msg, 'success');
                       loadProduct();
                     } catch (err) {
-                      addToast(`Erro ao desassociar: ${err.message}`, 'error');
+                      addToast(`Erro ao desvincular: ${err.message}`, 'error');
                     }
-                  } : null}
+                  }}
                 />
               ))}
             </div>
