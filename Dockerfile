@@ -31,6 +31,8 @@ RUN pip install --upgrade pip && \
 
 COPY --chown=appuser:appuser . .
 
+RUN pytest tests/test_structure_guard.py -q
+
 RUN mkdir -p /app/uploads/materials /app/uploads/attachments && \
     chown -R appuser:appuser /app/uploads
 
