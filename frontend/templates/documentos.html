@@ -837,19 +837,31 @@
         async function openMaterialPdf(materialId) {
             // Tenta abrir o PDF; se faltar (FILE_MISSING), oferece reupload em
             // vez de mostrar o JSON cru "PDF não encontrado..." numa aba nova.
-            // Estratégia: HEAD primeiro p/ não baixar o blob inteiro só pra checar.
+            //
+            // Para evitar baixar o PDF duas vezes (probe + window.open) usamos
+            // HEAD no probe quando o servidor responde 200 — assim só o
+            // window.open faz o download real. Em 404 a resposta de HEAD não
+            // traz o JSON com o `code`, então caímos num GET pequeno (apenas
+            // payload de erro, sem PDF) para distinguir FILE_MISSING vs
+            // MATERIAL_NOT_FOUND.
+            const url = `/api/products/materials/${materialId}/pdf`;
             try {
-                const url = `/api/products/materials/${materialId}/pdf`;
-                const probe = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+                const probe = await fetch(url, { method: 'HEAD' });
                 if (probe.ok) {
-                    // Conteúdo disponível — abre numa nova aba (mesma URL,
-                    // o navegador faz o request e o servidor agora devolve PDF).
                     window.open(url, '_blank');
                     return;
                 }
                 if (probe.status === 404) {
                     let body = {};
-                    try { body = await probe.json(); } catch (_) { body = {}; }
+                    try {
+                        const detailResp = await fetch(url, {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json' },
+                        });
+                        body = await detailResp.json();
+                    } catch (_) {
+                        body = {};
+                    }
                     const detail = body && body.detail;
                     const code = detail && typeof detail === 'object' ? detail.code : null;
                     if (code === 'FILE_MISSING') {
