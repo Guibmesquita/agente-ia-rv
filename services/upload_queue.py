@@ -5,9 +5,35 @@ import os
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
+
+
+def _get_retention_days() -> int:
+    """Lê a política de retenção (em dias) para itens terminais da fila.
+
+    Configurável via env `UPLOAD_QUEUE_RETENTION_DAYS` (default: 30).
+    Valor <= 0 desativa a limpeza automática.
+    """
+    raw = os.getenv("UPLOAD_QUEUE_RETENTION_DAYS", "30")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 30
+
+
+def _get_cleanup_interval_hours() -> int:
+    """Intervalo (em horas) entre execuções do job de limpeza.
+
+    Configurável via env `UPLOAD_QUEUE_CLEANUP_INTERVAL_HOURS` (default: 24).
+    """
+    raw = os.getenv("UPLOAD_QUEUE_CLEANUP_INTERVAL_HOURS", "24")
+    try:
+        v = int(raw)
+        return v if v > 0 else 24
+    except (TypeError, ValueError):
+        return 24
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +155,8 @@ class UploadQueue:
         self._history = []
         self._max_history = 50
         self._initialized = False
+        self._cleanup_thread = None
+        self._cleanup_stop = threading.Event()
 
     def _persist_item(self, item: UploadQueueItem):
         from database.database import SessionLocal
@@ -284,6 +312,101 @@ class UploadQueue:
         self._load_pending_from_db()
         if not self._queue.empty():
             self._ensure_worker_running()
+        self._start_cleanup_scheduler()
+
+    def cleanup_old_terminal_items(self, retention_days: Optional[int] = None) -> int:
+        """Remove registros terminais antigos da tabela `upload_queue_items`.
+
+        Apaga linhas em estado `completed` ou `failed` cuja
+        `completed_at` (ou `created_at` como fallback) é mais antiga que o TTL.
+        Retorna a quantidade de linhas removidas.
+
+        Args:
+            retention_days: Se informado, sobrescreve o valor da env
+                `UPLOAD_QUEUE_RETENTION_DAYS`. Valor <= 0 é tratado como
+                "limpeza desativada" e a função retorna 0 sem tocar no banco.
+        """
+        from database.database import SessionLocal
+        from database.models import PersistentQueueItem, QueueItemStatus
+        from sqlalchemy import func as sql_func
+
+        days = retention_days if retention_days is not None else _get_retention_days()
+        if days <= 0:
+            logger.info(
+                f"[UploadQueue] Limpeza automática desativada "
+                f"(UPLOAD_QUEUE_RETENTION_DAYS={days})"
+            )
+            return 0
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        terminal_states = [
+            QueueItemStatus.COMPLETED.value,
+            QueueItemStatus.FAILED.value,
+        ]
+
+        db = SessionLocal()
+        try:
+            # Usa COALESCE para que itens sem `completed_at` (raros, mas
+            # possíveis em estados terminais antigos) caiam no critério
+            # via `created_at`.
+            removed = db.query(PersistentQueueItem).filter(
+                PersistentQueueItem.status.in_(terminal_states),
+                sql_func.coalesce(
+                    PersistentQueueItem.completed_at,
+                    PersistentQueueItem.created_at,
+                ) < cutoff,
+            ).delete(synchronize_session=False)
+            db.commit()
+            if removed:
+                logger.info(
+                    f"[UploadQueue] Limpeza removeu {removed} registro(s) "
+                    f"terminal(is) com mais de {days} dia(s)"
+                )
+            return removed or 0
+        except Exception as e:
+            logger.error(f"[UploadQueue] Erro na limpeza de itens antigos: {e}")
+            db.rollback()
+            return 0
+        finally:
+            db.close()
+
+    def _start_cleanup_scheduler(self):
+        """Sobe um daemon thread que roda `cleanup_old_terminal_items`
+        periodicamente. A primeira execução acontece logo no startup; as
+        próximas seguem o intervalo configurado.
+        """
+        if _get_retention_days() <= 0:
+            logger.info(
+                "[UploadQueue] Scheduler de limpeza não iniciado "
+                "(UPLOAD_QUEUE_RETENTION_DAYS <= 0)"
+            )
+            return
+        if self._cleanup_thread is not None and self._cleanup_thread.is_alive():
+            return
+
+        interval_seconds = _get_cleanup_interval_hours() * 3600
+
+        def _loop():
+            # Executa uma vez logo no startup para limpar acúmulo histórico.
+            try:
+                self.cleanup_old_terminal_items()
+            except Exception as e:
+                logger.error(f"[UploadQueue] Erro na limpeza inicial: {e}")
+            while not self._cleanup_stop.wait(interval_seconds):
+                try:
+                    self.cleanup_old_terminal_items()
+                except Exception as e:
+                    logger.error(f"[UploadQueue] Erro na limpeza periódica: {e}")
+
+        t = threading.Thread(
+            target=_loop, name="upload-queue-cleanup", daemon=True
+        )
+        t.start()
+        self._cleanup_thread = t
+        logger.info(
+            f"[UploadQueue] Scheduler de limpeza ativo "
+            f"(retenção={_get_retention_days()}d, intervalo={_get_cleanup_interval_hours()}h)"
+        )
 
     def add(self, item: UploadQueueItem):
         self._persist_item(item)
