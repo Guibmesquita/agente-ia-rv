@@ -689,6 +689,11 @@
             gap: 12px;
         }
 
+        .dispatch-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .wizard-actions {
             display: flex;
             justify-content: space-between;
@@ -1283,6 +1288,14 @@ Equipe de Gestao"></textarea>
                                 <div style="margin-top: 12px; padding: 10px 14px; background: #eff6ff; border-radius: 6px; font-size: 0.85rem; color: #1e40af;">
                                     <strong>Anti-bloqueio:</strong> Intervalo minimo de 8 minutos entre envios, somente horario comercial (09h-18h), max 15 contatos frios/dia. Prioridade: contatos recentes primeiro.
                                 </div>
+                            </div>
+                        </div>
+
+                        <div id="attachmentWarningBanner" style="display: none; margin-bottom: 16px; padding: 14px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; align-items: flex-start; gap: 12px;">
+                            <svg width="20" height="20" fill="none" stroke="#b45309" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                            <div>
+                                <strong style="color: #92400e; font-size: 0.9rem;">Arquivo de anexo não encontrado</strong>
+                                <p id="attachmentWarningText" style="margin: 4px 0 0; color: #78350f; font-size: 0.85rem;"></p>
                             </div>
                         </div>
 
@@ -1885,6 +1898,34 @@ Equipe de Gestao"></textarea>
             
             if (step === 3) {
                 loadPreview();
+                if (campaignId) {
+                    checkAttachmentAccess(campaignId);
+                }
+            }
+        }
+
+        async function checkAttachmentAccess(id) {
+            const banner = document.getElementById('attachmentWarningBanner');
+            const warningText = document.getElementById('attachmentWarningText');
+            const dispatchBtn = document.getElementById('dispatchBtn');
+
+            banner.style.display = 'none';
+            dispatchBtn.disabled = false;
+            dispatchBtn.title = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/${id}/attachment-check`, { credentials: 'include' });
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (data.has_attachment && !data.accessible) {
+                    warningText.textContent = data.message;
+                    banner.style.display = 'flex';
+                    dispatchBtn.disabled = true;
+                    dispatchBtn.title = 'O arquivo de anexo não está disponível no servidor. Faça o upload novamente antes de disparar.';
+                }
+            } catch (e) {
+                console.warn('[attachment-check] Erro ao verificar anexo:', e);
             }
         }
 
@@ -2785,6 +2826,27 @@ Equipe de Gestao"></textarea>
                 return dispatchCadence();
             }
 
+            if (campaignId) {
+                try {
+                    const checkResp = await fetch(`${API_BASE}/${campaignId}/attachment-check`, { credentials: 'include' });
+                    if (checkResp.ok) {
+                        const checkData = await checkResp.json();
+                        if (checkData.has_attachment && !checkData.accessible) {
+                            const banner = document.getElementById('attachmentWarningBanner');
+                            const warningText = document.getElementById('attachmentWarningText');
+                            const dispatchBtn = document.getElementById('dispatchBtn');
+                            warningText.textContent = checkData.message;
+                            banner.style.display = 'flex';
+                            dispatchBtn.disabled = true;
+                            dispatchBtn.title = 'O arquivo de anexo não está disponível no servidor. Faça o upload novamente antes de disparar.';
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[attachment-check] Revalidação falhou:', e);
+                }
+            }
+
             const confirmed = await toast.confirm({
                 title: 'Disparar Campanha',
                 message: 'Tem certeza que deseja disparar esta campanha? As mensagens serão enviadas para todos os assessores com intervalo de 3-10 segundos entre cada envio.',
@@ -3023,6 +3085,27 @@ Equipe de Gestao"></textarea>
         async function dispatchCadence() {
             var dailyLimit = parseInt(document.getElementById('cadenceDailyLimit').value) || 50;
             var deadlineDays = parseInt(document.getElementById('cadenceDeadlineDays').value) || 5;
+
+            if (campaignId) {
+                try {
+                    const checkResp = await fetch(`${API_BASE}/${campaignId}/attachment-check`, { credentials: 'include' });
+                    if (checkResp.ok) {
+                        const checkData = await checkResp.json();
+                        if (checkData.has_attachment && !checkData.accessible) {
+                            const banner = document.getElementById('attachmentWarningBanner');
+                            const warningText = document.getElementById('attachmentWarningText');
+                            const dispatchBtn = document.getElementById('dispatchBtn');
+                            warningText.textContent = checkData.message;
+                            banner.style.display = 'flex';
+                            dispatchBtn.disabled = true;
+                            dispatchBtn.title = 'O arquivo de anexo não está disponível no servidor. Faça o upload novamente antes de disparar.';
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[attachment-check] Revalidação (cadência) falhou:', e);
+                }
+            }
 
             var confirmed = await toast.confirm({
                 title: 'Agendar Campanha com Cadencia',

@@ -816,6 +816,74 @@ async def set_custom_template(
     return {"message": "Template customizado salvo com sucesso"}
 
 
+@router.get("/{campaign_id}/attachment-check")
+async def check_campaign_attachment(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """
+    Verifica se o arquivo de anexo de uma campanha está acessível antes do disparo.
+    Retorna se o arquivo existe no filesystem local ou é uma URL pública válida.
+    """
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    attachment_url = campaign.attachment_url
+    attachment_filename = campaign.attachment_filename or ""
+
+    if not attachment_url:
+        return {
+            "has_attachment": False,
+            "accessible": True,
+            "filename": None,
+            "message": "Campanha sem anexo"
+        }
+
+    url = attachment_url.strip()
+
+    if url.startswith(("http://", "https://", "data:")):
+        return {
+            "has_attachment": True,
+            "accessible": True,
+            "filename": attachment_filename,
+            "message": "Anexo disponível via URL pública"
+        }
+
+    if not url.startswith("/"):
+        url = "/" + url
+
+    _UPLOADS_ROOT = os.path.realpath(
+        os.path.join(os.getcwd(), "uploads", "attachments")
+    )
+    raw_local = url.lstrip("/")
+    candidate = os.path.realpath(os.path.join(os.getcwd(), raw_local))
+
+    if not candidate.startswith(_UPLOADS_ROOT + os.sep) and candidate != _UPLOADS_ROOT:
+        return {
+            "has_attachment": True,
+            "accessible": False,
+            "filename": attachment_filename,
+            "message": "Caminho do arquivo fora do diretório permitido"
+        }
+
+    if os.path.isfile(candidate):
+        return {
+            "has_attachment": True,
+            "accessible": True,
+            "filename": attachment_filename,
+            "message": "Anexo disponível no servidor"
+        }
+
+    return {
+        "has_attachment": True,
+        "accessible": False,
+        "filename": attachment_filename,
+        "message": f"Arquivo \"{attachment_filename or raw_local}\" não encontrado no servidor. Faça o upload novamente antes de disparar."
+    }
+
+
 @router.get("/{campaign_id}/preview")
 async def preview_campaign(
     campaign_id: int,
