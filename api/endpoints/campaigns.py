@@ -1891,15 +1891,15 @@ async def dispatch_campaign_stream(
     
     async def generate_events():
         from services.whatsapp_client import zapi_client
-        from core.config import build_attachment_public_url
+        from core.config import resolve_attachment_for_send
         import os
         
         zapi_configured = zapi_client.is_configured()
-        # Resolve a URL pública do anexo UMA VEZ por campanha. Se a campanha
-        # tem anexo mas o domínio público não está configurado, devolve None
-        # e cada disparo será marcado como FAILED com mensagem clara — em vez
-        # de mandar URL relativa ao Z-API e travar o disparo em "pendente".
-        full_attachment_url = build_attachment_public_url(attachment_url) if attachment_url else None
+        # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
+        # arquivo existe localmente (elimina problema de URL inacessível pelo
+        # Z-API, como janeway.replit.dev). Fallback para URL pública se o
+        # arquivo não existir no disco.
+        full_attachment_url = resolve_attachment_for_send(attachment_url) if attachment_url else None
         attachment_url_invalid = bool(attachment_url) and full_attachment_url is None
         sent_count = 0
         failed_count = 0
@@ -1958,16 +1958,19 @@ async def dispatch_campaign_stream(
                         # travar em "pendente" eternamente. Falhar agora
                         # com mensagem clara.
                         dispatch.status = "failed"
-                        dispatch.error_message = "URL pública do anexo indisponível"
+                        dispatch.error_message = "Arquivo do anexo não encontrado"
                         dispatch.error_details = (
-                            "Não foi possível montar a URL pública do anexo "
-                            "para envio via WhatsApp. Configure a variável de "
-                            "ambiente APP_BASE_URL (ou REPLIT_DOMAINS) com o "
-                            "domínio público da aplicação e tente novamente."
+                            "O arquivo do anexo não pôde ser resolvido para envio "
+                            "via WhatsApp. Causas possíveis: (1) arquivo não "
+                            "encontrado no servidor — verifique se o upload foi "
+                            "feito no ambiente de produção (não no ambiente de dev); "
+                            "(2) variável APP_BASE_URL não configurada no Railway — "
+                            "configure com o domínio público da aplicação "
+                            "(ex.: https://agente-ia-rv.railway.app)."
                         )
                         failed_count += 1
                         status = "failed"
-                        error_msg = "URL pública do anexo indisponível"
+                        error_msg = "Arquivo do anexo não encontrado"
                     elif phone and zapi_configured:
                         while attempt <= MAX_RETRY_ATTEMPTS:
                             try:
@@ -2285,15 +2288,13 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     attachment_filename = campaign.attachment_filename
     
     async def generate_events():
-        from core.config import build_attachment_public_url
+        from core.config import resolve_attachment_for_send
         zapi_configured = zapi_client.is_configured()
-        # Resolve a URL pública absoluta do anexo UMA VEZ por campanha. Se a
-        # campanha tem anexo mas o domínio público não está configurado
-        # (APP_BASE_URL/REPLIT_DOMAINS ausentes), `full_attachment_url` fica
-        # None e cada disparo será marcado como FAILED com mensagem clara —
-        # em vez de mandar URL relativa ("/uploads/...") ao Z-API e ver o
-        # disparo travar permanentemente em "pendente".
-        full_attachment_url = build_attachment_public_url(attachment_url) if attachment_url else None
+        # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
+        # arquivo existe localmente (elimina problema de URL inacessível pelo
+        # Z-API, como janeway.replit.dev). Fallback para URL pública se o
+        # arquivo não existir no disco.
+        full_attachment_url = resolve_attachment_for_send(attachment_url) if attachment_url else None
         attachment_url_invalid = bool(attachment_url) and full_attachment_url is None
         sent_count = 0
         failed_count = 0
@@ -2376,16 +2377,19 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                         # travar em "pendente" eternamente. Falhar agora
                         # com mensagem clara.
                         dispatch.status = "failed"
-                        dispatch.error_message = "URL pública do anexo indisponível"
+                        dispatch.error_message = "Arquivo do anexo não encontrado"
                         dispatch.error_details = (
-                            "Não foi possível montar a URL pública do anexo "
-                            "para envio via WhatsApp. Configure a variável de "
-                            "ambiente APP_BASE_URL (ou REPLIT_DOMAINS) com o "
-                            "domínio público da aplicação e tente novamente."
+                            "O arquivo do anexo não pôde ser resolvido para envio "
+                            "via WhatsApp. Causas possíveis: (1) arquivo não "
+                            "encontrado no servidor — verifique se o upload foi "
+                            "feito no ambiente de produção (não no ambiente de dev); "
+                            "(2) variável APP_BASE_URL não configurada no Railway — "
+                            "configure com o domínio público da aplicação "
+                            "(ex.: https://agente-ia-rv.railway.app)."
                         )
                         failed_count += 1
                         status = "failed"
-                        error_msg = "URL pública do anexo indisponível"
+                        error_msg = "Arquivo do anexo não encontrado"
                     elif phone and zapi_configured:
                         while attempt <= MAX_RETRY_ATTEMPTS:
                             try:

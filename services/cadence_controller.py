@@ -284,19 +284,18 @@ async def run_cadence_tick():
                     attachment_filename = campaign.attachment_filename
 
                     if attachment_url and attachment_type:
-                        from core.config import build_attachment_public_url
-                        full_url = build_attachment_public_url(attachment_url)
+                        from core.config import resolve_attachment_for_send
+                        full_url = resolve_attachment_for_send(attachment_url)
                         if not full_url:
-                            # Sem URL pública absoluta o Z-API não consegue
-                            # baixar o anexo e o disparo travaria em pendente.
-                            # Falhar imediatamente com mensagem clara — sem
-                            # consumir tentativas/retries do motor de cadência.
+                            # Arquivo não encontrado no disco E sem URL pública
+                            # configurada — o Z-API não teria como baixar o
+                            # anexo. Falhar imediatamente sem consumir retries.
                             next_dispatch.status = "failed"
-                            next_dispatch.error_message = "URL pública do anexo indisponível"
+                            next_dispatch.error_message = "Arquivo do anexo não encontrado"
                             db.commit()
                             print(
                                 f"[CADENCE] Anexo da campanha '{campaign.name}' (id={campaign.id}) "
-                                f"sem URL pública absoluta. Configure APP_BASE_URL/REPLIT_DOMAINS. "
+                                f"não encontrado no disco e sem URL pública configurada. "
                                 f"Dispatch {next_dispatch.id} marcado como FAILED."
                             )
                             sent_this_tick = True

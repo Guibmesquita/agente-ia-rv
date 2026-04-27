@@ -109,3 +109,77 @@ def build_attachment_public_url(attachment_url: str) -> str | None:
         return None
 
     return f"{base.rstrip('/')}{url}"
+
+
+def resolve_attachment_for_send(attachment_url: str) -> str | None:
+    """
+    Resolve o anexo de campanha para envio via Z-API usando estratégia em cascata:
+
+    1. Se já for URL absoluta (http/https/data:) → retorna como está.
+    2. Se for caminho relativo E o arquivo existir no filesystem local
+       → lê o arquivo, codifica em base64, retorna data: URI.
+       (Z-API aceita base64 nativamente; elimina o problema de o Z-API
+       não conseguir baixar de domínios internos como janeway.replit.dev.)
+    3. Se o arquivo não existir localmente → tenta build_attachment_public_url.
+    4. Se nenhuma estratégia funcionar → retorna None.
+       (O caller deve marcar o disparo como failed imediatamente.)
+
+    Por que base64?
+    - O Z-API aceita data: URI nos campos document/image/video/audio.
+    - O servidor que recebe o upload é o mesmo que processa o disparo,
+      então o arquivo está sempre disponível no filesystem no momento imediato.
+    - Para cadência (disparo diferido), o Railway Volume garante persistência.
+    - Elimina a dependência de URL publicamente acessível: funciona em dev
+      (Replit) e em Railway prod sem exigir APP_BASE_URL configurado.
+    """
+    import os
+    import mimetypes
+    import base64
+    import logging
+
+    _log = logging.getLogger(__name__)
+
+    if not attachment_url:
+        return None
+
+    url = attachment_url.strip()
+    if not url:
+        return None
+
+    if url.startswith(("http://", "https://", "data:")):
+        return url
+
+    if not url.startswith("/"):
+        url = "/" + url
+
+    local_path = url.lstrip("/")
+    if os.path.isfile(local_path):
+        try:
+            mime_type, _ = mimetypes.guess_type(local_path)
+            if not mime_type:
+                ext = local_path.rsplit(".", 1)[-1].lower() if "." in local_path else ""
+                mime_type = {
+                    "pdf": "application/pdf",
+                    "png": "image/png",
+                    "jpg": "image/jpeg",
+                    "jpeg": "image/jpeg",
+                    "gif": "image/gif",
+                    "webp": "image/webp",
+                    "mp4": "video/mp4",
+                    "mp3": "audio/mpeg",
+                    "ogg": "audio/ogg",
+                }.get(ext, "application/octet-stream")
+            with open(local_path, "rb") as fh:
+                encoded = base64.b64encode(fh.read()).decode("ascii")
+            _log.info(
+                f"[ATTACHMENT] Arquivo '{local_path}' codificado em base64 "
+                f"({mime_type}) para envio via Z-API."
+            )
+            return f"data:{mime_type};base64,{encoded}"
+        except (OSError, IOError) as exc:
+            _log.warning(
+                f"[ATTACHMENT] Não foi possível ler '{local_path}' para base64: {exc}. "
+                "Tentando URL pública como fallback."
+            )
+
+    return build_attachment_public_url(url)
