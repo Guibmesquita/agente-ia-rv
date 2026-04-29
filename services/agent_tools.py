@@ -66,6 +66,28 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
                         "'completa', 'liste os N') para receber mais blocos de uma vez "
                         "em vez de paginar várias chamadas."
                     )
+                },
+                "block_id": {
+                    "type": "integer",
+                    "description": (
+                        "Continuação intra-bloco. Use quando uma chamada anterior "
+                        "retornou um resultado com 'content_truncated: true' — informe "
+                        "o 'block_id' do bloco truncado E 'content_offset' = "
+                        "'next_content_offset' para receber a continuação do MESMO "
+                        "bloco (típico de tabelas grandes >4000 chars). Quando "
+                        "'block_id' é fornecido, a busca semântica é IGNORADA e o "
+                        "retorno traz apenas o bloco solicitado. Se omitido, executa "
+                        "busca normal."
+                    )
+                },
+                "content_offset": {
+                    "type": "integer",
+                    "description": (
+                        "Posição (em caracteres) do conteúdo formatado do bloco a "
+                        "partir da qual continuar a leitura. Use junto com 'block_id'. "
+                        "Default 0. Use 'next_content_offset' devolvido pela chamada "
+                        "anterior."
+                    )
                 }
             },
             "required": ["query"]
@@ -319,6 +341,31 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     except (TypeError, ValueError):
         page_size = 6
     page_size = max(1, min(page_size, 20))
+
+    # RAG V3.6 — Continuação intra-bloco. Quando o agente recebe um bloco
+    # com `content_truncated: true`, pode chamar de novo com `block_id` e
+    # `content_offset` para receber a continuação (próximos ~4000 chars do
+    # MESMO bloco). Isso resolve o caso de uma tabela única que estoura o
+    # cap de formatador (ex.: carteira de 30 FIIs num único bloco).
+    raw_block_id = args.get("block_id")
+    if raw_block_id is not None:
+        try:
+            req_block_id = int(raw_block_id)
+        except (TypeError, ValueError):
+            req_block_id = None
+        try:
+            content_offset = int(args.get("content_offset", 0) or 0)
+            if content_offset < 0:
+                content_offset = 0
+        except (TypeError, ValueError):
+            content_offset = 0
+        if req_block_id is not None and db is not None:
+            return await _continue_block_content(
+                block_id=req_block_id,
+                content_offset=content_offset,
+                page_size_chars=4000,
+                db=db,
+            )
 
     vector_store = get_vector_store()
     if not vector_store:
@@ -741,10 +788,13 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     # — neste caso, paginar não recuperaria mais conteúdo do mesmo bloco;
     # o agente deve refinar a query (ex.: pedir um ticker específico).
     total_results = len(results)
-    has_truncated_block = any(r.get("content_truncated") for r in results)
 
     window_end = offset + page_size
     results_window = results[offset:window_end]
+    # Truncamento intra-bloco se aplica APENAS aos blocos que estão de fato
+    # na janela retornada — calcular sobre `results` inteiro produziria
+    # falsos positivos e induziria o agente a paginar/refinar à toa.
+    has_truncated_block = any(r.get("content_truncated") for r in results_window)
 
     next_offset = offset + len(results_window)
     has_more = next_offset < total_results
@@ -770,6 +820,146 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     if visual_candidates:
         response["visual_candidates"] = visual_candidates
 
+    return response
+
+
+async def _continue_block_content(
+    *,
+    block_id: int,
+    content_offset: int,
+    page_size_chars: int,
+    db,
+) -> Dict[str, Any]:
+    """RAG V3.6 — devolve a continuação do conteúdo formatado de UM bloco.
+
+    Quando uma chamada anterior a `search_knowledge_base` devolveu um
+    resultado com `content_truncated: true`, o agente pode chamar com
+    `block_id` + `content_offset` para receber o trecho seguinte do MESMO
+    bloco — útil para tabelas únicas que estouram o cap de 4000 chars do
+    formatador (ex.: carteira com 30+ FIIs em uma única tabela).
+
+    Comportamento:
+      - Carrega o bloco do banco; aplica `get_rich_content` com cap muito
+        alto (na prática, sem corte) para obter o conteúdo formatado
+        completo.
+      - Recorta `[content_offset:content_offset + page_size_chars]` em
+        boundary de linha para preservar integridade de cada linha.
+      - Devolve `next_content_offset` quando ainda há conteúdo restante,
+        permitindo várias chamadas sequenciais sem reformular a query.
+    """
+    try:
+        from database.models import ContentBlock as CB
+        from services.content_formatter import (
+            get_rich_content,
+            truncate_at_line_boundary,
+        )
+    except Exception as _e:
+        return {
+            "error": f"Falha ao carregar dependências: {_e}",
+            "results": [],
+        }
+
+    try:
+        row = db.query(
+            CB.id,
+            CB.content,
+            CB.block_type,
+            CB.material_id,
+            CB.source_page,
+            CB.visual_description,
+        ).filter(CB.id == block_id).first()
+    except Exception as _e:
+        return {
+            "error": f"Falha ao consultar bloco {block_id}: {_e}",
+            "results": [],
+        }
+
+    if not row:
+        return {
+            "results": [],
+            "message": f"Bloco {block_id} não encontrado.",
+            "block_id": block_id,
+            "content_offset": content_offset,
+            "has_more": False,
+        }
+
+    # Cap virtualmente infinito (10 MB) — queremos o formato completo para
+    # poder fatiar com precisão.
+    full_formatted = get_rich_content(
+        row.content or "",
+        row.content or "",
+        max_chars=10_000_000,
+        block_type=row.block_type,
+    )
+    total_chars = len(full_formatted)
+
+    if content_offset >= total_chars:
+        return {
+            "results": [],
+            "message": (
+                f"content_offset {content_offset} além do fim do bloco "
+                f"({total_chars} chars). Bloco esgotado."
+            ),
+            "block_id": block_id,
+            "content_offset": content_offset,
+            "total_chars": total_chars,
+            "has_more": False,
+        }
+
+    remaining = full_formatted[content_offset:]
+    chunk = truncate_at_line_boundary(remaining, page_size_chars)
+    # `truncate_at_line_boundary` adiciona um marcador "[…conteúdo
+    # truncado…]" ao chunk quando trunca; precisamos do tamanho REAL
+    # consumido do `remaining` original para calcular o offset seguinte.
+    if len(remaining) <= page_size_chars:
+        chars_consumed = len(remaining)
+        more = False
+    else:
+        head = remaining[:page_size_chars]
+        last_nl = head.rfind("\n")
+        chars_consumed = last_nl if last_nl > 0 else page_size_chars
+        more = chars_consumed < len(remaining)
+
+    next_offset = content_offset + chars_consumed
+
+    # Buscar nome do material para citação consistente.
+    material_name = "Documento"
+    try:
+        from database.models import Material as _Mat
+        mat = db.query(_Mat.title).filter(_Mat.id == row.material_id).first()
+        if mat and mat.title:
+            material_name = mat.title
+    except Exception:
+        pass
+
+    result_entry = {
+        "block_id": block_id,
+        "material_id": row.material_id,
+        "material_name": material_name,
+        "block_type": row.block_type,
+        "source_page": row.source_page,
+        "visual_description": row.visual_description,
+        "content": chunk,
+        "content_offset": content_offset,
+        "content_chars_returned": chars_consumed,
+        "content_truncated": more,
+    }
+
+    response = {
+        "results": [result_entry],
+        "count": 1,
+        "block_id": block_id,
+        "content_offset": content_offset,
+        "total_chars": total_chars,
+        "content_truncated_in_window": more,
+        "is_block_continuation": True,
+        "completeness_mode": False,
+    }
+    if more:
+        response["has_more"] = True
+        response["next_content_offset"] = next_offset
+    else:
+        response["has_more"] = False
     return response
 
 

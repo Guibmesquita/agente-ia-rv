@@ -518,6 +518,14 @@ def _apply_incremental_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_rag_evasive_created_at ON rag_evasive_responses(created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_rag_evasive_conversation ON rag_evasive_responses(conversation_id)",
+        # RAG V3.6 — enriquecimento da telemetria evasiva: identificadores e
+        # nomes dos materiais recuperados (JSON), top_k efetivo (page_size da
+        # última chamada KB) e label textual do intent classificado. Permite
+        # diagnóstico segmentado por material/query no painel admin.
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS retrieved_material_ids TEXT",
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS retrieved_material_names TEXT",
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS top_k INTEGER",
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS intent_label VARCHAR(50)",
     ]
     db = SessionLocal()
     ok = 0

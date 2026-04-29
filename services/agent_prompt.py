@@ -588,12 +588,30 @@ adivinhando — ou peça paginação (REGRA 2) ou diga claramente quantas linhas
 você está mostrando vs. o total esperado.
 
 REGRA 2 — PAGINAÇÃO PARA LISTAS COMPLETAS:
-Se a resposta da tool incluir `has_more: true` E o assessor pediu listagem
-exaustiva (palavras como "todos", "lista", "carteira completa", "composição",
-"quantos", "cada", "peso de cada"), você DEVE chamar `search_knowledge_base`
-de novo com a MESMA query e `offset = next_offset`. Repita até `has_more`
-ficar false OU até ter coletado linhas suficientes para responder com
-fidelidade. Só então redija a resposta final ao assessor.
+Existem DOIS tipos de paginação. Escolha o correto:
+
+(A) Paginação de BLOCOS (quando há vários blocos/resultados restantes):
+    Se a resposta da tool incluir `has_more: true` SEM `is_block_continuation`
+    E o assessor pediu listagem exaustiva (palavras como "todos", "lista",
+    "carteira completa", "composição", "quantos", "cada", "peso de cada"),
+    você DEVE chamar `search_knowledge_base` de novo com a MESMA query e
+    `offset = next_offset`. Opcionalmente passe `limit: 20` para receber
+    mais blocos por chamada. Repita até `has_more` ficar false OU até ter
+    coletado linhas suficientes para responder com fidelidade.
+
+(B) Continuação INTRA-BLOCO (quando UMA tabela única foi truncada):
+    Se a resposta incluir `content_truncated_in_window: true` E você
+    precisa do restante do MESMO bloco (típico de tabelas grandes >4000
+    chars num único bloco), chame `search_knowledge_base` passando:
+      - `block_id`: o `block_id` do resultado truncado
+      - `content_offset`: o `next_content_offset` devolvido (ou
+        `content_chars_returned` na primeira continuação)
+    Quando `block_id` é informado, a busca é IGNORADA — você recebe
+    apenas a continuação do bloco. Repita até `has_more: false`.
+
+Use (A) e (B) juntos quando precisar: pagine blocos com (A) e, dentro de
+qualquer bloco truncado de interesse, pagine o conteúdo com (B). Só então
+redija a resposta final ao assessor.
 
 REGRA 3 — RESPOSTA DEVE PRESERVAR A ESTRUTURA TABULAR:
 Quando responder uma pergunta que envolve tabela/carteira:

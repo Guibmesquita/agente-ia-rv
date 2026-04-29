@@ -53,11 +53,39 @@ def _log_evasive_response(
     had_kb_results: bool = False,
     kb_results_count: int = 0,
     completeness_mode: bool = False,
+    retrieved_material_ids: Optional[List[Any]] = None,
+    retrieved_material_names: Optional[List[str]] = None,
+    top_k: Optional[int] = None,
+    intent_label: Optional[str] = None,
 ) -> None:
-    """Grava resposta evasiva em rag_evasive_responses (best-effort, não-bloqueante)."""
+    """Grava resposta evasiva em rag_evasive_responses (best-effort, não-bloqueante).
+
+    RAG V3.6 — campos enriquecidos para diagnóstico segmentado:
+      - retrieved_material_ids/names: quais materiais o RAG entregou (para
+        cruzamento "este material gera muitas respostas evasivas?").
+      - top_k: page_size efetivo da última chamada KB.
+      - intent_label: rótulo textual do intent ("completeness", "general").
+    """
     try:
+        import json as _json
         from sqlalchemy import text as _sql_text
         from database.database import SessionLocal
+
+        # Normaliza IDs para JSON serializável; nomes para JSON de strings.
+        try:
+            _ids_json = _json.dumps(
+                [int(x) for x in (retrieved_material_ids or []) if x is not None],
+                ensure_ascii=False,
+            )[:1500]
+        except Exception:
+            _ids_json = _json.dumps(
+                [str(x) for x in (retrieved_material_ids or []) if x is not None],
+                ensure_ascii=False,
+            )[:1500]
+        _names_json = _json.dumps(
+            [str(n) for n in (retrieved_material_names or []) if n],
+            ensure_ascii=False,
+        )[:2000]
 
         with SessionLocal() as _db:
             _db.execute(
@@ -65,9 +93,12 @@ def _log_evasive_response(
                     """
                     INSERT INTO rag_evasive_responses
                         (conversation_id, user_query, ai_response, evasive_pattern,
-                         had_kb_results, kb_results_count, completeness_mode, tools_used)
+                         had_kb_results, kb_results_count, completeness_mode, tools_used,
+                         retrieved_material_ids, retrieved_material_names, top_k,
+                         intent_label)
                     VALUES
-                        (:c, :q, :r, :p, :hkb, :nkb, :cm, :t)
+                        (:c, :q, :r, :p, :hkb, :nkb, :cm, :t,
+                         :rmi, :rmn, :tk, :il)
                     """
                 ),
                 {
@@ -79,6 +110,10 @@ def _log_evasive_response(
                     "nkb": int(kb_results_count or 0),
                     "cm": bool(completeness_mode),
                     "t": ",".join(tools_used or [])[:1000],
+                    "rmi": _ids_json,
+                    "rmn": _names_json,
+                    "tk": int(top_k) if top_k is not None else None,
+                    "il": (intent_label or "")[:50] if intent_label else None,
                 },
             )
             _db.commit()
@@ -3254,6 +3289,13 @@ INSTRUÇÕES IMPORTANTES:
         tool_definitions = ALL_TOOLS_V2 if allow_tools else None
         tool_calls_log = []
         search_results_for_visual = []
+        # RAG V3.6 — acumuladores para enriquecimento da telemetria evasiva.
+        # `_kb_retrieved_material_ids` mantém ordem de chegada dos materiais
+        # entregues pelas chamadas KB ao longo da iteração; `_kb_last_top_k`
+        # guarda o page_size efetivo da última chamada KB (default 6).
+        kb_retrieved_material_ids: List[Any] = []
+        kb_retrieved_material_names: List[str] = []
+        kb_last_top_k: Optional[int] = None
         iterations = 0
 
         if db and allow_tools:
@@ -3389,6 +3431,10 @@ INSTRUÇÕES IMPORTANTES:
                             had_kb_results=_had_kb,
                             kb_results_count=len(_kb_calls),
                             completeness_mode=_completeness,
+                            retrieved_material_ids=kb_retrieved_material_ids,
+                            retrieved_material_names=kb_retrieved_material_names,
+                            top_k=kb_last_top_k,
+                            intent_label="completeness" if _completeness else "general",
                         )
                 except Exception:
                     pass
@@ -3518,6 +3564,23 @@ INSTRUÇÕES IMPORTANTES:
                 )
 
                 if tc_name == "search_knowledge_base" and isinstance(result, dict):
+                    # RAG V3.6 — captura page_size efetivo + materiais entregues
+                    # para enriquecer telemetria evasiva. Mantemos ordem e
+                    # deduplicamos preservando primeira aparição.
+                    try:
+                        _ps = result.get("page_size")
+                        if _ps is not None:
+                            kb_last_top_k = int(_ps)
+                    except (TypeError, ValueError):
+                        pass
+                    _seen_mids = set(kb_retrieved_material_ids)
+                    for _sr in result.get("results", []):
+                        _mid = _sr.get("material_id")
+                        if _mid is not None and _mid not in _seen_mids:
+                            _seen_mids.add(_mid)
+                            kb_retrieved_material_ids.append(_mid)
+                            _mname = _sr.get("material_name") or _sr.get("title") or ""
+                            kb_retrieved_material_names.append(str(_mname)[:200])
                     seen_visual_ids = {b.get("block_id") for b in search_results_for_visual}
                     for sr in result.get("results", []):
                         bid = sr.get("block_id")
@@ -3568,6 +3631,10 @@ INSTRUÇÕES IMPORTANTES:
                         t for t in (tool_calls_log or [])
                         if isinstance(t, dict) and t.get("name") == "search_knowledge_base"
                     ]
+                    try:
+                        _completeness_mi = TokenExtractor.detect_completeness_intent(user_message or "")
+                    except Exception:
+                        _completeness_mi = False
                     _log_evasive_response(
                         user_query=user_message,
                         response_text=ai_response,
@@ -3576,6 +3643,11 @@ INSTRUÇÕES IMPORTANTES:
                         conversation_id=conversation_id,
                         had_kb_results=len(_kb_calls) > 0,
                         kb_results_count=len(_kb_calls),
+                        completeness_mode=_completeness_mi,
+                        retrieved_material_ids=kb_retrieved_material_ids,
+                        retrieved_material_names=kb_retrieved_material_names,
+                        top_k=kb_last_top_k,
+                        intent_label="completeness" if _completeness_mi else "general",
                     )
             except Exception:
                 pass
