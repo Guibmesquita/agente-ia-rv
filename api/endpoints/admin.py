@@ -2,7 +2,9 @@
 Endpoints de administração transversais (prefixo /api/admin).
 Agrega diagnósticos e ferramentas de gestão interna restritas ao role admin.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database.database import get_db
@@ -199,3 +201,189 @@ async def list_evasive_responses(
     ]
 
     return {"count": len(items), "items": items}
+
+
+@router.post("/portfolio-rows/backfill")
+async def backfill_portfolio_rows(
+    material_id: Optional[int] = Query(
+        None,
+        description="Limita o backfill a um único material. Se omitido, processa todos os elegíveis.",
+    ),
+    product_id: Optional[int] = Query(
+        None,
+        description="Limita o backfill aos materiais de um produto específico.",
+    ),
+    dry_run: bool = Query(
+        False,
+        description="Quando true, apenas detecta tabelas de carteira sem criar blocos nem reindexar.",
+    ),
+    skip_index: bool = Query(
+        False,
+        description="Cria os blocos portfolio_row mas pula a reindexação no vector store.",
+    ),
+    limit: Optional[int] = Query(
+        None,
+        ge=1,
+        le=2000,
+        description="Limita quantos materiais são processados nesta chamada (útil em produção).",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    RAG V3.6 — Reprocessa materiais existentes para gerar blocos `portfolio_row`
+    sem mexer nos blocos atuais.
+
+    Para cada material elegível, varre os blocos do tipo `tabela`/`financial_table`
+    e, para os que casam a heurística de carteira, cria um bloco sintético por
+    linha (ticker → embedding dedicado). É idempotente — `_create_block` deduplica
+    pelo `content_hash`, então rodar de novo não duplica nada.
+
+    Se `dry_run=true`, apenas detecta as tabelas e relata o que seria criado
+    (sem inserir blocos nem reindexar). Quando blocos novos são gerados, o
+    material é reindexado no vector store (a menos que `skip_index=true`).
+    """
+    _require_admin(current_user)
+
+    from database.models import ContentBlock, ContentBlockType, Material
+    from services.product_ingestor import (
+        _detect_portfolio_table,
+        get_product_ingestor,
+    )
+    import json as _json
+
+    elegible_q = (
+        db.query(Material.id)
+        .join(ContentBlock, ContentBlock.material_id == Material.id)
+        .filter(
+            ContentBlock.block_type.in_(
+                [
+                    ContentBlockType.TABLE.value,
+                    ContentBlockType.FINANCIAL_TABLE.value,
+                ]
+            )
+        )
+        .distinct()
+    )
+    if material_id is not None:
+        elegible_q = elegible_q.filter(Material.id == material_id)
+    if product_id is not None:
+        elegible_q = elegible_q.filter(Material.product_id == product_id)
+
+    elegible_q = elegible_q.order_by(Material.id.asc())
+    if limit is not None:
+        elegible_q = elegible_q.limit(limit)
+
+    material_ids = [row[0] for row in elegible_q.all()]
+
+    summary = {
+        "dry_run": dry_run,
+        "skip_index": skip_index,
+        "filters": {
+            "material_id": material_id,
+            "product_id": product_id,
+            "limit": limit,
+        },
+        "materials_eligible": len(material_ids),
+        "materials_with_portfolio_tables": 0,
+        "materials_with_new_blocks": 0,
+        "materials_reindexed": 0,
+        "materials_failed": 0,
+        "tables_scanned": 0,
+        "portfolio_tables_detected": 0,
+        "portfolio_rows_created": 0,
+        "skipped_invalid_json": 0,
+        "details": [],
+    }
+
+    if not material_ids:
+        return summary
+
+    if dry_run:
+        for mid in material_ids:
+            blocks = (
+                db.query(ContentBlock)
+                .filter(ContentBlock.material_id == mid)
+                .filter(
+                    ContentBlock.block_type.in_(
+                        [
+                            ContentBlockType.TABLE.value,
+                            ContentBlockType.FINANCIAL_TABLE.value,
+                        ]
+                    )
+                )
+                .all()
+            )
+            mat_detected = 0
+            mat_rows_estimate = 0
+            mat_invalid = 0
+            for b in blocks:
+                summary["tables_scanned"] += 1
+                try:
+                    table_data = _json.loads(b.content)
+                except (ValueError, TypeError):
+                    mat_invalid += 1
+                    summary["skipped_invalid_json"] += 1
+                    continue
+                if not isinstance(table_data, dict):
+                    continue
+                if _detect_portfolio_table(table_data):
+                    mat_detected += 1
+                    summary["portfolio_tables_detected"] += 1
+                    rows = table_data.get("rows", []) or []
+                    mat_rows_estimate += sum(
+                        1
+                        for r in rows
+                        if isinstance(r, list) and any(c for c in r if c)
+                    )
+            if mat_detected > 0:
+                summary["materials_with_portfolio_tables"] += 1
+                summary["details"].append(
+                    {
+                        "material_id": mid,
+                        "portfolio_tables_detected": mat_detected,
+                        "estimated_rows": mat_rows_estimate,
+                        "skipped_invalid_json": mat_invalid,
+                    }
+                )
+        return summary
+
+    ingestor = get_product_ingestor()
+    user_id = getattr(current_user, "id", None)
+
+    for mid in material_ids:
+        try:
+            res = ingestor.backfill_portfolio_row_blocks(
+                material_id=mid,
+                db=db,
+                user_id=user_id,
+                reindex=not skip_index,
+            )
+        except Exception as e:
+            summary["materials_failed"] += 1
+            summary["details"].append({"material_id": mid, "error": str(e)})
+            continue
+
+        summary["tables_scanned"] += res.get("tables_scanned", 0)
+        summary["portfolio_tables_detected"] += res.get("portfolio_tables_detected", 0)
+        summary["portfolio_rows_created"] += res.get("portfolio_rows_created", 0)
+        summary["skipped_invalid_json"] += res.get("skipped_invalid_json", 0)
+
+        if res.get("portfolio_tables_detected", 0) > 0:
+            summary["materials_with_portfolio_tables"] += 1
+        if res.get("portfolio_rows_created", 0) > 0:
+            summary["materials_with_new_blocks"] += 1
+            entry = {
+                "material_id": mid,
+                "portfolio_tables_detected": res.get("portfolio_tables_detected", 0),
+                "portfolio_rows_created": res.get("portfolio_rows_created", 0),
+                "reindexed": res.get("reindexed", False),
+                "indexed_count": res.get("indexed_count", 0),
+            }
+            if res.get("reindex_error"):
+                entry["reindex_error"] = res["reindex_error"]
+            summary["details"].append(entry)
+            if res.get("reindexed"):
+                summary["materials_reindexed"] += 1
+
+    return summary

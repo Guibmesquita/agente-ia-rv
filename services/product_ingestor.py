@@ -1232,6 +1232,128 @@ class ProductIngestor:
             )
         return stats
 
+    def backfill_portfolio_row_blocks(
+        self,
+        material_id: int,
+        db: Session,
+        user_id: Optional[int] = None,
+        reindex: bool = True,
+    ) -> Dict[str, Any]:
+        """RAG V3.6 — Para um material já ingerido, varre os blocos
+        TABLE/FINANCIAL_TABLE existentes e gera blocos `portfolio_row`
+        para os que se qualificam como tabelas de carteira.
+
+        Idempotente: `_create_block` deduplica por `content_hash`.
+
+        Retorna estatísticas com:
+          - tables_scanned: tabelas inspecionadas
+          - portfolio_tables_detected: tabelas que casaram a heurística de carteira
+          - portfolio_rows_created: blocos portfolio_row criados nesta execução
+          - reindexed: bool indicando se o vector store foi atualizado
+          - indexed_count: quantos blocos foram (re)indexados (quando reindex=True)
+          - skipped_invalid_json: blocos TABLE com conteúdo inválido (não-JSON)
+        """
+        from database.models import Product
+
+        result = {
+            "material_id": material_id,
+            "tables_scanned": 0,
+            "portfolio_tables_detected": 0,
+            "portfolio_rows_created": 0,
+            "reindexed": False,
+            "indexed_count": 0,
+            "skipped_invalid_json": 0,
+        }
+
+        material = db.query(Material).filter(Material.id == material_id).first()
+        if not material:
+            result["error"] = "material_not_found"
+            return result
+
+        product = (
+            db.query(Product).filter(Product.id == material.product_id).first()
+            if material.product_id
+            else None
+        )
+        product_name = product.name if product else None
+        product_ticker = product.ticker if product else None
+        material_name = material.name or product_name
+
+        table_blocks = (
+            db.query(ContentBlock)
+            .filter(ContentBlock.material_id == material_id)
+            .filter(
+                ContentBlock.block_type.in_(
+                    [
+                        ContentBlockType.TABLE.value,
+                        ContentBlockType.FINANCIAL_TABLE.value,
+                    ]
+                )
+            )
+            .order_by(ContentBlock.order.asc(), ContentBlock.id.asc())
+            .all()
+        )
+
+        if not table_blocks:
+            return result
+
+        max_order = (
+            db.query(ContentBlock)
+            .filter(ContentBlock.material_id == material_id)
+            .order_by(ContentBlock.order.desc())
+            .first()
+        )
+        next_order = (max_order.order if max_order and max_order.order is not None else 0) + 1
+
+        for block in table_blocks:
+            result["tables_scanned"] += 1
+            try:
+                table_data = json.loads(block.content)
+            except (json.JSONDecodeError, TypeError):
+                result["skipped_invalid_json"] += 1
+                continue
+
+            if not isinstance(table_data, dict):
+                continue
+
+            if not _detect_portfolio_table(table_data):
+                continue
+
+            result["portfolio_tables_detected"] += 1
+
+            row_stats = self._emit_portfolio_row_blocks(
+                material_id=material_id,
+                table_data=table_data,
+                page_num=block.source_page or 0,
+                base_order=next_order,
+                db=db,
+                user_id=user_id,
+                material_name=material_name,
+                product_ticker=product_ticker,
+            )
+            created = row_stats.get("portfolio_rows_created", 0)
+            result["portfolio_rows_created"] += created
+            next_order += created
+
+        if reindex and result["portfolio_rows_created"] > 0:
+            try:
+                idx_result = self.index_approved_blocks(
+                    material_id=material_id,
+                    product_name=product_name or material_name or "",
+                    product_ticker=product_ticker,
+                    db=db,
+                )
+                result["reindexed"] = True
+                result["indexed_count"] = (idx_result or {}).get("indexed_count", 0)
+            except Exception as e:
+                print(
+                    f"[INGESTOR][V3.6] Falha ao reindexar material {material_id} "
+                    f"após backfill portfolio_row: {e}"
+                )
+                result["reindex_error"] = str(e)
+
+        return result
+
     def _create_block(
         self,
         material_id: int,
