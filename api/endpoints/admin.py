@@ -120,3 +120,64 @@ async def committee_status_diagnostic(
             "products_in_prompt": effective_names,
         },
     }
+
+
+@router.get("/rag/evasive")
+async def list_evasive_responses(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    RAG V3.6 — Lista as últimas respostas detectadas como evasivas.
+
+    Padrões evasivos: o agente declara não ter encontrado o material
+    ou que "o documento não detalha" mesmo após consultar a base.
+    Útil para calibrar o reranker, ajustar prompts e priorizar
+    re-extrações de PDFs.
+
+    Retorna até `limit` (máx 200) registros mais recentes.
+    """
+    _require_admin(current_user)
+
+    from sqlalchemy import text as _sql_text
+
+    safe_limit = max(1, min(int(limit or 50), 200))
+
+    try:
+        rows = db.execute(
+            _sql_text(
+                """
+                SELECT id, created_at, conversation_id, user_query,
+                       ai_response, evasive_pattern, had_kb_results,
+                       kb_results_count, completeness_mode, tools_used
+                FROM rag_evasive_responses
+                ORDER BY created_at DESC
+                LIMIT :lim
+                """
+            ),
+            {"lim": safe_limit},
+        ).fetchall()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha ao consultar telemetria evasiva: {e}",
+        )
+
+    items = [
+        {
+            "id": r[0],
+            "created_at": r[1].isoformat() if r[1] else None,
+            "conversation_id": r[2],
+            "user_query": r[3],
+            "ai_response": r[4],
+            "evasive_pattern": r[5],
+            "had_kb_results": bool(r[6]) if r[6] is not None else None,
+            "kb_results_count": r[7],
+            "completeness_mode": bool(r[8]) if r[8] is not None else None,
+            "tools_used": r[9],
+        }
+        for r in rows
+    ]
+
+    return {"count": len(items), "items": items}

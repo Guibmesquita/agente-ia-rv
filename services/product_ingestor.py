@@ -76,6 +76,49 @@ FINANCIAL_TABLE_HEADERS = {
 }
 
 
+_PORTFOLIO_ROW_BLOCK_TYPE = "portfolio_row"
+
+# RAG V3.6 — heurística para detectar tabelas de "portfólio/carteira".
+# Critério: presença simultânea de uma coluna identificadora de ativo
+# (ticker/ativo/papel/fundo/código) E uma coluna de peso/participação
+# (peso/% pl/alocação/participação/percentual).
+_PORTFOLIO_ID_HEADER_PATTERNS = (
+    "ticker", "ativo", "papel", "fundo", "papeis", "papéis",
+    "código", "codigo", "asset",
+)
+_PORTFOLIO_WEIGHT_HEADER_PATTERNS = (
+    "peso", "%pl", "% pl", "alocação", "alocacao", "alocacao(%)",
+    "participação", "participacao", "percentual", "%", "weight",
+)
+
+
+def _detect_portfolio_table(table_data: dict) -> bool:
+    """RAG V3.6 — detecta se a tabela é uma carteira/portfólio.
+
+    Critério: pelo menos 1 header de identificação de ativo + pelo menos
+    1 header de peso/participação. Tabelas com menos de 3 linhas não são
+    consideradas — geralmente são headers/totais e não justificam splits.
+    """
+    if not isinstance(table_data, dict):
+        return False
+    headers = table_data.get("headers", []) or []
+    rows = table_data.get("rows", []) or []
+    if len(rows) < 3:
+        return False
+    if not headers:
+        return False
+    headers_norm = [str(h).lower().strip() for h in headers]
+    has_id = any(
+        any(p in h for p in _PORTFOLIO_ID_HEADER_PATTERNS)
+        for h in headers_norm
+    )
+    has_weight = any(
+        any(p in h for p in _PORTFOLIO_WEIGHT_HEADER_PATTERNS)
+        for h in headers_norm
+    )
+    return has_id and has_weight
+
+
 def _detect_financial_metrics_in_table(table_data: dict) -> list:
     """
     Detecta métricas financeiras nos headers de uma tabela JSON.
@@ -235,6 +278,18 @@ class ProductIngestor:
                             stats["auto_approved"] += 1
                         else:
                             stats["pending_review"] += 1
+                    # RAG V3.6 — emite blocos por linha quando a tabela é uma carteira.
+                    _row_stats = self._emit_portfolio_row_blocks(
+                        material_id=material_id,
+                        table_data=table,
+                        page_num=page_num,
+                        base_order=block_order,
+                        db=db,
+                        user_id=user_id,
+                    )
+                    block_order += _row_stats.get("portfolio_rows_created", 0)
+                    stats["blocks_created"] = stats.get("blocks_created", 0) + _row_stats.get("portfolio_rows_created", 0)
+                    stats["auto_approved"] = stats.get("auto_approved", 0) + _row_stats.get("portfolio_rows_created", 0)
             
             if content_type == "infographic":
                 block, was_created = self._create_block(
@@ -581,6 +636,18 @@ class ProductIngestor:
                             stats["auto_approved"] += 1
                         else:
                             stats["pending_review"] += 1
+                    # RAG V3.6 — emite blocos por linha quando a tabela é uma carteira.
+                    _row_stats = self._emit_portfolio_row_blocks(
+                        material_id=target_material_id,
+                        table_data=table,
+                        page_num=page_num,
+                        base_order=block_order,
+                        db=db,
+                        user_id=user_id,
+                    )
+                    block_order += _row_stats.get("portfolio_rows_created", 0)
+                    stats["blocks_created"] = stats.get("blocks_created", 0) + _row_stats.get("portfolio_rows_created", 0)
+                    stats["auto_approved"] = stats.get("auto_approved", 0) + _row_stats.get("portfolio_rows_created", 0)
             
             if content_type == "infographic":
                 block, was_created = self._create_block(
@@ -906,6 +973,20 @@ class ProductIngestor:
                             stats["auto_approved"] += 1
                         else:
                             stats["pending_review"] += 1
+                    # RAG V3.6 — emite blocos por linha quando a tabela é uma carteira.
+                    _row_stats = self._emit_portfolio_row_blocks(
+                        material_id=target_material_id,
+                        table_data=table,
+                        page_num=page_num,
+                        base_order=block_order,
+                        db=db,
+                        user_id=user_id,
+                    )
+                    _rows_added = _row_stats.get("portfolio_rows_created", 0)
+                    block_order += _rows_added
+                    stats["blocks_created"] = stats.get("blocks_created", 0) + _rows_added
+                    blocks_created_page += _rows_added
+                    stats["auto_approved"] = stats.get("auto_approved", 0) + _rows_added
             
             if content_type == "infographic":
                 block, was_created = self._create_block(
@@ -1041,6 +1122,116 @@ class ProductIngestor:
         
         return {"success": True, "stats": stats}
     
+    def _emit_portfolio_row_blocks(
+        self,
+        material_id: int,
+        table_data: dict,
+        page_num: int,
+        base_order: int,
+        db: Session,
+        user_id: Optional[int],
+        material_name: Optional[str] = None,
+        product_ticker: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """RAG V3.6 — Para tabelas detectadas como carteira/portfólio, cria
+        UM bloco adicional por linha. Cada bloco é um "fato" auto-contido
+        do tipo:
+
+            "Carteira <material>: <ticker> | peso=<X>%; setor=<Y>; ..."
+
+        Isso resolve o problema onde o RAG retornava apenas 4 blocos e a
+        tabela inteira (12+ FIIs) cabia em 1 chunk gigante — ao perguntar
+        "qual o peso do MANA11?" o agente recebia o bloco mas o vetor
+        semântico do MANA11 não casava bem com o vetor da tabela inteira.
+        Linha por linha, cada ticker tem seu embedding dedicado.
+
+        Idempotente via content_hash em `_create_block`. Retorna estatísticas
+        de blocos criados.
+        """
+        stats = {"portfolio_rows_created": 0}
+        if not _detect_portfolio_table(table_data):
+            return stats
+
+        headers = table_data.get("headers", []) or []
+        rows = table_data.get("rows", []) or []
+        if not headers or not rows:
+            return stats
+
+        clean_headers = [str(h).strip() for h in headers]
+
+        # Identificar índice da coluna de ticker/ativo (primeira que casar)
+        id_col_idx = None
+        for i, h in enumerate(clean_headers):
+            h_lower = h.lower()
+            if any(p in h_lower for p in _PORTFOLIO_ID_HEADER_PATTERNS):
+                id_col_idx = i
+                break
+
+        # Lookup defensivo do nome do material se não foi passado.
+        if not material_name:
+            try:
+                _mat = db.query(Material).filter(Material.id == material_id).first()
+                if _mat:
+                    material_name = _mat.name
+            except Exception:
+                pass
+
+        carteira_label = (material_name or product_ticker or "Carteira").strip()
+        emitted = 0
+        order = base_order
+
+        for row in rows:
+            if not isinstance(row, list) or not row:
+                continue
+            cells = [str(c).strip() if c is not None else "" for c in row]
+            # Pula linhas totalmente vazias ou de "total"
+            non_empty = [c for c in cells if c]
+            if not non_empty:
+                continue
+            row_id = cells[id_col_idx] if id_col_idx is not None and id_col_idx < len(cells) else cells[0]
+            row_id_lower = (row_id or "").lower().strip()
+            if row_id_lower in ("total", "totais", "soma", "subtotal", ""):
+                continue
+
+            # Construir conteúdo sintético: "Carteira X — TICKER: header1=v1; header2=v2; ..."
+            facts = []
+            for i, cell in enumerate(cells):
+                if i >= len(clean_headers):
+                    continue
+                if cell == "" or cell is None:
+                    continue
+                facts.append(f"{clean_headers[i]}={cell}")
+
+            content = (
+                f"[CARTEIRA {carteira_label}] {row_id}: " + "; ".join(facts)
+            )
+            title = f"Linha de carteira — {row_id} (Página {page_num})"
+
+            try:
+                _block, was_created = self._create_block(
+                    material_id=material_id,
+                    block_type=_PORTFOLIO_ROW_BLOCK_TYPE,
+                    title=title[:255],
+                    content=content,
+                    source_page=page_num,
+                    order=order,
+                    db=db,
+                    user_id=user_id,
+                )
+                order += 1
+                if was_created:
+                    emitted += 1
+            except Exception as e:
+                print(f"[INGESTOR][V3.6] Falha ao criar portfolio_row para {row_id}: {e}")
+
+        stats["portfolio_rows_created"] = emitted
+        if emitted > 0:
+            print(
+                f"[INGESTOR][V3.6] {emitted} bloco(s) portfolio_row criados "
+                f"para carteira '{carteira_label}' (página {page_num})"
+            )
+        return stats
+
     def _create_block(
         self,
         material_id: int,

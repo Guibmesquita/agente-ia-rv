@@ -4,7 +4,15 @@ from typing import Optional, Tuple
 
 # Tipos de bloco que devem ser tratados como tabela ao formatar conteúdo para o agente.
 # Mantemos as strings literais aqui para evitar import circular com database.models.
-TABLE_BLOCK_TYPES = {"table", "financial_table"}
+#
+# RAG V3.6 — BUG-FIX CRÍTICO da V3.5: o enum real `ContentBlockType.TABLE` armazena
+# o valor "tabela" (em português), enquanto a V3.5 colocou "table" (inglês) neste
+# set. O efeito: para 100% dos blocos de tabela em produção, o caminho rico nunca
+# era ativado — só o fallback heurístico, que falha silenciosamente para JSON
+# tabular bem formado mas grande. Agora cobrimos as três variantes possíveis para
+# evitar regressão se houver legado: "tabela" (canônico), "financial_table" e
+# "table" (defensivo).
+TABLE_BLOCK_TYPES = {"tabela", "financial_table", "table"}
 
 # Limites de truncamento. Para texto comum, mantemos um cap conservador para não
 # explodir a janela de contexto do modelo. Para tabelas, usamos um cap muito maior

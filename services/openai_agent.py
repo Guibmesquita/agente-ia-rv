@@ -20,6 +20,72 @@ from services.cost_tracker import cost_tracker
 settings = get_settings()
 
 
+# RAG V3.6 — Telemetria de respostas evasivas
+_EVASIVE_PATTERNS = [
+    re.compile(r"documento\s+n[ãa]o\s+detalha", re.IGNORECASE),
+    re.compile(r"n[ãa]o\s+(?:foi\s+)?encontr(?:ei|ado).{0,40}material", re.IGNORECASE),
+    re.compile(r"n[ãa]o\s+(?:foi\s+)?encontr(?:ei|ado).{0,40}(?:base|conte[úu]do)", re.IGNORECASE),
+    re.compile(r"n[ãa]o\s+(?:est[áa]\s+)?dispon[íi]vel\s+(?:na|em)\s+(?:nossa\s+)?base", re.IGNORECASE),
+    re.compile(r"n[ãa]o.{0,15}consta.{0,25}(?:base|material|documento)", re.IGNORECASE),
+    re.compile(r"n[ãa]o.{0,15}possuo.{0,25}informa[çc][ãa]o", re.IGNORECASE),
+    re.compile(r"infelizmente.{0,30}n[ãa]o.{0,40}(?:detalh|inform|encontr)", re.IGNORECASE),
+]
+
+
+def _detect_evasive_response(text: str) -> Optional[str]:
+    """Retorna o padrão casado se a resposta for evasiva, ou None."""
+    if not text or len(text) > 4000:
+        return None
+    for pattern in _EVASIVE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return match.group(0)[:120]
+    return None
+
+
+def _log_evasive_response(
+    *,
+    user_query: Optional[str],
+    response_text: str,
+    matched_pattern: str,
+    tools_used: Optional[List[str]] = None,
+    conversation_id: Optional[Any] = None,
+    had_kb_results: bool = False,
+    kb_results_count: int = 0,
+    completeness_mode: bool = False,
+) -> None:
+    """Grava resposta evasiva em rag_evasive_responses (best-effort, não-bloqueante)."""
+    try:
+        from sqlalchemy import text as _sql_text
+        from database.database import SessionLocal
+
+        with SessionLocal() as _db:
+            _db.execute(
+                _sql_text(
+                    """
+                    INSERT INTO rag_evasive_responses
+                        (conversation_id, user_query, ai_response, evasive_pattern,
+                         had_kb_results, kb_results_count, completeness_mode, tools_used)
+                    VALUES
+                        (:c, :q, :r, :p, :hkb, :nkb, :cm, :t)
+                    """
+                ),
+                {
+                    "c": str(conversation_id) if conversation_id is not None else None,
+                    "q": (user_query or "")[:1000],
+                    "r": (response_text or "")[:1500],
+                    "p": matched_pattern[:200],
+                    "hkb": bool(had_kb_results),
+                    "nkb": int(kb_results_count or 0),
+                    "cm": bool(completeness_mode),
+                    "t": ",".join(tools_used or [])[:1000],
+                },
+            )
+            _db.commit()
+    except Exception as _e:
+        print(f"[V3.6] Aviso: falha ao gravar resposta evasiva: {_e}")
+
+
 class OpenAIAgent:
     """Agente de IA para gerar respostas usando GPT."""
 
@@ -2966,6 +3032,20 @@ INSTRUÇÕES IMPORTANTES:
                     )
                     print(f"[OpenAI] Tool call: {tc.function.name}({args})")
 
+            # RAG V3.6 — telemetria de respostas evasivas (best-effort)
+            try:
+                _evasive = _detect_evasive_response(ai_response)
+                if _evasive:
+                    _log_evasive_response(
+                        user_query=user_message,
+                        response_text=ai_response,
+                        matched_pattern=_evasive,
+                        tools_used=[t["name"] for t in tool_calls_data],
+                        conversation_id=conversation_id_for_context,
+                    )
+            except Exception:
+                pass
+
             derivatives_structures = self._detect_derivatives_structures(
                 context_documents
             )
@@ -3278,6 +3358,31 @@ INSTRUÇÕES IMPORTANTES:
                     f"[V2] Resposta final — {iterations} iteração(ões), {elapsed_ms}ms total, {len(tool_calls_log)} tool calls"
                 )
 
+                # RAG V3.6 — telemetria de respostas evasivas (best-effort)
+                try:
+                    _evasive = _detect_evasive_response(ai_response)
+                    if _evasive:
+                        _tools_names = [
+                            (t.get("name") if isinstance(t, dict) else str(t))
+                            for t in (tool_calls_log or [])
+                        ]
+                        _kb_calls = [
+                            t for t in (tool_calls_log or [])
+                            if isinstance(t, dict) and t.get("name") == "search_knowledge_base"
+                        ]
+                        _had_kb = len(_kb_calls) > 0
+                        _log_evasive_response(
+                            user_query=user_message,
+                            response_text=ai_response,
+                            matched_pattern=_evasive,
+                            tools_used=_tools_names,
+                            conversation_id=conversation_id,
+                            had_kb_results=_had_kb,
+                            kb_results_count=len(_kb_calls),
+                        )
+                except Exception:
+                    pass
+
                 # Task #152 — propaga tools_used para o RetrievalLog desta conversa
                 try:
                     _vs_log = get_vector_store()
@@ -3440,6 +3545,30 @@ INSTRUÇÕES IMPORTANTES:
             }
             final_response = self.client.chat.completions.create(**api_kwargs_final)
             ai_response = final_response.choices[0].message.content or ""
+
+            # RAG V3.6 — telemetria de respostas evasivas (best-effort)
+            try:
+                _evasive = _detect_evasive_response(ai_response)
+                if _evasive:
+                    _tools_names = [
+                        (t.get("name") if isinstance(t, dict) else str(t))
+                        for t in (tool_calls_log or [])
+                    ]
+                    _kb_calls = [
+                        t for t in (tool_calls_log or [])
+                        if isinstance(t, dict) and t.get("name") == "search_knowledge_base"
+                    ]
+                    _log_evasive_response(
+                        user_query=user_message,
+                        response_text=ai_response,
+                        matched_pattern=_evasive,
+                        tools_used=_tools_names,
+                        conversation_id=conversation_id,
+                        had_kb_results=len(_kb_calls) > 0,
+                        kb_results_count=len(_kb_calls),
+                    )
+            except Exception:
+                pass
         except Exception as e:
             print(f"[V2] Erro na resposta final após max iterations: {e}")
             error_str = str(e)

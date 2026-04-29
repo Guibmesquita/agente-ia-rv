@@ -25,7 +25,13 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
             "Para '[NÃO-COMITÊ]', você PODE informar, analisar e explicar o ativo, mas deve "
             "deixar claro que não é uma recomendação formal da SVN. "
             "Ao citar dados desta tool, SEMPRE inclua o nome do documento como fonte. "
-            "Para cotações e dados ao vivo, use search_web ou lookup_fii_public."
+            "Para cotações e dados ao vivo, use search_web ou lookup_fii_public. "
+            "PAGINAÇÃO DE TABELAS GRANDES: a resposta inclui o campo 'has_more' e "
+            "'next_offset' quando o conteúdo (ex.: tabela com 12+ linhas) foi truncado. "
+            "Para ver as linhas restantes, refaça a busca com a MESMA query e o "
+            "parâmetro 'offset' igual ao 'next_offset' retornado. NUNCA invente linhas "
+            "que não vieram no resultado: se 'has_more' = true e o usuário pediu lista "
+            "completa, faça nova chamada com offset."
         ),
         "parameters": {
             "type": "object",
@@ -35,7 +41,19 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
                     "description": (
                         "A consulta de busca. Seja específico: inclua ticker, nome do fundo, "
                         "ou termos-chave do que procura. Exemplos: 'BTLG11 rentabilidade histórica', "
-                        "'Kinea Rendimentos estratégia', 'COE proteção capital estrutura'."
+                        "'Kinea Rendimentos estratégia', 'COE proteção capital estrutura'. "
+                        "Para listas exaustivas use termos como 'composição completa', "
+                        "'todos os ativos', 'lista completa da carteira X'."
+                    )
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": (
+                        "Deslocamento de paginação (default 0). Use APENAS quando uma "
+                        "chamada anterior retornou 'has_more: true' — informe o valor de "
+                        "'next_offset' para receber as linhas/blocos seguintes da MESMA "
+                        "tabela ou da mesma sequência de resultados. Útil para carteiras "
+                        "com muitas linhas (10+ FIIs, 20+ ações)."
                     )
                 }
             },
@@ -250,29 +268,60 @@ async def execute_tool_call_direct(name: str, args: dict, db=None, conversation_
 
 
 async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=None) -> Dict[str, Any]:
-    """Executa busca na base de conhecimento usando EnhancedSearch existente."""
-    from services.semantic_search import EnhancedSearch
+    """Executa busca na base de conhecimento usando EnhancedSearch existente.
+
+    RAG V3.6 — Mudanças nesta função:
+      1. Detecta intenção de COMPLETUDE (carteira, lista exaustiva, "todos os...").
+         Quando True:
+           - Expande n_results de 12 → 20 para cobrir todas as linhas/blocos
+             de uma carteira espalhada em múltiplos chunks.
+           - Em vez de cortar para os 4 melhores blocos (top-4), AGRUPA por
+             material_id e devolve TODOS os blocos do(s) material(is) com
+             melhor pontuação acumulada. Isso garante que uma carteira de 12
+             FIIs distribuída em 5 blocos sequenciais não seja cortada para 4.
+           - Aumenta o `max_chars` do `get_rich_content` para 4000 (já era o
+             default para tabelas, mas força mesmo se o `block_type` vier
+             vazio em embeddings legados).
+      2. Aceita parâmetro `offset` (default 0) — quando o agente recebe um
+         resultado com `has_more: true` (tabela truncada), pode chamar de
+         novo com `offset = next_offset` para receber a continuação.
+    """
+    from services.semantic_search import EnhancedSearch, TokenExtractor
     from services.vector_store import get_vector_store, filter_expired_results
 
     query = args.get("query", "")
     if not query:
         return {"error": "Query vazia", "results": []}
 
+    try:
+        offset = int(args.get("offset", 0) or 0)
+        if offset < 0:
+            offset = 0
+    except (TypeError, ValueError):
+        offset = 0
+
     vector_store = get_vector_store()
     if not vector_store:
         return {"error": "Base de conhecimento indisponível", "results": []}
 
+    is_completeness = TokenExtractor.detect_completeness_intent(query)
+    n_results = 20 if is_completeness else 12
+
     enhanced = EnhancedSearch(vector_store)
     raw_results = enhanced.search(
         query=query,
-        n_results=12,
+        n_results=n_results,
         conversation_id=conversation_id,
         similarity_threshold=0.4,
         db=db
     )
 
     if not raw_results:
-        return {"results": [], "message": "Nenhum resultado encontrado para a consulta."}
+        return {
+            "results": [],
+            "message": "Nenhum resultado encontrado para a consulta.",
+            "completeness_mode": is_completeness,
+        }
 
     if db:
         raw_dicts = [
@@ -285,7 +334,11 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             }
             for r in raw_results
         ]
-        filtered = filter_expired_results(raw_dicts, db)[:4]
+        # RAG V3.6 — em modo completude, expandimos a janela pós-filtro de
+        # expirados para 20 (n_results) em vez de cortar para 4. Os blocos
+        # serão depois agrupados por material_id.
+        post_filter_cap = n_results if is_completeness else 4
+        filtered = filter_expired_results(raw_dicts, db)[:post_filter_cap]
         filtered_ids = {d.get("metadata", {}).get("block_id") for d in filtered}
         if filtered_ids:
             raw_results = [
@@ -295,7 +348,37 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         else:
             raw_results = []
     else:
-        raw_results = raw_results[:4]
+        raw_results = raw_results[:n_results if is_completeness else 4]
+
+    # RAG V3.6 — em modo completude, ao invés do top-4 padrão, devolvemos
+    # TODOS os blocos do(s) material(is) com maior contagem de blocos
+    # entre os top n. Isso preserva a integridade de tabelas/listas que
+    # foram chunkificadas e garante que carteiras grandes não sejam
+    # cortadas pela metade.
+    if is_completeness and raw_results:
+        from collections import OrderedDict
+        material_buckets: "OrderedDict[Any, list]" = OrderedDict()
+        for r in raw_results:
+            mid = r.metadata.get("material_id") or r.metadata.get("doc_id") or "_no_material"
+            material_buckets.setdefault(mid, []).append(r)
+        # Materiais ordenados pelo MAIOR score entre seus blocos (relevância
+        # semântica), não pela quantidade de blocos — material mais relevante
+        # vence material mais fragmentado. Empate mantém ordem original
+        # (estabilidade). Mantemos os 2 melhores materiais para evitar
+        # misturar carteiras distintas no mesmo retorno.
+        def _bucket_score(kv):
+            blocks = kv[1]
+            if not blocks:
+                return 0.0
+            return max((float(getattr(b, "score", 0.0) or 0.0)) for b in blocks)
+        ranked_materials = sorted(
+            material_buckets.items(),
+            key=lambda kv: -_bucket_score(kv),
+        )
+        kept = []
+        for _mid, blocks in ranked_materials[:2]:
+            kept.extend(blocks)
+        raw_results = kept
 
     results = []
     materials_with_pdf = set()
@@ -342,21 +425,29 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         meta = r.metadata
         content = r.content
 
+        # RAG V3.6 — guarda o block_type efetivo (do banco se disponível, do
+        # metadata caso contrário) para decidir o cap final de `content` no
+        # result_entry mais abaixo. Tabelas merecem 4000 chars; texto, 600.
+        effective_block_type = (meta.get("block_type") or "").lower().strip()
+
         if db:
             try:
                 block_id_raw = meta.get("block_id")
                 if block_id_raw:
                     from database.models import ContentBlock as CB
-                    from services.content_formatter import get_rich_content
+                    from services.content_formatter import get_rich_content, TABLE_BLOCK_TYPES
                     int_bid = int(str(block_id_raw).split("_")[-1]) if "_" in str(block_id_raw) else int(block_id_raw)
-                    # RAG V3.5 — Recuperação rica de tabelas: também buscamos
-                    # o block_type para que o formatter possa decidir entre o
-                    # path de texto (cap 600) ou o path de tabela (cap 4000 +
-                    # markdown + Fatos por linha + truncamento por linha).
-                    # Sem isso, tabelas com 12+ linhas (ex.: carteira "Seven
-                    # FIIs") eram cortadas pela metade antes de chegar no agente.
+                    # RAG V3.5/V3.6 — Recuperação rica de tabelas: buscamos o
+                    # block_type do banco (mais confiável que o metadata, que
+                    # pode estar vazio em embeddings legados) para que o
+                    # formatter ative o path rico (Markdown + Fatos por linha +
+                    # truncamento por linha, cap 4000) em vez do path de texto
+                    # (cap 600). Sem isso, tabelas grandes (ex.: carteira
+                    # "Seven FIIs" com 12 FIIs) eram cortadas pela metade.
                     block = db.query(CB.content, CB.block_type).filter(CB.id == int_bid).first()
                     if block:
+                        if (block.block_type or "").lower().strip():
+                            effective_block_type = (block.block_type or "").lower().strip()
                         content = get_rich_content(
                             block.content,
                             r.content,
@@ -520,6 +611,17 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
                     f"{_type_clause}"
                 )
 
+        # RAG V3.6 — cap dinâmico por tipo de bloco. Tabela/financial_table
+        # ganham 4000 chars (carteira de 12 FIIs precisa); o resto fica em 600.
+        # Sem isso, o `get_rich_content` retornava 4000 chars de tabela rica e
+        # nós destruíamos tudo aqui com `content[:600]`. Bug silencioso da V3.5.
+        from services.content_formatter import TABLE_BLOCK_TYPES as _TBT
+        _is_table_block = (effective_block_type or block_type_meta or "").lower() in _TBT
+        _content_cap = 4000 if _is_table_block else 600
+        _final_content = content[:_content_cap]
+        # Marcador de truncamento para o agente saber pedir paginação.
+        _content_was_truncated = len(content) > _content_cap
+
         result_entry = {
             "title": meta.get("document_title", "Documento"),
             "material_name": material_name,
@@ -529,7 +631,8 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             "product_type": product_type_meta or "outro",
             "product": meta.get("product_name", ""),
             "ticker": meta.get("products", ""),
-            "content": content[:600],
+            "content": _final_content,
+            "content_truncated": _content_was_truncated,
             "score": round(r.composite_score, 3) if hasattr(r, 'composite_score') else None,
             "material_id": None if is_product_key_info else meta.get("material_id"),
             "block_id": int_block_id,
@@ -595,7 +698,43 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         except Exception as ve:
             print(f"[VISUAL_ENRICH] Error enriching visual candidates: {ve}")
 
-    response = {"results": results, "count": len(results)}
+    # RAG V3.6 — paginação por offset. Aplicamos o offset depois de tudo
+    # construído para que a contagem original (`total_results`) reflita o
+    # tamanho real do conjunto antes da janela.
+    #
+    # IMPORTANTE: `has_more` é EXCLUSIVAMENTE sobre paginação de blocos
+    # restantes (cursor monotônico). Truncamento intra-bloco é exposto via
+    # `content_truncated` por resultado e via `content_truncated_in_window`
+    # agregado — não via `has_more`, pois chamar de novo com o mesmo offset
+    # NÃO recuperaria mais conteúdo do mesmo bloco truncado (causaria loop).
+    # Quando a janela contém truncamento, o agente deve refinar a query
+    # (ex.: pedir um ticker específico) ou aceitar que aquele bloco é o cap.
+    total_results = len(results)
+    has_truncated_block = any(r.get("content_truncated") for r in results)
+
+    if offset and offset > 0:
+        results_window = results[offset:]
+    else:
+        results_window = results
+
+    next_offset = offset + len(results_window)
+    has_more = next_offset < total_results
+
+    response = {
+        "results": results_window,
+        "count": len(results_window),
+        "total_results": total_results,
+        "offset": offset,
+        "completeness_mode": is_completeness,
+        "content_truncated_in_window": has_truncated_block,
+    }
+
+    if has_more:
+        response["has_more"] = True
+        response["next_offset"] = next_offset
+    else:
+        response["has_more"] = False
+
     if materials_with_pdf:
         response["materials_with_pdf"] = list(materials_with_pdf)
     if visual_candidates:

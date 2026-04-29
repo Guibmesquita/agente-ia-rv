@@ -500,6 +500,24 @@ def _apply_incremental_migrations():
         """UPDATE products SET category = 'FII Tijolo', categories = '["FII Tijolo"]'
            WHERE UPPER(ticker) IN ('LIFE11')
              AND (category IS NULL OR category = '' OR category = 'FII')""",
+        # RAG V3.6 — Telemetria de respostas evasivas. Quando o agente
+        # responde com padrões como "documento não detalha", "não encontrei
+        # nos materiais", apesar do RAG ter retornado resultados, gravamos
+        # aqui para auditoria e calibração contínua.
+        """CREATE TABLE IF NOT EXISTS rag_evasive_responses (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            conversation_id VARCHAR(100),
+            user_query TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            evasive_pattern VARCHAR(255),
+            had_kb_results BOOLEAN DEFAULT FALSE,
+            kb_results_count INTEGER DEFAULT 0,
+            completeness_mode BOOLEAN DEFAULT FALSE,
+            tools_used TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_rag_evasive_created_at ON rag_evasive_responses(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_rag_evasive_conversation ON rag_evasive_responses(conversation_id)",
     ]
     db = SessionLocal()
     ok = 0

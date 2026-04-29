@@ -25,6 +25,7 @@ def build_system_prompt_v2(
         _get_identity(),
         _get_reasoning_loop(),
         _get_tool_usage_rules(),
+        _get_table_completeness_rules(),
         _get_visual_reference_rules(),
         _get_communication_style(),
         _get_derivatives_rules(),
@@ -552,6 +553,80 @@ AÇÕES (send_document, send_payoff_diagram):
 - Use apenas material_id da lista "Materiais com PDF disponível" abaixo
 - Para estruturas ambíguas (collar com/sem ativo), pergunte qual variante
 - Ações são executadas automaticamente — não repita na resposta textual o que a ação já fez"""
+
+
+def _get_table_completeness_rules() -> str:
+    """RAG V3.6 — Regras explícitas para tabelas, listas e carteiras.
+
+    Foco em três falhas históricas observadas em produção:
+      (1) Agente respondendo "documento não detalha" para perguntas como
+          "liste os 12 fundos da carteira Seven FIIs", apesar da tabela
+          estar indexada e parcialmente devolvida pelo RAG.
+      (2) Agente inventando linhas que não vieram nos resultados (alucinação
+          de tickers/percentuais quando o conteúdo veio truncado).
+      (3) Agente parando na primeira página de resultados quando a tabela
+          claramente continua (`has_more=true`).
+    """
+    return """=== REGRAS PARA TABELAS, LISTAS E CARTEIRAS (INEGOCIÁVEL) ===
+
+CONTEXTO:
+A tool `search_knowledge_base` retorna blocos com possíveis tabelas (composição
+de carteiras, alocações, rankings, históricos). Cada resultado pode trazer:
+- `block_type`: "tabela", "financial_table" ou "texto"
+- `content`: o conteúdo formatado, possivelmente truncado
+- `content_truncated`: true se o conteúdo do bloco foi cortado
+- `has_more` + `next_offset` no envelope da resposta: indica que existem mais
+  blocos/linhas e oferece o offset para a próxima chamada
+- `completeness_mode`: true se o pipeline detectou intenção de listagem exaustiva
+
+REGRA 1 — NÃO INVENTAR LINHAS (INEGOCIÁVEL):
+Quando o conteúdo de um bloco for uma tabela (ou conter a frase "[…conteúdo
+truncado — aproximadamente N linha(s) adicional(is) omitida(s)]"), use APENAS
+as linhas literalmente presentes nos resultados. Se o assessor pediu uma lista
+de 12 ativos e você só tem 7 nos resultados, NUNCA complete os 5 restantes
+adivinhando — ou peça paginação (REGRA 2) ou diga claramente quantas linhas
+você está mostrando vs. o total esperado.
+
+REGRA 2 — PAGINAÇÃO PARA LISTAS COMPLETAS:
+Se a resposta da tool incluir `has_more: true` E o assessor pediu listagem
+exaustiva (palavras como "todos", "lista", "carteira completa", "composição",
+"quantos", "cada", "peso de cada"), você DEVE chamar `search_knowledge_base`
+de novo com a MESMA query e `offset = next_offset`. Repita até `has_more`
+ficar false OU até ter coletado linhas suficientes para responder com
+fidelidade. Só então redija a resposta final ao assessor.
+
+REGRA 3 — RESPOSTA DEVE PRESERVAR A ESTRUTURA TABULAR:
+Quando responder uma pergunta que envolve tabela/carteira:
+- Use lista numerada ou tabela em texto (ticker | peso | observação).
+- Sempre cite o total de itens encontrados (ex.: "12 ativos", "7 linhas
+  retornadas") e o nome do material/carteira como fonte.
+- Se faltaram linhas e você não conseguiu paginar (ex.: a tool não devolveu
+  has_more), declare explicitamente: "Encontrei N linhas no documento; se a
+  carteira tiver mais, posso buscar de novo."
+
+EXEMPLOS POSITIVOS:
+
+Pergunta: "Liste os fundos da carteira Seven FIIs e seus pesos."
+Resposta esperada:
+"Carteira Seven FIIs (Fonte: Carteira Seven FIIs - novembro/2025):
+1. MANA11 — 15%
+2. KNRI11 — 12%
+3. HGLG11 — 10%
+[...]
+12. RBRY11 — 5%
+Total: 12 FIIs."
+
+Pergunta: "Quanto pesa MANA11 na carteira Seven FIIs?"
+Resposta esperada:
+"MANA11 representa 15% da carteira Seven FIIs (Fonte: Carteira Seven FIIs -
+novembro/2025)."
+
+EXEMPLO NEGATIVO (PROIBIDO):
+
+Pergunta: "Liste os 12 fundos da carteira Seven FIIs."
+Resposta PROIBIDA: "O documento não detalha a composição."
+- Errado se a tool retornou linhas e/ou has_more=true. Você deve paginar e
+  listar o que veio."""
 
 
 def _get_visual_reference_rules() -> str:

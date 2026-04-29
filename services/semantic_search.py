@@ -357,6 +357,41 @@ class TokenExtractor:
         'mais alto', 'mais baixo', 'mais rentavel', 'mais rentável',
         'maior dy', 'maior dividend', 'menor pvp', 'menor p/vp',
     }
+
+    # RAG V3.6 — palavras-chave que sinalizam intenção de COMPLETUDE/EXAUSTÃO,
+    # tipicamente quando o assessor quer ver todos os itens de uma carteira,
+    # lista, alocação ou ranking. Para essas queries, o pipeline DEVE expandir
+    # n_results e PRESERVAR todos os blocos do mesmo material (não pode cortar
+    # para top-4), porque qualquer linha omitida = resposta enganosa.
+    # Caso real: "liste os 12 fundos da carteira Seven FIIs" — se cortarmos
+    # para 4 blocos e a carteira tiver 12 ativos espalhados, o agente
+    # responde "documento não detalha".
+    COMPLETENESS_KEYWORDS = {
+        # Verbos de listagem exaustiva
+        'liste', 'listar', 'lista', 'listagem', 'enumere', 'enumerar',
+        'todos', 'todas', 'todo', 'toda',
+        'cada', 'cada um', 'cada uma',
+        # Termos de carteira/portfólio
+        'carteira', 'portfolio', 'portfólio', 'composicao', 'composição',
+        'alocacao', 'alocação', 'aloca',
+        'ativos da carteira', 'fundos da carteira', 'papeis da carteira',
+        'composicao da carteira', 'composição da carteira',
+        # Quantificação total
+        'quantos', 'quantas', 'qual o peso', 'qual peso', 'qual percentual',
+        'qual a participacao', 'qual participação', 'qual a participação',
+        'pesos', 'percentuais', 'participacoes', 'participações',
+        # Padrões característicos
+        'completo', 'completa', 'exaustiv', 'integralmente',
+    }
+
+    # RAG V3.6 — palavras-chave de "portfólio/carteira" stricto. Usadas pelo
+    # reranker para boost de blocos do tipo "portfolio_row" e tabelas, e pelo
+    # agente_tools para também expandir resultados quando combinadas com tickers.
+    PORTFOLIO_KEYWORDS = {
+        'carteira', 'portfolio', 'portfólio', 'composicao', 'composição',
+        'alocacao', 'alocação', 'pesos', 'peso', 'participacao', 'participação',
+        'fundos da', 'ativos da', 'papeis da', 'papéis da',
+    }
     
     @classmethod
     def extract(cls, query: str) -> ExtractedTokens:
@@ -427,7 +462,45 @@ class TokenExtractor:
                 return 'numeric'
 
         return 'conceptual'
-    
+
+    @classmethod
+    def detect_completeness_intent(cls, query: str) -> bool:
+        """RAG V3.6 — Detecta intenção de listagem/completude exaustiva.
+
+        Quando a query pede "todos", "lista", "carteira", "composição",
+        "quantos", etc., o pipeline de RAG deve:
+          1. Aumentar n_results (top_k expandido).
+          2. NÃO truncar para os 4 melhores blocos (preservar todos do mesmo
+             material de origem).
+          3. Usar caminho rico de tabelas (cap 4000 chars) sempre que
+             encontrar TABLE/FINANCIAL_TABLE.
+
+        Retorna True se a intenção de completude for detectada.
+        """
+        if not query:
+            return False
+        query_norm = QueryNormalizer.normalize_for_comparison(query)
+        for kw in cls.COMPLETENESS_KEYWORDS:
+            if kw in query_norm:
+                return True
+        return False
+
+    @classmethod
+    def detect_portfolio_intent(cls, query: str) -> bool:
+        """RAG V3.6 — Detecta intenção estrita de portfólio/carteira.
+
+        Mais restritiva que `detect_completeness_intent` — usada pelo
+        reranker para boost de blocos `portfolio_row` e tabelas, e para
+        ativar caminhos de busca específicos por linha de carteira.
+        """
+        if not query:
+            return False
+        query_norm = QueryNormalizer.normalize_for_comparison(query)
+        for kw in cls.PORTFOLIO_KEYWORDS:
+            if kw in query_norm:
+                return True
+        return False
+
     @classmethod
     def _extract_gestoras(cls, query: str) -> List[str]:
         """Extrai possíveis nomes de gestoras da query."""
