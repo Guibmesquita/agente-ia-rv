@@ -43,7 +43,10 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
                         "ou termos-chave do que procura. Exemplos: 'BTLG11 rentabilidade histórica', "
                         "'Kinea Rendimentos estratégia', 'COE proteção capital estrutura'. "
                         "Para listas exaustivas use termos como 'composição completa', "
-                        "'todos os ativos', 'lista completa da carteira X'."
+                        "'todos os ativos', 'lista completa da carteira X'. "
+                        "OBRIGATÓRIO no fluxo de busca; OPCIONAL apenas quando você está "
+                        "continuando a leitura de um bloco específico via 'block_id' (nesse "
+                        "caso pode ser omitido ou enviado como string vazia)."
                     )
                 },
                 "offset": {
@@ -90,7 +93,12 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
                     )
                 }
             },
-            "required": ["query"]
+            # `query` é obrigatório no fluxo de busca. Para o fluxo de
+            # continuação intra-bloco (`block_id` + `content_offset`), o
+            # backend dispensa a validação. Mantemos o campo formalmente
+            # como NÃO obrigatório no schema para permitir o fluxo de
+            # continuação sem inflar a query com placeholder.
+            "required": []
         }
     }
 }
