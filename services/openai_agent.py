@@ -20,6 +20,203 @@ from services.cost_tracker import cost_tracker
 settings = get_settings()
 
 
+# RAG V3.6 — Truncamento semanticamente seguro do payload das tools.
+#
+# O loop agentic V2 envia o resultado de cada tool de volta para o GPT como
+# `messages.append({"role": "tool", "content": json.dumps(result)})`. Quando o
+# payload é grande (carteira com 30+ linhas, várias tabelas), precisamos cortar
+# para não estourar o contexto efetivo do modelo. A versão antiga simplesmente
+# removia o último item de `results` em loop até caber em 5000 chars — isso
+# descartava blocos `portfolio_row`/`tabela` que o pipeline V3.6 acabou de
+# garantir que viessem completos.
+#
+# A versão atual prioriza a semântica:
+#   1) cap maior (10000 chars) — modernos GPT-4o/4-turbo têm contexto sobrando;
+#   2) compressão de campos verbosos repetitivos (source_note, visual_description
+#      vazio, metadata redundante) ANTES de descartar resultados;
+#   3) quando ainda assim precisa cortar, descarta primeiro blocos NÃO-
+#      prioritários (texto solto) e por último blocos `portfolio_row`/`tabela`;
+#   4) atualiza `count`, `has_more` e `next_offset` para o agente saber
+#      honestamente o que sobrou e poder paginar.
+_TOOL_PAYLOAD_MAX_CHARS = 10000
+_PRIORITY_BLOCK_TYPES = {"portfolio_row", "tabela", "financial_table", "table"}
+_NON_ESSENTIAL_RESULT_FIELDS = (
+    "material_type",
+    "product_type",
+    "comite_tag",
+    "score",
+    "visual_description",
+)
+
+
+def _is_priority_block(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return (entry.get("block_type") or "").lower() in _PRIORITY_BLOCK_TYPES
+
+
+def _compact_tool_payload(
+    result: Any,
+    max_chars: int = _TOOL_PAYLOAD_MAX_CHARS,
+) -> Tuple[str, bool]:
+    """Serializa o resultado de uma tool em JSON, comprimindo de forma
+    semanticamente segura quando passa do cap.
+
+    Retorna ``(json_str, was_truncated)``.
+
+    Estratégia, em ordem:
+
+    1. Se já cabe, retorna como está.
+    2. Pass de compressão: remove campos vazios e ``source_note`` (longo e
+       repetitivo); deduplicado em uma única ``citation_legend`` no envelope.
+       Remove ``visual_description`` de blocos prioritários (irrelevante para
+       linhas de carteira).
+    3. Pass mais agressivo: trima ``content`` de blocos não-prioritários para
+       até 200 chars e remove campos não essenciais
+       (material_type, product_type, comite_tag, score, visual_description).
+    4. Pass de poda: remove primeiro resultados NÃO-prioritários (a partir do
+       fim) e, em último caso, prioritários (também do fim).
+    5. Atualiza ``count``, ``has_more`` e ``next_offset`` para refletir
+       fielmente o que sobrou — assim o agente pode pedir o resto via
+       paginação em vez de inventar dados ausentes.
+    """
+    raw = json.dumps(result, ensure_ascii=False)
+    if len(raw) <= max_chars:
+        return raw, False
+
+    if (
+        not isinstance(result, dict)
+        or not isinstance(result.get("results"), list)
+    ):
+        # Estrutura desconhecida — fallback conservador. Em vez de cortar a
+        # string crua (que quebraria o JSON e poderia confundir o parser do
+        # modelo), embrulhamos em um envelope válido com preview truncado.
+        # Reservamos uns chars para o envelope, daí o cap interno do preview.
+        preview_cap = max(0, max_chars - 200)
+        envelope = {
+            "_truncated": True,
+            "_truncated_reason": "unknown_payload_structure",
+            "raw_preview": raw[:preview_cap],
+        }
+        return json.dumps(envelope, ensure_ascii=False), True
+
+    payload = dict(result)
+    payload["_truncated"] = True
+
+    # ----- Pass 1: compressão leve (campos vazios + source_note + visual_description em tabelas) -----
+    compacted_results: List[Any] = []
+    has_any_source_note = False
+    for entry in payload["results"]:
+        if not isinstance(entry, dict):
+            compacted_results.append(entry)
+            continue
+        slim = dict(entry)
+        if slim.pop("source_note", None):
+            has_any_source_note = True
+        # Remove campos vazios.
+        for k in list(slim.keys()):
+            v = slim.get(k)
+            if v is None or v == "" or v == [] or v == {}:
+                slim.pop(k, None)
+        # Em blocos prioritários, visual_description quase sempre é vazio
+        # ou pouco útil (a "imagem" da linha de carteira é o próprio texto).
+        if _is_priority_block(slim):
+            slim.pop("visual_description", None)
+        # content_truncated=False não agrega significado.
+        if slim.get("content_truncated") is False:
+            slim.pop("content_truncated", None)
+        compacted_results.append(slim)
+
+    payload["results"] = compacted_results
+    if has_any_source_note and "citation_legend" not in payload:
+        payload["citation_legend"] = (
+            "Cite cada resultado como (Fonte: <material_name>, p.<source_page>); "
+            "use framing de COMITÊ apenas para resultados onde o título do material "
+            "indique recomendação formal."
+        )
+
+    if len(json.dumps(payload, ensure_ascii=False)) <= max_chars:
+        return json.dumps(payload, ensure_ascii=False), True
+
+    # ----- Pass 2: compressão agressiva (campos não essenciais + trim de não-prioritários) -----
+    for entry in payload["results"]:
+        if not isinstance(entry, dict):
+            continue
+        for f in _NON_ESSENTIAL_RESULT_FIELDS:
+            entry.pop(f, None)
+        # `product` muitas vezes duplica `ticker` (ações/FIIs); manter ambos é
+        # ruído puro para o agente quando o payload está apertado.
+        if entry.get("product") and entry.get("product") == entry.get("ticker"):
+            entry.pop("product", None)
+        # Em blocos prioritários (linha de carteira/tabela), o `title` é
+        # informação redundante: o `content` já carrega o ticker e o número
+        # da página vem em `source_page`.
+        if _is_priority_block(entry):
+            entry.pop("title", None)
+        if not _is_priority_block(entry):
+            content = entry.get("content")
+            if isinstance(content, str) and len(content) > 200:
+                entry["content"] = content[:200] + "…"
+                entry["content_compacted"] = True
+
+    if len(json.dumps(payload, ensure_ascii=False)) <= max_chars:
+        return json.dumps(payload, ensure_ascii=False), True
+
+    # Drop também alguns campos secundários do envelope se ainda apertado.
+    for f in ("materials_with_pdf", "visual_candidates"):
+        if f in payload:
+            payload.pop(f, None)
+            if len(json.dumps(payload, ensure_ascii=False)) <= max_chars:
+                return json.dumps(payload, ensure_ascii=False), True
+
+    # ----- Pass 3: poda preservando prioridade -----
+    items = payload["results"]
+    base_offset = 0
+    try:
+        base_offset = int(payload.get("offset") or 0)
+    except (TypeError, ValueError):
+        base_offset = 0
+
+    original_total = payload.get("total_results")
+    if not isinstance(original_total, int) or original_total <= 0:
+        original_total = base_offset + len(items)
+
+    dropped = 0
+    # 3a) descarta NÃO-prioritários a partir do fim.
+    i = len(items) - 1
+    while i >= 0 and len(json.dumps(payload, ensure_ascii=False)) > max_chars:
+        if not _is_priority_block(items[i]):
+            items.pop(i)
+            dropped += 1
+        i -= 1
+
+    # 3b) se ainda apertado, descarta prioritários a partir do fim.
+    while items and len(json.dumps(payload, ensure_ascii=False)) > max_chars:
+        items.pop()
+        dropped += 1
+
+    if dropped:
+        kept = len(items)
+        payload["count"] = kept
+        # Sinalização honesta: o agente precisa saber que existem mais blocos
+        # e em qual offset continuar. Preserva total_results para o agente
+        # entender o tamanho real do conjunto.
+        new_next = base_offset + kept
+        if new_next < original_total:
+            payload["has_more"] = True
+            payload["next_offset"] = new_next
+        payload["_truncated_results_count"] = dropped
+        # content_truncated_in_window pode ter mudado; recalcula sobre o
+        # que de fato sobrou.
+        if "content_truncated_in_window" in payload:
+            payload["content_truncated_in_window"] = any(
+                isinstance(r, dict) and r.get("content_truncated")
+                for r in items
+            )
+
+    return json.dumps(payload, ensure_ascii=False), True
+
+
 # RAG V3.6 — Telemetria de respostas evasivas
 _EVASIVE_PATTERNS = [
     re.compile(r"documento\s+n[ãa]o\s+detalha", re.IGNORECASE),
@@ -3524,25 +3721,11 @@ INSTRUÇÕES IMPORTANTES:
                 if isinstance(result, Exception):
                     result_str = json.dumps({"error": str(result)}, ensure_ascii=False)
                 else:
-                    result_str = json.dumps(result, ensure_ascii=False)
-
-                if len(result_str) > 5000:
-                    if isinstance(result, dict) and "results" in result:
-                        truncated = dict(result)
-                        while len(
-                            json.dumps(truncated, ensure_ascii=False)
-                        ) > 5000 and truncated.get("results"):
-                            if (
-                                isinstance(truncated["results"], list)
-                                and len(truncated["results"]) > 1
-                            ):
-                                truncated["results"] = truncated["results"][:-1]
-                            else:
-                                break
-                        truncated["_truncated"] = True
-                        result_str = json.dumps(truncated, ensure_ascii=False)
-                    else:
-                        result_str = result_str[:5000]
+                    # RAG V3.6 — Truncamento que preserva blocos prioritários
+                    # (portfolio_row/tabela). Comprime campos verbosos antes de
+                    # descartar resultados; quando descarta, atualiza
+                    # has_more/next_offset honestamente.
+                    result_str, _ = _compact_tool_payload(result)
 
                 messages.append(
                     {
