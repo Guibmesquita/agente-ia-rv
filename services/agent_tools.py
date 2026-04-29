@@ -395,9 +395,21 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     )
 
     if not raw_results:
+        # Task #196 — sinal explícito para o LLM de que NADA foi recuperado.
+        # `no_results: true` é referenciado pela REGRA 4 do prompt
+        # (`_get_table_completeness_rules`), que proíbe inventar dados nesse
+        # caso. A mensagem é deliberadamente directiva.
         return {
             "results": [],
-            "message": "Nenhum resultado encontrado para a consulta.",
+            "no_results": True,
+            "count": 0,
+            "total_results": 0,
+            "message": (
+                "Nenhum resultado encontrado na base interna para a consulta. "
+                "Material não indexado ou nome não corresponde a nenhum "
+                "documento. NÃO INVENTE composição, tickers ou percentuais — "
+                "siga a REGRA 4 do prompt e responda com transparência."
+            ),
             "completeness_mode": is_completeness,
         }
 
@@ -427,6 +439,24 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             raw_results = []
     else:
         raw_results = raw_results[:n_results if is_completeness else 4]
+
+    # Task #196 — se o pós-filtro de expirados esvaziou tudo, devolva o
+    # mesmo sinal `no_results: true` que o caminho do bloco anterior, para
+    # que o LLM aplique a REGRA 4 e não fabrique conteúdo. Sem este guard,
+    # o for-loop adiante geraria `results: []` sem o sinal explícito.
+    if not raw_results:
+        return {
+            "results": [],
+            "no_results": True,
+            "count": 0,
+            "total_results": 0,
+            "message": (
+                "Nenhum resultado válido após filtro de expirados. "
+                "Material possivelmente desatualizado ou inexistente. "
+                "NÃO INVENTE composição — siga a REGRA 4 do prompt."
+            ),
+            "completeness_mode": is_completeness,
+        }
 
     # RAG V3.6 — em modo completude, ao invés do top-4 padrão, devolvemos
     # TODOS os blocos do(s) material(is) com maior contagem de blocos

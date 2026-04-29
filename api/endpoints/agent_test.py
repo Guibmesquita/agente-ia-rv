@@ -159,6 +159,15 @@ async def test_agent_message(
     session["last_response_at"] = datetime.now()
     test_session_data[user_id] = session
 
+    # Task #196 — telemetria do playground precisa ser visível. Antes este
+    # try/except absorvia silenciosamente qualquer falha (ex.: rollback de
+    # transação anterior), apagando o rastro do playground inteiro. Agora:
+    #  1. Logamos o tipo do erro + traceback completo no console.
+    #  2. Forçamos rollback da sessão para não contaminar requisições
+    #     subsequentes (sintoma observado em prod: nenhum RetrievalLog do
+    #     playground por horas após uma única falha).
+    #  3. Mantemos não-bloqueante para o usuário — a resposta do agente já
+    #     foi gerada e nunca deve ser invalidada por falha de telemetria.
     try:
         import json as _json
         from database.models import RetrievalLog
@@ -192,7 +201,16 @@ async def test_agent_message(
         db.add(retrieval_log)
         db.commit()
     except Exception as log_err:
-        print(f"[AGENT_TEST] Erro ao salvar RetrievalLog (não-bloqueante): {log_err}")
+        import traceback as _tb
+        print(
+            f"[AGENT_TEST][TELEMETRY] Falha ao gravar RetrievalLog (não-bloqueante) — "
+            f"{type(log_err).__name__}: {log_err}"
+        )
+        print(_tb.format_exc())
+        try:
+            db.rollback()
+        except Exception as _rb_err:
+            print(f"[AGENT_TEST][TELEMETRY] Rollback também falhou: {_rb_err}")
 
     knowledge_documents = []
     if context and context.get("tool_calls"):

@@ -622,29 +622,59 @@ Quando responder uma pergunta que envolve tabela/carteira:
   has_more), declare explicitamente: "Encontrei N linhas no documento; se a
   carteira tiver mais, posso buscar de novo."
 
-EXEMPLOS POSITIVOS:
+REGRA 4 — MATERIAL NÃO ENCONTRADO (INEGOCIÁVEL):
+Se a tool `search_knowledge_base` devolveu `no_results: true` (ou `results: []`
+com a mensagem "Nenhum resultado encontrado"), a carteira/material que o
+assessor citou NÃO existe na base interna — ou o nome usado não corresponde a
+nenhum material indexado. NESTE CASO É PROIBIDO:
+- Inventar tickers, percentuais, datas ou composição de carteira.
+- Citar uma "Fonte: Carteira XYZ - <mês>/<ano>" que não veio nos resultados
+  reais (citação fabricada é considerada alucinação grave).
+- Reaproveitar dados de QUALQUER exemplo deste prompt como se fossem reais.
+A resposta correta é dizer com transparência:
+"Não encontrei a carteira [nome citado] na nossa base. Pode confirmar o nome
+exato? Se não estiver indexada, posso acionar o broker responsável."
+Se o assessor pediu uma carteira específica e a tool retornou só blocos de
+OUTRA carteira (nome diferente), trate como "não encontrado" para o que foi
+pedido — NÃO preencha a resposta com dados de outra carteira fingindo ser a
+solicitada.
 
-Pergunta: "Liste os fundos da carteira Seven FIIs e seus pesos."
-Resposta esperada:
-"Carteira Seven FIIs (Fonte: Carteira Seven FIIs - novembro/2025):
-1. MANA11 — 15%
-2. KNRI11 — 12%
-3. HGLG11 — 10%
+REGRA 5 — EXEMPLOS DESTE PROMPT NÃO SÃO DADOS REAIS (INEGOCIÁVEL):
+Os exemplos abaixo usam nomes/tickers fictícios apenas para ilustrar formato.
+NUNCA reutilize esses nomes (ex.: "Carteira Modelo Demo", tickers começando
+com placeholder como ABCD11/WXYZ11/EFGH11) numa resposta real, e NUNCA copie
+os percentuais ou meses/anos dos exemplos. Os dados reais SEMPRE vêm das
+chamadas de tool — se a tool não devolveu, aplique a REGRA 4.
+
+EXEMPLOS POSITIVOS (placeholders fictícios — NÃO REUTILIZAR):
+
+Pergunta: "Liste os fundos da Carteira Modelo Demo e seus pesos."
+Resposta esperada (assumindo que a tool devolveu 12 linhas reais):
+"Carteira Modelo Demo (Fonte: <nome real do material vindo da tool>):
+1. ABCD11 — 15%
+2. WXYZ11 — 12%
+3. EFGH11 — 10%
 [...]
-12. RBRY11 — 5%
+12. <ticker real> — <% real>
 Total: 12 FIIs."
 
-Pergunta: "Quanto pesa MANA11 na carteira Seven FIIs?"
-Resposta esperada:
-"MANA11 representa 15% da carteira Seven FIIs (Fonte: Carteira Seven FIIs -
-novembro/2025)."
+Pergunta: "Quanto pesa ABCD11 na Carteira Modelo Demo?"
+Resposta esperada (se a tool devolveu a linha de ABCD11):
+"ABCD11 representa 15% da Carteira Modelo Demo (Fonte: <nome real do material>)."
 
-EXEMPLO NEGATIVO (PROIBIDO):
-
-Pergunta: "Liste os 12 fundos da carteira Seven FIIs."
+EXEMPLO NEGATIVO 1 (PROIBIDO — alucinação por paginação não feita):
+Pergunta: "Liste os 12 fundos da Carteira Modelo Demo."
 Resposta PROIBIDA: "O documento não detalha a composição."
 - Errado se a tool retornou linhas e/ou has_more=true. Você deve paginar e
-  listar o que veio."""
+  listar o que veio.
+
+EXEMPLO NEGATIVO 2 (PROIBIDO — fabricação de fonte):
+Pergunta: "Liste os fundos da Carteira <nome qualquer>."
+Resposta PROIBIDA: "Carteira <nome qualquer> (Fonte: Carteira <nome qualquer>
+- novembro/2025): 1. ABCD11 — 15% [...]"  (quando a tool devolveu no_results
+ou só blocos de outra carteira)
+- Errado: a fonte foi inventada e os dados foram copiados deste prompt. Aplique
+  a REGRA 4 e seja transparente sobre não ter encontrado o material."""
 
 
 def _get_visual_reference_rules() -> str:
