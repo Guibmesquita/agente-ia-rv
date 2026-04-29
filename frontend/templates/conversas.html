@@ -631,7 +631,21 @@
                 document.getElementById('sidebar').classList.add('collapsed');
                 document.getElementById('mainContent').style.marginLeft = 'var(--sidebar-collapsed)';
             }
-            loadConversations();
+            // Task #190 — abrir conversa via ?id=<conversation_id>
+            // (usado pelo painel de respostas evasivas para deep-link).
+            // O id de Conversation é Integer no backend, então convertemos
+            // para número aqui para casar com a comparação estrita usada
+            // em selectConversation (`c.id === id`).
+            const urlParams = new URLSearchParams(window.location.search);
+            const rawConvId = urlParams.get('id');
+            const targetConvId = (rawConvId && /^\d+$/.test(rawConvId))
+                ? parseInt(rawConvId, 10)
+                : rawConvId;
+            loadConversations().then(() => {
+                if (targetConvId !== null && targetConvId !== undefined && targetConvId !== '') {
+                    selectConversation(targetConvId);
+                }
+            });
 
             const btnDeduplicar = document.getElementById('btnDeduplicar');
             if (btnDeduplicar) {

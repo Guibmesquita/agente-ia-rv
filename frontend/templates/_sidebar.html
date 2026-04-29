@@ -102,6 +102,14 @@
           </svg>
           <span class="text-sm font-medium sidebar-text">Usuários</span>
         </a>
+
+        <!-- RAG Evasivas (Task #190) -->
+        <a href="/admin/rag-evasive" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/admin/rag-evasive' %}bg-primary/10 text-primary{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <span class="text-sm font-medium sidebar-text">RAG Evasivas</span>
+        </a>
         {% endif %}
 
         <!-- Personalidade IA -->
@@ -231,7 +239,7 @@
   let isKnowledgeOpen = false;
 
   const knowledgeRoutes = ['/base-conhecimento', '/fila-revisao', '/documentos', '/comite'];
-  const configRoutes = ['/assessores', '/admin', '/agent-brain', '/integrations', '/custos'].concat(knowledgeRoutes);
+  const configRoutes = ['/assessores', '/admin', '/admin/rag-evasive', '/agent-brain', '/integrations', '/custos'].concat(knowledgeRoutes);
   const currentPath = window.location.pathname;
   const isKnowledgePath = knowledgeRoutes.includes(currentPath) || currentPath.startsWith('/base-conhecimento');
   const isConfigPath = configRoutes.includes(currentPath) || currentPath.startsWith('/base-conhecimento');

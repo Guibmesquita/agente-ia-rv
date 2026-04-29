@@ -4,12 +4,16 @@ Agrega diagnósticos e ferramentas de gestão interna restritas ao role admin.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database.database import get_db
 from database.models import Product, User
 from api.endpoints.auth import get_current_user
+
+
+# Status válidos para triagem de respostas evasivas (Task #190).
+_VALID_RESOLUTION_STATUSES = {"resolved", "false_positive"}
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -127,40 +131,113 @@ async def committee_status_diagnostic(
 @router.get("/rag/evasive")
 async def list_evasive_responses(
     limit: int = 50,
+    offset: int = 0,
+    evasive_pattern: Optional[str] = None,
+    had_kb_results: Optional[bool] = None,
+    completeness_mode: Optional[bool] = None,
+    resolution_status: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    RAG V3.6 — Lista as últimas respostas detectadas como evasivas.
+    RAG V3.6 — Lista as respostas detectadas como evasivas, com filtros.
 
     Padrões evasivos: o agente declara não ter encontrado o material
     ou que "o documento não detalha" mesmo após consultar a base.
     Útil para calibrar o reranker, ajustar prompts e priorizar
     re-extrações de PDFs.
 
-    Retorna até `limit` (máx 200) registros mais recentes.
+    Filtros suportados (Task #190):
+    - `evasive_pattern`: filtra pelo padrão exato detectado.
+    - `had_kb_results`: True/False — só registros em que o RAG retornou
+      (ou não retornou) resultados.
+    - `completeness_mode`: True/False — só registros disparados (ou não)
+      pelo modo de completude estendida.
+    - `resolution_status`: 'open' (default), 'resolved', 'false_positive'
+      ou 'all'. 'open' inclui apenas itens ainda não triados.
+
+    Retorna até `limit` (máx 200) itens com `total` filtrado e a lista
+    de padrões evasivos distintos para popular o seletor da UI.
     """
     _require_admin(current_user)
 
     from sqlalchemy import text as _sql_text
 
     safe_limit = max(1, min(int(limit or 50), 200))
+    safe_offset = max(0, int(offset or 0))
+
+    where_clauses = []
+    params: dict = {"lim": safe_limit, "off": safe_offset}
+
+    if evasive_pattern:
+        where_clauses.append("evasive_pattern = :pattern")
+        params["pattern"] = evasive_pattern
+    if had_kb_results is not None:
+        where_clauses.append("had_kb_results = :had_kb")
+        params["had_kb"] = bool(had_kb_results)
+    if completeness_mode is not None:
+        where_clauses.append("completeness_mode = :comp")
+        params["comp"] = bool(completeness_mode)
+
+    # 'open' é o default — agiliza a triagem mostrando só o que ainda
+    # precisa de revisão. 'all' desliga o filtro.
+    status = (resolution_status or "open").lower()
+    if status == "open":
+        where_clauses.append("resolution_status IS NULL")
+    elif status in _VALID_RESOLUTION_STATUSES:
+        where_clauses.append("resolution_status = :res_status")
+        params["res_status"] = status
+    elif status != "all":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "resolution_status inválido. Use 'open', 'resolved', "
+                "'false_positive' ou 'all'."
+            ),
+        )
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
     try:
+        total_row = db.execute(
+            _sql_text(
+                f"SELECT COUNT(*) FROM rag_evasive_responses {where_sql}"
+            ),
+            params,
+        ).fetchone()
+        total = int(total_row[0]) if total_row else 0
+
         rows = db.execute(
             _sql_text(
-                """
+                f"""
                 SELECT id, created_at, conversation_id, user_query,
                        ai_response, evasive_pattern, had_kb_results,
                        kb_results_count, completeness_mode, tools_used,
                        retrieved_material_ids, retrieved_material_names,
-                       top_k, intent_label
+                       top_k, intent_label, resolution_status, resolved_at,
+                       resolved_by_user_id, resolution_note
                 FROM rag_evasive_responses
+                {where_sql}
                 ORDER BY created_at DESC
-                LIMIT :lim
+                LIMIT :lim OFFSET :off
                 """
             ),
-            {"lim": safe_limit},
+            params,
+        ).fetchall()
+
+        # Lista distinta de padrões para popular o filtro da UI. Usa o
+        # universo total da tabela (sem aplicar os filtros), para que o
+        # usuário sempre veja todas as opções disponíveis.
+        pattern_rows = db.execute(
+            _sql_text(
+                """
+                SELECT evasive_pattern, COUNT(*) AS total
+                FROM rag_evasive_responses
+                WHERE evasive_pattern IS NOT NULL AND evasive_pattern <> ''
+                GROUP BY evasive_pattern
+                ORDER BY total DESC
+                """
+            )
         ).fetchall()
     except Exception as e:
         raise HTTPException(
@@ -196,11 +273,113 @@ async def list_evasive_responses(
             "retrieved_material_names": _parse_json_list(r[11]),
             "top_k": r[12],
             "intent_label": r[13],
+            # Task #190 — triagem.
+            "resolution_status": r[14],
+            "resolved_at": r[15].isoformat() if r[15] else None,
+            "resolved_by_user_id": r[16],
+            "resolution_note": r[17],
         }
         for r in rows
     ]
 
-    return {"count": len(items), "items": items}
+    return {
+        "count": len(items),
+        "total": total,
+        "limit": safe_limit,
+        "offset": safe_offset,
+        "items": items,
+        "patterns": [
+            {"pattern": p[0], "total": int(p[1])}
+            for p in pattern_rows
+        ],
+    }
+
+
+@router.patch("/rag/evasive/{evasive_id}")
+async def update_evasive_resolution(
+    evasive_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Task #190 — Marca uma resposta evasiva como triada.
+
+    Body:
+    - `resolution_status`: 'resolved', 'false_positive' ou null (reabre).
+    - `resolution_note`: string opcional explicando a decisão.
+
+    Retorna o registro atualizado.
+    """
+    _require_admin(current_user)
+
+    from datetime import datetime
+    from sqlalchemy import text as _sql_text
+
+    raw_status = payload.get("resolution_status")
+    note = payload.get("resolution_note")
+
+    if raw_status is not None and raw_status not in _VALID_RESOLUTION_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "resolution_status inválido. Use 'resolved', 'false_positive' "
+                "ou null para reabrir."
+            ),
+        )
+
+    # null reabre o item (limpa metadados de triagem).
+    if raw_status is None:
+        params = {
+            "id": evasive_id,
+            "status": None,
+            "resolved_at": None,
+            "resolved_by": None,
+            "note": None,
+        }
+    else:
+        params = {
+            "id": evasive_id,
+            "status": raw_status,
+            "resolved_at": datetime.utcnow(),
+            "resolved_by": current_user.id,
+            "note": note if isinstance(note, str) and note.strip() else None,
+        }
+
+    try:
+        result = db.execute(
+            _sql_text(
+                """
+                UPDATE rag_evasive_responses
+                SET resolution_status = :status,
+                    resolved_at = :resolved_at,
+                    resolved_by_user_id = :resolved_by,
+                    resolution_note = :note
+                WHERE id = :id
+                RETURNING id, resolution_status, resolved_at,
+                          resolved_by_user_id, resolution_note
+                """
+            ),
+            params,
+        ).fetchone()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha ao atualizar telemetria evasiva: {e}",
+        )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Registro não encontrado")
+
+    return {
+        "id": result[0],
+        "resolution_status": result[1],
+        "resolved_at": result[2].isoformat() if result[2] else None,
+        "resolved_by_user_id": result[3],
+        "resolution_note": result[4],
+    }
 
 
 @router.post("/portfolio-rows/backfill")

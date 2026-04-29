@@ -526,6 +526,15 @@ def _apply_incremental_migrations():
         "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS retrieved_material_names TEXT",
         "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS top_k INTEGER",
         "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS intent_label VARCHAR(50)",
+        # Task #190 — painel admin para triagem de evasivas. Permite marcar
+        # cada registro como 'resolved' (problema corrigido — prompt/reranker
+        # ajustados / PDF re-extraído) ou 'false_positive' (a resposta era
+        # de fato adequada). Linhas em aberto têm resolution_status NULL.
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS resolution_status VARCHAR(50)",
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ",
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS resolved_by_user_id INTEGER",
+        "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS resolution_note TEXT",
+        "CREATE INDEX IF NOT EXISTS ix_rag_evasive_resolution ON rag_evasive_responses(resolution_status)",
     ]
     db = SessionLocal()
     ok = 0
@@ -1158,6 +1167,32 @@ async def admin_page(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request, "user_role": "admin"})
 
 
+@app.get("/admin/rag-evasive", response_class=HTMLResponse)
+async def admin_rag_evasive_page(request: Request):
+    """
+    Task #190 — Painel admin para triagem de respostas evasivas do RAG.
+
+    Lista paginada com filtros (padrão evasivo, completeness_mode,
+    had_kb_results, status de triagem) e ações para marcar como
+    'resolvida' ou 'falso positivo'. Restrita ao role admin.
+    """
+    from core.security import decode_token
+    token = request.cookies.get("access_token")
+
+    if not token:
+        return RedirectResponse(url="/login")
+
+    payload = decode_token(token)
+    if not payload:
+        return RedirectResponse(url="/login")
+
+    if payload.get("role") != "admin":
+        return RedirectResponse(url="/login?error=permission")
+
+    return templates.TemplateResponse(
+        "rag_evasive.html",
+        {"request": request, "user_role": "admin"},
+    )
 
 
 @app.get("/integrations", response_class=HTMLResponse)

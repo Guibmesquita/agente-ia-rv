@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Evasivas - Agente IA RV</title>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/global.css">
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <style>
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        .badge-gray   { background: #f3f4f6; color: #374151; }
+        .badge-amber  { background: #fef3c7; color: #92400e; }
+        .badge-blue   { background: #dbeafe; color: #1e40af; }
+        .badge-green  { background: #dcfce7; color: #166534; }
+        .badge-red    { background: #fee2e2; color: #991b1b; }
+        .badge-violet { background: #ede9fe; color: #5b21b6; }
+
+        .resp-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            background: #fff;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .resp-card.resolved   { border-left: 4px solid #16a34a; }
+        .resp-card.false-pos  { border-left: 4px solid #6b7280; }
+
+        details > summary {
+            cursor: pointer;
+            list-style: none;
+        }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+{% include '_sidebar.html' %}
+
+<div id="mainContent" class="main-content transition-all duration-300" style="margin-left: 260px;">
+    <div class="max-w-6xl mx-auto px-6 py-8">
+
+        <!-- Header -->
+        <div class="flex items-start justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Respostas Evasivas do RAG</h1>
+                <p class="text-gray-500 mt-1">
+                    Triagem das respostas em que o agente declarou não ter encontrado a informação,
+                    para calibrar prompts, reranker e priorizar re-extrações.
+                </p>
+            </div>
+            <button id="btn-refresh" class="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Atualizar
+            </button>
+        </div>
+
+        <!-- KPIs -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Em aberto</div>
+                <div id="kpi-open" class="mt-1 text-2xl font-bold text-amber-600">—</div>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Resolvidas</div>
+                <div id="kpi-resolved" class="mt-1 text-2xl font-bold text-green-600">—</div>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Falso positivo</div>
+                <div id="kpi-falsepos" class="mt-1 text-2xl font-bold text-gray-500">—</div>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Total registrado</div>
+                <div id="kpi-total" class="mt-1 text-2xl font-bold text-gray-900">—</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <section class="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                    <select id="f-status" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
+                        <option value="open" selected>Em aberto</option>
+                        <option value="resolved">Resolvidas</option>
+                        <option value="false_positive">Falso positivo</option>
+                        <option value="all">Todas</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Padrão evasivo</label>
+                    <select id="f-pattern" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Tinha resultados na base?</label>
+                    <select id="f-kb" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
+                        <option value="">Indiferente</option>
+                        <option value="true">Sim — havia material</option>
+                        <option value="false">Não — base vazia</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Modo completude</label>
+                    <select id="f-comp" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
+                        <option value="">Indiferente</option>
+                        <option value="true">Ativo</option>
+                        <option value="false">Inativo</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <!-- Lista -->
+        <section id="list-container">
+            <div id="loading" class="bg-white border border-gray-200 rounded-xl p-8 text-center text-sm text-gray-500">
+                Carregando...
+            </div>
+            <div id="empty" class="hidden bg-white border border-dashed border-gray-300 rounded-xl p-8 text-center text-sm text-gray-500">
+                Nenhuma resposta evasiva encontrada com os filtros atuais.
+            </div>
+            <div id="error" class="hidden bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700"></div>
+            <div id="items"></div>
+        </section>
+
+        <!-- Paginação -->
+        <div id="pagination" class="hidden flex items-center justify-between mt-4 text-sm text-gray-600">
+            <div id="pagination-info"></div>
+            <div class="flex items-center gap-2">
+                <button id="btn-prev" class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">Anterior</button>
+                <button id="btn-next" class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">Próximo</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script nonce="{{ request.state.csp_nonce }}">
+(function() {
+    const PAGE_SIZE = 25;
+    const state = {
+        offset: 0,
+        total: 0,
+        currentItems: [],
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+        if (s === null || s === undefined) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function fmtDate(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            return d.toLocaleString('pt-BR', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+            });
+        } catch (_) { return iso; }
+    }
+
+    function statusBadge(item) {
+        if (item.resolution_status === 'resolved') {
+            return '<span class="badge badge-green">Resolvida</span>';
+        }
+        if (item.resolution_status === 'false_positive') {
+            return '<span class="badge badge-gray">Falso positivo</span>';
+        }
+        return '<span class="badge badge-amber">Em aberto</span>';
+    }
+
+    function kbBadge(item) {
+        if (item.had_kb_results === true) {
+            const n = (item.kb_results_count || 0);
+            return `<span class="badge badge-blue">Base tinha ${n} resultado${n === 1 ? '' : 's'}</span>`;
+        }
+        if (item.had_kb_results === false) {
+            return '<span class="badge badge-red">Base vazia</span>';
+        }
+        return '';
+    }
+
+    function compBadge(item) {
+        return item.completeness_mode
+            ? '<span class="badge badge-violet">completude</span>'
+            : '';
+    }
+
+    function intentBadge(item) {
+        return item.intent_label
+            ? `<span class="badge badge-gray">intent: ${escapeHtml(item.intent_label)}</span>`
+            : '';
+    }
+
+    function topkBadge(item) {
+        return (item.top_k != null)
+            ? `<span class="badge badge-gray">top_k: ${item.top_k}</span>`
+            : '';
+    }
+
+    function materialsBlock(item) {
+        const ids = item.retrieved_material_ids || [];
+        const names = item.retrieved_material_names || [];
+        if (!ids.length && !names.length) return '';
+        const rows = [];
+        const max = Math.max(ids.length, names.length);
+        for (let i = 0; i < max; i++) {
+            const id = ids[i];
+            const name = names[i];
+            rows.push(`<li class="text-xs text-gray-600">${name ? escapeHtml(name) : '—'}${id ? ` <span class="text-gray-400">(${escapeHtml(id)})</span>` : ''}</li>`);
+        }
+        return `
+            <div class="mt-3">
+                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                    Materiais recuperados (${max})
+                </div>
+                <ul class="list-disc list-inside space-y-0.5">${rows.join('')}</ul>
+            </div>
+        `;
+    }
+
+    function actionButtons(item) {
+        const id = item.id;
+        if (item.resolution_status) {
+            return `
+                <button data-action="reopen" data-id="${id}" class="text-xs px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
+                    Reabrir
+                </button>
+            `;
+        }
+        return `
+            <button data-action="resolved" data-id="${id}" class="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                Marcar resolvida
+            </button>
+            <button data-action="false_positive" data-id="${id}" class="text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                Falso positivo
+            </button>
+        `;
+    }
+
+    function renderItem(item) {
+        const klass = item.resolution_status === 'resolved'
+            ? 'resp-card resolved'
+            : (item.resolution_status === 'false_positive' ? 'resp-card false-pos' : 'resp-card');
+
+        const convLink = item.conversation_id
+            ? `<a href="/conversas?id=${encodeURIComponent(item.conversation_id)}" class="text-xs text-primary hover:underline" target="_blank">Abrir conversa →</a>`
+            : '<span class="text-xs text-gray-400">sem conversa vinculada</span>';
+
+        const note = item.resolution_note
+            ? `<div class="mt-2 text-xs text-gray-500 italic">Nota: ${escapeHtml(item.resolution_note)}</div>`
+            : '';
+
+        const tools = item.tools_used
+            ? `<details class="mt-2"><summary class="text-xs text-gray-500 hover:text-gray-700">Ferramentas usadas</summary><pre class="mt-1 text-xs bg-gray-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap">${escapeHtml(item.tools_used)}</pre></details>`
+            : '';
+
+        return `
+            <div class="${klass}" data-id="${item.id}">
+                <div class="flex items-start justify-between gap-3 mb-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                        ${statusBadge(item)}
+                        ${item.evasive_pattern ? `<span class="badge badge-red">${escapeHtml(item.evasive_pattern)}</span>` : ''}
+                        ${kbBadge(item)}
+                        ${compBadge(item)}
+                        ${intentBadge(item)}
+                        ${topkBadge(item)}
+                    </div>
+                    <div class="text-xs text-gray-400 whitespace-nowrap">${fmtDate(item.created_at)}</div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Pergunta</div>
+                        <div class="text-sm text-gray-800 whitespace-pre-wrap">${escapeHtml(item.user_query) || '<span class="text-gray-400">(vazia)</span>'}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resposta evasiva</div>
+                        <div class="text-sm text-gray-800 whitespace-pre-wrap">${escapeHtml(item.ai_response) || '<span class="text-gray-400">(vazia)</span>'}</div>
+                    </div>
+                </div>
+
+                ${materialsBlock(item)}
+                ${tools}
+                ${note}
+
+                <div class="mt-3 flex items-center justify-between">
+                    ${convLink}
+                    <div class="flex items-center gap-2">
+                        ${actionButtons(item)}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderList() {
+        const items = state.currentItems;
+        const container = $('items');
+        const empty = $('empty');
+        const pag = $('pagination');
+
+        if (!items.length) {
+            container.innerHTML = '';
+            empty.classList.remove('hidden');
+            pag.classList.add('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+        container.innerHTML = items.map(renderItem).join('');
+
+        // Paginação
+        const showingFrom = state.offset + 1;
+        const showingTo = state.offset + items.length;
+        $('pagination-info').textContent =
+            `Mostrando ${showingFrom}-${showingTo} de ${state.total} (filtrado)`;
+        $('btn-prev').disabled = state.offset <= 0;
+        $('btn-next').disabled = (state.offset + items.length) >= state.total;
+        pag.classList.remove('hidden');
+        pag.classList.add('flex');
+    }
+
+    function buildQuery() {
+        const params = new URLSearchParams();
+        params.set('limit', PAGE_SIZE);
+        params.set('offset', state.offset);
+        params.set('resolution_status', $('f-status').value || 'open');
+        const pattern = $('f-pattern').value;
+        if (pattern) params.set('evasive_pattern', pattern);
+        const kb = $('f-kb').value;
+        if (kb) params.set('had_kb_results', kb);
+        const comp = $('f-comp').value;
+        if (comp) params.set('completeness_mode', comp);
+        return params.toString();
+    }
+
+    async function fetchData() {
+        $('error').classList.add('hidden');
+        $('loading').classList.remove('hidden');
+        $('items').innerHTML = '';
+        $('empty').classList.add('hidden');
+        $('pagination').classList.add('hidden');
+
+        try {
+            const res = await fetch(`/api/admin/rag/evasive?${buildQuery()}`, {
+                credentials: 'include',
+            });
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = '/login';
+                return;
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            state.total = data.total || 0;
+            state.currentItems = data.items || [];
+
+            // Atualiza dropdown de padrões (mantém seleção)
+            const patternSelect = $('f-pattern');
+            const currentVal = patternSelect.value;
+            patternSelect.innerHTML = '<option value="">Todos</option>' +
+                (data.patterns || []).map(p =>
+                    `<option value="${escapeHtml(p.pattern)}">${escapeHtml(p.pattern)} (${p.total})</option>`
+                ).join('');
+            patternSelect.value = currentVal;
+
+            renderList();
+        } catch (e) {
+            $('error').textContent = `Falha ao carregar: ${e.message}`;
+            $('error').classList.remove('hidden');
+        } finally {
+            $('loading').classList.add('hidden');
+        }
+    }
+
+    async function fetchKpis() {
+        // KPIs ignoram filtros — sempre mostram a visão global.
+        try {
+            const [openRes, resRes, fpRes, allRes] = await Promise.all([
+                fetch('/api/admin/rag/evasive?limit=1&resolution_status=open', { credentials: 'include' }),
+                fetch('/api/admin/rag/evasive?limit=1&resolution_status=resolved', { credentials: 'include' }),
+                fetch('/api/admin/rag/evasive?limit=1&resolution_status=false_positive', { credentials: 'include' }),
+                fetch('/api/admin/rag/evasive?limit=1&resolution_status=all', { credentials: 'include' }),
+            ]);
+            const [openD, resD, fpD, allD] = await Promise.all([
+                openRes.ok ? openRes.json() : { total: 0 },
+                resRes.ok ? resRes.json() : { total: 0 },
+                fpRes.ok ? fpRes.json() : { total: 0 },
+                allRes.ok ? allRes.json() : { total: 0 },
+            ]);
+            $('kpi-open').textContent     = openD.total ?? 0;
+            $('kpi-resolved').textContent = resD.total ?? 0;
+            $('kpi-falsepos').textContent = fpD.total ?? 0;
+            $('kpi-total').textContent    = allD.total ?? 0;
+        } catch (_) { /* silencioso — KPIs são best-effort */ }
+    }
+
+    async function setResolution(id, status) {
+        let note = null;
+        if (status) {
+            // Pede nota opcional antes de marcar.
+            const label = status === 'resolved' ? 'Marcar como resolvida' : 'Marcar como falso positivo';
+            const input = window.prompt(`${label}\n\nDeixe uma nota opcional (Enter para confirmar sem nota):`, '');
+            if (input === null) return; // cancelado
+            note = input || null;
+        } else if (!window.confirm('Reabrir este registro? A triagem anterior será apagada.')) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/admin/rag/evasive/${id}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resolution_status: status, resolution_note: note }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            await Promise.all([fetchData(), fetchKpis()]);
+        } catch (e) {
+            alert(`Falha ao atualizar: ${e.message}`);
+        }
+    }
+
+    // Event handlers
+    document.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        if (!id) return;
+        if (action === 'resolved') setResolution(id, 'resolved');
+        else if (action === 'false_positive') setResolution(id, 'false_positive');
+        else if (action === 'reopen') setResolution(id, null);
+    });
+
+    ['f-status', 'f-pattern', 'f-kb', 'f-comp'].forEach((id) => {
+        $(id).addEventListener('change', () => {
+            state.offset = 0;
+            fetchData();
+        });
+    });
+
+    $('btn-prev').addEventListener('click', () => {
+        state.offset = Math.max(0, state.offset - PAGE_SIZE);
+        fetchData();
+    });
+    $('btn-next').addEventListener('click', () => {
+        state.offset = state.offset + PAGE_SIZE;
+        fetchData();
+    });
+    $('btn-refresh').addEventListener('click', () => {
+        fetchData();
+        fetchKpis();
+    });
+
+    // Initial load
+    fetchData();
+    fetchKpis();
+})();
+</script>
+
+</body>
+</html>
