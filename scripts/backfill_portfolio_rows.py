@@ -277,6 +277,42 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     _log("[BACKFILL_PORTFOLIO] Resumo:")
     _log(json.dumps(summary, indent=2, ensure_ascii=False))
+
+    # Task #196 — validação SQL pós-execução: confirma que os blocos
+    # `portfolio_row` criados foram efetivamente indexados em
+    # `document_embeddings`. Sem essa verificação o operador não tem
+    # como saber se o pipeline de embedding falhou silenciosamente.
+    if not args.dry_run:
+        try:
+            from database.database import SessionLocal
+            from sqlalchemy import text
+
+            with SessionLocal() as vdb:
+                row = vdb.execute(text(
+                    "SELECT COUNT(*) AS total, "
+                    "COUNT(de.id) AS indexed FROM content_blocks cb "
+                    "LEFT JOIN document_embeddings de "
+                    "ON de.block_id = cb.id::varchar "
+                    "WHERE cb.block_type = 'portfolio_row'"
+                )).first()
+                total = (row[0] if row else 0) or 0
+                indexed = (row[1] if row else 0) or 0
+                pct = (100.0 * indexed / total) if total else 0.0
+                _log(
+                    f"[BACKFILL_PORTFOLIO] Validação: {indexed}/{total} "
+                    f"portfolio_row blocks indexados em document_embeddings "
+                    f"({pct:.1f}%)."
+                )
+                if total and indexed < total:
+                    _log(
+                        f"[BACKFILL_PORTFOLIO] AVISO: {total - indexed} "
+                        "blocos sem embedding — o auto-reindex no startup "
+                        "do app deve cobrí-los, ou rode novamente o "
+                        "endpoint admin de reindex."
+                    )
+        except Exception as ve:
+            _log(f"[BACKFILL_PORTFOLIO] Validação SQL falhou: {ve}")
+
     return 0
 
 

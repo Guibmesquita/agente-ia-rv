@@ -458,6 +458,37 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
             "completeness_mode": is_completeness,
         }
 
+    # Task #196 — terceiro guard: resultados existem mas TODOS com score
+    # muito baixo significa "match fraco" (provavelmente o material pedido
+    # não está na base, e o RAG devolveu blocos pouco relacionados). Tratar
+    # como no_results para evitar que o agente tente "preencher" com
+    # conteúdo de outra carteira/produto. Threshold conservador (0.30)
+    # ajustável via env var em iteração futura.
+    LOW_CONFIDENCE_THRESHOLD = 0.30
+    try:
+        max_score = max(
+            (getattr(r, "composite_score", 0.0) or 0.0) for r in raw_results
+        )
+    except Exception:
+        max_score = 1.0  # Em caso de schema inesperado, não ative o guard.
+    if max_score < LOW_CONFIDENCE_THRESHOLD:
+        return {
+            "results": [],
+            "no_results": True,
+            "count": 0,
+            "total_results": 0,
+            "message": (
+                f"Resultados encontrados mas com baixa relevância "
+                f"(score máximo {max_score:.2f} < {LOW_CONFIDENCE_THRESHOLD:.2f}). "
+                "Provavelmente o material exato não está na base. "
+                "NÃO INVENTE composição nem reaproveite blocos de outro "
+                "material como se fossem do solicitado — siga a REGRA 4 "
+                "do prompt."
+            ),
+            "completeness_mode": is_completeness,
+            "low_confidence_max_score": round(max_score, 3),
+        }
+
     # RAG V3.6 — em modo completude, ao invés do top-4 padrão, devolvemos
     # TODOS os blocos do(s) material(is) com maior contagem de blocos
     # entre os top n. Isso preserva a integridade de tabelas/listas que

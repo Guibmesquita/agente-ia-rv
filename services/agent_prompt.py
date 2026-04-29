@@ -560,7 +560,7 @@ def _get_table_completeness_rules() -> str:
 
     Foco em três falhas históricas observadas em produção:
       (1) Agente respondendo "documento não detalha" para perguntas como
-          "liste os 12 fundos da carteira Seven FIIs", apesar da tabela
+          "liste os 12 fundos da carteira <nome>", apesar da tabela
           estar indexada e parcialmente devolvida pelo RAG.
       (2) Agente inventando linhas que não vieram nos resultados (alucinação
           de tickers/percentuais quando o conteúdo veio truncado).
