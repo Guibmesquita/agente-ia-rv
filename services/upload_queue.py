@@ -938,9 +938,17 @@ class UploadQueue:
                         document_type=metadata.document_type,
                     )
                 elif not product and skip_auto_create:
+                    primary_kind_parts = []
+                    if primary_is_structure:
+                        primary_kind_parts.append("estrutura")
+                    if primary_is_swap:
+                        primary_kind_parts.append("swap")
+                    if primary_is_portfolio:
+                        primary_kind_parts.append("carteira")
+                    primary_kind = "/".join(primary_kind_parts) or "especial"
                     logger.info(
                         f"[MultiProduct] Pulando auto-criação de produto ação para "
-                        f"ticker {ticker!r} — material primário é estrutura "
+                        f"ticker {ticker!r} — material primário é {primary_kind} "
                         f"(primary_id={primary_id})."
                     )
 
