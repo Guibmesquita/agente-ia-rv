@@ -45,7 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import bindparam, text  # noqa: E402
 
 from database.database import SessionLocal  # noqa: E402
 from database.models import Material, Product  # noqa: E402
@@ -187,7 +187,7 @@ def _reindex_one(db, material: Material, apply: bool) -> dict:
             text(
                 "DELETE FROM document_embeddings "
                 "WHERE material_id = :mid AND doc_id NOT IN :keep"
-            ).bindparams(__import__("sqlalchemy").bindparam("keep", expanding=True)),
+            ).bindparams(bindparam("keep", expanding=True)),
             {"mid": str(material.id), "keep": expected_doc_ids},
         )
         db.commit()
