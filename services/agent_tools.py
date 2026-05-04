@@ -496,23 +496,36 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         max_score = 1.0  # Em caso de schema inesperado, não ative o guard.
 
     # Task #204 — Portfolio intent BYPASS do guard de baixa confiança.
-    # Quando a query é portfolio E pelo menos 1 bloco veio do lookup
-    # relacional (`portfolio_row` com source `portfolio_lookup` ou block_type
-    # `portfolio_row`), o match é por NOME, não por similaridade vetorial.
-    # O `composite_score` natural fica baixo porque o embedding "liste FIIs
-    # da Seven" é distante semanticamente de cada linha "BTLG11: Peso=6%...",
-    # mas o resultado é AUTORITATIVO (vem do banco relacional). Aplicar o
-    # guard aqui esconderia a carteira inteira.
-    has_portfolio_rows = any(
-        (getattr(r, "metadata", None) or {}).get("block_type", "").lower() == "portfolio_row"
+    # Bypassa quando: (a) query tem intent de portfólio, (b) o lookup
+    # relacional retornou portfolio_row, E (c) pelo menos um veio de um
+    # match RELACIONAL FORTE (nome da carteira reconhecido na query via
+    # token distintivo). O caso fallback de search_by_portfolio (sem
+    # token distintivo, devolve TODAS as carteiras como contexto
+    # exploratório) NÃO bypassa — aí o guard semântico continua
+    # protegendo contra mistura de carteiras não relacionadas.
+    has_strong_portfolio_match = any(
+        ((getattr(r, "metadata", None) or {}).get("block_type", "").lower() == "portfolio_row")
+        and ((getattr(r, "metadata", None) or {}).get("portfolio_match_strength") == "strong")
         for r in raw_results
     )
-    portfolio_bypass = is_portfolio_intent and has_portfolio_rows
+    portfolio_bypass = is_portfolio_intent and has_strong_portfolio_match
     if portfolio_bypass:
         print(
-            f"[search_kb] Portfolio intent + portfolio_row blocks "
+            f"[search_kb] Portfolio intent + STRONG relational match "
             f"(max_score={max_score:.2f}) → bypass do guard de baixa confiança."
         )
+    elif is_portfolio_intent:
+        # Sinaliza que houve intent mas não houve match forte — o guard
+        # semântico continua valendo (não há autoridade relacional).
+        weak_rows = any(
+            (getattr(r, "metadata", None) or {}).get("block_type", "").lower() == "portfolio_row"
+            for r in raw_results
+        )
+        if weak_rows:
+            print(
+                f"[search_kb] Portfolio intent com match WEAK (sem token "
+                f"distintivo) → guard de baixa confiança MANTIDO."
+            )
 
     if max_score < LOW_CONFIDENCE_THRESHOLD and not portfolio_bypass:
         return {

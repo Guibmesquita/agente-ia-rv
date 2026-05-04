@@ -1437,6 +1437,14 @@ class VectorStore:
             # 3) Filtra por tokens distintivos quando disponíveis. Se nenhum
             #    material casar com nenhum token, mantém TODOS (a query é
             #    genérica do tipo "liste as carteiras"; agente verá tudo).
+            #    Code review (Task #204): rastreamos `_match_strength` para
+            #    diferenciar match RELACIONAL FORTE (distintivo casou um
+            #    nome de carteira específico) de FALLBACK (query genérica
+            #    sem nome — devolve todas como contexto exploratório). O
+            #    bypass do guard de baixa confiança em agent_tools só
+            #    deve disparar no modo FORTE — caso contrário mistura
+            #    carteiras não relacionadas e mascara false-positives.
+            match_strength = "weak"  # default: sem distintivo OU sem match
             if distinctive:
                 ranked: List[Tuple[int, _Mat]] = []
                 for mat in target_materials:
@@ -1449,6 +1457,7 @@ class VectorStore:
                 if ranked:
                     ranked.sort(key=lambda kv: -kv[0])
                     target_materials = [m for _s, m in ranked]
+                    match_strength = "strong"  # casou nome específico
                 # caso contrário (nenhum token bateu), mantém a lista cheia
                 # — talvez seja query genérica "liste as carteiras".
 
@@ -1531,6 +1540,14 @@ class VectorStore:
                     "product_id": str(prod.id) if prod else None,
                     "publish_status": mat.publish_status or "publicado",
                     "products": (prod.name.upper() if prod and prod.name else ""),
+                    # Tag de força do match relacional. Vai dentro de
+                    # `metadata` (não no top-level do dict) porque o
+                    # `CompositeScorer.score_results` converte os dicts em
+                    # `SearchResult` e só os campos do dataclass + metadata
+                    # sobrevivem. agent_tools lê `r.metadata["portfolio_match_strength"]`
+                    # para decidir se pode bypassar o guard de baixa confiança.
+                    "portfolio_match_strength": match_strength,
+                    "portfolio_lookup_source": True,
                 }
                 # distância sintética baixa (= score alto) para entrar com
                 # prioridade no merge da EnhancedSearch.

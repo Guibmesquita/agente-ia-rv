@@ -165,6 +165,148 @@ def test_search_by_portfolio_exhaustive_portfolio_rows():
     )
 
 
+def test_search_by_portfolio_tags_strong_match_when_distinctive_hits():
+    """Quando token distintivo casa o nome da carteira, todos os blocos
+    saem com `portfolio_match_strength='strong'` no metadata — sinal para
+    o agent_tools liberar o bypass do guard de baixa confiança."""
+    from services import vector_store as vs_mod
+
+    mat, prod, blocks = _make_search_by_portfolio_db(num_rows=3)
+
+    db = MagicMock()
+    candidates_q = MagicMock()
+    candidates_q.outerjoin.return_value = candidates_q
+    candidates_q.filter.return_value = candidates_q
+    candidates_q.all.return_value = [(mat, prod)]
+    blocks_q = MagicMock()
+    blocks_q.join.return_value = blocks_q
+    blocks_q.filter.return_value = blocks_q
+    blocks_q.order_by.return_value = blocks_q
+    blocks_q.all.return_value = [(b, mat) for b in blocks]
+    prod_q = MagicMock()
+    prod_q.filter.return_value = prod_q
+    prod_q.all.return_value = [prod]
+    db.query.side_effect = [candidates_q, blocks_q, prod_q]
+
+    vs = vs_mod.VectorStore.__new__(vs_mod.VectorStore)
+    docs = vs.search_by_portfolio(
+        query="liste os FIIs da carteira Seven",  # 'seven' é distintivo
+        n_results=20, db=db,
+    )
+    assert len(docs) > 0
+    # Como o nome do material é "Carteira Seven FIIs Abril", o token "seven"
+    # casa → todos os blocos devem sair tagueados como STRONG.
+    strengths = {d["metadata"].get("portfolio_match_strength") for d in docs}
+    assert strengths == {"strong"}, (
+        f"Esperava todos os blocos com strength='strong', recebi {strengths}"
+    )
+
+
+def test_search_by_portfolio_tags_weak_match_when_no_distinctive():
+    """Quando a query é genérica ("liste as carteiras") e nenhum token
+    distintivo casa, o fallback devolve TODAS como contexto exploratório
+    com `portfolio_match_strength='weak'` — agent_tools NÃO deve bypassar
+    o guard nesse caso (evita mistura de carteiras não relacionadas)."""
+    from services import vector_store as vs_mod
+
+    mat, prod, blocks = _make_search_by_portfolio_db(num_rows=3)
+
+    db = MagicMock()
+    candidates_q = MagicMock()
+    candidates_q.outerjoin.return_value = candidates_q
+    candidates_q.filter.return_value = candidates_q
+    candidates_q.all.return_value = [(mat, prod)]
+    blocks_q = MagicMock()
+    blocks_q.join.return_value = blocks_q
+    blocks_q.filter.return_value = blocks_q
+    blocks_q.order_by.return_value = blocks_q
+    blocks_q.all.return_value = [(b, mat) for b in blocks]
+    prod_q = MagicMock()
+    prod_q.filter.return_value = prod_q
+    prod_q.all.return_value = [prod]
+    db.query.side_effect = [candidates_q, blocks_q, prod_q]
+
+    vs = vs_mod.VectorStore.__new__(vs_mod.VectorStore)
+    # Query SEM nome específico → nenhum token distintivo casa "Carteira
+    # Seven FIIs Abril" → fallback devolve a única carteira candidata como
+    # WEAK (mantém comportamento exploratório).
+    docs = vs.search_by_portfolio(
+        query="liste as carteiras",
+        n_results=20, db=db,
+    )
+    assert len(docs) > 0
+    strengths = {d["metadata"].get("portfolio_match_strength") for d in docs}
+    assert strengths == {"weak"}, (
+        f"Esperava todos os blocos com strength='weak', recebi {strengths}"
+    )
+
+
+def test_agent_tools_bypass_only_with_strong_match(monkeypatch):
+    """Integration test: simula o `_execute_search_knowledge_base` recebendo
+    resultados com `portfolio_match_strength` STRONG vs WEAK e verifica que
+    o bypass do guard de baixa confiança só dispara no STRONG."""
+    import asyncio
+    from services import agent_tools as at_mod
+    from services.semantic_search import SearchResult
+
+    def _mk_result(strength: str, score: float = 0.10) -> SearchResult:
+        return SearchResult(
+            content="[CARTEIRA Seven] BTLG11: Peso=6%; DY=0,78%",
+            metadata={
+                "block_id": "1001", "material_id": "47",
+                "material_name": "Carteira Seven FIIs Abril",
+                "block_type": "portfolio_row", "page": "3",
+                "product_name": "Carteira Seven", "product_type": "carteira",
+                "portfolio_match_strength": strength,
+                "portfolio_lookup_source": True,
+            },
+            vector_distance=0.05, vector_score=0.95,
+            composite_score=score, source="portfolio_lookup",
+        )
+
+    async def _run(strong: bool):
+        # Mocka EnhancedSearch dentro do módulo `services.semantic_search`
+        # (importado lazily por agent_tools no início da função). A
+        # instância retornada tem `.search()` SÍNCRONO que devolve apenas 1
+        # portfolio_row com a strength desejada (agent_tools chama sem await).
+        results = [_mk_result("strong" if strong else "weak", score=0.10)]
+        def _fake_search(*a, **kw):
+            return results
+        fake_instance = MagicMock()
+        fake_instance.search = _fake_search
+        from services import semantic_search as ss_mod
+        monkeypatch.setattr(
+            ss_mod, "EnhancedSearch", lambda *a, **kw: fake_instance,
+        )
+        # Mocka também o vector_store getter para evitar conexão real.
+        from services import vector_store as vs_mod
+        monkeypatch.setattr(
+            vs_mod, "get_vector_store", lambda: MagicMock(),
+        )
+        monkeypatch.setattr(
+            vs_mod, "filter_expired_results", lambda items, *a, **kw: items,
+            raising=False,
+        )
+        return await at_mod._execute_search_knowledge_base(
+            {"query": "liste os FIIs da carteira Seven com seus pesos"},
+            db=MagicMock(), conversation_id="t",
+        )
+
+    # STRONG: bypass deve disparar → resposta tem `results` populado
+    out_strong = asyncio.run(_run(strong=True))
+    assert out_strong.get("count", 0) > 0, (
+        "STRONG match deveria bypassar o guard e retornar resultados"
+    )
+    assert out_strong.get("no_results") is not True
+
+    # WEAK: bypass NÃO dispara → guard de baixa confiança barra → no_results
+    out_weak = asyncio.run(_run(strong=False))
+    assert out_weak.get("no_results") is True, (
+        "WEAK match NÃO deveria bypassar o guard — guard semântico continua "
+        "valendo (sem autoridade relacional)"
+    )
+
+
 def test_search_by_portfolio_returns_empty_when_no_carteira():
     """Quando não existe nenhum material-carteira, devolve []."""
     from services import vector_store as vs_mod
