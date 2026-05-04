@@ -930,6 +930,15 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     else:
         response["has_more"] = False
 
+    # Task #204 — sinal para o `_compact_tool_payload` em openai_agent.py:
+    # quando `is_portfolio_intent`, NUNCA descartar `portfolio_row` no
+    # passo 3b da poda. A composição da carteira é a resposta literal
+    # da pergunta — perder qualquer linha vira "carteira incompleta" ou,
+    # pior, indução do agente a inventar um ticker faltante. Outros
+    # priority types (financial_table) ainda podem cair como antes.
+    if is_portfolio_intent:
+        response["_portfolio_preserve_mode"] = True
+
     if materials_with_pdf:
         response["materials_with_pdf"] = list(materials_with_pdf)
     if visual_candidates:

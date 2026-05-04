@@ -187,6 +187,21 @@ def _compact_tool_payload(
     if not isinstance(original_total, int) or original_total <= 0:
         original_total = base_offset + len(items)
 
+    # Task #204 — Modo de PRESERVAÇÃO de portfólio. Quando o tool flag
+    # `_portfolio_preserve_mode` está True (setado por agent_tools quando
+    # `is_portfolio_intent`), `portfolio_row` é INTOCÁVEL no compactor:
+    # composição é a resposta inteira da pergunta — perder uma única linha
+    # significa o agente responder "carteira incompleta" ou inventar um
+    # ticker faltante. Outros priority types (financial_table, tabela)
+    # podem cair como antes; os portfolio_row ficam até o fim.
+    portfolio_preserve = bool(payload.get("_portfolio_preserve_mode"))
+
+    def _is_portfolio_row(entry: Any) -> bool:
+        return (
+            isinstance(entry, dict)
+            and (entry.get("block_type") or "").lower() == "portfolio_row"
+        )
+
     dropped = 0
     # 3a) descarta NÃO-prioritários a partir do fim.
     i = len(items) - 1
@@ -196,10 +211,27 @@ def _compact_tool_payload(
             dropped += 1
         i -= 1
 
-    # 3b) se ainda apertado, descarta prioritários a partir do fim.
-    while items and len(json.dumps(payload, ensure_ascii=False)) > max_chars:
-        items.pop()
-        dropped += 1
+    # 3b) se ainda apertado, descarta prioritários a partir do fim — em modo
+    #     portfolio-preserve, PULA portfolio_row e só descarta os outros
+    #     priority types (financial_table, tabela). Nunca descarta linha de
+    #     carteira em modo preserve, mesmo que estoure o cap.
+    if portfolio_preserve:
+        i = len(items) - 1
+        while i >= 0 and len(json.dumps(payload, ensure_ascii=False)) > max_chars:
+            if not _is_portfolio_row(items[i]):
+                items.pop(i)
+                dropped += 1
+            i -= 1
+        # Se ainda passa do cap só com portfolio_row, marcamos no envelope
+        # mas NÃO descartamos: melhor o agente receber payload um pouco
+        # maior do que receber carteira mutilada (modelo aguenta — cap é
+        # heurística para tokens, não limite duro).
+        if len(json.dumps(payload, ensure_ascii=False)) > max_chars:
+            payload["_portfolio_preserved_over_cap"] = True
+    else:
+        while items and len(json.dumps(payload, ensure_ascii=False)) > max_chars:
+            items.pop()
+            dropped += 1
 
     if dropped:
         kept = len(items)

@@ -1548,12 +1548,33 @@ class VectorStore:
                 int(d["metadata"].get("block_id") or "0"),
             ))
 
+            # Task #204 — EXAUSTIVIDADE para portfolio_row: o cap n_results
+            # NÃO se aplica a linhas de carteira. Se a carteira tem 30 FIIs,
+            # o agente recebe os 30 mesmo que `n_results=20`. O cap é
+            # respeitado apenas para os blocos de CONTEXTO (texto, tabela
+            # auxiliar). Sem isso, perguntas como "todos os ativos da
+            # carteira" devolveriam parcialmente quando `n_results < N`.
+            portfolio_rows = [
+                d for d in documents
+                if (d["metadata"].get("block_type") or "").lower() == "portfolio_row"
+            ]
+            other_blocks = [
+                d for d in documents
+                if (d["metadata"].get("block_type") or "").lower() != "portfolio_row"
+            ]
+            # cap dos auxiliares: pelo menos n_results - len(portfolio_rows),
+            # nunca menos que 5 (para preservar contexto narrativo mínimo).
+            aux_cap = max(5, n_results - len(portfolio_rows))
+            final_documents = portfolio_rows + other_blocks[:aux_cap]
+
             print(
                 f"[VECTOR_STORE] search_by_portfolio: query={query!r} "
                 f"distinctive={distinctive} materiais={mat_ids} "
-                f"blocos={len(documents)}"
+                f"portfolio_rows={len(portfolio_rows)} "
+                f"aux_blocos={min(len(other_blocks), aux_cap)} "
+                f"total={len(final_documents)}"
             )
-            return documents[:n_results]
+            return final_documents
         except Exception as e:
             print(f"[VECTOR_STORE] Erro em search_by_portfolio: {e}")
             return []
