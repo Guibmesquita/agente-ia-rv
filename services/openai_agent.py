@@ -38,7 +38,13 @@ settings = get_settings()
 #      prioritários (texto solto) e por último blocos `portfolio_row`/`tabela`;
 #   4) atualiza `count`, `has_more` e `next_offset` para o agente saber
 #      honestamente o que sobrou e poder paginar.
-_TOOL_PAYLOAD_MAX_CHARS = 10000
+# Task #204 — cap aumentado de 10000 → 14000. Carteiras com ~30 portfolio_row
+# (~250 chars cada = 7500 chars de conteúdo) + envelope (citações, metadata,
+# tabelas extras) extrapolavam o cap antigo e forçavam o compactor a podar
+# `portfolio_row`, mesmo sendo o tipo PRIORITÁRIO. Modelos GPT-4o e GPT-4-turbo
+# atuais têm 128K+ de contexto efetivo — 14000 caracteres do retorno de uma
+# tool fica bem abaixo do limite e preserva a integridade da carteira no payload.
+_TOOL_PAYLOAD_MAX_CHARS = 14000
 _PRIORITY_BLOCK_TYPES = {"portfolio_row", "tabela", "financial_table", "table"}
 _NON_ESSENTIAL_RESULT_FIELDS = (
     "material_type",

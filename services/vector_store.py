@@ -1329,6 +1329,238 @@ class VectorStore:
             print(f"[VECTOR_STORE] Erro ao buscar por produto: {e}")
             return []
     
+    def search_by_portfolio(
+        self,
+        query: str,
+        n_results: int = 30,
+        db: Optional["object"] = None,
+    ) -> List[dict]:
+        """Task #204 — Lookup relacional de blocos de carteira/portfólio.
+
+        Quando a intenção da query é "portfólio" (`detect_portfolio_intent`),
+        a busca semântica padrão pode falhar por dois motivos:
+          1. Cada `portfolio_row` fala apenas de UM ticker (ex.: "BTLG11:
+             Peso=6%; DY=0,78%..."), então o embedding de "liste FIIs da
+             carteira Seven" fica semanticamente distante de cada linha
+             individual — top-K convencional pega 4 linhas das 12 e
+             responde "documento incompleto".
+          2. O `composite_score` cai abaixo do `LOW_CONFIDENCE_THRESHOLD`
+             (0.30) e o guard anti-alucinação retorna `no_results`.
+
+        Solução: identificar o(s) material(is)-carteira por nome relacional
+        (não por embedding) e devolver TODOS os blocos `portfolio_row` +
+        `financial_table` desse material. O `composite_score` injetado é
+        alto (0.05 de distância = ~0.95 de score) para passar o guard.
+
+        Estratégia:
+          1. Tokeniza a query removendo stopwords e keywords genéricas de
+             portfólio (carteira/composição/lista/...) — sobram tokens
+             distintivos (ex.: "seven", "abril").
+          2. Encontra materiais cujo `product.product_type='carteira'`
+             (taxonomia oficial) OU cujo `material.name` casa o regex
+             de carteira em `product_ingestor`.
+          3. Filtra: se há tokens distintivos, prioriza materiais cujo
+             `name` ou `product.name` casa pelo menos 1 token.
+          4. Devolve TODOS os blocos prioritários (`portfolio_row`,
+             `financial_table`, `tabela`) desses materiais, mais blocos
+             de texto da MESMA(s) carteira(s) como contexto.
+
+        Sem isso, queries como "fundos da carteira Seven", "composição da
+        carteira recomendada", "alocação dos FIIs" caem no fluxo semântico
+        puro e retornam resultados incompletos ou no_results.
+        """
+        from database.models import Product as _Prod, Material as _Mat, ContentBlock as _CB
+        try:
+            from services.product_ingestor import _PORTFOLIO_REGEX
+        except Exception:
+            _PORTFOLIO_REGEX = None
+
+        owns_db = False
+        if db is None:
+            db = SessionLocal()
+            owns_db = True
+
+        try:
+            # 1) Tokeniza a query removendo termos genéricos para extrair
+            #    tokens distintivos (nome da carteira: "seven", "arrojada"...).
+            _GENERIC_TOKENS = {
+                "carteira", "carteiras", "portfolio", "portfólio", "portfolios",
+                "composicao", "composição", "alocacao", "alocação",
+                "lista", "listar", "liste", "todos", "todas", "todo", "toda",
+                "fundos", "ativos", "papeis", "papéis", "fiis", "fii",
+                "peso", "pesos", "participacao", "participação",
+                "qual", "quais", "quanto", "quantos", "quantas",
+                "da", "do", "de", "dos", "das", "para", "com", "em",
+                "a", "o", "os", "as", "um", "uma", "e", "ou",
+                "me", "mostre", "mostra", "diga", "fale", "explique",
+                "recomendada", "recomendado", "sugerida", "sugerido",
+                "atual", "atualizada", "agora", "hoje",
+            }
+            import unicodedata
+            def _norm(s: str) -> str:
+                if not s:
+                    return ""
+                nfkd = unicodedata.normalize("NFKD", str(s))
+                return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+            q_norm = _norm(query)
+            raw_tokens = re.findall(r"[a-zA-Z0-9]+", q_norm)
+            distinctive = [
+                t for t in raw_tokens
+                if len(t) >= 4 and t not in _GENERIC_TOKENS and not t.isdigit()
+            ]
+
+            # 2) Candidatos: materiais cujo produto associado é do tipo
+            #    'carteira' OU cujo nome casa o regex de carteira.
+            candidate_mats = (
+                db.query(_Mat, _Prod)
+                .outerjoin(_Prod, _Mat.product_id == _Prod.id)
+                .filter(_Mat.source_file_path.isnot(None))
+                .filter(_Mat.publish_status.notin_(["rascunho", "arquivado"]))
+                .all()
+            )
+            target_materials: List[_Mat] = []
+            for mat, prod in candidate_mats:
+                prod_type = (prod.product_type or "").lower() if prod else ""
+                is_carteira = prod_type == "carteira"
+                if not is_carteira and _PORTFOLIO_REGEX is not None:
+                    name_check = " ".join(
+                        s for s in [mat.name, prod.name if prod else None] if s
+                    )
+                    is_carteira = bool(_PORTFOLIO_REGEX.search(name_check))
+                if is_carteira:
+                    target_materials.append(mat)
+
+            if not target_materials:
+                _log_zero_results("search_by_portfolio()", query)
+                return []
+
+            # 3) Filtra por tokens distintivos quando disponíveis. Se nenhum
+            #    material casar com nenhum token, mantém TODOS (a query é
+            #    genérica do tipo "liste as carteiras"; agente verá tudo).
+            if distinctive:
+                ranked: List[Tuple[int, _Mat]] = []
+                for mat in target_materials:
+                    haystack = _norm(
+                        " ".join(s for s in [mat.name, getattr(mat.product, "name", None)] if s)
+                    )
+                    score = sum(1 for t in distinctive if t in haystack)
+                    if score > 0:
+                        ranked.append((score, mat))
+                if ranked:
+                    ranked.sort(key=lambda kv: -kv[0])
+                    target_materials = [m for _s, m in ranked]
+                # caso contrário (nenhum token bateu), mantém a lista cheia
+                # — talvez seja query genérica "liste as carteiras".
+
+            # Limite defensivo para não devolver dezenas de blocos por
+            # múltiplas carteiras concorrentes.
+            target_materials = target_materials[:3]
+            mat_ids = [m.id for m in target_materials]
+
+            # 4) Busca blocos prioritários + texto desses materiais.
+            #    Ordem: portfolio_row > financial_table/tabela > texto.
+            from database.models import ContentBlockStatus as _CBS
+            blocks = (
+                db.query(_CB, _Mat)
+                .join(_Mat, _CB.material_id == _Mat.id)
+                .filter(_CB.material_id.in_(mat_ids))
+                .filter(_CB.status.in_([
+                    _CBS.APPROVED.value, _CBS.AUTO_APPROVED.value,
+                ]))
+                .order_by(_CB.material_id, _CB.source_page, _CB.id)
+                .all()
+            )
+
+            # Mapas de produto/material para hidratar metadata.
+            # Code review (Task #204): substitui o N+1 (1 query por material)
+            # por uma única query `IN (...)` cobrindo todos os produtos das
+            # carteiras-alvo de uma vez. Para até 3 carteiras o ganho é
+            # marginal, mas o padrão evita regressão se o limite subir.
+            _pids_needed = [
+                m.product_id for m in target_materials if m.product_id is not None
+            ]
+            _prod_rows = (
+                db.query(_Prod).filter(_Prod.id.in_(_pids_needed)).all()
+                if _pids_needed else []
+            )
+            _prod_by_id = {p.id: p for p in _prod_rows}
+            prod_by_mat = {
+                m.id: _prod_by_id.get(m.product_id) for m in target_materials
+            }
+
+            # Prioridade explícita: portfolio_row primeiro, tabelas depois,
+            # texto por último — o caller do agent_tools mantém essa ordem.
+            _PRIORITY_ORDER = {
+                "portfolio_row": 0,
+                "financial_table": 1,
+                "tabela": 1,
+                "table": 1,
+                "texto": 2,
+                "text": 2,
+            }
+            def _prio(bt: str) -> int:
+                return _PRIORITY_ORDER.get((bt or "").lower(), 9)
+
+            # Limita texto a no máximo 4 por material (contexto narrativo,
+            # mas sem inundar). Tabelas e portfolio_rows passam todas.
+            text_count_per_mat: Dict[int, int] = {}
+            documents: List[dict] = []
+            for blk, mat in blocks:
+                bt = (blk.block_type or "").lower()
+                if bt in ("texto", "text"):
+                    text_count_per_mat.setdefault(mat.id, 0)
+                    if text_count_per_mat[mat.id] >= 4:
+                        continue
+                    text_count_per_mat[mat.id] += 1
+                if _prio(bt) >= 9:
+                    continue  # tipos desconhecidos (chart/imagem) — não úteis para listagem
+
+                prod = prod_by_mat.get(mat.id)
+                metadata = {
+                    "block_id": str(blk.id),
+                    "material_id": str(mat.id),
+                    "material_name": mat.name or "",
+                    "material_type": mat.material_type or "",
+                    "block_type": bt,
+                    "page": str(blk.source_page or 0),
+                    "source_page": blk.source_page,
+                    "title": blk.title or "",
+                    "product_name": prod.name if prod else "",
+                    "product_ticker": (prod.ticker or "") if prod else "",
+                    "product_type": (prod.product_type or "carteira") if prod else "carteira",
+                    "product_id": str(prod.id) if prod else None,
+                    "publish_status": mat.publish_status or "publicado",
+                    "products": (prod.name.upper() if prod and prod.name else ""),
+                }
+                # distância sintética baixa (= score alto) para entrar com
+                # prioridade no merge da EnhancedSearch.
+                documents.append({
+                    "content": blk.content or "",
+                    "metadata": metadata,
+                    "distance": 0.05 + 0.05 * _prio(bt),
+                    "source": "portfolio_lookup",
+                })
+
+            documents.sort(key=lambda d: (
+                _prio(d["metadata"]["block_type"]),
+                int(d["metadata"].get("material_id") or "0"),
+                int(d["metadata"].get("source_page") or 0),
+                int(d["metadata"].get("block_id") or "0"),
+            ))
+
+            print(
+                f"[VECTOR_STORE] search_by_portfolio: query={query!r} "
+                f"distinctive={distinctive} materiais={mat_ids} "
+                f"blocos={len(documents)}"
+            )
+            return documents[:n_results]
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro em search_by_portfolio: {e}")
+            return []
+        finally:
+            if owns_db:
+                db.close()
+
     def search_by_product_ids(self, product_ids: List[int], max_per_product: int = 5) -> List[dict]:
         """
         Busca blocos de conteúdo via ORM relacional (Product→Material→ContentBlock).

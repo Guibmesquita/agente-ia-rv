@@ -1415,6 +1415,33 @@ class EnhancedSearch:
             # (evita ruído de texto genérico).
             intent_block_types = ['grafico', 'imagem']
 
+        # Task #204 — Portfolio intent: lookup RELACIONAL antes da busca
+        # semântica. Quando a query é uma carteira/portfólio, cada
+        # `portfolio_row` é uma linha de 1 ticker — embedding semântico
+        # tem péssimo recall ("liste FIIs da Seven" não casa bem com
+        # "BTLG11: Peso=6%..."). Buscamos o material por nome (regex /
+        # tipo='carteira') e injetamos TODAS as linhas como blocos
+        # prioritários (distance baixa).
+        is_portfolio_intent = TokenExtractor.detect_portfolio_intent(query)
+        if is_portfolio_intent:
+            try:
+                portfolio_results = self.vector_store.search_by_portfolio(
+                    query=query,
+                    n_results=30,
+                    db=db,
+                )
+                injected = 0
+                for r in portfolio_results:
+                    doc_id = r.get('metadata', {}).get('block_id') or r.get('content', '')[:50]
+                    if doc_id and doc_id not in seen_ids:
+                        seen_ids.add(doc_id)
+                        all_results.append(r)
+                        injected += 1
+                if injected:
+                    print(f"[EnhancedSearch] Portfolio intent: {injected} blocos via search_by_portfolio")
+            except Exception as _e_pf:
+                print(f"[EnhancedSearch] search_by_portfolio falhou (não-bloqueante): {_e_pf}")
+
         for q in expanded_queries[:3]:
             results = self.vector_store.search(
                 query=q,

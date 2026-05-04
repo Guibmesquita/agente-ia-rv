@@ -345,13 +345,28 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     except (TypeError, ValueError):
         offset = 0
 
+    # Task #204 — Detecção de intenção movida para CIMA da definição de
+    # `page_size` para que carteiras (que precisam caber inteiras na primeira
+    # janela) ganhem default maior. `is_portfolio_intent` é mais estrito que
+    # `is_completeness` e também dispara `search_by_portfolio` (lookup
+    # relacional) dentro de EnhancedSearch, mais abaixo.
+    is_completeness = TokenExtractor.detect_completeness_intent(query)
+    is_portfolio_intent = TokenExtractor.detect_portfolio_intent(query)
+
     # RAG V3.6 — limit (tamanho da janela) define o page_size para a paginação
     # monotônica. Default 6 (cobre o caso comum de 1-2 carteiras + alguns
     # extras), máximo 20 (mesmo cap de n_results em modo completude).
+    #
+    # Task #204 — para queries de PORTFÓLIO o default sobe para 20: uma
+    # carteira de 12-15 FIIs precisa caber inteira na primeira janela. Sem
+    # isso o agente recebe 6 linhas + has_more=true e tem que paginar 2-3x
+    # para ler a carteira completa, frequentemente respondendo "documento
+    # incompleto" antes de paginar.
+    _portfolio_default = 20 if is_portfolio_intent else 6
     try:
-        page_size = int(args.get("limit", 6) or 6)
+        page_size = int(args.get("limit", _portfolio_default) or _portfolio_default)
     except (TypeError, ValueError):
-        page_size = 6
+        page_size = _portfolio_default
     page_size = max(1, min(page_size, 20))
 
     # RAG V3.6 — Continuação intra-bloco. Quando o agente recebe um bloco
@@ -383,8 +398,10 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     if not vector_store:
         return {"error": "Base de conhecimento indisponível", "results": []}
 
-    is_completeness = TokenExtractor.detect_completeness_intent(query)
-    n_results = 20 if is_completeness else 12
+    # Task #204 — `is_completeness` e `is_portfolio_intent` foram detectados
+    # mais acima (antes do `page_size`) para parametrizar a janela. Aqui só
+    # decidimos quantos resultados pedir do EnhancedSearch (n_results).
+    n_results = 30 if is_portfolio_intent else (20 if is_completeness else 12)
 
     enhanced = EnhancedSearch(vector_store)
     raw_results = enhanced.search(
@@ -477,7 +494,27 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
         )
     except Exception:
         max_score = 1.0  # Em caso de schema inesperado, não ative o guard.
-    if max_score < LOW_CONFIDENCE_THRESHOLD:
+
+    # Task #204 — Portfolio intent BYPASS do guard de baixa confiança.
+    # Quando a query é portfolio E pelo menos 1 bloco veio do lookup
+    # relacional (`portfolio_row` com source `portfolio_lookup` ou block_type
+    # `portfolio_row`), o match é por NOME, não por similaridade vetorial.
+    # O `composite_score` natural fica baixo porque o embedding "liste FIIs
+    # da Seven" é distante semanticamente de cada linha "BTLG11: Peso=6%...",
+    # mas o resultado é AUTORITATIVO (vem do banco relacional). Aplicar o
+    # guard aqui esconderia a carteira inteira.
+    has_portfolio_rows = any(
+        (getattr(r, "metadata", None) or {}).get("block_type", "").lower() == "portfolio_row"
+        for r in raw_results
+    )
+    portfolio_bypass = is_portfolio_intent and has_portfolio_rows
+    if portfolio_bypass:
+        print(
+            f"[search_kb] Portfolio intent + portfolio_row blocks "
+            f"(max_score={max_score:.2f}) → bypass do guard de baixa confiança."
+        )
+
+    if max_score < LOW_CONFIDENCE_THRESHOLD and not portfolio_bypass:
         return {
             "results": [],
             "no_results": True,
