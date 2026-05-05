@@ -395,7 +395,7 @@ export function PortfolioDetail() {
               {portfolio.materials?.length ?? 0}
             </span>
           </h2>
-          <Button size="sm" variant="secondary" onClick={() => navigate(`/upload?portfolio_id=${id}`)}>
+          <Button size="sm" variant="secondary" onClick={() => navigate(`/upload?portfolio_id=${id}&portfolio_name=${encodeURIComponent(portfolio.name)}`)}>
             <Plus className="w-4 h-4" />
             Fazer upload
           </Button>

@@ -73,13 +73,26 @@ def _portfolio_to_dict(portfolio: Portfolio, db: Session, include_members: bool 
 @router.get("")
 async def list_portfolios(
     active_only: bool = False,
+    name: Optional[str] = None,
+    portfolio_type: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Lista todas as Carteiras Recomendadas."""
+    """
+    Lista todas as Carteiras Recomendadas.
+
+    Filtros opcionais:
+    - active_only: retorna apenas carteiras ativas (is_active=True)
+    - name: filtra por nome (busca parcial ILIKE, insensível a acento)
+    - portfolio_type: filtra por tipo exato (ex.: "FII", "Ações")
+    """
     q = db.query(Portfolio)
     if active_only:
         q = q.filter(Portfolio.is_active == True)
+    if name and name.strip():
+        q = q.filter(Portfolio.name.ilike(f"%{name.strip()}%"))
+    if portfolio_type and portfolio_type.strip():
+        q = q.filter(Portfolio.portfolio_type == portfolio_type.strip())
     portfolios = q.order_by(Portfolio.name).all()
     return {
         "portfolios": [_portfolio_to_dict(p, db, include_members=False) for p in portfolios],

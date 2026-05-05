@@ -3814,6 +3814,7 @@ async def smart_upload_without_product(
     description: str = Form(None),
     valid_from: str = Form(None),
     valid_until: str = Form(None),
+    portfolio_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -3879,6 +3880,15 @@ async def smart_upload_without_product(
         publish_status="rascunho",
         file_hash=file_hash
     )
+    # Task #206 — vincular à Carteira Recomendada quando portfolio_id fornecido
+    if portfolio_id:
+        from database.models import Portfolio as _Port
+        _port_check = db.query(_Port).filter(_Port.id == portfolio_id, _Port.is_active == True).first()
+        if _port_check:
+            material.portfolio_id = portfolio_id
+        else:
+            print(f"[smart-upload] portfolio_id={portfolio_id} inválido ou inativo — ignorado")
+
     db.add(material)
     db.commit()
     db.refresh(material)
@@ -3906,9 +3916,11 @@ async def smart_upload_without_product(
         "message": "PDF enviado para processamento inteligente. A IA identificará os produtos automaticamente.",
         "material": {
             "id": material.id,
-            "name": material.name
+            "name": material.name,
+            "portfolio_id": material.portfolio_id,
         },
-        "product_id": temp_product.id
+        "product_id": temp_product.id,
+        "portfolio_id": material.portfolio_id,
     }
 
 
@@ -3922,6 +3934,7 @@ async def smart_upload_stream(
     valid_from: str = Form(None),
     valid_until: str = Form(None),
     tags: str = Form("[]"),
+    portfolio_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -3999,6 +4012,15 @@ async def smart_upload_stream(
         publish_status="rascunho",
         file_hash=file_hash
     )
+    # Task #206 — vincular à Carteira Recomendada quando portfolio_id fornecido
+    if portfolio_id:
+        from database.models import Portfolio as _Port2
+        _port_check2 = db.query(_Port2).filter(_Port2.id == portfolio_id, _Port2.is_active == True).first()
+        if _port_check2:
+            material.portfolio_id = portfolio_id
+        else:
+            print(f"[smart-upload-stream] portfolio_id={portfolio_id} inválido ou inativo — ignorado")
+
     db.add(material)
     db.commit()
     db.refresh(material)
@@ -6838,10 +6860,23 @@ async def link_products_and_queue(
     primary_product_id = body.get("primary_product_id")
     products_with_info = body.get("products_with_info", []) or []
     is_conceptual_material = bool(body.get("is_conceptual_material", False))
+    # Task #206 — portfolio_id opcional: vincula o material à Carteira Recomendada
+    laq_portfolio_id = body.get("portfolio_id")
 
     material = db.query(Material).filter(Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
+
+    # Task #206 — vincula à carteira se ainda não vinculado e portfolio_id fornecido
+    if laq_portfolio_id and not material.portfolio_id:
+        from database.models import Portfolio as _PortLAQ
+        _port_laq = db.query(_PortLAQ).filter(
+            _PortLAQ.id == laq_portfolio_id, _PortLAQ.is_active == True
+        ).first()
+        if _port_laq:
+            material.portfolio_id = laq_portfolio_id
+            db.commit()
+            print(f"[LINK_QUEUE] Material {material_id} vinculado à carteira {_port_laq.name} (id={laq_portfolio_id})")
 
     file_path = getattr(material, "source_file_path", None)
     if not file_path or not os.path.exists(file_path):

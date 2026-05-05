@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info, AlertCircle, RotateCcw, Clock, Trash2, X, Loader, Loader2, Files, List, ChevronUp, ChevronDown, FileWarning, FileUp, Copy, Search, Link2, PlusCircle } from 'lucide-react';
+import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info, AlertCircle, RotateCcw, Clock, Trash2, X, Loader, Loader2, Files, List, ChevronUp, ChevronDown, FileWarning, FileUp, Copy, Search, Link2, PlusCircle, Briefcase } from 'lucide-react';
 import { materialsAPI, productsAPI } from '../services/api';
 import { Button } from '../components/Button';
 import { ProductAutocomplete } from '../components/ProductAutocomplete';
@@ -93,7 +93,15 @@ export function SmartUpload() {
   const { addToast } = useToast();
   const { confirmDialog, openConfirm } = useConfirmDialog();
   const logRef = useRef(null);
-  
+
+  // Task #206 — Lê portfolio_id da query string (?portfolio_id=N)
+  // para que uploads iniciados a partir de uma Carteira Recomendada
+  // sejam automaticamente vinculados a ela.
+  const portfolioIdFromUrl = searchParams.get('portfolio_id')
+    ? parseInt(searchParams.get('portfolio_id'), 10) || null
+    : null;
+  const portfolioNameFromUrl = searchParams.get('portfolio_name') || null;
+
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState([]);
   const [materialType, setMaterialType] = useState('');
@@ -476,6 +484,9 @@ export function SmartUpload() {
       formData.append('tags', JSON.stringify(tags));
       if (validFrom) formData.append('valid_from', validFrom);
       if (validUntil) formData.append('valid_until', validUntil);
+      // Task #206 — passa portfolio_id para que pré-análise/upload criem
+      // o material já vinculado à Carteira Recomendada
+      if (portfolioIdFromUrl) formData.append('portfolio_id', String(portfolioIdFromUrl));
 
       const response = await fetch('/api/products/pre-analyze-upload', {
         method: 'POST',
@@ -712,6 +723,9 @@ export function SmartUpload() {
             primary_product_id: primaryId,
             products_with_info: productsWithInfo,
             is_conceptual_material: isConceptual,
+            // Task #206 — propaga portfolio_id para que o backend vincule o
+            // material à Carteira Recomendada na etapa de confirmação.
+            ...(portfolioIdFromUrl ? { portfolio_id: portfolioIdFromUrl } : {}),
           }),
         });
         if (!resp.ok) {
@@ -782,6 +796,8 @@ export function SmartUpload() {
       if (validFrom) formData.append('valid_from', validFrom);
       if (validUntil) formData.append('valid_until', validUntil);
       if (selectedProduct) formData.append('product_id', selectedProduct.id.toString());
+      // Task #206 — vincula à Carteira Recomendada quando vindo da página de carteira
+      if (portfolioIdFromUrl) formData.append('portfolio_id', String(portfolioIdFromUrl));
 
       if (materialType === 'campanha' && campaignSlug) {
         formData.append('campaign_slug', campaignSlug);
@@ -1349,6 +1365,21 @@ export function SmartUpload() {
       )}
       {renderMissingPdfSection()}
       {renderFailedSection()}
+
+      {/* Task #206 — Banner de contexto quando upload é iniciado de uma Carteira */}
+      {portfolioIdFromUrl && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
+          <Briefcase className="w-4 h-4 text-teal-600 shrink-0" />
+          <span>
+            Os materiais enviados serão vinculados automaticamente à carteira
+            {portfolioNameFromUrl ? (
+              <strong className="mx-1">{portfolioNameFromUrl}</strong>
+            ) : (
+              <span className="mx-1">selecionada</span>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="text-center mb-8">
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">

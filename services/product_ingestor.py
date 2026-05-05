@@ -1730,7 +1730,37 @@ class ProductIngestor:
                 metadata["financial_metrics_detected"] = json.dumps(financial_metrics_detected, ensure_ascii=False)
                 if block.block_type == ContentBlockType.FINANCIAL_TABLE.value:
                     print(f"[INGESTOR] Bloco {block.id} — tabela financeira com métricas: {financial_metrics_detected}")
-            
+
+            # Task #206 — Injetar metadados de Carteira Recomendada nos embeddings.
+            # Quando o material pertence a uma Carteira Recomendada (material.portfolio_id),
+            # adiciona portfolio_id, portfolio_name, member_tickers e o prefixo
+            # [CARTEIRA:<nome>] no campo source para melhorar recall no RAG.
+            if getattr(material, 'portfolio_id', None):
+                try:
+                    from database.models import Portfolio as _PortfolioModel, PortfolioProduct as _PP
+                    _portfolio_obj = db.query(_PortfolioModel).filter(
+                        _PortfolioModel.id == material.portfolio_id
+                    ).first()
+                    if _portfolio_obj:
+                        metadata["portfolio_id"] = _portfolio_obj.id
+                        metadata["portfolio_name"] = _portfolio_obj.name
+                        # Enriquece source com tag de carteira para recall textual
+                        metadata["source"] = (
+                            f"[CARTEIRA:{_portfolio_obj.name}] " + metadata.get("source", "")
+                        )
+                        # member_tickers: todos os tickers dos produtos membros da carteira
+                        _member_rows = (
+                            db.query(Product.ticker)
+                            .join(_PP, Product.id == _PP.product_id)
+                            .filter(_PP.portfolio_id == _portfolio_obj.id, Product.ticker != None)
+                            .all()
+                        )
+                        _member_tickers = [r[0] for r in _member_rows if r[0]]
+                        if _member_tickers:
+                            metadata["member_tickers"] = " ".join(_member_tickers)
+                except Exception as _e_pf_meta:
+                    print(f"[INGESTOR] Aviso: injeção de metadados de carteira falhou para bloco {block.id}: {_e_pf_meta}")
+
             try:
                 from services.chunk_enrichment import enrich_metadata
                 metadata = enrich_metadata(

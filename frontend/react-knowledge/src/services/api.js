@@ -142,6 +142,9 @@ export const materialsAPI = {
     if (materialData.valid_until) {
       formData.append('valid_until', materialData.valid_until);
     }
+    if (materialData.portfolio_id) {
+      formData.append('portfolio_id', String(materialData.portfolio_id));
+    }
     return fetchAPI('/products/smart-upload', {
       method: 'POST',
       body: formData,
@@ -287,8 +290,14 @@ export const adminAPI = {
 };
 
 export const portfoliosAPI = {
-  list: (activeOnly = false) =>
-    fetchAPI(`/portfolios${activeOnly ? '?active_only=true' : ''}`),
+  list: ({ activeOnly = false, name = '', portfolioType = '' } = {}) => {
+    const params = new URLSearchParams();
+    if (activeOnly) params.set('active_only', 'true');
+    if (name) params.set('name', name);
+    if (portfolioType) params.set('portfolio_type', portfolioType);
+    const qs = params.toString();
+    return fetchAPI(`/portfolios${qs ? `?${qs}` : ''}`);
+  },
 
   get: (id) => fetchAPI(`/portfolios/${id}`),
 
