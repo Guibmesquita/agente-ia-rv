@@ -32,7 +32,14 @@ TOOL_SEARCH_KNOWLEDGE_BASE = {
             "Para ver as linhas restantes, refaça a busca com a MESMA query e o "
             "parâmetro 'offset' igual ao 'next_offset' retornado. NUNCA invente linhas "
             "que não vieram no resultado: se 'has_more' = true e o usuário pediu lista "
-            "completa, faça nova chamada com offset."
+            "completa, faça nova chamada com offset. "
+            "CARTEIRAS RECOMENDADAS: quando a query mencionar o nome de uma Carteira "
+            "Recomendada cadastrada (ex.: 'Carteira FII Renda', 'Carteira Dividendos'), "
+            "a resposta inclui automaticamente o campo 'portfolio_context' com a "
+            "composição oficial (members + key_info de cada ativo). Esse campo é a "
+            "FONTE DE VERDADE para a composição — use-o em vez de reconstruir a partir "
+            "dos blocos textuais e NUNCA adicione/remova ativos da lista. Detalhes "
+            "de formatação no bloco 'CARTEIRAS RECOMENDADAS' do system prompt."
         ),
         "parameters": {
             "type": "object",

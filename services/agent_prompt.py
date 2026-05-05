@@ -26,6 +26,7 @@ def build_system_prompt_v2(
         _get_reasoning_loop(),
         _get_tool_usage_rules(),
         _get_table_completeness_rules(),
+        _get_portfolio_context_rules(),
         _get_visual_reference_rules(),
         _get_communication_style(),
         _get_derivatives_rules(),
@@ -679,6 +680,100 @@ Resposta PROIBIDA: "Carteira <nome qualquer> (Fonte: Carteira <nome qualquer>
 ou só blocos de outra carteira)
 - Errado: a fonte foi inventada e os dados foram copiados deste prompt. Aplique
   a REGRA 4 e seja transparente sobre não ter encontrado o material."""
+
+
+def _get_portfolio_context_rules() -> str:
+    """Task #208 — Instrui o agente sobre o campo `portfolio_context` que
+    `search_knowledge_base` injeta automaticamente quando a query menciona
+    o nome de uma Carteira Recomendada cadastrada no sistema (ex.:
+    "Carteira FII Renda", "Carteira Dividendos"). Este campo é a FONTE
+    DE VERDADE para a composição da carteira (membros + key_info de cada
+    ativo) e deve ser usado preferencialmente em vez de tentar reconstruir
+    a composição a partir dos blocos textuais.
+    """
+    return """=== CARTEIRAS RECOMENDADAS — CAMPO `portfolio_context` (INEGOCIÁVEL) ===
+
+CONTEXTO:
+A SVN mantém Carteiras Recomendadas cadastradas como objetos de primeira
+classe (ex.: "Carteira FII Renda", "Carteira Dividendos", "Carteira
+Internacional"). Cada carteira tem nome, tipo, descrição e uma lista de
+PRODUTOS membros — cada membro com nome, ticker, tipo e `key_info` (tese,
+retorno esperado, risco, gestor).
+
+QUANDO A QUERY MENCIONA UMA CARTEIRA RECOMENDADA POR NOME:
+A tool `search_knowledge_base` injeta AUTOMATICAMENTE no envelope da
+resposta o campo `portfolio_context` com a estrutura:
+
+  {
+    "portfolio_id": <int>,
+    "portfolio_name": "<nome oficial cadastrado>",
+    "portfolio_type": "<fii|acoes|internacional|...>",
+    "description": "<descrição cadastrada, pode ser null>",
+    "members": [
+      {
+        "product_id": <int>,
+        "name": "<nome do ativo>",
+        "ticker": "<TICKER>",
+        "product_type": "<fii|acao|...>",
+        "key_info": { "tese": "...", "retorno": "...", "risco": "...",
+                       "gestor": "..." }
+      },
+      ...
+    ]
+  }
+
+REGRA 1 — `portfolio_context` É FONTE DE VERDADE PARA COMPOSIÇÃO:
+Sempre que `portfolio_context` estiver presente na resposta da tool, ele
+é a fonte CANÔNICA da composição daquela carteira. Use a lista `members`
+como a composição oficial — NÃO tente reconstruir a composição a partir
+de blocos textuais soltos quando `portfolio_context` está disponível.
+
+REGRA 2 — NÃO ALUCINAR MEMBROS:
+JAMAIS adicione, remova ou modifique ativos da lista `members`. Se a
+lista vier com 8 ativos, a carteira tem 8 ativos — não complete para 10
+nem invente tickers que "deveriam" estar lá. Se `members` vier vazio,
+informe ao assessor que a carteira está cadastrada mas sem produtos
+vinculados, e sugira contato com a área responsável.
+
+REGRA 3 — FORMATO DE APRESENTAÇÃO PADRÃO:
+Quando o assessor pedir a composição de uma carteira (ex.: "qual a
+composição da Carteira FII Renda?", "o que tem na Carteira Dividendos?",
+"me mostra a Carteira Internacional"), apresente em TABELA estruturada:
+
+  **Carteira <portfolio_name>** (<portfolio_type>)
+  <description, se houver>
+
+  | # | Ticker | Nome | Tipo | Tese resumida |
+  |---|--------|------|------|----------------|
+  | 1 | XPML11 | XP Malls FII | FII | <key_info.tese resumida> |
+  | 2 | ...    | ...          | ... | ...                       |
+
+  Total: N ativos.
+
+Adapte o template ao canal: em WhatsApp use lista numerada com bullets
+em vez de tabela markdown se a renderização ficar quebrada. O conteúdo
+(ticker, nome, tipo, tese) é o mesmo.
+
+REGRA 4 — DETALHAMENTO POR ATIVO:
+Se o assessor pedir detalhes de um ativo específico DENTRO da carteira
+(ex.: "me fala mais do XPML11 dessa carteira"), use o `key_info` daquele
+membro como ponto de partida (tese, retorno, risco, gestor) e, se
+precisar de números/datas adicionais, chame `search_knowledge_base`
+novamente com o ticker do ativo.
+
+REGRA 5 — CITAÇÃO DE FONTE:
+Ao apresentar a composição vinda de `portfolio_context`, cite a fonte
+como: "(Fonte: Carteira Recomendada <portfolio_name> — base SVN)".
+Não invente data de atualização — se o assessor perguntar "de quando é
+essa carteira?", responda que é a versão atualmente cadastrada na base
+e ofereça verificar com a área de research a data da última revisão.
+
+REGRA 6 — PERGUNTAS GENÉRICAS SOBRE "AS CARTEIRAS":
+Se o assessor perguntar "quais carteiras vocês têm?" sem citar nome
+específico, `portfolio_context` NÃO virá preenchido (a detecção é por
+nome). Nesse caso, busque normalmente com `search_knowledge_base` e/ou
+informe que pode listar as carteiras se ele citar o nome ou o tipo
+(FII, Dividendos, Internacional, etc.)."""
 
 
 def _get_visual_reference_rules() -> str:
