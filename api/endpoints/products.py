@@ -7379,12 +7379,17 @@ async def link_products_and_queue(
         primary_product_id = created_products[0]
 
     if not primary_product_id and not created_products:
-        raise HTTPException(
-            status_code=400,
-            detail="Selecione pelo menos um produto para vincular ao material antes de processar."
-        )
+        # Task #206 — Em modo Carteira Recomendada, zero produtos é permitido:
+        # a carteira é a proprietária do material e product_id permanece nulo.
+        if not laq_portfolio_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Selecione pelo menos um produto para vincular ao material antes de processar."
+            )
 
-    if primary_product_id:
+    # Task #206 — Em modo carteira NÃO sobrescrevemos material.product_id:
+    # o material pertence à carteira (portfolio_id), não a um produto individual.
+    if primary_product_id and not laq_portfolio_id:
         material.product_id = primary_product_id
 
     db.query(MaterialProductLink).filter(

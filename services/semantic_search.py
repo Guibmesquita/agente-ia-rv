@@ -1473,20 +1473,46 @@ class EnhancedSearch:
             except Exception as _e_pf:
                 print(f"[EnhancedSearch] search_by_portfolio falhou (não-bloqueante): {_e_pf}")
 
-        for q in expanded_queries[:3]:
-            results = self.vector_store.search(
-                query=q,
-                n_results=n_results * 2,
-                similarity_threshold=similarity_threshold,
-                query_type=query_intent,
-                block_type_filter=intent_block_types,
-                conversation_id=conversation_id,
-            )
-            for r in results:
-                doc_id = r.get('metadata', {}).get('block_id', r.get('content', '')[:50])
-                if doc_id not in seen_ids:
-                    seen_ids.add(doc_id)
-                    all_results.append(r)
+        # Task #206 — Quando a query identificou uma Carteira Recomendada pelo nome,
+        # usamos modo exclusivo: ignoramos a busca semântica global para não
+        # misturar blocos de produtos individuais com os da carteira.
+        # Se nenhuma carteira foi identificada, executa busca semântica global normalmente.
+        if not _named_portfolio_injected:
+            for q in expanded_queries[:3]:
+                results = self.vector_store.search(
+                    query=q,
+                    n_results=n_results * 2,
+                    similarity_threshold=similarity_threshold,
+                    query_type=query_intent,
+                    block_type_filter=intent_block_types,
+                    conversation_id=conversation_id,
+                )
+                for r in results:
+                    doc_id = r.get('metadata', {}).get('block_id', r.get('content', '')[:50])
+                    if doc_id not in seen_ids:
+                        seen_ids.add(doc_id)
+                        all_results.append(r)
+        else:
+            # Em modo carteira exclusivo, ainda complementamos com busca por ticker
+            # dos produtos membros para garantir resultados relevantes quando
+            # a query menciona ativos específicos dentro da carteira.
+            for q in expanded_queries[:3]:
+                results = self.vector_store.search(
+                    query=q,
+                    n_results=n_results,
+                    similarity_threshold=similarity_threshold,
+                    query_type=query_intent,
+                    block_type_filter=intent_block_types,
+                    conversation_id=conversation_id,
+                )
+                for r in results:
+                    r_portfolio_id = r.get('metadata', {}).get('portfolio_id')
+                    if r_portfolio_id != _pid:
+                        continue
+                    doc_id = r.get('metadata', {}).get('block_id', r.get('content', '')[:50])
+                    if doc_id not in seen_ids:
+                        seen_ids.add(doc_id)
+                        all_results.append(r)
         
         if tokens.possible_tickers and not is_comparative:
             for ticker in tokens.possible_tickers[:2]:
