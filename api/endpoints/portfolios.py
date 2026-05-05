@@ -35,12 +35,17 @@ def _portfolio_to_dict(portfolio: Portfolio, db: Session, include_members: bool 
         Material.portfolio_id == portfolio.id
     ).scalar() or 0
 
+    # Task #213 — apelidos/sinônimos para reconhecimento de variações na query.
+    # `get_aliases` já trata erros de parsing internamente.
+    aliases = portfolio.get_aliases()
+
     payload = {
         "id": portfolio.id,
         "name": portfolio.name,
         "portfolio_type": portfolio.portfolio_type,
         "description": portfolio.description,
         "is_active": portfolio.is_active,
+        "aliases": aliases,
         "members_count": int(members_count),
         "materials_count": int(materials_count),
         "created_at": portfolio.created_at.isoformat() if portfolio.created_at else None,
@@ -126,6 +131,11 @@ async def create_portfolio(
         is_active=bool(body.get("is_active", True)),
         created_by=current_user.id,
     )
+    # Task #213 — apelidos cadastrados na criação (opcional).
+    if "aliases" in body:
+        raw_aliases = body.get("aliases") or []
+        if isinstance(raw_aliases, list):
+            portfolio.set_aliases(raw_aliases)
     db.add(portfolio)
     db.commit()
     db.refresh(portfolio)
@@ -202,6 +212,11 @@ async def update_portfolio(
         portfolio.description = body["description"] or None
     if "is_active" in body:
         portfolio.is_active = bool(body["is_active"])
+    # Task #213 — atualização de apelidos/sinônimos.
+    if "aliases" in body:
+        raw_aliases = body.get("aliases") or []
+        if isinstance(raw_aliases, list):
+            portfolio.set_aliases(raw_aliases)
 
     db.commit()
     db.refresh(portfolio)

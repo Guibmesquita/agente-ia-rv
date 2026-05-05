@@ -564,6 +564,8 @@ def _apply_incremental_migrations():
         "ALTER TABLE document_embeddings ADD COLUMN IF NOT EXISTS portfolio_id INTEGER",
         "ALTER TABLE document_embeddings ADD COLUMN IF NOT EXISTS portfolio_name VARCHAR(255)",
         "CREATE INDEX IF NOT EXISTS ix_doc_embeddings_portfolio_id ON document_embeddings(portfolio_id)",
+        # Task #213 — Apelidos/sinônimos de Carteiras Recomendadas
+        "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS aliases TEXT DEFAULT '[]'",
     ]
     db = SessionLocal()
     ok = 0

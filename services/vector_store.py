@@ -104,6 +104,194 @@ def extract_manager_from_query(query: str) -> Optional[str]:
     return None
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Task #213 — Reconhecimento de apelidos/variações para Carteiras Recomendadas
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Stopwords portuguesas usadas para identificar tokens "distintivos" do nome
+# da carteira (sempre comparados após singularização).
+_PORTFOLIO_STOPWORDS = {
+    "de", "da", "do", "das", "dos", "a", "o", "as", "os", "para", "com",
+    "minha", "meu", "minhas", "meus", "nossa", "nosso", "uma", "um",
+    "carteira", "portfolio", "recomendada", "recomendado",
+    "e", "em", "no", "na", "nos", "nas", "que",
+}
+
+# Tokens que, quando presentes na query, indicam que o usuário está se
+# referindo a uma carteira (todos comparados já singularizados/sem acento).
+_PORTFOLIO_TRIGGERS = {"carteira", "portfolio"}
+
+# Sinônimos do `portfolio_type` para auto-aliases por tipo. Cada lista é
+# ativada apenas se houver UMA única carteira ativa daquele tipo.
+_PORTFOLIO_TYPE_ALIASES: Dict[str, List[str]] = {
+    "fii": ["fii", "fundo imobiliario", "fundos imobiliarios"],
+    "acoes": ["acoes", "acao", "stocks", "renda variavel"],
+    "renda fixa": ["renda fixa", "rf"],
+    "multimercado": ["multimercado"],
+    "internacional": ["internacional", "global", "exterior"],
+    "misto": ["misto", "balanceada", "balanceado"],
+}
+
+
+def _portfolio_normalize(text: str) -> str:
+    """Lowercase + remoção de acentos + colapsar não-alfanuméricos."""
+    if not text:
+        return ""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode("ascii")
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _portfolio_singularize(token: str) -> str:
+    """Singularização leve para PT-BR. Heurística suficiente para casar
+    plurais comuns (fiis→fii, acoes→acao, dividendos→dividendo, papeis→papel).
+    """
+    if len(token) < 4:
+        return token
+    if token.endswith("oes"):
+        return token[:-3] + "ao"
+    if token.endswith("aes"):
+        return token[:-3] + "ao"
+    if token.endswith("eis"):
+        return token[:-3] + "el"
+    if token.endswith("ais"):
+        return token[:-3] + "al"
+    if token.endswith("is") and len(token) >= 5:
+        # "fiis" -> "fii"; evita estragar "pais"/"mais" mantendo len >= 5.
+        return token[:-1]
+    if token.endswith("ns"):
+        return token[:-2] + "m"
+    if token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _portfolio_tokens(text: str) -> List[str]:
+    """Tokens normalizados e singularizados de um texto."""
+    return [_portfolio_singularize(t) for t in _portfolio_normalize(text).split() if t]
+
+
+def _detect_portfolio_match(query: str, portfolios: list):
+    """Núcleo do matching de carteira por nome/apelido. Recebe lista de
+    instâncias `Portfolio` ativas e devolve `(portfolio, matched_via)` ou
+    None. Veja `VectorStore.detect_portfolio_name_in_query` para a doc.
+    """
+    if not portfolios:
+        return None
+
+    query_tokens = _portfolio_tokens(query)
+    if not query_tokens:
+        return None
+    query_token_set = set(query_tokens)
+    has_trigger = bool(query_token_set & _PORTFOLIO_TRIGGERS)
+
+    # Frequência de cada token "distintivo" (excluindo stopwords) entre
+    # todos os nomes de carteiras ativas. Tokens que aparecem em apenas
+    # uma carteira viram auto-aliases para ela.
+    from collections import Counter
+    token_freq: Counter = Counter()
+    for p in portfolios:
+        toks = {
+            t for t in _portfolio_tokens(p.name)
+            if t and t not in _PORTFOLIO_STOPWORDS
+        }
+        for t in toks:
+            token_freq[t] += 1
+
+    type_freq: Counter = Counter(
+        _portfolio_normalize(p.portfolio_type) for p in portfolios if p.portfolio_type
+    )
+
+    # candidate := (set_de_tokens, label, prioridade, exige_trigger)
+    # A prioridade desempata; mais específico vence.
+    candidates = []  # list[tuple[Portfolio, frozenset, str, int, bool]]
+
+    for p in portfolios:
+        name_tokens_all = _portfolio_tokens(p.name)
+        name_content = [
+            t for t in name_tokens_all if t and t not in _PORTFOLIO_STOPWORDS
+        ]
+
+        # 1) Nome formal completo (todas as palavras de conteúdo).
+        if name_content:
+            candidates.append((
+                p, frozenset(name_content), f"name:{p.name}",
+                1000 + len(name_content) * 10, False,
+            ))
+
+        # 2) Apelidos cadastrados pelo admin (alta prioridade).
+        for alias in (p.get_aliases() or []):
+            atoks = [
+                t for t in _portfolio_tokens(alias)
+                if t and t not in _PORTFOLIO_STOPWORDS
+            ]
+            if atoks:
+                candidates.append((
+                    p, frozenset(atoks), f"alias:{alias}",
+                    900 + len(atoks) * 10, False,
+                ))
+
+        # 3) Tokens únicos do nome (auto-alias). Cada token único da carteira
+        # vira um candidato individual; exige trigger ("carteira"/"portfolio")
+        # na query para evitar falso positivo em queries não relacionadas.
+        for tok in set(name_content):
+            if token_freq.get(tok, 0) == 1 and len(tok) >= 3:
+                candidates.append((
+                    p, frozenset([tok]), f"unique-name-token:{tok}",
+                    400, True,
+                ))
+
+        # 4) Tipo da carteira como apelido genérico — apenas se houver UMA
+        # única carteira daquele tipo. Exige trigger.
+        ptype_norm = _portfolio_normalize(p.portfolio_type or "")
+        if ptype_norm and type_freq.get(ptype_norm, 0) == 1:
+            keywords = _PORTFOLIO_TYPE_ALIASES.get(ptype_norm, [ptype_norm])
+            for kw in keywords:
+                ktoks = [
+                    t for t in _portfolio_tokens(kw)
+                    if t and t not in _PORTFOLIO_STOPWORDS
+                ]
+                if ktoks:
+                    candidates.append((
+                        p, frozenset(ktoks), f"type:{kw}",
+                        300 + len(ktoks) * 10, True,
+                    ))
+
+    # Coleta TODOS os matches válidos para permitir desempate determinístico
+    # e logging de ambiguidade (mesma prioridade em portfolios distintos).
+    matches = []  # list[(priority, portfolio_id, portfolio, label)]
+    for portfolio, tok_set, label, prio, needs_trigger in candidates:
+        if needs_trigger and not has_trigger:
+            continue
+        if not tok_set:
+            continue
+        if tok_set.issubset(query_token_set):
+            matches.append((prio, portfolio.id, portfolio, label))
+
+    if not matches:
+        return None
+
+    # Desempate determinístico: maior prioridade primeiro; em empate, menor
+    # portfolio_id (estável entre execuções).
+    matches.sort(key=lambda x: (-x[0], x[1]))
+    top_prio = matches[0][0]
+    top_portfolios = {m[2].id for m in matches if m[0] == top_prio}
+    if len(top_portfolios) > 1:
+        ambiguous = ", ".join(
+            f"#{m[2].id} {m[2].name!r} via {m[3]!r}"
+            for m in matches if m[0] == top_prio
+        )
+        print(
+            f"[VECTOR_STORE] detect_portfolio_name_in_query: ambiguidade "
+            f"(prio={top_prio}) entre {ambiguous}; escolhendo a de menor id"
+        )
+
+    chosen = matches[0]
+    return chosen[2], chosen[3]
+
+
 def levenshtein_distance(s1: str, s2: str) -> int:
     """Calcula a distância de Levenshtein entre duas strings."""
     if len(s1) < len(s2):
@@ -2130,11 +2318,25 @@ class VectorStore:
 
     def detect_portfolio_name_in_query(self, query: str) -> Optional[dict]:
         """
-        Task #206 — Detecta se a query menciona o nome de uma Carteira Recomendada cadastrada.
-        Faz lookup exato e aproximado (ILIKE) no banco.
+        Task #206 / Task #213 — Detecta se a query menciona uma Carteira
+        Recomendada cadastrada, considerando:
+          1. Nome formal (ex.: "Carteira Top 10 FIIs")
+          2. Apelidos cadastrados pelo admin (campo `aliases`)
+          3. Tokens distintivos do nome auto-promovidos a apelido quando são
+             únicos no conjunto de carteiras ativas (ex.: "carteira de
+             dividendos" → carteira cujo nome contém "dividendos")
+          4. Tipo da carteira (`portfolio_type`) como apelido genérico,
+             apenas quando há uma única carteira ativa daquele tipo
+             (ex.: "carteira de FIIs" se só existir uma carteira de FII)
+
+        Toda comparação é feita após normalização (lowercase, remoção de
+        acentos e singularização leve "fiis"→"fii", "ações"→"acao",
+        "dividendos"→"dividendo"), então plural/singular e variações de
+        acentuação são equivalentes.
 
         Returns:
-            Portfolio dict ou None
+            Dict {portfolio_id, portfolio_name, portfolio_type, matched_via}
+            ou None.
         """
         if not query or len(query) < 3:
             return None
@@ -2147,15 +2349,16 @@ class VectorStore:
             if not portfolios:
                 return None
 
-            query_lower = query.lower()
-            for p in portfolios:
-                if p.name.lower() in query_lower:
-                    return {
-                        "portfolio_id": p.id,
-                        "portfolio_name": p.name,
-                        "portfolio_type": p.portfolio_type,
-                    }
-            return None
+            match = _detect_portfolio_match(query, portfolios)
+            if not match:
+                return None
+            p, matched_via = match
+            return {
+                "portfolio_id": p.id,
+                "portfolio_name": p.name,
+                "portfolio_type": p.portfolio_type,
+                "matched_via": matched_via,
+            }
         except Exception as e:
             print(f"[VECTOR_STORE] Erro em detect_portfolio_name_in_query: {e}")
             return None

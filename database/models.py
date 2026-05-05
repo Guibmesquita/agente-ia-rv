@@ -864,6 +864,11 @@ class Portfolio(Base):
     portfolio_type = Column(String(100), nullable=True)  # Ex: "FII", "Ações", "Misto", "Renda Fixa"
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
+    # Task #213 — Apelidos/sinônimos cadastrados pelo admin para a carteira.
+    # Lista JSON de strings; usado por detect_portfolio_name_in_query para
+    # reconhecer variações ("carteira de FIIs", "minha carteira de dividendos",
+    # "top 10", abreviações etc.) que o nome formal não casaria.
+    aliases = Column(Text, default="[]")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -874,6 +879,35 @@ class Portfolio(Base):
 
     def get_member_product_ids(self):
         return [pp.product_id for pp in self.members]
+
+    def get_aliases(self):
+        """Retorna a lista de apelidos cadastrados (strings)."""
+        import json
+        try:
+            data = json.loads(self.aliases or "[]")
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if str(x).strip()]
+            return []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_aliases(self, items):
+        """Substitui a lista de apelidos. Aceita lista de strings;
+        normaliza removendo vazios e duplicados (case-insensitive)."""
+        import json
+        cleaned = []
+        seen = set()
+        for raw in (items or []):
+            s = str(raw).strip()
+            if not s:
+                continue
+            key = s.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(s)
+        self.aliases = json.dumps(cleaned, ensure_ascii=False)
+        return cleaned
 
 
 class PortfolioProduct(Base):

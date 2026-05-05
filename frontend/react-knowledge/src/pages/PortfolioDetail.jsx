@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Plus, Trash2, RefreshCw, X, Search,
-  Users, FileText, Edit2, Check, Briefcase,
+  Users, FileText, Edit2, Check, Briefcase, Tag,
 } from 'lucide-react';
 import { portfoliosAPI, materialsAPI } from '../services/api';
 import { Button } from '../components/Button';
@@ -21,6 +21,77 @@ const PORTFOLIO_TYPE_OPTIONS = [
   { value: 'Internacional', label: 'Internacional' },
   { value: 'Outro', label: 'Outro' },
 ];
+
+function AliasEditor({ aliases, onChange }) {
+  const [draft, setDraft] = useState('');
+
+  const addAlias = () => {
+    const v = draft.trim();
+    if (!v) return;
+    if (aliases.some((a) => a.toLowerCase() === v.toLowerCase())) {
+      setDraft('');
+      return;
+    }
+    onChange([...aliases, v]);
+    setDraft('');
+  };
+
+  const removeAlias = (a) => {
+    onChange(aliases.filter((x) => x !== a));
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-muted flex items-center gap-1.5">
+        <Tag className="w-3.5 h-3.5" />
+        Apelidos / sinônimos
+        <span className="font-normal text-[11px] opacity-70">
+          (ex.: "carteira de FIIs", "top dividendos", "minha carteira")
+        </span>
+      </label>
+      <div className="flex flex-wrap gap-1.5 p-2 bg-card border border-border rounded-lg min-h-[42px]">
+        {aliases.map((a) => (
+          <span
+            key={a}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+                       bg-amber-50 border border-amber-200 text-amber-700 text-xs"
+          >
+            {a}
+            <button
+              type="button"
+              onClick={() => removeAlias(a)}
+              className="text-amber-700/60 hover:text-amber-900"
+              aria-label={`Remover apelido ${a}`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              addAlias();
+            } else if (e.key === 'Backspace' && !draft && aliases.length > 0) {
+              onChange(aliases.slice(0, -1));
+            }
+          }}
+          onBlur={addAlias}
+          placeholder={aliases.length === 0 ? 'Digite um apelido e pressione Enter…' : 'Adicionar…'}
+          className="flex-1 min-w-[160px] bg-transparent text-sm text-foreground
+                     focus:outline-none placeholder:text-muted/60"
+        />
+      </div>
+      <p className="text-[11px] text-muted">
+        O agente reconhece o apelido em variações com plural, sem acento e com palavras extras
+        ("minha carteira de FIIs", "carteira top 10").
+      </p>
+    </div>
+  );
+}
 
 function ProductTypeBadge({ type }) {
   const colors = {
@@ -78,6 +149,7 @@ export function PortfolioDetail() {
         portfolio_type: data.portfolio_type || '',
         description: data.description || '',
         is_active: data.is_active,
+        aliases: Array.isArray(data.aliases) ? data.aliases : [],
       });
     } catch (err) {
       addToast(`Erro ao carregar carteira: ${err.message}`, 'error');
@@ -239,6 +311,10 @@ export function PortfolioDetail() {
                 className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground
                            focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
               />
+              <AliasEditor
+                aliases={editForm.aliases || []}
+                onChange={(next) => setEditForm({ ...editForm, aliases: next })}
+              />
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSaveEdit} loading={saving}>
                   <Check className="w-4 h-4" />
@@ -274,6 +350,21 @@ export function PortfolioDetail() {
               <h1 className="text-2xl font-bold text-foreground mt-1">{portfolio.name}</h1>
               {portfolio.description && (
                 <p className="text-muted text-sm mt-1">{portfolio.description}</p>
+              )}
+              {Array.isArray(portfolio.aliases) && portfolio.aliases.length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  <Tag className="w-3.5 h-3.5 text-muted" />
+                  <span className="text-xs text-muted">Apelidos:</span>
+                  {portfolio.aliases.map((a) => (
+                    <span
+                      key={a}
+                      className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200
+                                 text-amber-700 text-xs"
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
               )}
             </>
           )}
