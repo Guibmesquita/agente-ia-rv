@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, FileText, CheckCircle, ArrowRight, Sparkles, Info, AlertCircle, RotateCcw, Clock, Trash2, X, Loader, Loader2, Files, List, ChevronUp, ChevronDown, FileWarning, FileUp, Copy, Search, Link2, PlusCircle, Briefcase } from 'lucide-react';
-import { materialsAPI, productsAPI } from '../services/api';
+import { materialsAPI, productsAPI, portfoliosAPI } from '../services/api';
 import { Button } from '../components/Button';
 import { ProductAutocomplete } from '../components/ProductAutocomplete';
 import { StructuredTags } from '../components/StructuredTags';
@@ -102,6 +102,23 @@ export function SmartUpload() {
     : null;
   const portfolioNameFromUrl = searchParams.get('portfolio_name') || null;
 
+  // Task #207 — Carteira escolhida explicitamente no formulário (dropdown).
+  // Inicializada com o valor da query string (quando o upload vem da página
+  // de uma Carteira Recomendada via "Fazer upload"). O usuário pode trocar
+  // para qualquer outra carteira ativa antes de enviar.
+  const [availablePortfolios, setAvailablePortfolios] = useState([]);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState(portfolioIdFromUrl);
+  // Task #207 — Quando o usuário interage com o dropdown manualmente, paramos
+  // de usar o valor da URL como fallback. Isso permite que escolher "Nenhuma"
+  // realmente desvincule a carteira mesmo quando a página foi aberta via
+  // ?portfolio_id=N (ex.: PortfolioDetail → "Fazer upload").
+  const [portfolioTouched, setPortfolioTouched] = useState(false);
+
+  // ID efetivo da carteira a ser enviado ao backend: se o usuário tocou no
+  // dropdown, usamos exatamente o que ele escolheu (incluindo null = nenhuma);
+  // senão, mantemos o pré-preenchido da URL.
+  const effectivePortfolioId = portfolioTouched ? selectedPortfolioId : (selectedPortfolioId || portfolioIdFromUrl);
+
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState([]);
   const [materialType, setMaterialType] = useState('');
@@ -168,6 +185,15 @@ export function SmartUpload() {
   useEffect(() => {
     loadQueueStatus();
     loadUnifiedPending();
+    // Task #207 — Carrega lista de carteiras ativas para o dropdown de seleção.
+    portfoliosAPI
+      .list({ activeOnly: true })
+      .then((data) => {
+        setAvailablePortfolios(data?.portfolios || []);
+      })
+      .catch((e) => {
+        console.warn('[SmartUpload] Erro ao carregar carteiras:', e?.message);
+      });
   }, []);
 
   useEffect(() => {
@@ -484,9 +510,10 @@ export function SmartUpload() {
       formData.append('tags', JSON.stringify(tags));
       if (validFrom) formData.append('valid_from', validFrom);
       if (validUntil) formData.append('valid_until', validUntil);
-      // Task #206 — passa portfolio_id para que pré-análise/upload criem
-      // o material já vinculado à Carteira Recomendada
-      if (portfolioIdFromUrl) formData.append('portfolio_id', String(portfolioIdFromUrl));
+      // Task #206/#207 — passa portfolio_id para que pré-análise/upload criem
+      // o material já vinculado à Carteira Recomendada (vindo da URL ou do
+      // dropdown explícito do formulário).
+      if (effectivePortfolioId) formData.append('portfolio_id', String(effectivePortfolioId));
 
       const response = await fetch('/api/products/pre-analyze-upload', {
         method: 'POST',
@@ -736,11 +763,11 @@ export function SmartUpload() {
             primary_product_id: primaryId,
             products_with_info: productsWithInfo,
             is_conceptual_material: isConceptual,
-            // Task #206 — propaga portfolio_id para que o backend vincule o
+            // Task #206/#207 — propaga portfolio_id para que o backend vincule o
             // material à Carteira Recomendada na etapa de confirmação.
-            ...(portfolioIdFromUrl ? { portfolio_id: portfolioIdFromUrl } : {}),
+            ...(effectivePortfolioId ? { portfolio_id: effectivePortfolioId } : {}),
             // Task #206 — IDs dos membros confirmados via painel de sugestão
-            ...(portfolioIdFromUrl ? {
+            ...(effectivePortfolioId ? {
               portfolio_member_product_ids: (mat.suggested_members || [])
                 .filter(sm => sm.selected && sm.product_id)
                 .map(sm => sm.product_id),
@@ -815,8 +842,8 @@ export function SmartUpload() {
       if (validFrom) formData.append('valid_from', validFrom);
       if (validUntil) formData.append('valid_until', validUntil);
       if (selectedProduct) formData.append('product_id', selectedProduct.id.toString());
-      // Task #206 — vincula à Carteira Recomendada quando vindo da página de carteira
-      if (portfolioIdFromUrl) formData.append('portfolio_id', String(portfolioIdFromUrl));
+      // Task #206/#207 — vincula à Carteira Recomendada (URL ou dropdown)
+      if (effectivePortfolioId) formData.append('portfolio_id', String(effectivePortfolioId));
 
       if (materialType === 'campanha' && campaignSlug) {
         formData.append('campaign_slug', campaignSlug);
@@ -1385,17 +1412,21 @@ export function SmartUpload() {
       {renderMissingPdfSection()}
       {renderFailedSection()}
 
-      {/* Task #206 — Banner de contexto quando upload é iniciado de uma Carteira */}
-      {portfolioIdFromUrl && (
+      {/* Task #206/#207 — Banner de contexto quando upload é iniciado de uma Carteira */}
+      {effectivePortfolioId && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
           <Briefcase className="w-4 h-4 text-teal-600 shrink-0" />
           <span>
             Os materiais enviados serão vinculados automaticamente à carteira
-            {portfolioNameFromUrl ? (
-              <strong className="mx-1">{portfolioNameFromUrl}</strong>
-            ) : (
-              <span className="mx-1">selecionada</span>
-            )}
+            {(() => {
+              const sel = availablePortfolios.find(p => p.id === effectivePortfolioId);
+              const label = sel?.name || portfolioNameFromUrl;
+              return label ? (
+                <strong className="mx-1">{label}</strong>
+              ) : (
+                <span className="mx-1">selecionada</span>
+              );
+            })()}
           </span>
         </div>
       )}
@@ -1543,6 +1574,37 @@ export function SmartUpload() {
           <ChevronDown className="w-4 h-4 text-muted group-open:rotate-180 transition-transform" />
         </summary>
         <div className="px-4 pb-4 pt-2 space-y-5 border-t border-border">
+
+      {/* Task #207 — Dropdown explícito para vincular o material a uma
+          Carteira Recomendada já existente. Quando o upload começa a partir
+          da página de uma carteira (?portfolio_id=N), o valor já vem
+          pré-selecionado mas continua trocável. */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-foreground flex items-center gap-2">
+          <Briefcase className="w-4 h-4 text-teal-600" />
+          Carteira Recomendada (opcional)
+        </label>
+        <select
+          value={selectedPortfolioId || ''}
+          onChange={(e) => {
+            const v = e.target.value ? parseInt(e.target.value, 10) : null;
+            setSelectedPortfolioId(v);
+            setPortfolioTouched(true);
+          }}
+          className="w-full px-3 py-2 bg-card border border-border rounded-lg text-foreground
+                     focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+        >
+          <option value="">Nenhuma — material avulso de produto</option>
+          {availablePortfolios.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name}{p.portfolio_type ? ` (${p.portfolio_type})` : ''}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted">
+          Vincula o PDF a uma carteira recomendada (relatório, composição, comentário). O agente passará a citá-lo ao falar dessa carteira.
+        </p>
+      </div>
 
       <div className="space-y-2">
         <label className="block text-sm font-medium text-foreground">
@@ -2192,7 +2254,7 @@ export function SmartUpload() {
                   )}
 
                   {/* Task #206 — Painel de membros sugeridos da Carteira Recomendada */}
-                  {portfolioIdFromUrl && mat.suggested_members && mat.suggested_members.length > 0 && (
+                  {effectivePortfolioId && mat.suggested_members && mat.suggested_members.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-teal-200">
                       <p className="text-xs font-semibold text-teal-700 mb-2 flex items-center gap-1.5">
                         <Briefcase className="w-3.5 h-3.5" />
