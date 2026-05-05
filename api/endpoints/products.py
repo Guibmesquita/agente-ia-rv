@@ -3928,7 +3928,8 @@ async def smart_upload_without_product(
             "name": material.name,
             "portfolio_id": material.portfolio_id,
         },
-        "product_id": temp_product.id,
+        # Task #206 — em modo carteira, product_id é None (portfolio é owner)
+        "product_id": material.product_id,
         "portfolio_id": material.portfolio_id,
     }
 
