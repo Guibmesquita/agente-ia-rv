@@ -872,6 +872,11 @@ class Portfolio(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Task #214 — Data da última revisão da carteira (atualizada manualmente
+    # pelo painel ou automaticamente em mudanças de membros). Permite ao
+    # agente citar uma data concreta quando o assessor pergunta "de quando
+    # é essa carteira?".
+    last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     creator = relationship("User", foreign_keys=[created_by])
     members = relationship("PortfolioProduct", back_populates="portfolio", cascade="all, delete-orphan")

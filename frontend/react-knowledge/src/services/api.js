@@ -331,6 +331,11 @@ export const portfoliosAPI = {
     method: 'POST',
   }),
 
+  // Task #214 — marca a carteira como revisada agora (last_reviewed_at = now)
+  touchReview: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/touch-review`, {
+    method: 'POST',
+  }),
+
   summary: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/summary`),
 
   hardDelete: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/hard-delete`, {

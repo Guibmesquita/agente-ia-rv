@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func as _sa_func
 from typing import Optional
+from datetime import datetime, timezone
 import json
 
 from database.database import get_db
@@ -50,6 +51,9 @@ def _portfolio_to_dict(portfolio: Portfolio, db: Session, include_members: bool 
         "materials_count": int(materials_count),
         "created_at": portfolio.created_at.isoformat() if portfolio.created_at else None,
         "updated_at": portfolio.updated_at.isoformat() if portfolio.updated_at else None,
+        # Task #214 — Data da última revisão (manual ou automática)
+        "last_reviewed_at": portfolio.last_reviewed_at.isoformat() if getattr(portfolio, "last_reviewed_at", None) else None,
+        "last_reviewed_at_br": portfolio.last_reviewed_at.strftime("%d/%m/%Y") if getattr(portfolio, "last_reviewed_at", None) else None,
     }
 
     if include_members:
@@ -218,6 +222,55 @@ async def update_portfolio(
         if isinstance(raw_aliases, list):
             portfolio.set_aliases(raw_aliases)
 
+    # Task #214 — Permite ajuste manual da data da última revisão.
+    # Aceita ISO 8601 (ex.: "2025-04-30" ou "2025-04-30T12:00:00Z") ou null/""
+    # para limpar. Em qualquer outro update do PUT a data NÃO é tocada
+    # automaticamente (o "touch" automático acontece em add/remove de membro).
+    if "last_reviewed_at" in body:
+        raw = body["last_reviewed_at"]
+        if raw in (None, ""):
+            portfolio.last_reviewed_at = None
+        else:
+            try:
+                # Aceita "YYYY-MM-DD" ou ISO completo; normaliza para UTC.
+                s = str(raw).strip()
+                if "T" not in s and len(s) == 10:
+                    s = s + "T00:00:00+00:00"
+                # fromisoformat aceita "Z" só a partir do 3.11; trocamos por +00:00
+                s = s.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                portfolio.last_reviewed_at = dt
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail="last_reviewed_at inválido — use formato ISO (YYYY-MM-DD)",
+                )
+
+    db.commit()
+    db.refresh(portfolio)
+    return _portfolio_to_dict(portfolio, db)
+
+
+# ─── TOUCH REVIEW (marcar como revisada agora) ───────────────────────────────
+
+@router.post("/{portfolio_id}/touch-review")
+async def touch_portfolio_review(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Task #214 — Marca a Carteira Recomendada como revisada AGORA
+    (last_reviewed_at = now). Atalho do painel admin para o assessor de
+    research registrar uma revisão sem precisar digitar a data.
+    """
+    _require_role(current_user)
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Carteira não encontrada")
+    portfolio.last_reviewed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(portfolio)
     return _portfolio_to_dict(portfolio, db)
@@ -333,6 +386,8 @@ async def add_member(
 
     pp = PortfolioProduct(portfolio_id=portfolio_id, product_id=int(product_id))
     db.add(pp)
+    # Task #214 — Mudança de membros = revisão da carteira → atualiza data
+    portfolio.last_reviewed_at = datetime.now(timezone.utc)
     db.commit()
     return _portfolio_to_dict(portfolio, db)
 
@@ -354,8 +409,11 @@ async def remove_member(
         raise HTTPException(status_code=404, detail="Membro não encontrado nesta carteira")
 
     db.delete(pp)
-    db.commit()
     portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    # Task #214 — Mudança de membros = revisão da carteira → atualiza data
+    if portfolio:
+        portfolio.last_reviewed_at = datetime.now(timezone.utc)
+    db.commit()
     return _portfolio_to_dict(portfolio, db)
 
 
@@ -494,6 +552,9 @@ async def portfolio_summary(
         "portfolio_type": portfolio.portfolio_type,
         "description": portfolio.description,
         "is_active": portfolio.is_active,
+        # Task #214 — Data da última revisão
+        "last_reviewed_at": portfolio.last_reviewed_at.isoformat() if getattr(portfolio, "last_reviewed_at", None) else None,
+        "last_reviewed_at_br": portfolio.last_reviewed_at.strftime("%d/%m/%Y") if getattr(portfolio, "last_reviewed_at", None) else None,
         "members": member_list,
         "members_count": len(member_list),
     }

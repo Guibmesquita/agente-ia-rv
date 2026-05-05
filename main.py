@@ -566,6 +566,8 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_doc_embeddings_portfolio_id ON document_embeddings(portfolio_id)",
         # Task #213 — Apelidos/sinônimos de Carteiras Recomendadas
         "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS aliases TEXT DEFAULT '[]'",
+        # Task #214 — Data da última revisão da Carteira Recomendada
+        "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMPTZ",
     ]
     db = SessionLocal()
     ok = 0

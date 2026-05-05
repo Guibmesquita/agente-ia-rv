@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Plus, Trash2, RefreshCw, X, Search,
-  Users, FileText, Edit2, Check, Briefcase, Tag,
+  Users, FileText, Edit2, Check, Briefcase, Tag, Calendar,
 } from 'lucide-react';
 import { portfoliosAPI, materialsAPI } from '../services/api';
 import { Button } from '../components/Button';
@@ -133,6 +133,10 @@ export function PortfolioDetail() {
   const [removingMemberId, setRemovingMemberId] = useState(null);
 
   const [reindexing, setReindexing] = useState(false);
+  const [touchingReview, setTouchingReview] = useState(false);
+  const [editingReviewDate, setEditingReviewDate] = useState(false);
+  const [reviewDateInput, setReviewDateInput] = useState('');
+  const [savingReviewDate, setSavingReviewDate] = useState(false);
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
@@ -228,6 +232,45 @@ export function PortfolioDetail() {
       addToast(`Erro: ${err.message}`, 'error');
     } finally {
       setRemovingMemberId(null);
+    }
+  };
+
+  const handleTouchReview = async () => {
+    if (!confirm('Marcar esta carteira como revisada agora? A data de "última revisão" será atualizada para hoje.')) return;
+    setTouchingReview(true);
+    try {
+      const updated = await portfoliosAPI.touchReview(id);
+      setPortfolio((prev) => ({ ...prev, ...updated }));
+      addToast('Carteira marcada como revisada hoje', 'success');
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+    } finally {
+      setTouchingReview(false);
+    }
+  };
+
+  const openEditReviewDate = () => {
+    // ISO yyyy-mm-dd para o <input type="date" />
+    const iso = portfolio?.last_reviewed_at
+      ? portfolio.last_reviewed_at.slice(0, 10)
+      : '';
+    setReviewDateInput(iso);
+    setEditingReviewDate(true);
+  };
+
+  const handleSaveReviewDate = async () => {
+    setSavingReviewDate(true);
+    try {
+      const updated = await portfoliosAPI.update(id, {
+        last_reviewed_at: reviewDateInput || null,
+      });
+      setPortfolio((prev) => ({ ...prev, ...updated }));
+      setEditingReviewDate(false);
+      addToast('Data da última revisão atualizada', 'success');
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+    } finally {
+      setSavingReviewDate(false);
     }
   };
 
@@ -400,6 +443,67 @@ export function PortfolioDetail() {
             </div>
           </div>
         ))}
+
+        {/* Task #214 — Card "Última revisão" */}
+        <div className="bg-card border border-border rounded-xl p-4 flex items-start gap-3">
+          <div className="p-2 bg-teal-100 rounded-lg shrink-0">
+            <Calendar className="w-4 h-4 text-teal-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            {editingReviewDate ? (
+              <div className="space-y-2">
+                <input
+                  type="date"
+                  value={reviewDateInput}
+                  onChange={(e) => setReviewDateInput(e.target.value)}
+                  className="w-full px-2 py-1 bg-card border border-border rounded-md
+                             text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  autoFocus
+                />
+                <div className="flex gap-1.5">
+                  <Button size="sm" onClick={handleSaveReviewDate} loading={savingReviewDate}>
+                    <Check className="w-3.5 h-3.5" />
+                    Salvar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setEditingReviewDate(false)}
+                    disabled={savingReviewDate}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-lg font-bold text-foreground leading-tight">
+                  {portfolio.last_reviewed_at_br || '— sem registro —'}
+                </p>
+                <p className="text-xs text-muted">Última revisão</p>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  <button
+                    onClick={handleTouchReview}
+                    disabled={touchingReview}
+                    className="text-xs text-teal-700 hover:underline disabled:opacity-50"
+                    title="Marca a carteira como revisada agora"
+                  >
+                    {touchingReview ? 'Marcando...' : 'Revisada hoje'}
+                  </button>
+                  <span className="text-xs text-muted">·</span>
+                  <button
+                    onClick={openEditReviewDate}
+                    className="text-xs text-primary hover:underline"
+                    title="Definir data manualmente"
+                  >
+                    Editar data
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Produtos membros */}

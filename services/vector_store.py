@@ -2303,11 +2303,23 @@ class VectorStore:
                     "key_info": ki,
                 })
 
+            # Task #214 — formata data da última revisão (ISO + DD/MM/YYYY)
+            last_reviewed_iso = None
+            last_reviewed_br = None
+            if getattr(portfolio, "last_reviewed_at", None):
+                try:
+                    last_reviewed_iso = portfolio.last_reviewed_at.isoformat()
+                    last_reviewed_br = portfolio.last_reviewed_at.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+
             return {
                 "portfolio_id": portfolio.id,
                 "portfolio_name": portfolio.name,
                 "portfolio_type": portfolio.portfolio_type,
                 "description": portfolio.description,
+                "last_reviewed_at": last_reviewed_iso,
+                "last_reviewed_at_br": last_reviewed_br,
                 "members": member_list,
             }
         except Exception as e:
