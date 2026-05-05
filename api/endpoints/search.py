@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from database.database import get_db
 from database.models import (
     Product, Material, ContentBlock, 
-    KnowledgeDocument, WhatsAppScript
+    KnowledgeDocument, WhatsAppScript, Portfolio
 )
 from api.endpoints.auth import get_current_user
 
@@ -90,9 +90,24 @@ class ScriptSearchResult(BaseModel):
         from_attributes = True
 
 
+class PortfolioSearchResult(BaseModel):
+    id: int
+    name: str
+    portfolio_type: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    member_count: int = 0
+    match_field: str
+    match_context: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class GlobalSearchResponse(BaseModel):
     query: str
     total_results: int
+    portfolios: List[PortfolioSearchResult]
     products: List[ProductSearchResult]
     materials: List[MaterialSearchResult]
     content_blocks: List[ContentBlockSearchResult]
@@ -138,11 +153,47 @@ async def global_search(
     """
     search_pattern = f"%{q}%"
     
+    portfolios_results: List[PortfolioSearchResult] = []
     products_results: List[ProductSearchResult] = []
     materials_results: List[MaterialSearchResult] = []
     blocks_results: List[ContentBlockSearchResult] = []
     documents_results: List[DocumentSearchResult] = []
     scripts_results: List[ScriptSearchResult] = []
+    
+    portfolios = db.query(Portfolio).filter(
+        or_(
+            Portfolio.name.ilike(search_pattern),
+            Portfolio.portfolio_type.ilike(search_pattern),
+            Portfolio.description.ilike(search_pattern)
+        )
+    ).limit(limit).all()
+    
+    for pf in portfolios:
+        match_field = "nome"
+        match_context = None
+        
+        if q.lower() in (pf.name or "").lower():
+            match_field = "nome"
+            match_context = pf.name
+        elif q.lower() in (pf.portfolio_type or "").lower():
+            match_field = "tipo"
+            match_context = pf.portfolio_type
+        elif q.lower() in (pf.description or "").lower():
+            match_field = "descrição"
+            match_context = extract_match_context(pf.description, q)
+        
+        member_count = len(pf.members) if pf.members is not None else 0
+        
+        portfolios_results.append(PortfolioSearchResult(
+            id=pf.id,
+            name=pf.name,
+            portfolio_type=pf.portfolio_type,
+            description=pf.description,
+            is_active=pf.is_active,
+            member_count=member_count,
+            match_field=match_field,
+            match_context=match_context
+        ))
     
     products = db.query(Product).filter(
         or_(
@@ -289,11 +340,12 @@ async def global_search(
             match_context=match_context
         ))
     
-    total = len(products_results) + len(materials_results) + len(blocks_results) + len(documents_results) + len(scripts_results)
+    total = len(portfolios_results) + len(products_results) + len(materials_results) + len(blocks_results) + len(documents_results) + len(scripts_results)
     
     return GlobalSearchResponse(
         query=q,
         total_results=total,
+        portfolios=portfolios_results,
         products=products_results,
         materials=materials_results,
         content_blocks=blocks_results,

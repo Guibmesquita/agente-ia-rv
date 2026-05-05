@@ -25,6 +25,7 @@ function App() {
             <Route path="/upload" element={<SmartUpload />} />
             <Route path="/product/:id" element={<ProductDetail />} />
             <Route path="/portfolios/:id" element={<PortfolioDetail />} />
+            <Route path="/portfolio/:id" element={<PortfolioDetail />} />
             <Route path="/review" element={<ReviewQueue />} />
             <Route path="/documents" element={<Documents />} />
           </Routes>

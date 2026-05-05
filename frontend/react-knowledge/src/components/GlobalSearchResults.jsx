@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, FileText, LayoutGrid, ScrollText, MessageSquare,
-  ChevronDown, ChevronUp, ExternalLink, Search, Sparkles
+  ChevronDown, ChevronUp, ExternalLink, Search, Sparkles, Briefcase
 } from 'lucide-react';
 
 const SectionHeader = ({ icon: Icon, title, count, color, isOpen, onToggle }) => (
@@ -37,6 +37,46 @@ const MatchHighlight = ({ text, query }) => {
     </span>
   );
 };
+
+const PortfolioResult = ({ item, query, onClick }) => (
+  <motion.div
+    initial={{ opacity: 0, x: -10 }}
+    animate={{ opacity: 1, x: 0 }}
+    className="p-3 bg-white rounded-lg border border-border hover:border-teal-300 hover:shadow-sm transition-all cursor-pointer"
+    onClick={onClick}
+  >
+    <div className="flex items-start justify-between">
+      <div className="flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h4 className="font-medium text-foreground">
+            <MatchHighlight text={item.name} query={query} />
+          </h4>
+          <span className="px-2 py-0.5 text-xs font-medium bg-teal-100 text-teal-700 rounded-full">
+            Carteira
+          </span>
+          {item.portfolio_type && (
+            <span className="px-2 py-0.5 text-xs bg-teal-50 text-teal-600 rounded">
+              <MatchHighlight text={item.portfolio_type} query={query} />
+            </span>
+          )}
+          {item.is_active === false && (
+            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded">Inativa</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-1 text-sm text-muted">
+          <span>{item.member_count} produto{item.member_count !== 1 ? 's' : ''}</span>
+        </div>
+        {item.match_context && item.match_field !== 'nome' && item.match_field !== 'tipo' && (
+          <div className="mt-2 p-2 bg-teal-50/60 rounded text-sm">
+            <span className="text-teal-700 font-medium">Encontrado em {item.match_field}: </span>
+            <MatchHighlight text={item.match_context} query={query} />
+          </div>
+        )}
+      </div>
+      <ExternalLink className="w-4 h-4 text-muted" />
+    </div>
+  </motion.div>
+);
 
 const ProductResult = ({ item, query, onClick }) => (
   <motion.div
@@ -205,6 +245,7 @@ const ScriptResult = ({ item, query, onClick }) => (
 export function GlobalSearchResults({ results, query, onClose }) {
   const navigate = useNavigate();
   const [openSections, setOpenSections] = useState({
+    portfolios: true,
     products: true,
     materials: true,
     blocks: true,
@@ -221,9 +262,14 @@ export function GlobalSearchResults({ results, query, onClose }) {
     onClose?.();
   };
 
+  const navigateToPortfolio = (id) => {
+    navigate(`/portfolio/${id}`);
+    onClose?.();
+  };
+
   if (!results) return null;
 
-  const { products, materials, content_blocks, documents, scripts, total_results } = results;
+  const { portfolios = [], products, materials, content_blocks, documents, scripts, total_results } = results;
   const hasResults = total_results > 0;
 
   return (
@@ -260,6 +306,38 @@ export function GlobalSearchResults({ results, query, onClose }) {
           </div>
         ) : (
           <>
+            {portfolios.length > 0 && (
+              <div className="space-y-2">
+                <SectionHeader
+                  icon={Briefcase}
+                  title="Carteiras"
+                  count={portfolios.length}
+                  color="bg-teal-50 text-teal-700 hover:bg-teal-100"
+                  isOpen={openSections.portfolios}
+                  onToggle={() => toggleSection('portfolios')}
+                />
+                <AnimatePresence>
+                  {openSections.portfolios && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="space-y-2 overflow-hidden"
+                    >
+                      {portfolios.map(item => (
+                        <PortfolioResult
+                          key={item.id}
+                          item={item}
+                          query={query}
+                          onClick={() => navigateToPortfolio(item.id)}
+                        />
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             {products.length > 0 && (
               <div className="space-y-2">
                 <SectionHeader
