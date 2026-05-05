@@ -21,6 +21,7 @@ def _register_routers():
         files, insights, search, trusted_sources, costs, health, committee, admin
     )
     from api.endpoints import recommendations as recommendations_mod
+    from api.endpoints import portfolios as portfolios_mod
 
     app.include_router(auth.router)
     app.include_router(users.router)
@@ -47,6 +48,7 @@ def _register_routers():
     app.include_router(recommendations_mod.router)
     app.include_router(recommendations_mod.materials_router)
     app.include_router(recommendations_mod.page_router)
+    app.include_router(portfolios_mod.router)
     print("[INIT] Routers registrados com sucesso.")
 
 
@@ -535,6 +537,33 @@ def _apply_incremental_migrations():
         "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS resolved_by_user_id INTEGER",
         "ALTER TABLE rag_evasive_responses ADD COLUMN IF NOT EXISTS resolution_note TEXT",
         "CREATE INDEX IF NOT EXISTS ix_rag_evasive_resolution ON rag_evasive_responses(resolution_status)",
+        # Task #206 — Sistema de Carteiras Recomendadas
+        """CREATE TABLE IF NOT EXISTS portfolios (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            portfolio_type VARCHAR(100),
+            description TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_portfolios_name ON portfolios(name)",
+        "CREATE INDEX IF NOT EXISTS ix_portfolios_is_active ON portfolios(is_active)",
+        """CREATE TABLE IF NOT EXISTS portfolio_products (
+            id SERIAL PRIMARY KEY,
+            portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            added_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_portfolio_product UNIQUE (portfolio_id, product_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_portfolio_products_portfolio ON portfolio_products(portfolio_id)",
+        "CREATE INDEX IF NOT EXISTS ix_portfolio_products_product ON portfolio_products(product_id)",
+        "ALTER TABLE materials ADD COLUMN IF NOT EXISTS portfolio_id INTEGER REFERENCES portfolios(id)",
+        "CREATE INDEX IF NOT EXISTS ix_materials_portfolio_id ON materials(portfolio_id)",
+        "ALTER TABLE document_embeddings ADD COLUMN IF NOT EXISTS portfolio_id INTEGER",
+        "ALTER TABLE document_embeddings ADD COLUMN IF NOT EXISTS portfolio_name VARCHAR(255)",
+        "CREATE INDEX IF NOT EXISTS ix_doc_embeddings_portfolio_id ON document_embeddings(portfolio_id)",
     ]
     db = SessionLocal()
     ok = 0

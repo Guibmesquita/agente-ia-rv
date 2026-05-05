@@ -4,8 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, RefreshCw, Package, Search, X,
   CheckSquare, Square, Trash2, Star, StarOff, MousePointer, Wrench, Link2,
+  Briefcase,
 } from 'lucide-react';
-import { productsAPI, searchAPI, adminAPI } from '../services/api';
+import { productsAPI, searchAPI, adminAPI, portfoliosAPI } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
 import { Button } from '../components/Button';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -69,6 +70,13 @@ export function Dashboard() {
   const [gestoraBackfillRunning, setGestoraBackfillRunning] = useState(false);
   const [gestoraBackfillResult, setGestoraBackfillResult] = useState(null);
 
+  // Task #206 — Carteiras Recomendadas
+  const [portfolios, setPortfolios] = useState([]);
+  const [portfoliosLoading, setPortfoliosLoading] = useState(true);
+  const [showNewPortfolioModal, setShowNewPortfolioModal] = useState(false);
+  const [newPortfolio, setNewPortfolio] = useState({ name: '', portfolio_type: '', description: '' });
+  const [creatingPortfolio, setCreatingPortfolio] = useState(false);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_SEARCH_KEY, search);
   }, [search]);
@@ -102,9 +110,42 @@ export function Dashboard() {
     }
   };
 
+  const loadPortfolios = async () => {
+    try {
+      setPortfoliosLoading(true);
+      const data = await portfoliosAPI.list();
+      setPortfolios(data.portfolios || data || []);
+    } catch (err) {
+      console.error('Erro ao carregar carteiras:', err);
+    } finally {
+      setPortfoliosLoading(false);
+    }
+  };
+
+  const handleCreatePortfolio = async (e) => {
+    e.preventDefault();
+    if (!newPortfolio.name.trim()) {
+      addToast('Nome da carteira é obrigatório', 'warning');
+      return;
+    }
+    setCreatingPortfolio(true);
+    try {
+      const created = await portfoliosAPI.create(newPortfolio);
+      addToast('Carteira criada com sucesso!', 'success');
+      setShowNewPortfolioModal(false);
+      setNewPortfolio({ name: '', portfolio_type: '', description: '' });
+      navigate(`/portfolio/${created.id}`);
+    } catch (err) {
+      addToast(`Erro: ${err.message}`, 'error');
+    } finally {
+      setCreatingPortfolio(false);
+    }
+  };
+
   useEffect(() => {
     loadProducts();
     loadCategories();
+    loadPortfolios();
     adminAPI.getMe().then(setCurrentUser).catch(() => {});
   }, []);
 
@@ -500,6 +541,10 @@ export function Dashboard() {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 Atualizar
               </Button>
+              <Button variant="secondary" onClick={() => setShowNewPortfolioModal(true)}>
+                <Briefcase className="w-4 h-4" />
+                Nova Carteira
+              </Button>
               <Button onClick={() => setShowNewModal(true)}>
                 <Plus className="w-4 h-4" />
                 Novo Produto
@@ -508,6 +553,89 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Task #206 — Seção de Carteiras Recomendadas */}
+      {!selectionMode && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-teal-600" />
+              Carteiras Recomendadas
+              <span className="px-2 py-0.5 bg-teal-50 border border-teal-200 rounded-full text-xs font-normal text-teal-700">
+                {portfolios.length}
+              </span>
+            </h2>
+            {portfolios.length > 0 && (
+              <button
+                onClick={() => setShowNewPortfolioModal(true)}
+                className="text-xs text-primary hover:underline"
+              >
+                + Nova carteira
+              </button>
+            )}
+          </div>
+
+          {portfoliosLoading ? (
+            <div className="flex items-center gap-2 py-2">
+              <LoadingSpinner size="sm" />
+              <span className="text-sm text-muted">Carregando carteiras...</span>
+            </div>
+          ) : portfolios.length === 0 ? (
+            <button
+              onClick={() => setShowNewPortfolioModal(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed
+                         border-teal-300 bg-teal-50 hover:bg-teal-100 transition-colors text-left"
+            >
+              <div className="p-2 bg-teal-100 rounded-lg">
+                <Briefcase className="w-4 h-4 text-teal-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-teal-700">Criar primeira Carteira Recomendada</p>
+                <p className="text-xs text-teal-500">Agrupe produtos em carteiras temáticas para o agente</p>
+              </div>
+              <Plus className="w-4 h-4 text-teal-500 ml-auto" />
+            </button>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <AnimatePresence>
+                {portfolios.map((p) => (
+                  <motion.button
+                    key={p.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    onClick={() => navigate(`/portfolio/${p.id}`)}
+                    className="flex items-start gap-3 p-4 rounded-xl border border-border bg-card
+                               hover:border-teal-300 hover:bg-teal-50 transition-colors text-left group"
+                  >
+                    <div className="p-2 bg-teal-100 rounded-lg group-hover:bg-teal-200 transition-colors shrink-0">
+                      <Briefcase className="w-4 h-4 text-teal-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-foreground truncate">{p.name}</p>
+                        {!p.is_active && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 text-xs">
+                            Inativa
+                          </span>
+                        )}
+                      </div>
+                      {p.portfolio_type && (
+                        <p className="text-xs text-teal-600 mt-0.5">{p.portfolio_type}</p>
+                      )}
+                      <p className="text-xs text-muted mt-1">
+                        {p.members_count ?? 0} produto{(p.members_count ?? 0) !== 1 ? 's' : ''}
+                        {p.description && ` · ${p.description.slice(0, 50)}${p.description.length > 50 ? '…' : ''}`}
+                      </p>
+                    </div>
+                  </motion.button>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-4">
         <div className="flex-1 relative" ref={searchContainerRef}>
@@ -704,6 +832,82 @@ export function Dashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Modal: Nova Carteira Recomendada */}
+      <Modal
+        open={showNewPortfolioModal}
+        onClose={() => setShowNewPortfolioModal(false)}
+        title="Nova Carteira Recomendada"
+      >
+        <form onSubmit={handleCreatePortfolio} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Nome da Carteira *
+            </label>
+            <input
+              type="text"
+              value={newPortfolio.name}
+              onChange={(e) => setNewPortfolio({ ...newPortfolio, name: e.target.value })}
+              placeholder="Ex: Carteira FII Renda"
+              className="w-full px-3 py-2 bg-card border border-border rounded-input
+                        text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Tipo (opcional)
+            </label>
+            <select
+              value={newPortfolio.portfolio_type}
+              onChange={(e) => setNewPortfolio({ ...newPortfolio, portfolio_type: e.target.value })}
+              className="w-full px-3 py-2 bg-card border border-border rounded-input
+                        text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">— Sem tipo —</option>
+              <option value="FII">FII (Fundo Imobiliário)</option>
+              <option value="Ações">Ações</option>
+              <option value="Misto">Misto</option>
+              <option value="Renda Fixa">Renda Fixa</option>
+              <option value="Multimercado">Multimercado</option>
+              <option value="Internacional">Internacional</option>
+              <option value="Outro">Outro</option>
+            </select>
+            <p className="mt-1 text-xs text-muted">
+              Informativo — não afeta a busca do agente, apenas a organização visual.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Descrição (opcional)
+            </label>
+            <textarea
+              value={newPortfolio.description}
+              onChange={(e) => setNewPortfolio({ ...newPortfolio, description: e.target.value })}
+              placeholder="Ex: Carteira voltada para renda passiva com FIIs de tijolo..."
+              rows={2}
+              className="w-full px-3 py-2 bg-card border border-border rounded-input
+                        text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowNewPortfolioModal(false)}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" loading={creatingPortfolio} className="flex-1">
+              Criar Carteira
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         open={showNewModal}

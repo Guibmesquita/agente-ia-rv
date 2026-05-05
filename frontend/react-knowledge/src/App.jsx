@@ -5,6 +5,7 @@ import { SmartUpload } from './pages/SmartUpload';
 import { ProductDetail } from './pages/ProductDetail';
 import { ReviewQueue } from './pages/ReviewQueue';
 import { Documents } from './pages/Documents';
+import { PortfolioDetail } from './pages/PortfolioDetail';
 
 function Layout({ children }) {
   return (
@@ -23,6 +24,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/upload" element={<SmartUpload />} />
             <Route path="/product/:id" element={<ProductDetail />} />
+            <Route path="/portfolio/:id" element={<PortfolioDetail />} />
             <Route path="/review" element={<ReviewQueue />} />
             <Route path="/documents" element={<Documents />} />
           </Routes>

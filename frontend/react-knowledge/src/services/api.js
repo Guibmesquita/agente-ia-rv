@@ -286,6 +286,45 @@ export const adminAPI = {
   }),
 };
 
+export const portfoliosAPI = {
+  list: (activeOnly = false) =>
+    fetchAPI(`/portfolios${activeOnly ? '?active_only=true' : ''}`),
+
+  get: (id) => fetchAPI(`/portfolios/${id}`),
+
+  create: (data) => fetchAPI('/portfolios', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  update: (id, data) => fetchAPI(`/portfolios/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+
+  delete: (id) => fetchAPI(`/portfolios/${id}`, {
+    method: 'DELETE',
+  }),
+
+  addMember: (portfolioId, productId) => fetchAPI(`/portfolios/${portfolioId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ product_id: productId }),
+  }),
+
+  removeMember: (portfolioId, productId) => fetchAPI(`/portfolios/${portfolioId}/members/${productId}`, {
+    method: 'DELETE',
+  }),
+
+  availableProducts: (portfolioId, q = '', limit = 40) =>
+    fetchAPI(`/portfolios/${portfolioId}/available-products?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  reindex: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/reindex`, {
+    method: 'POST',
+  }),
+
+  summary: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/summary`),
+};
+
 export const knowledgeAPI = {
   list: () => fetchAPI('/knowledge/'),
   

@@ -958,6 +958,26 @@ async def _execute_search_knowledge_base(args: dict, db=None, conversation_id=No
     if is_portfolio_intent and response_has_portfolio_rows:
         response["_portfolio_preserve_mode"] = True
 
+    # Task #206 — Enriquecimento de contexto de Carteiras Recomendadas.
+    # Quando a query menciona o nome de uma carteira cadastrada, injeta
+    # `portfolio_context` (membros + key_info) na resposta para o agente
+    # ter acesso à composição sem precisar de tool extra.
+    try:
+        from services.vector_store import get_vector_store as _get_vs_p
+        _vs_p = _get_vs_p()
+        if _vs_p and query:
+            _port_match = _vs_p.detect_portfolio_name_in_query(query)
+            if _port_match:
+                _port_ctx = _vs_p.get_portfolio_context(_port_match["portfolio_id"])
+                if _port_ctx:
+                    response["portfolio_context"] = _port_ctx
+                    print(
+                        f"[search_kb] portfolio_context injetado: '{_port_ctx['portfolio_name']}' "
+                        f"({len(_port_ctx.get('members', []))} membros)"
+                    )
+    except Exception as _e_port:
+        pass
+
     if materials_with_pdf:
         response["materials_with_pdf"] = list(materials_with_pdf)
     if visual_candidates:

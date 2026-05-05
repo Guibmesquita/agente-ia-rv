@@ -851,6 +851,51 @@ class Product(Base):
         self.category = cats[0] if cats else None
 
 
+class Portfolio(Base):
+    """
+    Carteira Recomendada — objeto de primeiro nível, hierarquicamente acima dos produtos.
+    Uma carteira tem nome único, tipo informativo, descrição e membros (produtos).
+    Seus materiais (PDFs, one-pagers) são indexados como documentos de portfólio no RAG.
+    """
+    __tablename__ = "portfolios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    portfolio_type = Column(String(100), nullable=True)  # Ex: "FII", "Ações", "Misto", "Renda Fixa"
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    creator = relationship("User", foreign_keys=[created_by])
+    members = relationship("PortfolioProduct", back_populates="portfolio", cascade="all, delete-orphan")
+    materials = relationship("Material", back_populates="portfolio", cascade="all, delete-orphan")
+
+    def get_member_product_ids(self):
+        return [pp.product_id for pp in self.members]
+
+
+class PortfolioProduct(Base):
+    """
+    Associação M:N entre Portfolio e Product.
+    Representa os produtos-membro de uma Carteira Recomendada.
+    """
+    __tablename__ = "portfolio_products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "product_id", name="uq_portfolio_product"),
+    )
+
+    portfolio = relationship("Portfolio", back_populates="members")
+    product = relationship("Product")
+
+
 class Material(Base):
     """
     Material agrupa conteúdos por finalidade.
@@ -860,6 +905,7 @@ class Material(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True, index=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=True, index=True)
     material_type = Column(String(50), default=MaterialType.ONE_PAGE.value)
     name = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
@@ -890,6 +936,7 @@ class Material(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     product = relationship("Product", back_populates="materials")
+    portfolio = relationship("Portfolio", back_populates="materials", foreign_keys=[portfolio_id])
     creator = relationship("User", foreign_keys=[created_by])
     blocks = relationship("ContentBlock", back_populates="material", cascade="all, delete-orphan", order_by="ContentBlock.order")
     file = relationship("MaterialFile", back_populates="material", uselist=False, cascade="all, delete-orphan")

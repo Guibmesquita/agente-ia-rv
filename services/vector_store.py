@@ -135,6 +135,9 @@ KNOWN_METADATA_FIELDS = [
     'valid_until_dt',
     # Task #152 — versão do embedding (2 = gerado a partir de content_for_embedding markdown)
     'embedding_version',
+    # Task #206 — Carteiras Recomendadas: colunas reais em document_embeddings
+    'portfolio_id',
+    'portfolio_name',
     # NOTA Task #153 — `product_type` e `product_id` NÃO entram aqui de propósito:
     # não há colunas correspondentes em `document_embeddings`. Eles são propagados
     # via `extra_metadata` (JSON) e re-hidratados em `_row_to_metadata`.
@@ -1941,6 +1944,149 @@ class VectorStore:
         finally:
             db.close()
     
+    def search_by_portfolio_id(self, portfolio_id: int, n_results: int = 30) -> List[dict]:
+        """
+        Task #206 — Busca documentos indexados de uma Carteira Recomendada específica
+        usando filtro relacional direto (portfolio_id) no vector store.
+
+        Args:
+            portfolio_id: ID da carteira no banco de dados
+            n_results: Número máximo de resultados
+
+        Returns:
+            Lista de dicts com content + metadata dos blocos da carteira
+        """
+        db = SessionLocal()
+        try:
+            rows = db.execute(sql_text(
+                "SELECT * FROM document_embeddings "
+                "WHERE portfolio_id = :pid "
+                f"{PUBLISH_STATUS_FILTER} "
+                "ORDER BY created_at DESC "
+                "LIMIT :n"
+            ), {"pid": portfolio_id, "n": n_results}).fetchall()
+
+            results = []
+            for row in rows:
+                meta = {}
+                mapping = row._mapping if hasattr(row, '_mapping') else {}
+                for field in KNOWN_METADATA_FIELDS:
+                    val = mapping.get(field)
+                    if val is not None:
+                        meta[field] = val
+                if mapping.get('block_id'):
+                    meta['block_id'] = mapping.get('block_id')
+                if mapping.get('material_id'):
+                    meta['material_id'] = mapping.get('material_id')
+                if mapping.get('extra_metadata'):
+                    try:
+                        extra = json.loads(mapping.get('extra_metadata'))
+                        for k, v in extra.items():
+                            if k not in meta:
+                                meta[k] = v
+                    except Exception:
+                        pass
+                results.append({
+                    "content": mapping.get('content', ''),
+                    "metadata": meta,
+                    "distance": 0.0,
+                })
+            return results
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro em search_by_portfolio_id({portfolio_id}): {e}")
+            return []
+        finally:
+            db.close()
+
+    def get_portfolio_context(self, portfolio_id: int) -> Optional[dict]:
+        """
+        Task #206 — Retorna contexto estruturado de uma Carteira Recomendada:
+        nome, tipo, membros com key_info. Usado pelo agente para enriquecer
+        respostas sobre carteiras.
+
+        Args:
+            portfolio_id: ID da carteira no banco de dados
+
+        Returns:
+            Dict com nome, tipo, membros ou None se não encontrado
+        """
+        db = SessionLocal()
+        try:
+            from database.models import Portfolio as PortfolioModel, PortfolioProduct, Product
+            import json as _json
+            portfolio = db.query(PortfolioModel).filter(PortfolioModel.id == portfolio_id).first()
+            if not portfolio:
+                return None
+
+            members = (
+                db.query(PortfolioProduct, Product)
+                .join(Product, Product.id == PortfolioProduct.product_id)
+                .filter(PortfolioProduct.portfolio_id == portfolio_id)
+                .all()
+            )
+            member_list = []
+            for pp, prod in members:
+                ki = {}
+                if prod.key_info:
+                    try:
+                        ki = _json.loads(prod.key_info)
+                    except Exception:
+                        pass
+                member_list.append({
+                    "product_id": prod.id,
+                    "name": prod.name,
+                    "ticker": prod.ticker,
+                    "product_type": prod.product_type,
+                    "key_info": ki,
+                })
+
+            return {
+                "portfolio_id": portfolio.id,
+                "portfolio_name": portfolio.name,
+                "portfolio_type": portfolio.portfolio_type,
+                "description": portfolio.description,
+                "members": member_list,
+            }
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro em get_portfolio_context({portfolio_id}): {e}")
+            return None
+        finally:
+            db.close()
+
+    def detect_portfolio_name_in_query(self, query: str) -> Optional[dict]:
+        """
+        Task #206 — Detecta se a query menciona o nome de uma Carteira Recomendada cadastrada.
+        Faz lookup exato e aproximado (ILIKE) no banco.
+
+        Returns:
+            Portfolio dict ou None
+        """
+        if not query or len(query) < 3:
+            return None
+        db = SessionLocal()
+        try:
+            from database.models import Portfolio as PortfolioModel
+            portfolios = db.query(PortfolioModel).filter(
+                PortfolioModel.is_active == True
+            ).all()
+            if not portfolios:
+                return None
+
+            query_lower = query.lower()
+            for p in portfolios:
+                if p.name.lower() in query_lower:
+                    return {
+                        "portfolio_id": p.id,
+                        "portfolio_name": p.name,
+                        "portfolio_type": p.portfolio_type,
+                    }
+            return None
+        except Exception as e:
+            print(f"[VECTOR_STORE] Erro em detect_portfolio_name_in_query: {e}")
+            return None
+        finally:
+            db.close()
+
     def get_active_committee_product_ids(self) -> List[int]:
         """
         Retorna product_ids de produtos marcados como Comitê SVN.
