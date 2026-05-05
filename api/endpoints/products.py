@@ -6397,6 +6397,7 @@ async def pre_analyze_upload(
     tags: str = Form("[]"),
     valid_from: str = Form(None),
     valid_until: str = Form(None),
+    portfolio_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -6585,6 +6586,38 @@ async def pre_analyze_upload(
 
         import json as _json2
         material.ai_product_analysis = _json2.dumps(identified, ensure_ascii=False)
+
+        # Task #206 — Quando portfolio_id fornecido, vincula o material à carteira
+        # e devolve membros como suggested_members para pré-seleção na UI.
+        _suggested_members = []
+        if portfolio_id and not material.portfolio_id:
+            try:
+                from database.models import Portfolio as _PAPort, PortfolioProduct as _PAPP
+                _pa_port = db.query(_PAPort).filter(
+                    _PAPort.id == portfolio_id, _PAPort.is_active == True
+                ).first()
+                if _pa_port:
+                    material.portfolio_id = portfolio_id
+                    # Busca membros da carteira para suggested_members
+                    _member_products = (
+                        db.query(Product)
+                        .join(_PAPP, Product.id == _PAPP.product_id)
+                        .filter(_PAPP.portfolio_id == portfolio_id)
+                        .all()
+                    )
+                    _suggested_members = [
+                        {
+                            "product_id": p.id,
+                            "ticker": p.ticker or "",
+                            "name": p.name or "",
+                            "product_type": p.product_type or "",
+                            "selected": True,
+                        }
+                        for p in _member_products
+                    ]
+            except Exception as _e_pa:
+                print(f"[PRE_ANALYZE] Erro ao vincular portfolio_id={portfolio_id}: {_e_pa}")
+
         db.commit()
 
         results.append({
@@ -6596,6 +6629,9 @@ async def pre_analyze_upload(
             "error": None,
             "duplicate": is_duplicate,
             "existing_material_name": material.name if is_duplicate else None,
+            # Task #206 — membros sugeridos da Carteira para pré-seleção na UI
+            "suggested_members": _suggested_members,
+            "portfolio_id": material.portfolio_id,
         })
 
     return {
@@ -7044,14 +7080,22 @@ async def link_products_and_queue(
         force_new = bool(cp.get("force_new"))
         pid = None if force_new else cp.get("product_id")
 
-        # Detecta estrutura ANTES de aceitar `pid` que veio da pré-análise.
-        # Se `pid` aponta para um produto não-estruturado mas o material é
-        # estrutura (filename "POP RAPT4.pdf" + ação RAPT4 cadastrada),
-        # descartamos o pid e caímos na criação do produto-estrutura novo.
-        cp_is_structure_flag, cp_structure_reason = _cp_is_structure(cp)
-        # Idem para SWAP/troca: se pid aponta para ação mas material é troca,
-        # descartamos para forçar criação de produto-swap novo.
-        cp_is_swap_flag, cp_swap_reason = _cp_is_swap(cp)
+        # Task #206 — Em modo Carteira Recomendada (laq_portfolio_id presente),
+        # os guards de estruturada/swap NÃO devem ser aplicados: o material descreve
+        # a composição da carteira como um todo, não um produto estruturado ou troca.
+        if laq_portfolio_id:
+            cp_is_structure_flag, cp_structure_reason = False, None
+            cp_is_swap_flag, cp_swap_reason = False, None
+        else:
+            # Detecta estrutura ANTES de aceitar `pid` que veio da pré-análise.
+            # Se `pid` aponta para um produto não-estruturado mas o material é
+            # estrutura (filename "POP RAPT4.pdf" + ação RAPT4 cadastrada),
+            # descartamos o pid e caímos na criação do produto-estrutura novo.
+            cp_is_structure_flag, cp_structure_reason = _cp_is_structure(cp)
+            # Idem para SWAP/troca: se pid aponta para ação mas material é troca,
+            # descartamos para forçar criação de produto-swap novo.
+            cp_is_swap_flag, cp_swap_reason = _cp_is_swap(cp)
+
         if pid and cp_is_structure_flag:
             existing_for_pid = db.query(Product).filter(Product.id == pid).first()
             existing_type = (
