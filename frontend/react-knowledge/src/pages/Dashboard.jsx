@@ -15,6 +15,7 @@ import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { GlobalSearchResults } from '../components/GlobalSearchResults';
 import { ProductCategories } from '../components/ProductCategories';
+import { ProductAutocomplete } from '../components/ProductAutocomplete';
 
 const STORAGE_SEARCH_KEY = 'products_filter_search';
 const STORAGE_CATEGORY_KEY = 'products_filter_category';
@@ -518,6 +519,12 @@ export function Dashboard() {
     }
   };
 
+  const handleQuickJumpProduct = (product) => {
+    if (product?.id) {
+      navigate(`/product/${product.id}`);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-28">
       <div className="flex items-center justify-between">
@@ -553,6 +560,20 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Task #210 — Quick-jump autocomplete (produtos + carteiras) */}
+      {!selectionMode && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">
+            Saltar para produto ou carteira
+          </p>
+          <ProductAutocomplete
+            value={null}
+            onChange={handleQuickJumpProduct}
+            placeholder="Digite um produto, ticker ou nome de carteira..."
+          />
+        </div>
+      )}
 
       {/* Task #206 — Seção de Carteiras Recomendadas */}
       {!selectionMode && (

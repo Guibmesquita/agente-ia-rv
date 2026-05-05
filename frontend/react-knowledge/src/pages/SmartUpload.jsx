@@ -1759,6 +1759,7 @@ export function SmartUpload() {
             value={selectedProduct}
             onChange={setSelectedProduct}
             placeholder="Digite para buscar um produto..."
+            includePortfolios={false}
           />
           <div className="flex items-start gap-2 mt-2 p-3 bg-blue-50 rounded-xl border border-blue-200">
             <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />

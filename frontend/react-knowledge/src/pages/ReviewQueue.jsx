@@ -498,6 +498,7 @@ function ProductMatchCard({ item, onResolved, addToast }) {
               value={selectedProduct}
               onChange={handleLinkFromAutocomplete}
               placeholder="Buscar produto para vincular..."
+              includePortfolios={false}
             />
           </div>
 

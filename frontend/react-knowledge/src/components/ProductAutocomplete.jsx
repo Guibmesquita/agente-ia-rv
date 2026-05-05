@@ -1,11 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Package } from 'lucide-react';
+import { Search, X, Package, Briefcase } from 'lucide-react';
 import { productsAPI } from '../services/api';
 
-export function ProductAutocomplete({ value, onChange, placeholder = "Digite para buscar produto..." }) {
+export function ProductAutocomplete({
+  value,
+  onChange,
+  placeholder = "Digite para buscar produto...",
+  includePortfolios = true,
+}) {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
+  const [portfolioSuggestions, setPortfolioSuggestions] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const wrapperRef = useRef(null);
@@ -29,6 +37,7 @@ export function ProductAutocomplete({ value, onChange, placeholder = "Digite par
 
     if (query.length < 2) {
       setSuggestions([]);
+      setPortfolioSuggestions([]);
       return;
     }
 
@@ -37,10 +46,12 @@ export function ProductAutocomplete({ value, onChange, placeholder = "Digite par
       try {
         const result = await productsAPI.search(query);
         setSuggestions(result.suggestions || []);
+        setPortfolioSuggestions(includePortfolios ? (result.portfolios || []) : []);
         setIsOpen(true);
       } catch (err) {
         console.error('Erro na busca:', err);
         setSuggestions([]);
+        setPortfolioSuggestions([]);
       } finally {
         setLoading(false);
       }
@@ -58,12 +69,22 @@ export function ProductAutocomplete({ value, onChange, placeholder = "Digite par
     setQuery('');
     setIsOpen(false);
     setSuggestions([]);
+    setPortfolioSuggestions([]);
+  };
+
+  const handleSelectPortfolio = (portfolio) => {
+    setQuery('');
+    setIsOpen(false);
+    setSuggestions([]);
+    setPortfolioSuggestions([]);
+    navigate(`/portfolios/${portfolio.id}`);
   };
 
   const handleClear = () => {
     onChange(null);
     setQuery('');
     setSuggestions([]);
+    setPortfolioSuggestions([]);
     inputRef.current?.focus();
   };
 
@@ -97,7 +118,7 @@ export function ProductAutocomplete({ value, onChange, placeholder = "Digite par
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => suggestions.length > 0 && setIsOpen(true)}
+          onFocus={() => (suggestions.length > 0 || portfolioSuggestions.length > 0) && setIsOpen(true)}
           placeholder={placeholder}
           className="w-full pl-10 pr-4 py-3 bg-card border border-border rounded-input
                      text-foreground placeholder:text-muted
@@ -111,16 +132,39 @@ export function ProductAutocomplete({ value, onChange, placeholder = "Digite par
       </div>
 
       <AnimatePresence>
-        {isOpen && suggestions.length > 0 && (
+        {isOpen && (suggestions.length > 0 || portfolioSuggestions.length > 0) && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className="absolute z-50 w-full mt-2 bg-card border border-border rounded-card shadow-lg overflow-hidden"
           >
+            {portfolioSuggestions.map((portfolio) => (
+              <button
+                key={`portfolio-${portfolio.id}`}
+                type="button"
+                onClick={() => handleSelectPortfolio(portfolio)}
+                className="w-full px-4 py-3 text-left hover:bg-teal-50 transition-colors
+                           flex items-center gap-3 border-b border-border last:border-0"
+              >
+                <Briefcase className="w-5 h-5 text-teal-600" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground truncate">{portfolio.name}</p>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-700 whitespace-nowrap">
+                      Carteira
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted truncate">
+                    {portfolio.portfolio_type || ''}
+                    {portfolio.member_count ? ` • ${portfolio.member_count} produto(s)` : ''}
+                  </p>
+                </div>
+              </button>
+            ))}
             {suggestions.map((product) => (
               <button
-                key={product.id}
+                key={`product-${product.id}`}
                 type="button"
                 onClick={() => handleSelect(product)}
                 className="w-full px-4 py-3 text-left hover:bg-primary/5 transition-colors

@@ -363,10 +363,11 @@ async def quick_search(
 ):
     """
     Busca rápida para autocomplete.
-    Retorna apenas produtos com correspondência no nome, ticker ou gestor.
+    Retorna sugestões de produtos (nome/ticker/gestor) e carteiras
+    (nome/tipo/descrição) com correspondência parcial.
     """
     search_pattern = f"%{q}%"
-    
+
     products = db.query(Product).filter(
         or_(
             Product.name.ilike(search_pattern),
@@ -374,7 +375,15 @@ async def quick_search(
             Product.manager.ilike(search_pattern)
         )
     ).limit(limit).all()
-    
+
+    portfolios = db.query(Portfolio).filter(
+        or_(
+            Portfolio.name.ilike(search_pattern),
+            Portfolio.portfolio_type.ilike(search_pattern),
+            Portfolio.description.ilike(search_pattern)
+        )
+    ).limit(limit).all()
+
     return {
         "query": q,
         "suggestions": [
@@ -386,6 +395,17 @@ async def quick_search(
                 "category": p.category
             }
             for p in products
+        ],
+        "portfolios": [
+            {
+                "id": pf.id,
+                "name": pf.name,
+                "portfolio_type": pf.portfolio_type,
+                "description": pf.description,
+                "is_active": pf.is_active,
+                "member_count": len(pf.members) if pf.members is not None else 0
+            }
+            for pf in portfolios
         ]
     }
 
