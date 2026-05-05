@@ -134,7 +134,7 @@ export function Dashboard() {
       addToast('Carteira criada com sucesso!', 'success');
       setShowNewPortfolioModal(false);
       setNewPortfolio({ name: '', portfolio_type: '', description: '' });
-      navigate(`/portfolio/${created.id}`);
+      navigate(`/portfolios/${created.id}`);
     } catch (err) {
       addToast(`Erro: ${err.message}`, 'error');
     } finally {
@@ -605,7 +605,7 @@ export function Dashboard() {
                     initial={{ opacity: 0, scale: 0.97 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.97 }}
-                    onClick={() => navigate(`/portfolio/${p.id}`)}
+                    onClick={() => navigate(`/portfolios/${p.id}`)}
                     className="flex items-start gap-3 p-4 rounded-xl border border-border bg-card
                                hover:border-teal-300 hover:bg-teal-50 transition-colors text-left group"
                   >

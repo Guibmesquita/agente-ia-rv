@@ -323,6 +323,10 @@ export const portfoliosAPI = {
   }),
 
   summary: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/summary`),
+
+  hardDelete: (portfolioId) => fetchAPI(`/portfolios/${portfolioId}/hard-delete`, {
+    method: 'POST',
+  }),
 };
 
 export const knowledgeAPI = {

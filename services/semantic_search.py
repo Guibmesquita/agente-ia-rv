@@ -1424,6 +1424,37 @@ class EnhancedSearch:
         # prioritários (distance baixa).
         is_portfolio_intent = TokenExtractor.detect_portfolio_intent(query)
         if is_portfolio_intent:
+            # Task #206 — Caminho 1: Carteiras Recomendadas por portfolio_id (Task #206).
+            # Detecta se a query menciona o nome de uma Carteira Recomendada cadastrada
+            # (Portfolio.is_active=True) e, se sim, usa search_by_portfolio_id (filtro
+            # relacional direto), garantindo recall total para carteiras nomeadas.
+            _named_portfolio_injected = 0
+            try:
+                _named_match = self.vector_store.detect_portfolio_name_in_query(query)
+                if _named_match:
+                    _pid = _named_match.get("portfolio_id")
+                    _pname = _named_match.get("portfolio_name", "")
+                    _portfolio_id_results = self.vector_store.search_by_portfolio_id(
+                        portfolio_id=_pid, n_results=40
+                    )
+                    for r in _portfolio_id_results:
+                        doc_id = r.get('metadata', {}).get('block_id') or r.get('content', '')[:50]
+                        if doc_id and doc_id not in seen_ids:
+                            seen_ids.add(doc_id)
+                            # Injeta distância baixa para passar o guard anti-alucinação
+                            r['distance'] = 0.05
+                            all_results.append(r)
+                            _named_portfolio_injected += 1
+                    if _named_portfolio_injected:
+                        print(
+                            f"[EnhancedSearch] Carteira Recomendada '{_pname}' (id={_pid}): "
+                            f"{_named_portfolio_injected} blocos via search_by_portfolio_id"
+                        )
+            except Exception as _e_np:
+                print(f"[EnhancedSearch] search_by_portfolio_id (Task #206) falhou: {_e_np}")
+
+            # Caminho 2 (fallback legado, Task #204): busca por nome/tipo de produto
+            # 'carteira'. Ainda ativo para carteiras não cadastradas como Portfolio.
             try:
                 portfolio_results = self.vector_store.search_by_portfolio(
                     query=query,
@@ -1438,7 +1469,7 @@ class EnhancedSearch:
                         all_results.append(r)
                         injected += 1
                 if injected:
-                    print(f"[EnhancedSearch] Portfolio intent: {injected} blocos via search_by_portfolio")
+                    print(f"[EnhancedSearch] Portfolio intent: {injected} blocos via search_by_portfolio (legado)")
             except Exception as _e_pf:
                 print(f"[EnhancedSearch] search_by_portfolio falhou (não-bloqueante): {_e_pf}")
 

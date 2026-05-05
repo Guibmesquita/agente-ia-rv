@@ -1944,6 +1944,81 @@ class VectorStore:
         finally:
             db.close()
     
+    def index_portfolio_material(
+        self,
+        portfolio_id: int,
+        portfolio_name: str,
+        doc_id: str,
+        text: str,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """
+        Task #206 — Versão especializada de add_document que injeta
+        `portfolio_id` e `portfolio_name` no embedding como colunas de
+        primeira classe. Garante que os metadados de carteira constem
+        em KNOWN_METADATA_FIELDS e, portanto, fluam corretamente pelo
+        pipeline _metadata_to_columns → _row_to_metadata.
+
+        Use este método (em vez do add_document genérico) ao indexar
+        qualquer bloco cujo material pertença a uma Carteira Recomendada.
+
+        Args:
+            portfolio_id:   ID da carteira (chave na tabela portfolios)
+            portfolio_name: Nome da carteira (para busca ILIKE / display)
+            doc_id:         ID único do embedding (mesmo contrato de add_document)
+            text:           Conteúdo a ser vetorizado
+            metadata:       Metadados extras (product_id, block_type, etc.)
+        """
+        merged_metadata = dict(metadata or {})
+        merged_metadata["portfolio_id"] = portfolio_id
+        merged_metadata["portfolio_name"] = portfolio_name
+        self.add_document(doc_id=doc_id, text=text, metadata=merged_metadata)
+
+    def tag_existing_material_embeddings(
+        self,
+        material_id: int,
+        portfolio_id: int,
+        portfolio_name: str,
+    ) -> int:
+        """
+        Task #206 — Retroativamente marca embeddings já indexados de um
+        material com o portfolio_id e portfolio_name da carteira.
+
+        Útil após vincular um material pré-existente a uma carteira via
+        portal de administração, sem precisar reindexar todos os blocos.
+
+        Args:
+            material_id:    ID do material (tabela materials)
+            portfolio_id:   ID da carteira (tabela portfolios)
+            portfolio_name: Nome exibível da carteira
+
+        Returns:
+            Número de linhas atualizadas
+        """
+        db = SessionLocal()
+        try:
+            result = db.execute(
+                sql_text(
+                    "UPDATE document_embeddings "
+                    "SET portfolio_id = :pid, portfolio_name = :pname "
+                    "WHERE material_id = :mid"
+                ),
+                {"pid": portfolio_id, "pname": portfolio_name, "mid": str(material_id)},
+            )
+            db.commit()
+            updated = result.rowcount if hasattr(result, 'rowcount') else 0
+            print(
+                f"[VECTOR_STORE] tag_existing_material_embeddings: "
+                f"{updated} embeddings do material {material_id} → carteira {portfolio_id}"
+            )
+            return updated
+        except Exception as e:
+            db.rollback()
+            print(f"[VECTOR_STORE] Erro em tag_existing_material_embeddings: {e}")
+            return 0
+        finally:
+            db.close()
+
     def search_by_portfolio_id(self, portfolio_id: int, n_results: int = 30) -> List[dict]:
         """
         Task #206 — Busca documentos indexados de uma Carteira Recomendada específica

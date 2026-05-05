@@ -44,7 +44,7 @@ function ProductTypeBadge({ type }) {
 }
 
 export function PortfolioDetail() {
-  const { id } = useParams();
+  const { id } = useParams(); // rota /portfolios/:id
   const navigate = useNavigate();
   const { addToast } = useToast();
 

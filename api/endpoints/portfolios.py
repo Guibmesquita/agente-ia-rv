@@ -195,7 +195,7 @@ async def update_portfolio(
     return _portfolio_to_dict(portfolio, db)
 
 
-# ─── DELETE ──────────────────────────────────────────────────────────────────
+# ─── DELETE (soft delete) ─────────────────────────────────────────────────────
 
 @router.delete("/{portfolio_id}")
 async def delete_portfolio(
@@ -203,37 +203,73 @@ async def delete_portfolio(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exclui uma Carteira Recomendada e todos os seus membros/materiais."""
+    """
+    Desativa uma Carteira Recomendada (soft delete: is_active=False).
+
+    Os membros e materiais são preservados no banco; a carteira fica invisível
+    na listagem padrão e o agente não a detecta via detect_portfolio_name_in_query
+    (que filtra apenas carteiras ativas).
+
+    Para exclusão física (hard delete), use o endpoint de manutenção
+    POST /api/portfolios/{id}/hard-delete — restrito a admin.
+    """
     _require_role(current_user)
     portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
 
-    # Remover embeddings de materiais dessa carteira do vector store
-    mats = db.query(Material).filter(Material.portfolio_id == portfolio_id).all()
-    if mats:
-        try:
-            from services.vector_store import get_vector_store
-            vs = get_vector_store()
-            if vs:
-                for m in mats:
-                    from sqlalchemy import text as sql_text
-                    from database.database import SessionLocal
-                    _db = SessionLocal()
-                    try:
-                        _db.execute(
-                            sql_text("DELETE FROM document_embeddings WHERE material_id = :mid"),
-                            {"mid": str(m.id)},
-                        )
-                        _db.commit()
-                    finally:
-                        _db.close()
-        except Exception as e:
-            print(f"[portfolios] Erro ao remover embeddings: {e}")
+    portfolio.is_active = False
+    from datetime import datetime, timezone
+    portfolio.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(portfolio)
+    return {"ok": True, "deactivated_id": portfolio_id, "is_active": False}
 
+
+@router.post("/{portfolio_id}/hard-delete")
+async def hard_delete_portfolio(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Exclusão física permanente de uma Carteira Recomendada (somente admin).
+
+    Remove membros, desvincula materiais (portfolio_id → NULL), limpa
+    embeddings com portfolio_id desta carteira, e apaga o registro.
+    Operação irreversível.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem excluir carteiras permanentemente")
+
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Carteira não encontrada")
+
+    # 1) Desvincular materiais (não excluir — materiais são independentes)
+    db.query(Material).filter(Material.portfolio_id == portfolio_id).update(
+        {"portfolio_id": None}, synchronize_session=False
+    )
+
+    # 2) Limpar embeddings com portfolio_id desta carteira usando a sessão atual
+    from sqlalchemy import text as _sql_text
+    db.execute(
+        _sql_text(
+            "UPDATE document_embeddings SET portfolio_id = NULL, portfolio_name = NULL "
+            "WHERE portfolio_id = :pid"
+        ),
+        {"pid": portfolio_id},
+    )
+
+    # 3) Remover membros (ON DELETE CASCADE cobre isso, mas explicitamos)
+    db.query(PortfolioProduct).filter(
+        PortfolioProduct.portfolio_id == portfolio_id
+    ).delete(synchronize_session=False)
+
+    # 4) Excluir a carteira
     db.delete(portfolio)
     db.commit()
-    return {"ok": True, "deleted_id": portfolio_id}
+    return {"ok": True, "hard_deleted_id": portfolio_id}
 
 
 # ─── MEMBERS ─────────────────────────────────────────────────────────────────
