@@ -3850,11 +3850,6 @@ async def smart_upload_without_product(
             detail=f"Arquivo idêntico já processado como '{existing_dup.name}' em {dup_date}. Upload duplicado bloqueado."
         )
 
-    material_name = name or file.filename.replace('.pdf', '')
-    temp_product = find_or_create_product_from_name(db, material_name)
-    if not temp_product:
-        raise HTTPException(status_code=500, detail="Não foi possível criar ou encontrar produto para o material")
-
     parsed_valid_from = None
     parsed_valid_until = None
     
@@ -3869,9 +3864,29 @@ async def smart_upload_without_product(
             parsed_valid_until = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
         except ValueError:
             pass
-    
+
+    # Task #206 — Em modo Carteira Recomendada (portfolio_id fornecido), o dono
+    # do material é a carteira: product_id fica nulo e não criamos produto temporário.
+    # Em modo produto normal, mantemos o comportamento original de criar temp_product.
+    _portfolio_owner = None
+    if portfolio_id:
+        from database.models import Portfolio as _Port
+        _portfolio_owner = db.query(_Port).filter(_Port.id == portfolio_id, _Port.is_active == True).first()
+        if not _portfolio_owner:
+            print(f"[smart-upload] portfolio_id={portfolio_id} inválido ou inativo — usando modo produto")
+            portfolio_id = None
+
+    if not _portfolio_owner:
+        material_name = name or file.filename.replace('.pdf', '')
+        temp_product = find_or_create_product_from_name(db, material_name)
+        if not temp_product:
+            raise HTTPException(status_code=500, detail="Não foi possível criar ou encontrar produto para o material")
+        _product_id_for_material = temp_product.id
+    else:
+        _product_id_for_material = None
+
     material = Material(
-        product_id=temp_product.id,
+        product_id=_product_id_for_material,
         material_type=material_type,
         name=name,
         description=description,
@@ -3880,14 +3895,8 @@ async def smart_upload_without_product(
         publish_status="rascunho",
         file_hash=file_hash
     )
-    # Task #206 — vincular à Carteira Recomendada quando portfolio_id fornecido
-    if portfolio_id:
-        from database.models import Portfolio as _Port
-        _port_check = db.query(_Port).filter(_Port.id == portfolio_id, _Port.is_active == True).first()
-        if _port_check:
-            material.portfolio_id = portfolio_id
-        else:
-            print(f"[smart-upload] portfolio_id={portfolio_id} inválido ou inativo — ignorado")
+    if _portfolio_owner:
+        material.portfolio_id = _portfolio_owner.id
 
     db.add(material)
     db.commit()
@@ -3973,11 +3982,6 @@ async def smart_upload_stream(
             detail=f"Arquivo idêntico já processado como '{existing_dup.name}' em {dup_date}. Upload duplicado bloqueado."
         )
 
-    material_name2 = name or file.filename.replace('.pdf', '')
-    temp_product2 = find_or_create_product_from_name(db, material_name2)
-    if not temp_product2:
-        raise HTTPException(status_code=500, detail="Não foi possível criar ou encontrar produto para o material")
-
     parsed_valid_from = None
     parsed_valid_until = None
     
@@ -4000,9 +4004,27 @@ async def smart_upload_stream(
         parsed_tags = json_lib.loads(tags) if tags else []
     except:
         parsed_tags = []
-    
+
+    # Task #206 — Em modo Carteira Recomendada, product_id fica nulo.
+    _portfolio_owner2 = None
+    if portfolio_id:
+        from database.models import Portfolio as _Port2
+        _portfolio_owner2 = db.query(_Port2).filter(_Port2.id == portfolio_id, _Port2.is_active == True).first()
+        if not _portfolio_owner2:
+            print(f"[smart-upload-stream] portfolio_id={portfolio_id} inválido ou inativo — usando modo produto")
+            portfolio_id = None
+
+    if not _portfolio_owner2:
+        material_name2 = name or file.filename.replace('.pdf', '')
+        temp_product2 = find_or_create_product_from_name(db, material_name2)
+        if not temp_product2:
+            raise HTTPException(status_code=500, detail="Não foi possível criar ou encontrar produto para o material")
+        _product_id_stream = temp_product2.id
+    else:
+        _product_id_stream = None
+
     material = Material(
-        product_id=temp_product2.id,
+        product_id=_product_id_stream,
         material_type=material_type,
         name=name,
         description=description,
@@ -4012,14 +4034,8 @@ async def smart_upload_stream(
         publish_status="rascunho",
         file_hash=file_hash
     )
-    # Task #206 — vincular à Carteira Recomendada quando portfolio_id fornecido
-    if portfolio_id:
-        from database.models import Portfolio as _Port2
-        _port_check2 = db.query(_Port2).filter(_Port2.id == portfolio_id, _Port2.is_active == True).first()
-        if _port_check2:
-            material.portfolio_id = portfolio_id
-        else:
-            print(f"[smart-upload-stream] portfolio_id={portfolio_id} inválido ou inativo — ignorado")
+    if _portfolio_owner2:
+        material.portfolio_id = _portfolio_owner2.id
 
     db.add(material)
     db.commit()
@@ -6587,8 +6603,12 @@ async def pre_analyze_upload(
         import json as _json2
         material.ai_product_analysis = _json2.dumps(identified, ensure_ascii=False)
 
-        # Task #206 — Quando portfolio_id fornecido, vincula o material à carteira
-        # e devolve membros como suggested_members para pré-seleção na UI.
+        # Task #206 — Quando portfolio_id fornecido:
+        # 1. Vincula o material à carteira (portfolio_id no material)
+        # 2. Constrói suggested_members a partir dos tickers/produtos DETECTADOS
+        #    no PDF via IA (identified), com flag is_existing_member para os que
+        #    já estão cadastrados na carteira — assim a UI pode pré-selecionar
+        #    e o usuário confirma/ajusta antes de vincular.
         _suggested_members = []
         if portfolio_id and not material.portfolio_id:
             try:
@@ -6598,23 +6618,24 @@ async def pre_analyze_upload(
                 ).first()
                 if _pa_port:
                     material.portfolio_id = portfolio_id
-                    # Busca membros da carteira para suggested_members
-                    _member_products = (
-                        db.query(Product)
-                        .join(_PAPP, Product.id == _PAPP.product_id)
+                    # Busca membros já cadastrados para marcar is_existing_member
+                    _existing_member_ids = {
+                        r.product_id
+                        for r in db.query(_PAPP.product_id)
                         .filter(_PAPP.portfolio_id == portfolio_id)
                         .all()
-                    )
-                    _suggested_members = [
-                        {
-                            "product_id": p.id,
-                            "ticker": p.ticker or "",
-                            "name": p.name or "",
-                            "product_type": p.product_type or "",
+                    }
+                    # suggested_members = ativos identificados no PDF pela IA
+                    for idp in identified:
+                        pid_idp = idp.get("matched_product_id") or idp.get("product_id")
+                        _suggested_members.append({
+                            "product_id": pid_idp,
+                            "ticker": idp.get("ticker") or "",
+                            "name": idp.get("name") or "",
+                            "product_type": idp.get("product_type") or "",
                             "selected": True,
-                        }
-                        for p in _member_products
-                    ]
+                            "is_existing_member": pid_idp in _existing_member_ids if pid_idp else False,
+                        })
             except Exception as _e_pa:
                 print(f"[PRE_ANALYZE] Erro ao vincular portfolio_id={portfolio_id}: {_e_pa}")
 
