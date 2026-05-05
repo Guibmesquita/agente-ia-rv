@@ -6920,6 +6920,11 @@ async def link_products_and_queue(
     is_conceptual_material = bool(body.get("is_conceptual_material", False))
     # Task #206 — portfolio_id opcional: vincula o material à Carteira Recomendada
     laq_portfolio_id = body.get("portfolio_id")
+    # Task #206 — IDs dos produtos confirmados como membros da carteira
+    portfolio_member_product_ids = [
+        int(pid) for pid in (body.get("portfolio_member_product_ids") or [])
+        if pid is not None
+    ]
 
     material = db.query(Material).filter(Material.id == material_id).first()
     if not material:
@@ -7426,6 +7431,46 @@ async def link_products_and_queue(
                     index_product_key_info(prod_obj)
         except Exception as idx_err:
             print(f"[LINK_QUEUE] Aviso: falha ao reindexar key_info de produtos novos: {idx_err}")
+
+    # Task #206 — MODO CARTEIRA RECOMENDADA
+    if laq_portfolio_id:
+        # 1. Política de reposição: arquiva materiais anteriores do mesmo tipo para
+        #    esta carteira para que "o último material por tipo substitui o anterior".
+        mat_type = material.material_type
+        if mat_type:
+            try:
+                old_mats = db.query(Material).filter(
+                    Material.portfolio_id == laq_portfolio_id,
+                    Material.material_type == mat_type,
+                    Material.id != material_id,
+                    Material.publish_status == "publicado",
+                ).all()
+                for old_m in old_mats:
+                    old_m.publish_status = "arquivado"
+                    print(f"[LINK_QUEUE] Material {old_m.id} arquivado (substituído por {material_id}, tipo={mat_type})")
+                if old_mats:
+                    db.commit()
+            except Exception as _repl_err:
+                print(f"[LINK_QUEUE] Aviso: falha na política de reposição: {_repl_err}")
+
+        # 2. Upsert de membros confirmados na carteira
+        if portfolio_member_product_ids:
+            try:
+                from database.models import PortfolioProduct as _PPModel
+                for mpid in portfolio_member_product_ids:
+                    existing_link = db.query(_PPModel).filter(
+                        _PPModel.portfolio_id == laq_portfolio_id,
+                        _PPModel.product_id == mpid,
+                    ).first()
+                    if not existing_link:
+                        db.add(_PPModel(portfolio_id=laq_portfolio_id, product_id=mpid))
+                db.commit()
+                print(
+                    f"[LINK_QUEUE] Carteira {laq_portfolio_id}: "
+                    f"{len(portfolio_member_product_ids)} membro(s) confirmados via SmartUpload"
+                )
+            except Exception as _mem_err:
+                print(f"[LINK_QUEUE] Aviso: falha ao inserir membros da carteira: {_mem_err}")
 
     upload_id = str(uuid.uuid4())
     queue_item = UploadQueueItem(

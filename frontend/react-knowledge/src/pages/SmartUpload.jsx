@@ -533,6 +533,19 @@ export function SmartUpload() {
     });
   };
 
+  // Task #206 — toggle de membros sugeridos da Carteira Recomendada
+  const toggleSuggestedMember = (materialIdx, memberIdx) => {
+    setAnalysisResults(prev => prev.map((m, mi) => {
+      if (mi !== materialIdx) return m;
+      return {
+        ...m,
+        suggested_members: (m.suggested_members || []).map((sm, si) =>
+          si === memberIdx ? { ...sm, selected: !sm.selected } : sm
+        ),
+      };
+    }));
+  };
+
   const addManualProduct = (materialIdx, text) => {
     if (!text.trim()) return;
     const tickerMatch = text.trim().toUpperCase().match(/\b([A-Z]{4}[0-9]{1,2})\b/);
@@ -726,6 +739,12 @@ export function SmartUpload() {
             // Task #206 — propaga portfolio_id para que o backend vincule o
             // material à Carteira Recomendada na etapa de confirmação.
             ...(portfolioIdFromUrl ? { portfolio_id: portfolioIdFromUrl } : {}),
+            // Task #206 — IDs dos membros confirmados via painel de sugestão
+            ...(portfolioIdFromUrl ? {
+              portfolio_member_product_ids: (mat.suggested_members || [])
+                .filter(sm => sm.selected && sm.product_id)
+                .map(sm => sm.product_id),
+            } : {}),
           }),
         });
         if (!resp.ok) {
@@ -2170,6 +2189,52 @@ export function SmartUpload() {
                     </div>
                   ) : (
                     <p className="text-xs text-muted italic">Nenhum produto identificado automaticamente.</p>
+                  )}
+
+                  {/* Task #206 — Painel de membros sugeridos da Carteira Recomendada */}
+                  {portfolioIdFromUrl && mat.suggested_members && mat.suggested_members.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-teal-200">
+                      <p className="text-xs font-semibold text-teal-700 mb-2 flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5" />
+                        Membros sugeridos para a carteira (detectados no PDF)
+                      </p>
+                      <div className="space-y-1.5">
+                        {mat.suggested_members.map((sm, si) => (
+                          <label
+                            key={si}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs transition-colors ${
+                              sm.selected
+                                ? 'bg-teal-50 border-teal-300 text-teal-800'
+                                : 'bg-card border-border text-muted line-through'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="accent-teal-600 flex-shrink-0"
+                              checked={!!sm.selected}
+                              onChange={() => toggleSuggestedMember(mi, si)}
+                            />
+                            <span className="font-medium">{sm.ticker || sm.name}</span>
+                            {sm.ticker && sm.name && sm.name !== sm.ticker && (
+                              <span className="text-muted/80 truncate">{sm.name}</span>
+                            )}
+                            {sm.product_type && (
+                              <span className="ml-auto bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0">
+                                {sm.product_type}
+                              </span>
+                            )}
+                            {sm.is_existing_member && (
+                              <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0">
+                                já membro
+                              </span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-muted mt-1.5">
+                        Desmarque para não adicionar como membro. Apenas produtos com ID cadastrado serão vinculados.
+                      </p>
+                    </div>
                   )}
 
                   <div className="pt-2 border-t border-border/50 space-y-2">

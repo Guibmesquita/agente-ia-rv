@@ -415,10 +415,17 @@ async def reindex_portfolio(
             from database.database import SessionLocal
             _db = SessionLocal()
             try:
+                ingestor = ProductIngestor()
                 for mid in material_ids:
                     try:
-                        ingestor = ProductIngestor(_db)
-                        ingestor.index_material(mid)
+                        # Para materiais de carteira product_id é None;
+                        # passamos o nome da carteira como "produto" para o contexto.
+                        ingestor.index_approved_blocks(
+                            material_id=mid,
+                            product_name=portfolio.name,
+                            product_ticker=None,
+                            db=_db,
+                        )
                     except Exception as e:
                         print(f"[portfolio reindex] Erro no material {mid}: {e}")
             finally:
