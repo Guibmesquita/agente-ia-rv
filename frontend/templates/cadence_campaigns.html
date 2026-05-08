@@ -161,7 +161,15 @@
                 </div>
                 <div class="form-group">
                     <label>Limite diário</label>
-                    <input type="number" id="campaign-limit" value="50" min="1" max="200">
+                    <input type="number" id="campaign-limit" value="50" min="1" max="500">
+                </div>
+                <div class="form-group">
+                    <label>Velocidade (perfil)</label>
+                    <select id="campaign-profile">
+                        <option value="conservador" selected>Conservador (8-25 min)</option>
+                        <option value="padrao">Padrão (4-12 min)</option>
+                        <option value="acelerado">Acelerado (2-6 min)</option>
+                    </select>
                 </div>
             </div>
             <div class="contacts-area">
@@ -278,8 +286,18 @@
                             '<span class="detail-item">Início: ' + (c.start_date ? c.start_date.slice(0,10) : '—') + '</span>' +
                             '<span class="detail-item">Limite diário: ' + c.daily_limit + '</span>' +
                             '<span class="detail-item">Prazo: ' + c.deadline_days + ' dias úteis</span>' +
+                            '<span class="detail-item">Perfil: ' + (c.cadence_profile || 'conservador') + '</span>' +
                             (c.end_date ? '<span class="detail-item">Concluída: ' + c.end_date.slice(0,10) + '</span>' : '') +
                         '</div>' +
+                        (c.status === 'firing' || c.status === 'paused' ? (
+                            '<div class="detail-row" style="margin-top:8px;align-items:center;gap:8px;">' +
+                                '<label style="font-size:0.85rem;font-weight:600;">Mudar velocidade:</label>' +
+                                '<select id="profile-' + c.id + '" data-stop="1" onclick="event.stopPropagation()">' +
+                                    ['conservador','padrao','acelerado'].map(function(p){return '<option value="'+p+'"'+((c.cadence_profile||'conservador')===p?' selected':'')+'>'+p+'</option>';}).join('') +
+                                '</select>' +
+                                '<button class="btn btn-resume" data-action="change-profile" data-id="' + c.id + '">Recalcular agenda</button>' +
+                            '</div>'
+                        ) : '') +
                         '<div class="chart-container"><canvas id="chart-' + c.id + '"></canvas></div>' +
                         '<div style="margin-top:12px">' + actionBtn + deleteBtn + '</div>' +
                     '</div>' +
@@ -346,6 +364,7 @@
             const name = document.getElementById('campaign-name').value.trim();
             const deadline = parseInt(document.getElementById('campaign-deadline').value) || 5;
             const limit = parseInt(document.getElementById('campaign-limit').value) || 50;
+            const profile = (document.getElementById('campaign-profile') || {}).value || 'conservador';
             const contactsText = document.getElementById('contacts-input').value;
 
             if (!name) { showToast('Informe o nome da campanha', 'error'); return; }
@@ -356,7 +375,7 @@
                 const res = await fetch(API, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, deadline_days: deadline, daily_limit: limit, contacts })
+                    body: JSON.stringify({ name, deadline_days: deadline, daily_limit: limit, cadence_profile: profile, contacts })
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro ao criar');
@@ -377,6 +396,23 @@
                 const res = await fetch(API + '/' + id + '/' + action, { method: 'PATCH' });
                 if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
                 showToast(action === 'pause' ? 'Campanha pausada' : 'Campanha retomada', 'success');
+                fetchCampaigns();
+            } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+        }
+
+        async function changeProfile(id) {
+            const sel = document.getElementById('profile-' + id);
+            if (!sel) return;
+            const profile = sel.value;
+            if (!confirm('Recalcular agenda dos pendentes com perfil "' + profile + '"?')) return;
+            try {
+                const res = await fetch(API + '/' + id + '/profile', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cadence_profile: profile })
+                });
+                if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+                showToast('Perfil atualizado e pendentes reagendados', 'success');
                 fetchCampaigns();
             } catch (e) { showToast('Erro: ' + e.message, 'error'); }
         }
@@ -402,6 +438,7 @@
             }
             else if (action === 'pause') { e.stopPropagation(); togglePauseResume(el.dataset.id, 'pause'); }
             else if (action === 'resume') { e.stopPropagation(); togglePauseResume(el.dataset.id, 'resume'); }
+            else if (action === 'change-profile') { e.stopPropagation(); changeProfile(el.dataset.id); }
             else if (action === 'delete-campaign') { e.stopPropagation(); deleteCampaign(el.dataset.id); }
         });
 

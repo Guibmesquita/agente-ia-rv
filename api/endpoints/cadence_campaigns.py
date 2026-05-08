@@ -29,7 +29,12 @@ class CampaignCreateInput(BaseModel):
     name: str
     deadline_days: int = 5
     daily_limit: int = 50
+    cadence_profile: str = "conservador"
     contacts: List[ContactInput]
+
+
+class CadenceProfileInput(BaseModel):
+    cadence_profile: str
 
 
 def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_contacts: bool = False):
@@ -75,6 +80,7 @@ def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_con
         "response_rate": response_rate,
         "daily_limit": campaign.daily_limit,
         "deadline_days": campaign.deadline_days,
+        "cadence_profile": getattr(campaign, "cadence_profile", None) or "conservador",
         "start_date": campaign.start_date.isoformat() if campaign.start_date else None,
         "end_date": campaign.end_date.isoformat() if campaign.end_date else None,
         "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
@@ -137,6 +143,7 @@ async def get_campaign(campaign_id: int, db: Session = Depends(get_db), current_
 @router.post("")
 async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_db), current_user=Depends(_get_auth())):
     from services.campaign_planner import calculate_daily_plan, prioritize_contacts, assign_scheduled_times
+    from services.cadence_profiles import is_valid_profile, PROFILES
 
     if not data.contacts:
         raise HTTPException(status_code=400, detail="Lista de contatos não pode estar vazia")
@@ -145,6 +152,11 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="deadline_days deve ser >= 1")
     if data.daily_limit < 1:
         raise HTTPException(status_code=400, detail="daily_limit deve ser >= 1")
+    if not is_valid_profile(data.cadence_profile):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Perfil inválido. Opções: {', '.join(PROFILES.keys())}"
+        )
 
     plan = calculate_daily_plan(len(data.contacts), data.deadline_days, data.daily_limit)
 
@@ -155,6 +167,7 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
         total_contacts=len(data.contacts),
         daily_limit=data.daily_limit,
         deadline_days=data.deadline_days,
+        cadence_profile=str(data.cadence_profile).strip().lower(),
         start_date=now,
         created_by=current_user.id if hasattr(current_user, 'id') else None,
     )
@@ -218,6 +231,54 @@ async def resume_campaign(campaign_id: int, db: Session = Depends(get_db), curre
     db.commit()
     print(f"[CADENCE] Campanha '{campaign.name}' retomada")
     return {"message": "Campanha retomada", "status": "firing"}
+
+
+@router.patch("/{campaign_id}/profile")
+async def change_profile(
+    campaign_id: int,
+    data: CadenceProfileInput,
+    db: Session = Depends(get_db),
+    current_user=Depends(_get_auth()),
+):
+    """
+    Troca o perfil de velocidade da campanha legada e reagenda apenas os
+    contatos com status 'pending'. Os já enviados/falhados não são tocados.
+    """
+    from services.campaign_planner import assign_scheduled_times
+    from services.cadence_profiles import is_valid_profile, PROFILES
+
+    if not is_valid_profile(data.cadence_profile):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Perfil inválido. Opções: {', '.join(PROFILES.keys())}"
+        )
+
+    campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    old_profile = getattr(campaign, "cadence_profile", None) or "conservador"
+    campaign.cadence_profile = str(data.cadence_profile).strip().lower()
+    db.commit()
+
+    if campaign.status in ("firing", "paused"):
+        assign_scheduled_times(campaign.id, db, only_pending=True)
+
+    print(
+        f"[CADENCE] Perfil da campanha legada '{campaign.name}' (id={campaign_id}) alterado: "
+        f"{old_profile} → {campaign.cadence_profile}"
+    )
+
+    return {
+        "message": "Perfil atualizado",
+        "cadence_profile": campaign.cadence_profile,
+    }
+
+
+@router.get("/profiles/list")
+async def list_cadence_profiles(current_user=Depends(_get_auth())):
+    from services.cadence_profiles import list_profiles
+    return {"profiles": list_profiles()}
 
 
 @router.delete("/{campaign_id}")

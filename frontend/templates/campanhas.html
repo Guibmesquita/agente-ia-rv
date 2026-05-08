@@ -1273,11 +1273,22 @@ Equipe de Gestao"></textarea>
                                 </label>
                             </div>
                             <div id="cadenceConfig" style="display: none; margin-top: 16px; padding: 16px; background: white; border-radius: 8px; border: 1px solid var(--border-color);">
+                                <div style="margin-bottom: 16px;">
+                                    <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 6px;">Velocidade de envio</label>
+                                    <select id="cadenceProfile" class="form-input" style="width: 100%;">
+                                        <option value="conservador" selected>Conservador — 8 a 25 min entre envios (mais seguro)</option>
+                                        <option value="padrao">Padrão — 4 a 12 min entre envios (equilíbrio)</option>
+                                        <option value="acelerado">Acelerado — 2 a 6 min entre envios (número aquecido)</option>
+                                    </select>
+                                    <span id="cadenceProfileHint" style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-top: 4px;">
+                                        Mais lento, menor risco de bloqueio. Recomendado para números novos ou pouco aquecidos.
+                                    </span>
+                                </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                                     <div>
                                         <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 6px;">Limite Diario</label>
-                                        <input type="number" id="cadenceDailyLimit" value="50" min="5" max="200" class="form-input" style="width: 100%;">
-                                        <span style="font-size: 0.75rem; color: var(--text-secondary);">Max de mensagens por dia</span>
+                                        <input type="number" id="cadenceDailyLimit" value="50" min="5" max="500" class="form-input" style="width: 100%;">
+                                        <span style="font-size: 0.75rem; color: var(--text-secondary);">Max de mensagens por dia (sugerido pelo perfil)</span>
                                     </div>
                                     <div>
                                         <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 6px;">Prazo (dias uteis)</label>
@@ -1286,7 +1297,7 @@ Equipe de Gestao"></textarea>
                                     </div>
                                 </div>
                                 <div style="margin-top: 12px; padding: 10px 14px; background: #eff6ff; border-radius: 6px; font-size: 0.85rem; color: #1e40af;">
-                                    <strong>Anti-bloqueio:</strong> Intervalo minimo de 8 minutos entre envios, somente horario comercial (09h-18h), max 15 contatos frios/dia. Prioridade: contatos recentes primeiro.
+                                    <strong>Anti-bloqueio:</strong> somente horario comercial (09h-18h seg-sex), pausa de almoço, pausa de 20 min após 2 falhas Z-API consecutivas, max 15 contatos frios/dia. Prioridade: contatos recentes primeiro.
                                 </div>
                             </div>
                         </div>
@@ -3082,9 +3093,26 @@ Equipe de Gestao"></textarea>
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        var CADENCE_PROFILE_DEFAULTS = {
+            'conservador': { daily_limit: 50, hint: 'Mais lento, menor risco de bloqueio. Recomendado para números novos ou pouco aquecidos.' },
+            'padrao':      { daily_limit: 80, hint: 'Equilíbrio entre velocidade e segurança. Para números já aquecidos com histórico estável.' },
+            'acelerado':   { daily_limit: 120, hint: 'Mais rápido, exige número bem aquecido. Use só se o número já enviou volume alto sem bloqueios.' }
+        };
+
+        document.addEventListener('change', function(e) {
+            if (e.target && e.target.id === 'cadenceProfile') {
+                var cfg = CADENCE_PROFILE_DEFAULTS[e.target.value] || CADENCE_PROFILE_DEFAULTS.conservador;
+                var hint = document.getElementById('cadenceProfileHint');
+                if (hint) hint.textContent = cfg.hint;
+                var dl = document.getElementById('cadenceDailyLimit');
+                if (dl) dl.value = cfg.daily_limit;
+            }
+        });
+
         async function dispatchCadence() {
             var dailyLimit = parseInt(document.getElementById('cadenceDailyLimit').value) || 50;
             var deadlineDays = parseInt(document.getElementById('cadenceDeadlineDays').value) || 5;
+            var cadenceProfile = (document.getElementById('cadenceProfile') || {}).value || 'conservador';
 
             if (campaignId) {
                 try {
@@ -3124,7 +3152,7 @@ Equipe de Gestao"></textarea>
                     method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ daily_limit: dailyLimit, deadline_days: deadlineDays })
+                    body: JSON.stringify({ daily_limit: dailyLimit, deadline_days: deadlineDays, cadence_profile: cadenceProfile })
                 });
 
                 if (!response.ok) {
@@ -3220,6 +3248,23 @@ Equipe de Gestao"></textarea>
                     html += '<canvas id="cadenceDailyChart" height="200"></canvas></div>';
                 }
 
+                var currentProfile = data.cadence_profile || 'conservador';
+                var profileLabels = { 'conservador': 'Conservador (8-25 min)', 'padrao': 'Padrão (4-12 min)', 'acelerado': 'Acelerado (2-6 min)' };
+                if (data.status === 'firing_cadence' || data.status === 'paused_cadence') {
+                    html += '<div style="margin-bottom: 24px; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">';
+                    html += '<div style="font-weight: 600; margin-bottom: 8px;">Velocidade de envio</div>';
+                    html += '<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">';
+                    html += '<select id="profileSelector_' + cId + '" class="form-input" style="flex: 1; min-width: 200px;">';
+                    ['conservador','padrao','acelerado'].forEach(function(p) {
+                        html += '<option value="' + p + '"' + (p === currentProfile ? ' selected' : '') + '>' + profileLabels[p] + '</option>';
+                    });
+                    html += '</select>';
+                    html += '<button class="btn btn-secondary" data-action="changeCadenceProfile" data-id="' + cId + '">Recalcular agenda</button>';
+                    html += '</div>';
+                    html += '<div style="font-size: 0.8rem; color: #64748b; margin-top: 8px;">Reagenda apenas os disparos pendentes — os já enviados não são alterados.</div>';
+                    html += '</div>';
+                }
+
                 html += '<div style="display: flex; gap: 8px; justify-content: center;">';
                 if (data.status === 'firing_cadence') {
                     html += '<button class="btn" style="background: #f59e0b; color: white; border: none;" data-action="pauseCadence" data-id="' + cId + '">Pausar Campanha</button>';
@@ -3289,6 +3334,36 @@ Equipe de Gestao"></textarea>
                     throw new Error(err.detail || 'Erro ao pausar');
                 }
                 toast.success('Campanha pausada');
+                await renderCadenceDashboard(cId);
+            } catch (error) {
+                toast.error(error.message);
+            }
+        }
+
+        async function changeCadenceProfileFn(cId) {
+            var sel = document.getElementById('profileSelector_' + cId);
+            if (!sel) return;
+            var profile = sel.value;
+            var confirmed = await toast.confirm({
+                title: 'Recalcular agenda com novo perfil?',
+                message: 'Os disparos pendentes serão redistribuídos usando o perfil "' + profile + '". Os já enviados não serão tocados.',
+                confirmText: 'Recalcular',
+                type: 'warning'
+            });
+            if (!confirmed) return;
+            try {
+                var response = await fetch(API_BASE + '/' + cId + '/cadence-profile', {
+                    method: 'PATCH',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cadence_profile: profile })
+                });
+                if (!response.ok) {
+                    var err = await response.json();
+                    throw new Error(err.detail || 'Erro ao trocar perfil');
+                }
+                var result = await response.json();
+                toast.success('Perfil atualizado — ' + result.rescheduled_dispatches + ' disparos reagendados');
                 await renderCadenceDashboard(cId);
             } catch (error) {
                 toast.error(error.message);
@@ -3919,6 +3994,8 @@ Equipe de Gestao"></textarea>
                 pauseCadenceCampaign(parseInt(actionEl.dataset.id));
             } else if (action === 'resumeCadence') {
                 resumeCadenceCampaign(parseInt(actionEl.dataset.id));
+            } else if (action === 'changeCadenceProfile') {
+                changeCadenceProfileFn(parseInt(actionEl.dataset.id));
             } else if (action === 'editTemplate') {
                 editTemplate(parseInt(actionEl.dataset.id));
             } else if (action === 'deleteTemplate') {

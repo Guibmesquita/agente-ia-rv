@@ -22,6 +22,7 @@ def _register_routers():
     )
     from api.endpoints import recommendations as recommendations_mod
     from api.endpoints import portfolios as portfolios_mod
+    from api.endpoints import cadence_campaigns as cadence_campaigns_mod
 
     app.include_router(auth.router)
     app.include_router(users.router)
@@ -49,6 +50,7 @@ def _register_routers():
     app.include_router(recommendations_mod.materials_router)
     app.include_router(recommendations_mod.page_router)
     app.include_router(portfolios_mod.router)
+    app.include_router(cadence_campaigns_mod.router)
     print("[INIT] Routers registrados com sucesso.")
 
 
@@ -373,6 +375,9 @@ def _apply_incremental_migrations():
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20) DEFAULT 'immediate'",
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS daily_limit INTEGER",
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS deadline_days INTEGER",
+        # Task #220: perfis de velocidade da cadência
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cadence_profile VARCHAR(20) NOT NULL DEFAULT 'conservador'",
+        "ALTER TABLE cadence_campaigns ADD COLUMN IF NOT EXISTS cadence_profile VARCHAR(20) NOT NULL DEFAULT 'conservador'",
         "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ",
         "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 3",
         "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ",

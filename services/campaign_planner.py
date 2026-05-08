@@ -37,9 +37,28 @@ def _get_business_days(start_date: date, num_days: int) -> List[date]:
     return days
 
 
-def _build_daily_schedule(num_contacts: int, base_date: date) -> List[datetime]:
+def _build_daily_schedule(
+    num_contacts: int,
+    base_date: date,
+    profile: Optional[str] = None,
+) -> List[datetime]:
+    """
+    Constrói os horários de envio para um único dia útil, respeitando a janela
+    comercial (09h-18h) e a pausa de almoço (12h-13h30 — máximo 2 envios).
+
+    O parâmetro ``profile`` controla os intervalos entre envios e a duração da
+    pausa longa (a cada 10-12 envios). Se for None ou desconhecido, usa o
+    perfil ``conservador`` (comportamento histórico).
+    """
     from zoneinfo import ZoneInfo
+    from services.cadence_profiles import get_profile
     tz = ZoneInfo("America/Sao_Paulo")
+
+    cfg = get_profile(profile)
+    interval_min = int(cfg["interval_min"])
+    interval_max = int(cfg["interval_max"])
+    pause_min = int(cfg["pause_min"])
+    pause_max = int(cfg["pause_max"])
 
     work_start = datetime.combine(base_date, time(9, 0), tzinfo=tz)
     lunch_start = datetime.combine(base_date, time(12, 0), tzinfo=tz)
@@ -69,11 +88,11 @@ def _build_daily_schedule(num_contacts: int, base_date: date) -> List[datetime]:
         block_count += 1
 
         if block_count >= random.randint(10, 12):
-            pause_minutes = random.randint(15, 30)
+            pause_minutes = random.randint(pause_min, pause_max)
             current_time += timedelta(minutes=pause_minutes)
             block_count = 0
         else:
-            interval_minutes = random.randint(8, 25)
+            interval_minutes = random.randint(interval_min, interval_max)
             current_time += timedelta(minutes=interval_minutes)
 
     return scheduled_times
@@ -133,11 +152,15 @@ def prioritize_contacts(campaign_id: int, db: Session):
 
 def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = False):
     from database.models import CadenceCampaign, CadenceCampaignContact
+    from services.cadence_profiles import get_profile
 
     campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
     if not campaign:
         print(f"[CADENCE_PLANNER] Campanha {campaign_id} não encontrada")
         return
+
+    profile_name = getattr(campaign, "cadence_profile", None) or "conservador"
+    profile_cfg = get_profile(profile_name)
 
     query = (
         db.query(CadenceCampaignContact)
@@ -157,7 +180,8 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
 
     today = date.today()
     business_days = _get_business_days(today, campaign.deadline_days)
-    daily_limit = campaign.daily_limit or 50
+    # daily_limit explícito no registro tem prioridade; senão usa o do perfil.
+    daily_limit = campaign.daily_limit or int(profile_cfg["daily_limit"])
 
     daily_cap = min(daily_limit, math.ceil(len(contacts) / len(business_days))) if business_days else daily_limit
 
@@ -180,7 +204,7 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
                 p3_count += 1
             day_contacts.append(c)
 
-        times = _build_daily_schedule(len(day_contacts), day)
+        times = _build_daily_schedule(len(day_contacts), day, profile=profile_name)
 
         for j, contact in enumerate(day_contacts):
             if j < len(times):
@@ -196,7 +220,7 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
             if ov_idx >= len(overflow):
                 break
             batch = overflow[ov_idx:ov_idx + daily_cap]
-            times = _build_daily_schedule(len(batch), ed)
+            times = _build_daily_schedule(len(batch), ed, profile=profile_name)
             for j, c in enumerate(batch):
                 if j < len(times):
                     c.scheduled_for = times[j]
@@ -204,4 +228,103 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
         print(f"[CADENCE_PLANNER] {len(overflow)} contatos excedentes agendados em dias adicionais")
 
     db.commit()
-    print(f"[CADENCE_PLANNER] {len(contacts)} contatos agendados para campanha {campaign_id} em {len(business_days)} dias úteis")
+    print(
+        f"[CADENCE_PLANNER] {len(contacts)} contatos agendados para campanha "
+        f"{campaign_id} (perfil={profile_name}) em {len(business_days)} dias úteis"
+    )
+
+
+def reschedule_unified_pending_dispatches(campaign_id: int, db: Session) -> int:
+    """
+    Reagenda apenas os ``CampaignDispatch`` com ``status='pending'`` da
+    campanha unificada, usando o perfil atual da campanha. Não toca em
+    dispatches já enviados, em processamento ou falhos.
+
+    Retorna o número de dispatches reagendados.
+    """
+    from database.models import Campaign, CampaignDispatch
+    from services.cadence_profiles import get_profile
+    from zoneinfo import ZoneInfo
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        return 0
+
+    profile_name = getattr(campaign, "cadence_profile", None) or "conservador"
+    profile_cfg = get_profile(profile_name)
+
+    pending = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.status == "pending",
+        )
+        .order_by(
+            CampaignDispatch.priority.asc(),
+            CampaignDispatch.scheduled_for.asc(),
+        )
+        .all()
+    )
+
+    if not pending:
+        return 0
+
+    tz = ZoneInfo("America/Sao_Paulo")
+    now = datetime.now(tz)
+    today = now.date()
+
+    deadline_days = campaign.deadline_days or 5
+    daily_limit = campaign.daily_limit or int(profile_cfg["daily_limit"])
+
+    business_days = _get_business_days(today, deadline_days)
+    if not business_days:
+        return 0
+
+    daily_cap = min(daily_limit, math.ceil(len(pending) / len(business_days)))
+
+    p3_daily_limit = 15
+    idx = 0
+
+    for day in business_days:
+        if idx >= len(pending):
+            break
+        day_batch = []
+        p3_count = 0
+        for i in range(idx, len(pending)):
+            if len(day_batch) >= daily_cap:
+                break
+            d = pending[i]
+            if (d.priority or 3) == 3:
+                if p3_count >= p3_daily_limit:
+                    continue
+                p3_count += 1
+            day_batch.append(d)
+
+        times = _build_daily_schedule(len(day_batch), day, profile=profile_name)
+        fallback_time = datetime.combine(day, time(9, 0), tzinfo=tz)
+
+        for j, d in enumerate(day_batch):
+            d.scheduled_for = times[j] if j < len(times) else fallback_time
+            idx += 1
+
+    overflow = pending[idx:]
+    if overflow:
+        extra_day = business_days[-1] + timedelta(days=1)
+        extra_days = _get_business_days(extra_day, math.ceil(len(overflow) / daily_cap) + 1)
+        ov_idx = 0
+        for ed in extra_days:
+            if ov_idx >= len(overflow):
+                break
+            batch = overflow[ov_idx:ov_idx + daily_cap]
+            times = _build_daily_schedule(len(batch), ed, profile=profile_name)
+            fallback_time = datetime.combine(ed, time(9, 0), tzinfo=tz)
+            for j, d in enumerate(batch):
+                d.scheduled_for = times[j] if j < len(times) else fallback_time
+            ov_idx += len(batch)
+
+    db.commit()
+    print(
+        f"[CADENCE_PLANNER] {len(pending)} dispatches reagendados para campanha "
+        f"unificada {campaign_id} (perfil={profile_name})"
+    )
+    return len(pending)

@@ -338,6 +338,7 @@ class Campaign(Base):
     delivery_mode = Column(String(20), default="immediate")
     daily_limit = Column(Integer, nullable=True)
     deadline_days = Column(Integer, nullable=True)
+    cadence_profile = Column(String(20), nullable=False, default="conservador")
     
     template = relationship("MessageTemplate", back_populates="campaigns")
     creator = relationship("User", foreign_keys=[created_by])
@@ -1480,6 +1481,7 @@ class CadenceCampaign(Base):
     total_contacts = Column(Integer, default=0)
     daily_limit = Column(Integer, default=50)
     deadline_days = Column(Integer, default=5)
+    cadence_profile = Column(String(20), nullable=False, default="conservador")
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)

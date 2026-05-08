@@ -37,20 +37,39 @@ async def run_cadence_tick():
     if _pause_until and now < _pause_until:
         return
 
-    if _last_send_time:
-        elapsed = (now - _last_send_time).total_seconds()
-        if elapsed < 480:
-            return
-
     db = SessionLocal()
     try:
         sent_this_tick = False
 
+        # Cooldown global é determinado pelo perfil mais "rápido" entre as
+        # campanhas atualmente ativas — assim uma campanha em modo "acelerado"
+        # não fica refém do cooldown do perfil "conservador" de outra campanha.
+        from services.cadence_profiles import get_profile
         active_legacy = (
             db.query(CadenceCampaign)
             .filter(CadenceCampaign.status == "firing")
             .all()
         )
+        active_unified_for_cd = (
+            db.query(Campaign)
+            .filter(Campaign.status == "firing_cadence")
+            .all()
+        )
+        candidate_profiles = [
+            getattr(c, "cadence_profile", None) or "conservador"
+            for c in list(active_legacy) + list(active_unified_for_cd)
+        ]
+        if candidate_profiles:
+            cooldown = min(
+                int(get_profile(p)["cooldown_seconds"]) for p in candidate_profiles
+            )
+        else:
+            cooldown = int(get_profile("conservador")["cooldown_seconds"])
+
+        if _last_send_time:
+            elapsed = (now - _last_send_time).total_seconds()
+            if elapsed < cooldown:
+                return
 
         today_date = now.date()
 
@@ -67,7 +86,9 @@ async def run_cadence_tick():
                 .first()
             )
 
-            if daily_log and daily_log.sent_count >= campaign.daily_limit:
+            campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
+            effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+            if daily_log and daily_log.sent_count >= effective_daily_limit:
                 continue
 
             next_contact = (
@@ -204,7 +225,9 @@ async def run_cadence_tick():
                     .count()
                 )
 
-                if today_sent >= (campaign.daily_limit or 50):
+                campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
+                effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+                if today_sent >= effective_daily_limit:
                     continue
 
                 from sqlalchemy import text as sql_text

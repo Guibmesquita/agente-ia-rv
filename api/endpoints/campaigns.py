@@ -3196,6 +3196,7 @@ def _persist_campaign_message(db_session: Session, phone: str, message: str, cam
 class CadenceDispatchRequest(BaseModel):
     daily_limit: int = 50
     deadline_days: int = 5
+    cadence_profile: str = "conservador"
 
     @validator('daily_limit')
     def validate_daily_limit(cls, v):
@@ -3212,6 +3213,24 @@ class CadenceDispatchRequest(BaseModel):
         if v > 60:
             raise ValueError('Prazo não pode exceder 60 dias')
         return v
+
+    @validator('cadence_profile')
+    def validate_cadence_profile(cls, v):
+        from services.cadence_profiles import is_valid_profile, PROFILES
+        if not is_valid_profile(v):
+            raise ValueError(f'Perfil inválido. Opções: {", ".join(PROFILES.keys())}')
+        return str(v).strip().lower()
+
+
+class CadenceProfileChangeRequest(BaseModel):
+    cadence_profile: str
+
+    @validator('cadence_profile')
+    def validate_cadence_profile(cls, v):
+        from services.cadence_profiles import is_valid_profile, PROFILES
+        if not is_valid_profile(v):
+            raise ValueError(f'Perfil inválido. Opções: {", ".join(PROFILES.keys())}')
+        return str(v).strip().lower()
 
 
 @router.post("/{campaign_id}/dispatch-cadence")
@@ -3418,7 +3437,7 @@ async def dispatch_campaign_cadence(
                 p3_count += 1
             day_batch.append(d)
 
-        times = _build_daily_schedule(len(day_batch), day)
+        times = _build_daily_schedule(len(day_batch), day, profile=data.cadence_profile)
         fallback_time = datetime.combine(day, datetime.min.time().replace(hour=9), tzinfo=tz)
 
         for j, d in enumerate(day_batch):
@@ -3446,7 +3465,7 @@ async def dispatch_campaign_cadence(
             if ov_idx >= len(overflow):
                 break
             batch = overflow[ov_idx:ov_idx + daily_cap]
-            times = _build_daily_schedule(len(batch), ed)
+            times = _build_daily_schedule(len(batch), ed, profile=data.cadence_profile)
             fallback_time = datetime.combine(ed, datetime.min.time().replace(hour=9), tzinfo=tz)
             for j, d in enumerate(batch):
                 sched_time = times[j] if j < len(times) else fallback_time
@@ -3467,6 +3486,7 @@ async def dispatch_campaign_cadence(
     campaign.delivery_mode = "cadence"
     campaign.daily_limit = daily_limit
     campaign.deadline_days = deadline_days
+    campaign.cadence_profile = data.cadence_profile
     campaign.status = "firing_cadence"
     campaign.total_assessors = total
     campaign.sent_at = now
@@ -3563,6 +3583,7 @@ async def get_cadence_status(
             "responded": responded_map.get(day_str, 0),
         })
 
+    from services.cadence_profiles import list_profiles
     return {
         "id": campaign.id,
         "name": campaign.name,
@@ -3576,7 +3597,47 @@ async def get_cadence_status(
         "response_rate": response_rate,
         "daily_limit": campaign.daily_limit,
         "deadline_days": campaign.deadline_days,
+        "cadence_profile": getattr(campaign, "cadence_profile", None) or "conservador",
+        "available_profiles": list_profiles(),
         "daily_log": daily_log,
+    }
+
+
+@router.patch("/{campaign_id}/cadence-profile")
+async def change_cadence_profile(
+    campaign_id: int,
+    data: CadenceProfileChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """
+    Troca o perfil de velocidade da cadência de uma campanha unificada e
+    reagenda automaticamente apenas os dispatches com status 'pending'.
+    Não altera os já enviados, em processamento ou falhos.
+    """
+    from services.campaign_planner import reschedule_unified_pending_dispatches
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    old_profile = getattr(campaign, "cadence_profile", None) or "conservador"
+    campaign.cadence_profile = data.cadence_profile
+    db.commit()
+
+    rescheduled = 0
+    if campaign.status in ("firing_cadence", "paused_cadence"):
+        rescheduled = reschedule_unified_pending_dispatches(campaign_id, db)
+
+    print(
+        f"[CADENCE] Perfil da campanha '{campaign.name}' (id={campaign_id}) alterado: "
+        f"{old_profile} → {data.cadence_profile} ({rescheduled} dispatches reagendados)"
+    )
+
+    return {
+        "message": "Perfil atualizado",
+        "cadence_profile": data.cadence_profile,
+        "rescheduled_dispatches": rescheduled,
     }
 
 
@@ -3605,6 +3666,7 @@ async def resume_cadence_campaign(
     current_user: User = Depends(require_admin_or_gestao())
 ):
     from services.campaign_planner import _get_business_days, _build_daily_schedule
+    from services.cadence_profiles import get_profile
     from zoneinfo import ZoneInfo
     from datetime import timedelta
     import math
@@ -3626,9 +3688,13 @@ async def resume_cadence_campaign(
     )
 
     if pending_dispatches:
+        # Usa o perfil atual da campanha — assim retomadas após troca de perfil
+        # respeitam a velocidade configurada e o limite diário sugerido.
+        profile_name = getattr(campaign, "cadence_profile", None) or "conservador"
+        profile_cfg = get_profile(profile_name)
         tz = ZoneInfo("America/Sao_Paulo")
         today = datetime.now(tz).date()
-        daily_limit = campaign.daily_limit or 50
+        daily_limit = campaign.daily_limit or int(profile_cfg["daily_limit"])
         deadline_days = campaign.deadline_days or 5
         business_days = _get_business_days(today, deadline_days)
         daily_cap = min(daily_limit, math.ceil(len(pending_dispatches) / len(business_days))) if business_days else daily_limit
@@ -3638,7 +3704,7 @@ async def resume_cadence_campaign(
             if idx >= len(pending_dispatches):
                 break
             batch = pending_dispatches[idx:idx + daily_cap]
-            times = _build_daily_schedule(len(batch), day)
+            times = _build_daily_schedule(len(batch), day, profile=profile_name)
             for j, d in enumerate(batch):
                 if j < len(times):
                     d.scheduled_for = times[j]
