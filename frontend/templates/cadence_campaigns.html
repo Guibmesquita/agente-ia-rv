@@ -363,7 +363,8 @@
         async function createCampaign() {
             const name = document.getElementById('campaign-name').value.trim();
             const deadline = parseInt(document.getElementById('campaign-deadline').value) || 5;
-            const limit = parseInt(document.getElementById('campaign-limit').value) || 50;
+            const rawLimit = (document.getElementById('campaign-limit').value || '').trim();
+            const limit = rawLimit === '' ? null : (parseInt(rawLimit) || null);
             const profile = (document.getElementById('campaign-profile') || {}).value || 'conservador';
             const contactsText = document.getElementById('contacts-input').value;
 

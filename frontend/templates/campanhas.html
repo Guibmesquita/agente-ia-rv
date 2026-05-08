@@ -3110,7 +3110,10 @@ Equipe de Gestao"></textarea>
         });
 
         async function dispatchCadence() {
-            var dailyLimit = parseInt(document.getElementById('cadenceDailyLimit').value) || 50;
+            // Permite null quando o campo está vazio: o backend usará o
+            // daily_limit do perfil de cadência selecionado como fallback.
+            var rawLimit = (document.getElementById('cadenceDailyLimit').value || '').trim();
+            var dailyLimit = rawLimit === '' ? null : (parseInt(rawLimit) || null);
             var deadlineDays = parseInt(document.getElementById('cadenceDeadlineDays').value) || 5;
             var cadenceProfile = (document.getElementById('cadenceProfile') || {}).value || 'conservador';
 
@@ -3137,7 +3140,7 @@ Equipe de Gestao"></textarea>
 
             var confirmed = await toast.confirm({
                 title: 'Agendar Campanha com Cadencia',
-                message: 'A campanha sera distribuida ao longo de ' + deadlineDays + ' dias uteis, com limite de ' + dailyLimit + ' envios/dia. O motor de cadencia enviara automaticamente em segundo plano.',
+                message: 'A campanha sera distribuida ao longo de ' + deadlineDays + ' dias uteis, com limite de ' + (dailyLimit === null ? '(perfil padrão)' : dailyLimit) + ' envios/dia. O motor de cadencia enviara automaticamente em segundo plano.',
                 confirmText: 'Agendar',
                 type: 'warning'
             });
