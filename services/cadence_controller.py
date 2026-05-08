@@ -9,11 +9,6 @@ _last_send_time: Optional[datetime] = None
 _consecutive_failures: int = 0
 _pause_until: Optional[datetime] = None
 _running: bool = False
-# Cooldown por campanha — chave: (kind, id) onde kind ∈ {"legacy","unified"}.
-# O cooldown agora é checado contra a campanha que está prestes a enviar,
-# usando o cooldown_seconds do perfil dela. Isso garante que uma campanha
-# em modo "acelerado" não fique presa ao cooldown de uma "conservadora".
-_last_send_per_campaign: dict = {}
 
 
 async def run_cadence_tick():
@@ -59,13 +54,15 @@ async def run_cadence_tick():
             if sent_this_tick:
                 break
 
-            # Cooldown por campanha — usa o cooldown_seconds do perfil DESTA
-            # campanha contra o último envio DESTA campanha. Campanhas em
-            # perfis diferentes operam de forma independente.
+            # Cooldown global — usa o cooldown_seconds do perfil DESTA
+            # campanha (a candidata a enviar agora) contra o último envio
+            # GLOBAL. Assim só pode haver um envio por janela de cooldown
+            # considerando o ritmo do perfil escolhido para a campanha em
+            # questão; se a candidata é "acelerada", basta esperar o cooldown
+            # menor; se é "conservadora", espera o cooldown maior.
             campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
             cooldown = int(campaign_profile["cooldown_seconds"])
-            last = _last_send_per_campaign.get(("legacy", campaign.id))
-            if last and (now - last).total_seconds() < cooldown:
+            if _last_send_time and (now - _last_send_time).total_seconds() < cooldown:
                 continue
 
             daily_log = (
@@ -137,7 +134,6 @@ async def run_cadence_tick():
                         daily_log.sent_count += 1
 
                     _last_send_time = now
-                    _last_send_per_campaign[("legacy", campaign.id)] = now
                     db.commit()
                     print(f"[CADENCE] Enviado para {next_contact.phone} (campanha legada '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
                 else:
@@ -206,11 +202,13 @@ async def run_cadence_tick():
                 if sent_this_tick:
                     break
 
-                # Cooldown por campanha (mesmo padrão do legacy).
+                # Cooldown global — mesma política do bloco legacy: o
+                # cooldown_seconds vem do perfil da campanha CANDIDATA, mas
+                # comparado contra o último envio global. Não há cooldowns
+                # paralelos por campanha.
                 campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
                 cooldown = int(campaign_profile["cooldown_seconds"])
-                last = _last_send_per_campaign.get(("unified", campaign.id))
-                if last and (now - last).total_seconds() < cooldown:
+                if _last_send_time and (now - _last_send_time).total_seconds() < cooldown:
                     continue
 
                 today_sent = (
@@ -340,7 +338,6 @@ async def run_cadence_tick():
                         next_dispatch.sent_at = now
                         _consecutive_failures = 0
                         _last_send_time = now
-                        _last_send_per_campaign[("unified", campaign.id)] = now
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
 
