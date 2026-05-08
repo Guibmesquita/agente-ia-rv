@@ -3019,13 +3019,11 @@ async def get_cadence_engine_state(
         normalized_reason = "weekend" if is_weekend else ("before_work" if is_before_work else "after_work")
         projected_resume_at = _next_business_window_start(now_local)
     elif is_lunch:
-        # Estado INFORMACIONAL — o motor NÃO pausa entre 12-13h.
-        # `projected_resume_at` é deixado nulo de propósito para evitar
-        # contadores no banner sugerindo suspensão (UI exibe label azul
-        # "motor segue ativo, cadência reduzida (informativo)").
+        # Pausa real de almoço (motor retorna cedo no tick entre 12-13h).
+        # Banner mostra contador até 13:00 BRT.
         normalized_state = ENGINE_STATE_LUNCH_BREAK
-        normalized_reason = "informational"
-        projected_resume_at = None
+        normalized_reason = "lunch_break"
+        projected_resume_at = now_local.replace(hour=13, minute=0, second=0, microsecond=0)
     elif in_global_cooldown:
         normalized_state = ENGINE_STATE_GLOBAL_COOLDOWN
         normalized_reason = "cooldown"

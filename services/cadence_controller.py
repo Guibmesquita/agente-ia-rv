@@ -144,13 +144,15 @@ async def run_cadence_tick():
             })
             return
 
-        # Task #221 (V2) — pausa de almoço: APENAS observabilidade (não bloqueia).
-        # Registra que o motor está dentro do horário de almoço para auditoria.
+        # Pausa de almoço (12:00-13:00 BRT) — comportamento original do motor:
+        # bloqueia envios para evitar mensagens fora do padrão comercial.
+        # Emite evento de timeline antes de retornar (last_tick_at já persistido).
         if now.hour == 12:
             _emit_engine_state_transition(db, "lunch_break", {
                 "now": now.isoformat(),
-                "note": "12:00-13:00 BRT — motor segue ativo, evento informativo",
+                "resume_at": now.replace(hour=13, minute=0, second=0, microsecond=0).isoformat(),
             })
+            return
 
         sent_this_tick = False
         # Task #221 (V2) — rastreia se TODAS as candidatas foram bloqueadas
