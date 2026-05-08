@@ -1386,12 +1386,13 @@ Equipe de Gestao"></textarea>
                                         <th>Assessores</th>
                                         <th>Enviadas</th>
                                         <th>Falhas</th>
+                                        <th>Próximo envio</th>
                                         <th>Status</th>
                                         <th></th>
                                     </tr>
                                 </thead>
                                 <tbody id="historyTableBody">
-                                    <tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-secondary);">Carregando...</td></tr>
+                                    <tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-secondary);">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -3409,6 +3410,42 @@ Equipe de Gestao"></textarea>
             } catch (e) { return '—'; }
         }
 
+        // Estado normalizado vindo do backend (task #221)
+        var ENGINE_STATE_MAP = {
+            'ok':                   { color: '#16a34a', label: 'Motor ativo', text: 'pronto para enviar' },
+            'pause_anti_block':     { color: '#dc2626', label: 'Motor em pausa anti-bloqueio', text: 'aguardando após falhas Z-API consecutivas' },
+            'out_of_business_hours':{ color: '#f59e0b', label: 'Motor fora do expediente', text: 'janela comercial 09–18, seg–sex' },
+            'lunch_break':          { color: '#f59e0b', label: 'Pausa de almoço', text: 'envios suspensos das 12:00 às 13:00' },
+            'global_cooldown':      { color: '#0ea5e9', label: 'Cooldown global ativo', text: 'aguardando o intervalo após o último envio' }
+        };
+        var lastEngineState = null;
+
+        function startEngineCountdown() {
+            // Atualiza só o sub-rótulo "em X min" sem refazer o fetch — o
+            // texto base já está em lastEngineState.projected_resume_at.
+            setInterval(function() {
+                if (!lastEngineState) return;
+                var sub = document.getElementById('cadenceEngineSubtitle');
+                if (!sub) return;
+                if (!lastEngineState.projected_resume_at) return;
+                try {
+                    var dt = new Date(lastEngineState.projected_resume_at);
+                    var diff = Math.floor((dt.getTime() - Date.now()) / 1000);
+                    if (diff <= 0) {
+                        // já passou — força refresh do estado real
+                        refreshCadenceEngineBanner();
+                        return;
+                    }
+                    var human;
+                    if (diff < 60) human = diff + 's';
+                    else if (diff < 3600) human = Math.floor(diff/60) + ' min ' + (diff%60) + 's';
+                    else human = Math.floor(diff/3600) + 'h ' + Math.floor((diff%3600)/60) + 'min';
+                    var meta = ENGINE_STATE_MAP[lastEngineState.state] || ENGINE_STATE_MAP['ok'];
+                    sub.innerHTML = '— ' + meta.text + ' · <strong>retoma em ' + human + '</strong>';
+                } catch (e) {}
+            }, 1000);
+        }
+
         async function refreshCadenceEngineBanner() {
             var banner = document.getElementById('cadenceEngineBanner');
             if (!banner) return;
@@ -3417,8 +3454,9 @@ Equipe de Gestao"></textarea>
                 if (r.status === 401 || r.status === 403) { banner.style.display = 'none'; return; }
                 if (!r.ok) throw new Error('Falha ao consultar estado do motor');
                 var s = await r.json();
+                lastEngineState = s;
 
-                // Pill Z-API (consulta o cache do health já existente)
+                // Pill Z-API (cache do health já existente)
                 try {
                     var rz = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
                     if (rz.ok) {
@@ -3433,23 +3471,24 @@ Equipe de Gestao"></textarea>
                     }
                 } catch (e) { /* mantém pill anterior */ }
 
+                var meta = ENGINE_STATE_MAP[s.state] || ENGINE_STATE_MAP['ok'];
                 var dot = document.getElementById('cadenceEngineDot');
                 var label = document.getElementById('cadenceEngineLabel');
                 var sub = document.getElementById('cadenceEngineSubtitle');
                 var details = document.getElementById('cadenceEngineDetails');
 
-                var color = '#16a34a', state = 'ativo, dentro do horário comercial';
-                if (s.is_paused_now) {
-                    color = '#dc2626';
-                    state = 'em pausa anti-bloqueio';
-                    if (s.pause_until) state += ' até ' + new Date(s.pause_until).toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'});
-                } else if (!s.in_business_hours_now) {
-                    color = '#f59e0b';
-                    state = 'fora do horário comercial (09–18, seg–sex)';
+                if (dot) dot.style.background = meta.color;
+                if (label) { label.style.color = meta.color; label.textContent = meta.label; }
+                if (sub) {
+                    var initial = '— ' + meta.text;
+                    if (s.projected_resume_at) {
+                        try {
+                            var dt2 = new Date(s.projected_resume_at);
+                            initial += ' · retoma ' + dt2.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit' });
+                        } catch (e) {}
+                    }
+                    sub.innerHTML = initial;
                 }
-                if (dot) dot.style.background = color;
-                if (label) label.style.color = color;
-                if (sub) sub.textContent = '— ' + state;
 
                 var detailLines = [];
                 if (s.last_send_at) detailLines.push('Último envio: ' + fmtRelativeTime(s.last_send_at));
@@ -3467,6 +3506,7 @@ Equipe de Gestao"></textarea>
             refreshCadenceEngineBanner();
             if (cadenceEngineRefreshInterval) clearInterval(cadenceEngineRefreshInterval);
             cadenceEngineRefreshInterval = setInterval(refreshCadenceEngineBanner, 30000);
+            startEngineCountdown();
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -3520,24 +3560,42 @@ Equipe de Gestao"></textarea>
             campaign_done: { label: 'Campanha concluída', color: '#16a34a', bg: '#dcfce7' }
         };
 
-        async function renderCadenceHistory(cId, kind) {
+        // Cache local dos eventos por campanha para suportar paginação "carregar mais"
+        var historyCache = {};
+        var HISTORY_PAGE_SIZE = 50;
+
+        async function renderCadenceHistory(cId, kind, opts) {
+            opts = opts || {};
+            var append = !!opts.append;
             var body = document.getElementById('cadenceHistoryBody');
             if (!body) return;
-            body.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Carregando histórico…</div>';
-            var url = (kind === 'legacy')
-                ? '/api/cadence-campaigns/' + cId + '/events?limit=200'
-                : API_BASE + '/' + cId + '/events?limit=200';
+            var cacheKey = kind + ':' + cId;
+            if (!append) historyCache[cacheKey] = [];
+            if (!append) body.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Carregando histórico…</div>';
+
+            var beforeId = '';
+            if (append && historyCache[cacheKey].length > 0) {
+                var lastId = historyCache[cacheKey][historyCache[cacheKey].length - 1].id;
+                if (lastId) beforeId = '&before_id=' + lastId;
+            }
+            var base = (kind === 'legacy')
+                ? '/api/cadence-campaigns/' + cId + '/events?limit=' + HISTORY_PAGE_SIZE
+                : API_BASE + '/' + cId + '/events?limit=' + HISTORY_PAGE_SIZE;
+            var url = base + beforeId;
             try {
                 var r = await fetch(url, { credentials: 'include' });
                 if (!r.ok) throw new Error('Falha ao carregar histórico (' + r.status + ')');
                 var data = await r.json();
-                var events = data.events || [];
+                var newEvents = data.events || [];
+                historyCache[cacheKey] = historyCache[cacheKey].concat(newEvents);
+                var events = historyCache[cacheKey];
                 if (events.length === 0) {
                     body.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Sem eventos registrados ainda.</div>';
                     return;
                 }
+                var hasMore = newEvents.length === HISTORY_PAGE_SIZE;
                 var html = '<div style="padding:8px 16px 16px;">';
-                html += '<div style="font-size:0.78rem;color:#64748b;margin-bottom:12px;">' + events.length + ' evento(s) — mais recentes primeiro. Eventos marcados como <em>reconstruído</em> foram inferidos retroativamente.</div>';
+                html += '<div style="font-size:0.78rem;color:#64748b;margin-bottom:12px;">' + events.length + ' evento(s) carregado(s) — mais recentes primeiro. Eventos marcados como <em>reconstruído</em> foram inferidos retroativamente.</div>';
                 html += '<div style="border-left:2px solid #e5e7eb;padding-left:14px;">';
                 events.forEach(function(ev) {
                     var meta = EVENT_LABELS[ev.event_type] || { label: ev.event_type, color: '#475569', bg: '#f1f5f9' };
@@ -3574,8 +3632,20 @@ Equipe de Gestao"></textarea>
                     if (details) html += '<div style="font-size:0.85rem;color:#334155;margin-top:4px;margin-left:2px;">' + details + '</div>';
                     html += '</div>';
                 });
-                html += '</div></div>';
+                html += '</div>';
+                if (hasMore) {
+                    html += '<div style="text-align:center;margin-top:14px;"><button type="button" class="btn btn-secondary" id="loadMoreHistoryBtn" data-kind="' + escapeHtmlSafe(kind) + '" data-cid="' + cId + '" style="padding:6px 18px;font-size:0.82rem;">Carregar mais</button></div>';
+                }
+                html += '</div>';
                 body.innerHTML = html;
+                var more = document.getElementById('loadMoreHistoryBtn');
+                if (more) {
+                    more.addEventListener('click', function() {
+                        more.disabled = true;
+                        more.textContent = 'Carregando…';
+                        renderCadenceHistory(cId, kind, { append: true });
+                    });
+                }
             } catch (e) {
                 body.innerHTML = '<div class="alert alert-danger" style="margin:16px;">' + escapeHtmlSafe(e.message) + '</div>';
             }
@@ -3686,6 +3756,25 @@ Equipe de Gestao"></textarea>
                         optionsContent += '<button data-action="deleteCampaign" data-id="' + c.id + '" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">Excluir</button>';
                     }
 
+                    // Task #221 — coluna "Próximo envio" para campanhas em cadência
+                    var nextEtaCell = '—';
+                    if (isCadence && c.next_send_eta) {
+                        try {
+                            var nd = new Date(c.next_send_eta);
+                            if (!isNaN(nd.getTime())) {
+                                var rel = (function(){
+                                    var diff = Math.floor((nd.getTime() - Date.now())/1000);
+                                    if (diff <= 0) return 'agora';
+                                    if (diff < 60) return 'em ' + diff + 's';
+                                    if (diff < 3600) return 'em ' + Math.floor(diff/60) + ' min';
+                                    if (diff < 86400) return 'em ' + Math.floor(diff/3600) + ' h';
+                                    return 'em ' + Math.floor(diff/86400) + ' dia(s)';
+                                })();
+                                nextEtaCell = '<span title="' + nd.toLocaleString('pt-BR') + '">' + rel + '</span>';
+                            }
+                        } catch (e) {}
+                    }
+
                     return '<tr>' +
                         '<td>' + nameLink + cadenceBadge +
                             '<br><small style="color: var(--text-secondary);">' + (c.original_filename || '') + '</small>' +
@@ -3696,6 +3785,7 @@ Equipe de Gestao"></textarea>
                         '<td style="color: ' + (c.messages_failed > 0 ? '#dc2626' : 'inherit') + '; font-weight: ' + (c.messages_failed > 0 ? '600' : 'normal') + ';">' +
                             c.messages_failed +
                         '</td>' +
+                        '<td style="font-size:0.82rem;color:#475569;">' + nextEtaCell + '</td>' +
                         '<td><span class="status-badge status-' + c.status + '">' + statusDisplay + '</span></td>' +
                         '<td>' +
                             '<div style="position: relative;">' +

@@ -299,7 +299,10 @@
                             '</div>'
                         ) : '') +
                         '<div class="chart-container"><canvas id="chart-' + c.id + '"></canvas></div>' +
-                        '<div style="margin-top:12px">' + actionBtn + deleteBtn + '</div>' +
+                        '<div style="margin-top:12px">' + actionBtn + deleteBtn +
+                            ' <button class="btn btn-resume" data-action="show-timeline" data-id="' + c.id + '" style="margin-left:8px;background:#475569;">Histórico</button>' +
+                        '</div>' +
+                        '<div id="timeline-' + c.id + '" class="timeline-panel" style="display:none;margin-top:14px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;max-height:360px;overflow:auto;font-size:0.85rem;"></div>' +
                     '</div>' +
                 '</div>';
             }).join('');
@@ -338,6 +341,65 @@
                     }
                 }
             });
+        }
+
+        // Task #221 — timeline de eventos por campanha legada
+        var EVENT_LABELS_LEGACY = {
+            campaign_created: { label: 'Campanha criada', color: '#1e3a8a' },
+            campaign_started: { label: 'Disparo iniciado', color: '#16a34a' },
+            campaign_paused:  { label: 'Pausada', color: '#92400e' },
+            campaign_resumed: { label: 'Retomada', color: '#16a34a' },
+            cadence_profile_changed: { label: 'Perfil de cadência alterado', color: '#1e3a8a' },
+            dispatch_sent:    { label: 'Mensagem enviada', color: '#16a34a' },
+            dispatch_failed:  { label: 'Falha no envio', color: '#b91c1c' },
+            anti_block_pause: { label: 'Pausa anti-bloqueio', color: '#b91c1c' },
+            daily_limit_reached: { label: 'Limite diário atingido', color: '#92400e' },
+            campaign_done:    { label: 'Campanha concluída', color: '#16a34a' }
+        };
+        var legacyHistoryCache = {};
+
+        async function showLegacyTimeline(cId, append) {
+            var panel = document.getElementById('timeline-' + cId);
+            if (!panel) return;
+            if (!append) {
+                if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+                panel.style.display = 'block';
+                panel.innerHTML = '<div style="text-align:center;color:#64748b;">Carregando histórico…</div>';
+                legacyHistoryCache[cId] = [];
+            }
+            var cache = legacyHistoryCache[cId] || [];
+            var beforeId = (append && cache.length > 0) ? '&before_id=' + cache[cache.length - 1].id : '';
+            try {
+                var r = await fetch(API + '/' + cId + '/events?limit=50' + beforeId, { credentials: 'include' });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                var data = await r.json();
+                var newEvents = data.events || [];
+                cache = cache.concat(newEvents);
+                legacyHistoryCache[cId] = cache;
+                if (cache.length === 0) { panel.innerHTML = '<div style="color:#64748b;">Sem eventos ainda.</div>'; return; }
+                var hasMore = newEvents.length === 50;
+                var html = '<div style="font-size:0.78rem;color:#64748b;margin-bottom:8px;">' + cache.length + ' evento(s) · mais recentes primeiro</div>';
+                html += '<div style="border-left:2px solid #cbd5e1;padding-left:10px;">';
+                cache.forEach(function(ev) {
+                    var meta = EVENT_LABELS_LEGACY[ev.event_type] || { label: ev.event_type, color: '#475569' };
+                    var when = ev.occurred_at ? new Date(ev.occurred_at).toLocaleString('pt-BR') : '—';
+                    var p = ev.payload || {};
+                    var extra = '';
+                    if (ev.event_type === 'dispatch_failed' && p.error_message) extra = ' · <span style="color:#b91c1c;">' + (p.error_message + '').slice(0,180) + '</span>';
+                    if (ev.event_type === 'cadence_profile_changed' && (p.from || p.to)) extra = ' · ' + (p.from||'?') + ' → ' + (p.to||'?');
+                    if (ev.event_type === 'dispatch_sent' && p.contact_phone) extra = ' · ' + p.contact_phone;
+                    var bf = p.is_backfill ? ' <em style="color:#94a3b8;">(reconstruído)</em>' : '';
+                    html += '<div style="margin-bottom:8px;">';
+                    html += '<strong style="color:' + meta.color + ';">' + meta.label + '</strong>';
+                    html += '<span style="color:#64748b;font-size:0.78rem;"> · ' + when + bf + extra + '</span>';
+                    html += '</div>';
+                });
+                html += '</div>';
+                if (hasMore) html += '<div style="text-align:center;margin-top:10px;"><button class="btn btn-resume" data-action="timeline-more" data-id="' + cId + '" style="background:#64748b;padding:4px 12px;font-size:0.78rem;">Carregar mais</button></div>';
+                panel.innerHTML = html;
+            } catch (e) {
+                panel.innerHTML = '<div style="color:#b91c1c;">Erro: ' + (e.message || e) + '</div>';
+            }
         }
 
         async function fetchCampaigns() {
@@ -441,6 +503,8 @@
             else if (action === 'resume') { e.stopPropagation(); togglePauseResume(el.dataset.id, 'resume'); }
             else if (action === 'change-profile') { e.stopPropagation(); changeProfile(el.dataset.id); }
             else if (action === 'delete-campaign') { e.stopPropagation(); deleteCampaign(el.dataset.id); }
+            else if (action === 'show-timeline') { e.stopPropagation(); showLegacyTimeline(el.dataset.id, false); }
+            else if (action === 'timeline-more') { e.stopPropagation(); showLegacyTimeline(el.dataset.id, true); }
         });
 
         fetchCampaigns();

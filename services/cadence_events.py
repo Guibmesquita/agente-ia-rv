@@ -26,7 +26,17 @@ EVENT_DISPATCH_SENT = "dispatch_sent"
 EVENT_DISPATCH_FAILED = "dispatch_failed"
 EVENT_ANTI_BLOCK_PAUSE = "anti_block_pause"
 EVENT_DAILY_LIMIT_REACHED = "daily_limit_reached"
+EVENT_LUNCH_BREAK = "lunch_break"
+EVENT_OUT_OF_BUSINESS_HOURS = "out_of_business_hours"
+EVENT_GLOBAL_COOLDOWN = "global_cooldown"
 EVENT_CAMPAIGN_DONE = "campaign_done"
+
+# Estados normalizados expostos pelo /engine-state (task #221)
+ENGINE_STATE_OK = "ok"
+ENGINE_STATE_ANTI_BLOCK = "pause_anti_block"
+ENGINE_STATE_OUT_OF_HOURS = "out_of_business_hours"
+ENGINE_STATE_LUNCH_BREAK = "lunch_break"
+ENGINE_STATE_GLOBAL_COOLDOWN = "global_cooldown"
 
 CAMPAIGN_KIND_UNIFIED = "unified"
 CAMPAIGN_KIND_LEGACY = "legacy"

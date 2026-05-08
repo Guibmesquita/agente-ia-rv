@@ -67,6 +67,11 @@ async def run_cadence_tick():
     if now < work_start or now >= work_end:
         return
 
+    # Task #221 — pausa de almoço (12:00-13:00 BRT). Trava anti-bloqueio
+    # adicional: agentes humanos típicos não enviam mensagens nesse horário.
+    if now.hour == 12:
+        return
+
     db = SessionLocal()
     try:
         # Hidrata do banco e registra tick. Estado persistente sobrevive a reinício.

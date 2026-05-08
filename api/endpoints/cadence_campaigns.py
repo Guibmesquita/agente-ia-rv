@@ -40,6 +40,9 @@ class CadenceProfileInput(BaseModel):
 
 
 def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_contacts: bool = False):
+    from datetime import datetime, timedelta
+    from services.cadence_profiles import get_profile
+
     sent = db.query(sql_func.count(CadenceCampaignContact.id)).filter(
         CadenceCampaignContact.campaign_id == campaign.id,
         CadenceCampaignContact.status == "sent"
@@ -70,6 +73,38 @@ def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_con
         .all()
     )
 
+    # Task #221 — observabilidade
+    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    sent_last_hour = db.query(sql_func.count(CadenceCampaignContact.id)).filter(
+        CadenceCampaignContact.campaign_id == campaign.id,
+        CadenceCampaignContact.status.in_(["sent", "responded"]),
+        CadenceCampaignContact.sent_at >= one_hour_ago,
+    ).scalar() or 0
+
+    next_pending = (
+        db.query(CadenceCampaignContact)
+        .filter(
+            CadenceCampaignContact.campaign_id == campaign.id,
+            CadenceCampaignContact.status == "pending",
+            CadenceCampaignContact.scheduled_for.isnot(None),
+        )
+        .order_by(CadenceCampaignContact.scheduled_for.asc())
+        .first()
+    )
+    next_send_eta = next_pending.scheduled_for.isoformat() if (next_pending and next_pending.scheduled_for) else None
+
+    last_err_row = (
+        db.query(CadenceCampaignContact)
+        .filter(
+            CadenceCampaignContact.campaign_id == campaign.id,
+            CadenceCampaignContact.last_error_message.isnot(None),
+        )
+        .order_by(CadenceCampaignContact.sent_at.desc().nullslast(), CadenceCampaignContact.id.desc())
+        .first()
+    )
+    last_error_message = last_err_row.last_error_message if last_err_row else None
+    profile_cfg = get_profile(getattr(campaign, "cadence_profile", None))
+
     result = {
         "id": campaign.id,
         "name": campaign.name,
@@ -86,6 +121,11 @@ def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_con
         "start_date": campaign.start_date.isoformat() if campaign.start_date else None,
         "end_date": campaign.end_date.isoformat() if campaign.end_date else None,
         "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
+        # Task #221 — paridade observabilidade
+        "sent_last_hour": int(sent_last_hour),
+        "next_send_eta": next_send_eta,
+        "last_error_message": last_error_message,
+        "cooldown_seconds": int(profile_cfg.get("cooldown_seconds", 0)),
         "daily_log": [
             {
                 "date": dl.log_date.strftime("%Y-%m-%d") if dl.log_date else None,

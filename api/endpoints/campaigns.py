@@ -2633,6 +2633,25 @@ async def list_campaigns(
     campaigns = db.query(Campaign).order_by(Campaign.created_at.desc()).offset(skip).limit(limit).all()
 
     result = []
+    # Task #221 — para campanhas em cadência, pré-calcular próximo envio
+    # de uma vez só (uma query por campanha) para mostrar no card.
+    cadence_ids = [c.id for c in campaigns if (c.delivery_mode == "cadence"
+                   or c.status in ("firing_cadence", "paused_cadence", "cadence_done"))]
+    next_etas: dict = {}
+    if cadence_ids:
+        from database.models import CampaignDispatch
+        rows = (
+            db.query(CampaignDispatch.campaign_id, sql_func.min(CampaignDispatch.scheduled_for))
+            .filter(
+                CampaignDispatch.campaign_id.in_(cadence_ids),
+                CampaignDispatch.status == "pending",
+                CampaignDispatch.scheduled_for.isnot(None),
+            )
+            .group_by(CampaignDispatch.campaign_id)
+            .all()
+        )
+        next_etas = {cid: dt for cid, dt in rows}
+
     for c in campaigns:
         result.append({
             "id": c.id,
@@ -2650,9 +2669,22 @@ async def list_campaigns(
             "sent_at": c.sent_at.isoformat() if c.sent_at else None,
             "template_name": c.template.name if c.template else None,
             "source": "unified",
+            "next_send_eta": next_etas.get(c.id).isoformat() if next_etas.get(c.id) else None,
         })
 
     legacy_campaigns = db.query(CadenceCampaign).order_by(CadenceCampaign.created_at.desc()).limit(50).all()
+    # Task #221 — próximo envio das legadas em uma query agregada
+    legacy_next_etas: dict = {}
+    if legacy_campaigns:
+        from database.models import CadenceCampaignContact as _LCC
+        legacy_ids = [lc.id for lc in legacy_campaigns]
+        for cid, dt in (
+            db.query(_LCC.campaign_id, sql_func.min(_LCC.scheduled_for))
+            .filter(_LCC.campaign_id.in_(legacy_ids), _LCC.status == "pending",
+                    _LCC.scheduled_for.isnot(None))
+            .group_by(_LCC.campaign_id).all()
+        ):
+            legacy_next_etas[cid] = dt
     for lc in legacy_campaigns:
         sent_count = db.query(sql_func.count(CadenceCampaignContact.id)).filter(
             CadenceCampaignContact.campaign_id == lc.id,
@@ -2682,6 +2714,7 @@ async def list_campaigns(
             "sent_at": lc.start_date.isoformat() if lc.start_date else None,
             "template_name": None,
             "source": "legacy_cadence",
+            "next_send_eta": legacy_next_etas.get(lc.id).isoformat() if legacy_next_etas.get(lc.id) else None,
         })
 
     result.sort(key=lambda x: x.get("created_at") or "", reverse=True)
@@ -2921,45 +2954,117 @@ async def get_cadence_engine_state(
     current_user: User = Depends(require_admin_or_gestao())
 ):
     """
-    Retorna o estado persistente atual do motor de cadência:
-    último tick, último envio bem-sucedido, pausa anti-block ativa
-    (se houver), motivo da pausa, contagem de falhas consecutivas e
-    janela de horário comercial calculada agora.
+    Estado normalizado do motor de cadência (task #221).
 
     DECLARADA ANTES de `/{campaign_id}` para evitar route-shadowing —
     `campaign_id: int` rejeitaria 'cadence' com 422 sem chegar aqui.
 
-    Usado pelo banner global da página de campanhas para mostrar
-    ao gestor por que (talvez) nada está sendo enviado.
+    Retorna `state` como enum normalizado:
+      - `ok`                       — motor ativo, pronto para enviar.
+      - `pause_anti_block`         — pausa por falhas consecutivas.
+      - `out_of_business_hours`    — fora da janela 09-18 seg-sex.
+      - `lunch_break`              — pausa de almoço 12:00-13:00.
+      - `global_cooldown`          — esperando cooldown do último envio.
+
+    Inclui `projected_resume_at` (datetime ISO) com a melhor estimativa
+    do próximo momento em que o motor estará apto a enviar.
     """
-    from services.cadence_events import get_engine_state
-    from datetime import datetime as _dt
+    from services.cadence_events import (
+        get_engine_state,
+        ENGINE_STATE_OK,
+        ENGINE_STATE_ANTI_BLOCK,
+        ENGINE_STATE_OUT_OF_HOURS,
+        ENGINE_STATE_LUNCH_BREAK,
+        ENGINE_STATE_GLOBAL_COOLDOWN,
+    )
+    from services.cadence_profiles import get_profile
+    from datetime import datetime as _dt, timedelta as _td
     from zoneinfo import ZoneInfo
 
     state = get_engine_state(db)
     tz = ZoneInfo("America/Sao_Paulo")
     now_local = _dt.now(tz)
 
-    in_business_hours = (
-        now_local.weekday() < 5
-        and now_local.hour >= 9
-        and now_local.hour < 18
-    )
+    # Janelas
+    is_weekend = now_local.weekday() >= 5
+    is_before_work = now_local.hour < 9
+    is_after_work = now_local.hour >= 18
+    is_lunch = now_local.hour == 12
+    in_business_hours = not (is_weekend or is_before_work or is_after_work)
 
+    # Pausa anti-block persistente
     pause_until = state.get("pause_until")
-    is_paused = bool(pause_until) and pause_until > _dt.now(pause_until.tzinfo)
+    is_paused_anti_block = bool(pause_until) and pause_until > _dt.now(pause_until.tzinfo)
+
+    # Cooldown global — usa o cooldown do perfil "conservador" como
+    # estimativa segura (perfil mais lento). É só uma projeção visual;
+    # o motor avalia o cooldown real por campanha em cada tick.
+    last_send = state.get("last_send_at")
+    cooldown_default = int(get_profile("conservador").get("cooldown_seconds", 480))
+    in_global_cooldown = False
+    cooldown_until = None
+    if last_send:
+        cd_end = last_send + _td(seconds=cooldown_default)
+        if cd_end > _dt.now(last_send.tzinfo):
+            in_global_cooldown = True
+            cooldown_until = cd_end
+
+    # Estado normalizado (precedência: pausa > horário > almoço > cooldown > ok)
+    if is_paused_anti_block:
+        normalized_state = ENGINE_STATE_ANTI_BLOCK
+        normalized_reason = state.get("pause_reason") or "anti_block"
+        projected_resume_at = pause_until
+    elif not in_business_hours:
+        normalized_state = ENGINE_STATE_OUT_OF_HOURS
+        normalized_reason = "weekend" if is_weekend else ("before_work" if is_before_work else "after_work")
+        projected_resume_at = _next_business_window_start(now_local)
+    elif is_lunch:
+        normalized_state = ENGINE_STATE_LUNCH_BREAK
+        normalized_reason = "lunch_break"
+        projected_resume_at = now_local.replace(hour=13, minute=0, second=0, microsecond=0)
+    elif in_global_cooldown:
+        normalized_state = ENGINE_STATE_GLOBAL_COOLDOWN
+        normalized_reason = "cooldown"
+        projected_resume_at = cooldown_until
+    else:
+        normalized_state = ENGINE_STATE_OK
+        normalized_reason = None
+        projected_resume_at = None
 
     return {
+        "state": normalized_state,
+        "reason": normalized_reason,
+        "projected_resume_at": projected_resume_at.isoformat() if projected_resume_at else None,
         "last_tick_at": state.get("last_tick_at").isoformat() if state.get("last_tick_at") else None,
-        "last_send_at": state.get("last_send_at").isoformat() if state.get("last_send_at") else None,
+        "last_send_at": last_send.isoformat() if last_send else None,
         "pause_until": pause_until.isoformat() if pause_until else None,
         "pause_reason": state.get("pause_reason"),
-        "is_paused_now": is_paused,
+        # Compat com banner V1 (mantido):
+        "is_paused_now": is_paused_anti_block,
         "consecutive_failures": int(state.get("consecutive_failures") or 0),
         "in_business_hours_now": in_business_hours,
+        "in_lunch_break_now": is_lunch,
+        "in_global_cooldown_now": in_global_cooldown,
+        "cooldown_seconds_default": cooldown_default,
         "now": now_local.isoformat(),
-        "business_hours": {"start": "09:00", "end": "18:00", "weekdays_only": True},
+        "business_hours": {"start": "09:00", "end": "18:00", "weekdays_only": True, "lunch_break": "12:00-13:00"},
     }
+
+
+def _next_business_window_start(now_local):
+    """Próximo horário em que o motor estará dentro da janela comercial.
+    Considera fim de semana e antes/depois do expediente.
+    """
+    from datetime import timedelta as _td
+    candidate = now_local
+    # Hoje antes das 9h e dia útil → hoje 9h
+    if candidate.weekday() < 5 and candidate.hour < 9:
+        return candidate.replace(hour=9, minute=0, second=0, microsecond=0)
+    # Senão, avança 1 dia até cair em dia útil e retorna 9h
+    candidate = (candidate + _td(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    while candidate.weekday() >= 5:
+        candidate = candidate + _td(days=1)
+    return candidate
 
 
 @router.get("/{campaign_id}")

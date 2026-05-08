@@ -680,6 +680,24 @@ def _backfill_cadence_events():
     db = SessionLocal()
     inserted = 0
     try:
+        # Task #221 — pré-passo: copiar `error_message` histórico para a nova
+        # coluna `last_error_message` (idempotente: só atualiza onde está NULL).
+        # Isso garante paridade total dos dados antigos com a nova UI.
+        for upd in (
+            "UPDATE campaign_dispatches SET last_error_message = LEFT(error_message, 500) "
+            "WHERE last_error_message IS NULL AND error_message IS NOT NULL",
+            # Para a tabela legacy não há coluna error_message histórica;
+            # apenas garantimos que a coluna exista com NULL (já feito pela migration).
+        ):
+            try:
+                r = db.execute(sql_text(upd))
+                db.commit()
+                if r.rowcount and r.rowcount > 0:
+                    print(f"[INIT] Backfill last_error_message: {r.rowcount} linhas copiadas")
+            except Exception as e:
+                db.rollback()
+                print(f"[INIT] Aviso: backfill last_error_message falhou: {e}")
+
         # Cada CTE roda como statement separado para evitar parsing de
         # parâmetros pelo SQLAlchemy (':true' no JSON literal seria
         # interpretado como bind). Usamos jsonb_build_object para construir
