@@ -385,13 +385,14 @@
                     var when = ev.occurred_at ? new Date(ev.occurred_at).toLocaleString('pt-BR') : '—';
                     var p = ev.payload || {};
                     var extra = '';
-                    if (ev.event_type === 'dispatch_failed' && p.error_message) extra = ' · <span style="color:#b91c1c;">' + (p.error_message + '').slice(0,180) + '</span>';
+                    if (ev.event_type === 'dispatch_failed' && p.error) extra = ' · <span style="color:#b91c1c;">' + (p.error + '').slice(0,180) + '</span>';
                     if (ev.event_type === 'cadence_profile_changed' && (p.old_profile || p.new_profile)) extra = ' · ' + (p.old_profile||'?') + ' → ' + (p.new_profile||'?');
-                    if (ev.event_type === 'dispatch_sent' && p.contact_phone) extra = ' · ' + p.contact_phone;
-                    var bf = p.is_backfill ? ' <em style="color:#94a3b8;">(reconstruído)</em>' : '';
+                    if (ev.event_type === 'dispatch_sent' && p.phone) extra = ' · ' + p.phone;
+                    var bf = (p.is_backfill || ev.is_backfill) ? ' <em style="color:#94a3b8;">(reconstruído)</em>' : '';
+                    var actor = ev.user_name ? ' · por ' + ev.user_name : '';
                     html += '<div style="margin-bottom:8px;">';
                     html += '<strong style="color:' + meta.color + ';">' + meta.label + '</strong>';
-                    html += '<span style="color:#64748b;font-size:0.78rem;"> · ' + when + bf + extra + '</span>';
+                    html += '<span style="color:#64748b;font-size:0.78rem;"> · ' + when + actor + bf + extra + '</span>';
                     html += '</div>';
                 });
                 html += '</div>';

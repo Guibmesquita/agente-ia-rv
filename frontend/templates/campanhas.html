@@ -3462,11 +3462,24 @@ Equipe de Gestao"></textarea>
                     if (rz.ok) {
                         var z = await rz.json();
                         var pill = document.getElementById('zapiHealthPill');
-                        var ok = (z.status === 'connected' || z.connected === true);
                         if (pill) {
-                            pill.style.background = ok ? '#dcfce7' : '#fee2e2';
-                            pill.style.color = ok ? '#166534' : '#991b1b';
-                            pill.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + (ok ? '#16a34a' : '#dc2626') + ';"></span> Z-API: ' + (ok ? 'conectado' : 'desconectado');
+                            // Mapeamento 3-state baseado em services/dependency_check.py:
+                            //   verde  → 'connected'
+                            //   âmbar  → 'unknown' (cache vazio no boot), 'timeout' (Z-API lenta), 'not_configured'
+                            //   vermelho → 'disconnected', 'error'
+                            var st = (z.status || '').toLowerCase();
+                            var color, bg, fg, txt;
+                            if (st === 'connected' || z.connected === true) {
+                                color = '#16a34a'; bg = '#dcfce7'; fg = '#166534'; txt = 'conectado';
+                            } else if (st === 'disconnected' || st === 'error') {
+                                color = '#dc2626'; bg = '#fee2e2'; fg = '#991b1b'; txt = (st === 'error' ? 'erro' : 'desconectado');
+                            } else {
+                                color = '#d97706'; bg = '#fef3c7'; fg = '#92400e';
+                                txt = (st === 'timeout' ? 'lento' : (st === 'not_configured' ? 'não configurado' : 'verificando'));
+                            }
+                            pill.style.background = bg;
+                            pill.style.color = fg;
+                            pill.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + color + ';"></span> Z-API: ' + txt;
                         }
                     }
                 } catch (e) { /* mantém pill anterior */ }

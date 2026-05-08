@@ -37,9 +37,35 @@ def _emit_engine_state_transition(db, new_state: str, payload: dict):
         logger.warning(f"[CADENCE-OBS] _emit_engine_state_transition({new_state}) falhou: {e}")
 
 
+_last_tick_persist_at: Optional[datetime] = None
+_TICK_PERSIST_THROTTLE_SECONDS = 60
+
+
 def _persist_state(db, **fields):
-    """Wrapper que silencia erros — persistir estado nunca pode quebrar o tick."""
+    """Wrapper que silencia erros — persistir estado nunca pode quebrar o tick.
+
+    Throttle: quando o ÚNICO campo é `last_tick_at` (heartbeat sem mudança
+    de estado), só faz commit a cada `_TICK_PERSIST_THROTTLE_SECONDS` para
+    não pressionar o banco a cada tick (30s). Updates com qualquer outro
+    campo (last_send_at, pause_until, consecutive_failures, ...) sempre
+    persistem imediatamente.
+    """
+    global _last_tick_persist_at
     try:
+        only_heartbeat = (
+            len(fields) == 1
+            and "last_tick_at" in fields
+            and isinstance(fields["last_tick_at"], datetime)
+        )
+        if only_heartbeat:
+            now_ts = fields["last_tick_at"]
+            if (
+                _last_tick_persist_at is not None
+                and (now_ts - _last_tick_persist_at).total_seconds()
+                < _TICK_PERSIST_THROTTLE_SECONDS
+            ):
+                return
+            _last_tick_persist_at = now_ts
         from services.cadence_events import update_engine_state
         update_engine_state(db, **fields)
     except Exception as e:
