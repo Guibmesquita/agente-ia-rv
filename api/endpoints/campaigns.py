@@ -2915,6 +2915,53 @@ async def upload_campaign_diagram(
     }
 
 
+@router.get("/cadence/engine-state")
+async def get_cadence_engine_state(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """
+    Retorna o estado persistente atual do motor de cadência:
+    último tick, último envio bem-sucedido, pausa anti-block ativa
+    (se houver), motivo da pausa, contagem de falhas consecutivas e
+    janela de horário comercial calculada agora.
+
+    DECLARADA ANTES de `/{campaign_id}` para evitar route-shadowing —
+    `campaign_id: int` rejeitaria 'cadence' com 422 sem chegar aqui.
+
+    Usado pelo banner global da página de campanhas para mostrar
+    ao gestor por que (talvez) nada está sendo enviado.
+    """
+    from services.cadence_events import get_engine_state
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+
+    state = get_engine_state(db)
+    tz = ZoneInfo("America/Sao_Paulo")
+    now_local = _dt.now(tz)
+
+    in_business_hours = (
+        now_local.weekday() < 5
+        and now_local.hour >= 9
+        and now_local.hour < 18
+    )
+
+    pause_until = state.get("pause_until")
+    is_paused = bool(pause_until) and pause_until > _dt.now(pause_until.tzinfo)
+
+    return {
+        "last_tick_at": state.get("last_tick_at").isoformat() if state.get("last_tick_at") else None,
+        "last_send_at": state.get("last_send_at").isoformat() if state.get("last_send_at") else None,
+        "pause_until": pause_until.isoformat() if pause_until else None,
+        "pause_reason": state.get("pause_reason"),
+        "is_paused_now": is_paused,
+        "consecutive_failures": int(state.get("consecutive_failures") or 0),
+        "in_business_hours_now": in_business_hours,
+        "now": now_local.isoformat(),
+        "business_hours": {"start": "09:00", "end": "18:00", "weekdays_only": True},
+    }
+
+
 @router.get("/{campaign_id}")
 async def get_campaign(
     campaign_id: int,
@@ -3503,6 +3550,24 @@ async def dispatch_campaign_cadence(
     campaign.sent_at = now
     db.commit()
 
+    # Task #221 — eventos de criação e início (cadência unificada)
+    from services.cadence_events import (
+        emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED,
+        EVENT_CAMPAIGN_CREATED as _EVT_CREATED,
+        EVENT_CAMPAIGN_STARTED as _EVT_STARTED,
+    )
+    _user_id_actor = getattr(current_user, "id", None)
+    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT_CREATED, {
+        "name": campaign.name,
+        "total_contacts": int(total),
+        "daily_limit": daily_limit,
+        "deadline_days": deadline_days,
+        "cadence_profile": campaign.cadence_profile,
+    }, user_id=_user_id_actor)
+    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT_STARTED, {
+        "auto": True,
+    }, user_id=_user_id_actor)
+
     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) agendada com cadência: {total} contatos, {deadline_days} dias, limite {daily_limit}/dia")
 
     return {
@@ -3594,7 +3659,42 @@ async def get_cadence_status(
             "responded": responded_map.get(day_str, 0),
         })
 
-    from services.cadence_profiles import list_profiles
+    from services.cadence_profiles import list_profiles, get_profile
+
+    # Task #221 — KPI "última hora" e "próximo envio" + último erro Z-API.
+    from datetime import datetime as _dt, timedelta as _td
+    now_utc = _dt.utcnow()
+    one_hour_ago = now_utc - _td(hours=1)
+    sent_last_hour = db.query(sql_func.count(CampaignDispatch.id)).filter(
+        CampaignDispatch.campaign_id == campaign_id,
+        CampaignDispatch.status.in_(["sent", "responded"]),
+        CampaignDispatch.sent_at >= one_hour_ago,
+    ).scalar() or 0
+
+    next_dispatch = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.status == "pending",
+        )
+        .order_by(CampaignDispatch.scheduled_for.asc())
+        .first()
+    )
+    next_send_eta = next_dispatch.scheduled_for.isoformat() if (next_dispatch and next_dispatch.scheduled_for) else None
+
+    last_err_row = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.last_error_message.isnot(None),
+        )
+        .order_by(CampaignDispatch.id.desc())
+        .first()
+    )
+    last_error_message = last_err_row.last_error_message if last_err_row else None
+
+    profile_cfg = get_profile(getattr(campaign, "cadence_profile", None))
+
     return {
         "id": campaign.id,
         "name": campaign.name,
@@ -3606,11 +3706,41 @@ async def get_cadence_status(
         "failed": failed,
         "responded": responded,
         "response_rate": response_rate,
+        "sent_last_hour": int(sent_last_hour),
+        "next_send_eta": next_send_eta,
+        "last_error_message": last_error_message,
+        "cooldown_seconds": int(profile_cfg.get("cooldown_seconds", 0)),
         "daily_limit": campaign.daily_limit,
         "deadline_days": campaign.deadline_days,
         "cadence_profile": getattr(campaign, "cadence_profile", None) or "conservador",
         "available_profiles": list_profiles(),
         "daily_log": daily_log,
+    }
+
+
+# ============================================================================
+# Task #221 — Endpoints de observabilidade do motor de cadência
+# ============================================================================
+
+@router.get("/{campaign_id}/events")
+async def get_campaign_events(
+    campaign_id: int,
+    limit: int = 100,
+    before_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """Lista eventos de timeline de uma campanha unificada (Task #221)."""
+    from services.cadence_events import list_events_for_campaign, CAMPAIGN_KIND_UNIFIED
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+    events = list(list_events_for_campaign(db, CAMPAIGN_KIND_UNIFIED, campaign_id, limit=int(limit), before_id=before_id))
+    return {
+        "campaign_id": campaign_id,
+        "campaign_kind": CAMPAIGN_KIND_UNIFIED,
+        "count": len(events),
+        "events": events,
     }
 
 
@@ -3640,6 +3770,13 @@ async def change_cadence_profile(
     if campaign.status in ("firing_cadence", "paused_cadence"):
         rescheduled = reschedule_unified_pending_dispatches(campaign_id, db)
 
+    from services.cadence_events import emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_PROFILE_CHANGED as _EVT
+    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {
+        "old_profile": old_profile,
+        "new_profile": data.cadence_profile,
+        "rescheduled_count": int(rescheduled),
+    }, user_id=getattr(current_user, "id", None))
+
     print(
         f"[CADENCE] Perfil da campanha '{campaign.name}' (id={campaign_id}) alterado: "
         f"{old_profile} → {data.cadence_profile} ({rescheduled} dispatches reagendados)"
@@ -3666,6 +3803,8 @@ async def pause_cadence_campaign(
 
     campaign.status = "paused_cadence"
     db.commit()
+    from services.cadence_events import emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_CAMPAIGN_PAUSED as _EVT
+    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {"manual": True}, user_id=getattr(current_user, "id", None))
     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) pausada")
     return {"message": "Campanha pausada", "status": "paused_cadence"}
 
@@ -3723,5 +3862,7 @@ async def resume_cadence_campaign(
 
     campaign.status = "firing_cadence"
     db.commit()
+    from services.cadence_events import emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_CAMPAIGN_RESUMED as _EVT
+    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {"manual": True}, user_id=getattr(current_user, "id", None))
     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) retomada")
     return {"message": "Campanha retomada", "status": "firing_cadence"}

@@ -573,6 +573,35 @@ def _apply_incremental_migrations():
         "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS aliases TEXT DEFAULT '[]'",
         # Task #214 — Data da última revisão da Carteira Recomendada
         "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMPTZ",
+        # Task #221 — Observabilidade do motor de cadência
+        "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS last_error_message TEXT",
+        "ALTER TABLE cadence_campaign_contacts ADD COLUMN IF NOT EXISTS last_error_message TEXT",
+        """CREATE TABLE IF NOT EXISTS cadence_engine_state (
+            id INTEGER PRIMARY KEY,
+            last_tick_at TIMESTAMPTZ,
+            last_send_at TIMESTAMPTZ,
+            pause_until TIMESTAMPTZ,
+            pause_reason VARCHAR(64),
+            consecutive_failures INTEGER DEFAULT 0,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "INSERT INTO cadence_engine_state (id, consecutive_failures) VALUES (1, 0) ON CONFLICT (id) DO NOTHING",
+        """CREATE TABLE IF NOT EXISTS cadence_campaign_events (
+            id SERIAL PRIMARY KEY,
+            campaign_kind VARCHAR(16) NOT NULL,
+            campaign_id INTEGER NOT NULL,
+            event_type VARCHAR(48) NOT NULL,
+            payload TEXT,
+            user_id INTEGER REFERENCES users(id),
+            occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_cadence_event_dedupe UNIQUE (campaign_kind, campaign_id, event_type, occurred_at)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_events_kind ON cadence_campaign_events(campaign_kind)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_events_campaign_id ON cadence_campaign_events(campaign_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_events_event_type ON cadence_campaign_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_events_occurred_at ON cadence_campaign_events(occurred_at)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_events_campaign_lookup ON cadence_campaign_events(campaign_kind, campaign_id, occurred_at)",
     ]
     db = SessionLocal()
     ok = 0
@@ -627,6 +656,159 @@ def _cleanup_orphan_pre_analysis_materials():
         db.close()
 
 
+def _backfill_cadence_events():
+    """
+    Task #221 — Backfill leve, idempotente, dos eventos de campanhas
+    pré-existentes a partir das colunas que JÁ existiam no banco antes
+    desta task. Evita timelines vazias para campanhas em curso.
+
+    Eventos gerados:
+    - campaign_created (a partir de created_at)
+    - campaign_started (a partir de start_date / sent_at)
+    - campaign_done (a partir de end_date e status terminal)
+    - dispatch_failed (um por dispatch/contact com status 'failed', usando
+      error_message ou last_error_message como mensagem). NÃO geramos
+      dispatch_sent porque seriam dezenas/centenas por campanha — o motor
+      passará a registrar isso a partir de agora.
+
+    Idempotência: a UNIQUE (campaign_kind, campaign_id, event_type, occurred_at)
+    impede duplicatas. Cada evento gerado leva is_backfill=true no payload
+    para que a UI mostre como "evento reconstruído".
+    """
+    from database.database import SessionLocal
+    from sqlalchemy import text as sql_text
+    db = SessionLocal()
+    inserted = 0
+    try:
+        # Cada CTE roda como statement separado para evitar parsing de
+        # parâmetros pelo SQLAlchemy (':true' no JSON literal seria
+        # interpretado como bind). Usamos jsonb_build_object para construir
+        # o payload de forma segura e idempotente.
+        statements = [
+            # Legacy — created
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'legacy', cc.id, 'campaign_created',
+                      jsonb_build_object('is_backfill', true, 'name', cc.name)::text,
+                      cc.created_at, NOW()
+               FROM cadence_campaigns cc
+               WHERE cc.created_at IS NOT NULL
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Legacy — started
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'legacy', cc.id, 'campaign_started',
+                      jsonb_build_object('is_backfill', true)::text,
+                      cc.start_date, NOW()
+               FROM cadence_campaigns cc
+               WHERE cc.start_date IS NOT NULL
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Legacy — done
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'legacy', cc.id, 'campaign_done',
+                      jsonb_build_object('is_backfill', true)::text,
+                      cc.end_date, NOW()
+               FROM cadence_campaigns cc
+               WHERE cc.end_date IS NOT NULL AND cc.status = 'done'
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Legacy — dispatch_failed (1 por contato falho)
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'legacy', ccc.campaign_id, 'dispatch_failed',
+                      jsonb_build_object(
+                          'is_backfill', true, 'is_final', true,
+                          'phone', ccc.phone, 'contact_id', ccc.id,
+                          'error', LEFT(COALESCE(ccc.last_error_message,''), 300)
+                      )::text,
+                      COALESCE(ccc.sent_at, ccc.scheduled_for, NOW()), NOW()
+               FROM cadence_campaign_contacts ccc
+               WHERE ccc.status = 'failed'
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Unified — created
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'unified', c.id, 'campaign_created',
+                      jsonb_build_object('is_backfill', true, 'name', c.name)::text,
+                      c.created_at, NOW()
+               FROM campaigns c
+               WHERE c.created_at IS NOT NULL
+                 AND (c.delivery_mode = 'cadence'
+                      OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Unified — started
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'unified', c.id, 'campaign_started',
+                      jsonb_build_object('is_backfill', true)::text,
+                      c.sent_at, NOW()
+               FROM campaigns c
+               WHERE c.sent_at IS NOT NULL
+                 AND (c.delivery_mode = 'cadence'
+                      OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Unified — done
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'unified', c.id, 'campaign_done',
+                      jsonb_build_object('is_backfill', true)::text,
+                      COALESCE(c.sent_at, NOW()), NOW()
+               FROM campaigns c
+               WHERE c.status = 'cadence_done'
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+            # Unified — dispatch_failed
+            """INSERT INTO cadence_campaign_events
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+               SELECT 'unified', cd.campaign_id, 'dispatch_failed',
+                      jsonb_build_object(
+                          'is_backfill', true, 'is_final', true,
+                          'phone', COALESCE(cd.assessor_phone,''),
+                          'dispatch_id', cd.id,
+                          'error', LEFT(COALESCE(cd.error_message, cd.last_error_message, ''), 300)
+                      )::text,
+                      COALESCE(cd.sent_at, cd.scheduled_for, NOW()), NOW()
+               FROM campaign_dispatches cd
+               JOIN campaigns c ON c.id = cd.campaign_id
+               WHERE cd.status = 'failed'
+                 AND (c.delivery_mode = 'cadence'
+                      OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
+               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
+        ]
+        for st in statements:
+            try:
+                r = db.execute(sql_text(st))
+                inserted += int(r.rowcount or 0)
+                db.commit()
+            except Exception as inner:
+                db.rollback()
+                snippet = " ".join(st.split())[:120]
+                print(f"[INIT] Aviso: backfill statement falhou (continuando): {inner} | SQL: {snippet}")
+        if inserted > 0:
+            print(f"[INIT] Backfill de eventos de cadência: {inserted} eventos sintéticos criados")
+        else:
+            print("[INIT] Backfill de eventos de cadência: nada a criar (já idempotente)")
+    except Exception as e:
+        db.rollback()
+        print(f"[INIT] Aviso: backfill de eventos de cadência falhou: {e}")
+    finally:
+        db.close()
+
+
+def _cleanup_old_cadence_events(retention_days: int = 90):
+    """Task #221 — remove eventos com mais de 90 dias para evitar crescimento indefinido."""
+    from database.database import SessionLocal
+    from services.cadence_events import cleanup_old_events
+    db = SessionLocal()
+    try:
+        n = cleanup_old_events(db, retention_days)
+        if n > 0:
+            print(f"[INIT] Cleanup de eventos de cadência > {retention_days}d: {n} removidos")
+    except Exception as e:
+        print(f"[INIT] Aviso: cleanup de eventos de cadência falhou: {e}")
+    finally:
+        db.close()
+
+
 def _sync_init_database():
     """Operações síncronas de inicialização do banco (roda em thread separada)."""
     import os
@@ -649,6 +831,8 @@ def _sync_init_database():
     if not is_sqlite:
         _apply_incremental_migrations()
         _cleanup_orphan_pre_analysis_materials()
+        _backfill_cadence_events()
+        _cleanup_old_cadence_events()
 
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")

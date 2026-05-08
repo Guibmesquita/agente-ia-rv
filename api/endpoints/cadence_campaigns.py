@@ -202,6 +202,23 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
     campaign.status = "firing"
     db.commit()
 
+    # Task #221 — eventos de criação e início
+    from services.cadence_events import (
+        emit_event, CAMPAIGN_KIND_LEGACY,
+        EVENT_CAMPAIGN_CREATED, EVENT_CAMPAIGN_STARTED,
+    )
+    user_id_actor = getattr(current_user, "id", None)
+    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_CREATED, {
+        "name": campaign.name,
+        "total_contacts": len(data.contacts),
+        "deadline_days": data.deadline_days,
+        "daily_limit": effective_daily_limit,
+        "cadence_profile": campaign.cadence_profile,
+    }, user_id=user_id_actor)
+    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_STARTED, {
+        "auto": True,
+    }, user_id=user_id_actor)
+
     response = _build_campaign_response(campaign, db)
     response["alerta"] = plan.get("alerta")
     response["plano"] = plan
@@ -220,6 +237,10 @@ async def pause_campaign(campaign_id: int, db: Session = Depends(get_db), curren
 
     campaign.status = "paused"
     db.commit()
+    from services.cadence_events import emit_event, CAMPAIGN_KIND_LEGACY, EVENT_CAMPAIGN_PAUSED
+    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_PAUSED, {
+        "manual": True,
+    }, user_id=getattr(current_user, "id", None))
     print(f"[CADENCE] Campanha '{campaign.name}' pausada")
     return {"message": "Campanha pausada", "status": "paused"}
 
@@ -238,6 +259,10 @@ async def resume_campaign(campaign_id: int, db: Session = Depends(get_db), curre
 
     campaign.status = "firing"
     db.commit()
+    from services.cadence_events import emit_event, CAMPAIGN_KIND_LEGACY, EVENT_CAMPAIGN_RESUMED
+    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_RESUMED, {
+        "manual": True,
+    }, user_id=getattr(current_user, "id", None))
     print(f"[CADENCE] Campanha '{campaign.name}' retomada")
     return {"message": "Campanha retomada", "status": "firing"}
 
@@ -274,6 +299,13 @@ async def change_profile(
     if campaign.status in ("firing", "paused"):
         rescheduled_count = assign_scheduled_times(campaign.id, db, only_pending=True) or 0
 
+    from services.cadence_events import emit_event, CAMPAIGN_KIND_LEGACY, EVENT_PROFILE_CHANGED
+    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_PROFILE_CHANGED, {
+        "old_profile": old_profile,
+        "new_profile": campaign.cadence_profile,
+        "rescheduled_count": int(rescheduled_count),
+    }, user_id=getattr(current_user, "id", None))
+
     print(
         f"[CADENCE] Perfil da campanha legada '{campaign.name}' (id={campaign_id}) alterado: "
         f"{old_profile} → {campaign.cadence_profile} ({rescheduled_count} contatos reagendados)"
@@ -290,6 +322,28 @@ async def change_profile(
 async def list_cadence_profiles(current_user=Depends(_get_auth())):
     from services.cadence_profiles import list_profiles
     return {"profiles": list_profiles()}
+
+
+@router.get("/{campaign_id}/events")
+async def get_legacy_campaign_events(
+    campaign_id: int,
+    limit: int = 100,
+    before_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(_get_auth())
+):
+    """Task #221 — timeline de eventos de uma campanha de cadência legada."""
+    from services.cadence_events import list_events_for_campaign, CAMPAIGN_KIND_LEGACY
+    campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+    events = list(list_events_for_campaign(db, CAMPAIGN_KIND_LEGACY, campaign_id, limit=int(limit), before_id=before_id))
+    return {
+        "campaign_id": campaign_id,
+        "campaign_kind": CAMPAIGN_KIND_LEGACY,
+        "count": len(events),
+        "events": events,
+    }
 
 
 @router.delete("/{campaign_id}")

@@ -1,0 +1,1219 @@
+diff --git a/api/endpoints/cadence_campaigns.py b/api/endpoints/cadence_campaigns.py
+index ff04760..0903e9c 100644
+--- a/api/endpoints/cadence_campaigns.py
++++ b/api/endpoints/cadence_campaigns.py
+@@ -202,6 +202,23 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
+     campaign.status = "firing"
+     db.commit()
+ 
++    # Task #221 — eventos de criação e início
++    from services.cadence_events import (
++        emit_event, CAMPAIGN_KIND_LEGACY,
++        EVENT_CAMPAIGN_CREATED, EVENT_CAMPAIGN_STARTED,
++    )
++    user_id_actor = getattr(current_user, "id", None)
++    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_CREATED, {
++        "name": campaign.name,
++        "total_contacts": len(data.contacts),
++        "deadline_days": data.deadline_days,
++        "daily_limit": effective_daily_limit,
++        "cadence_profile": campaign.cadence_profile,
++    }, user_id=user_id_actor)
++    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_STARTED, {
++        "auto": True,
++    }, user_id=user_id_actor)
++
+     response = _build_campaign_response(campaign, db)
+     response["alerta"] = plan.get("alerta")
+     response["plano"] = plan
+@@ -220,6 +237,10 @@ async def pause_campaign(campaign_id: int, db: Session = Depends(get_db), curren
+ 
+     campaign.status = "paused"
+     db.commit()
++    from services.cadence_events import emit_event, CAMPAIGN_KIND_LEGACY, EVENT_CAMPAIGN_PAUSED
++    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_PAUSED, {
++        "manual": True,
++    }, user_id=getattr(current_user, "id", None))
+     print(f"[CADENCE] Campanha '{campaign.name}' pausada")
+     return {"message": "Campanha pausada", "status": "paused"}
+ 
+@@ -238,6 +259,10 @@ async def resume_campaign(campaign_id: int, db: Session = Depends(get_db), curre
+ 
+     campaign.status = "firing"
+     db.commit()
++    from services.cadence_events import emit_event, CAMPAIGN_KIND_LEGACY, EVENT_CAMPAIGN_RESUMED
++    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_RESUMED, {
++        "manual": True,
++    }, user_id=getattr(current_user, "id", None))
+     print(f"[CADENCE] Campanha '{campaign.name}' retomada")
+     return {"message": "Campanha retomada", "status": "firing"}
+ 
+@@ -274,6 +299,13 @@ async def change_profile(
+     if campaign.status in ("firing", "paused"):
+         rescheduled_count = assign_scheduled_times(campaign.id, db, only_pending=True) or 0
+ 
++    from services.cadence_events import emit_event, CAMPAIGN_KIND_LEGACY, EVENT_PROFILE_CHANGED
++    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_PROFILE_CHANGED, {
++        "old_profile": old_profile,
++        "new_profile": campaign.cadence_profile,
++        "rescheduled_count": int(rescheduled_count),
++    }, user_id=getattr(current_user, "id", None))
++
+     print(
+         f"[CADENCE] Perfil da campanha legada '{campaign.name}' (id={campaign_id}) alterado: "
+         f"{old_profile} → {campaign.cadence_profile} ({rescheduled_count} contatos reagendados)"
+@@ -292,6 +324,28 @@ async def list_cadence_profiles(current_user=Depends(_get_auth())):
+     return {"profiles": list_profiles()}
+ 
+ 
++@router.get("/{campaign_id}/events")
++async def get_legacy_campaign_events(
++    campaign_id: int,
++    limit: int = 100,
++    before_id: Optional[int] = None,
++    db: Session = Depends(get_db),
++    current_user=Depends(_get_auth())
++):
++    """Task #221 — timeline de eventos de uma campanha de cadência legada."""
++    from services.cadence_events import list_events_for_campaign, CAMPAIGN_KIND_LEGACY
++    campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
++    if not campaign:
++        raise HTTPException(status_code=404, detail="Campanha não encontrada")
++    events = list(list_events_for_campaign(db, CAMPAIGN_KIND_LEGACY, campaign_id, limit=int(limit), before_id=before_id))
++    return {
++        "campaign_id": campaign_id,
++        "campaign_kind": CAMPAIGN_KIND_LEGACY,
++        "count": len(events),
++        "events": events,
++    }
++
++
+ @router.delete("/{campaign_id}")
+ async def delete_campaign(campaign_id: int, db: Session = Depends(get_db), current_user=Depends(_get_auth())):
+     campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
+diff --git a/api/endpoints/campaigns.py b/api/endpoints/campaigns.py
+index b467391..9e03a4e 100644
+--- a/api/endpoints/campaigns.py
++++ b/api/endpoints/campaigns.py
+@@ -3503,6 +3503,24 @@ async def dispatch_campaign_cadence(
+     campaign.sent_at = now
+     db.commit()
+ 
++    # Task #221 — eventos de criação e início (cadência unificada)
++    from services.cadence_events import (
++        emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED,
++        EVENT_CAMPAIGN_CREATED as _EVT_CREATED,
++        EVENT_CAMPAIGN_STARTED as _EVT_STARTED,
++    )
++    _user_id_actor = getattr(current_user, "id", None)
++    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT_CREATED, {
++        "name": campaign.name,
++        "total_contacts": int(total),
++        "daily_limit": daily_limit,
++        "deadline_days": deadline_days,
++        "cadence_profile": campaign.cadence_profile,
++    }, user_id=_user_id_actor)
++    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT_STARTED, {
++        "auto": True,
++    }, user_id=_user_id_actor)
++
+     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) agendada com cadência: {total} contatos, {deadline_days} dias, limite {daily_limit}/dia")
+ 
+     return {
+@@ -3594,7 +3612,42 @@ async def get_cadence_status(
+             "responded": responded_map.get(day_str, 0),
+         })
+ 
+-    from services.cadence_profiles import list_profiles
++    from services.cadence_profiles import list_profiles, get_profile
++
++    # Task #221 — KPI "última hora" e "próximo envio" + último erro Z-API.
++    from datetime import datetime as _dt, timedelta as _td
++    now_utc = _dt.utcnow()
++    one_hour_ago = now_utc - _td(hours=1)
++    sent_last_hour = db.query(sql_func.count(CampaignDispatch.id)).filter(
++        CampaignDispatch.campaign_id == campaign_id,
++        CampaignDispatch.status.in_(["sent", "responded"]),
++        CampaignDispatch.sent_at >= one_hour_ago,
++    ).scalar() or 0
++
++    next_dispatch = (
++        db.query(CampaignDispatch)
++        .filter(
++            CampaignDispatch.campaign_id == campaign_id,
++            CampaignDispatch.status == "pending",
++        )
++        .order_by(CampaignDispatch.scheduled_for.asc())
++        .first()
++    )
++    next_send_eta = next_dispatch.scheduled_for.isoformat() if (next_dispatch and next_dispatch.scheduled_for) else None
++
++    last_err_row = (
++        db.query(CampaignDispatch)
++        .filter(
++            CampaignDispatch.campaign_id == campaign_id,
++            CampaignDispatch.last_error_message.isnot(None),
++        )
++        .order_by(CampaignDispatch.id.desc())
++        .first()
++    )
++    last_error_message = last_err_row.last_error_message if last_err_row else None
++
++    profile_cfg = get_profile(getattr(campaign, "cadence_profile", None))
++
+     return {
+         "id": campaign.id,
+         "name": campaign.name,
+@@ -3606,6 +3659,10 @@ async def get_cadence_status(
+         "failed": failed,
+         "responded": responded,
+         "response_rate": response_rate,
++        "sent_last_hour": int(sent_last_hour),
++        "next_send_eta": next_send_eta,
++        "last_error_message": last_error_message,
++        "cooldown_seconds": int(profile_cfg.get("cooldown_seconds", 0)),
+         "daily_limit": campaign.daily_limit,
+         "deadline_days": campaign.deadline_days,
+         "cadence_profile": getattr(campaign, "cadence_profile", None) or "conservador",
+@@ -3614,6 +3671,76 @@ async def get_cadence_status(
+     }
+ 
+ 
++# ============================================================================
++# Task #221 — Endpoints de observabilidade do motor de cadência
++# ============================================================================
++
++@router.get("/cadence/engine-state")
++async def get_cadence_engine_state(
++    db: Session = Depends(get_db),
++    current_user: User = Depends(require_admin_or_gestao())
++):
++    """
++    Retorna o estado persistente atual do motor de cadência:
++    último tick, último envio bem-sucedido, pausa anti-block ativa
++    (se houver), motivo da pausa, contagem de falhas consecutivas e
++    janela de horário comercial calculada agora.
++
++    Usado pelo banner global da página de campanhas para mostrar
++    ao gestor por que (talvez) nada está sendo enviado.
++    """
++    from services.cadence_events import get_engine_state
++    from datetime import datetime as _dt
++    from zoneinfo import ZoneInfo
++
++    state = get_engine_state(db)
++    tz = ZoneInfo("America/Sao_Paulo")
++    now_local = _dt.now(tz)
++
++    in_business_hours = (
++        now_local.weekday() < 5
++        and now_local.hour >= 9
++        and now_local.hour < 18
++    )
++
++    pause_until = state.get("pause_until")
++    is_paused = bool(pause_until) and pause_until > _dt.now(pause_until.tzinfo)
++
++    return {
++        "last_tick_at": state.get("last_tick_at").isoformat() if state.get("last_tick_at") else None,
++        "last_send_at": state.get("last_send_at").isoformat() if state.get("last_send_at") else None,
++        "pause_until": pause_until.isoformat() if pause_until else None,
++        "pause_reason": state.get("pause_reason"),
++        "is_paused_now": is_paused,
++        "consecutive_failures": int(state.get("consecutive_failures") or 0),
++        "in_business_hours_now": in_business_hours,
++        "now": now_local.isoformat(),
++        "business_hours": {"start": "09:00", "end": "18:00", "weekdays_only": True},
++    }
++
++
++@router.get("/{campaign_id}/events")
++async def get_campaign_events(
++    campaign_id: int,
++    limit: int = 100,
++    before_id: Optional[int] = None,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(require_admin_or_gestao())
++):
++    """Lista eventos de timeline de uma campanha unificada (Task #221)."""
++    from services.cadence_events import list_events_for_campaign, CAMPAIGN_KIND_UNIFIED
++    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
++    if not campaign:
++        raise HTTPException(status_code=404, detail="Campanha não encontrada")
++    events = list(list_events_for_campaign(db, CAMPAIGN_KIND_UNIFIED, campaign_id, limit=int(limit), before_id=before_id))
++    return {
++        "campaign_id": campaign_id,
++        "campaign_kind": CAMPAIGN_KIND_UNIFIED,
++        "count": len(events),
++        "events": events,
++    }
++
++
+ @router.patch("/{campaign_id}/cadence-profile")
+ async def change_cadence_profile(
+     campaign_id: int,
+@@ -3640,6 +3767,13 @@ async def change_cadence_profile(
+     if campaign.status in ("firing_cadence", "paused_cadence"):
+         rescheduled = reschedule_unified_pending_dispatches(campaign_id, db)
+ 
++    from services.cadence_events import emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_PROFILE_CHANGED as _EVT
++    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {
++        "old_profile": old_profile,
++        "new_profile": data.cadence_profile,
++        "rescheduled_count": int(rescheduled),
++    }, user_id=getattr(current_user, "id", None))
++
+     print(
+         f"[CADENCE] Perfil da campanha '{campaign.name}' (id={campaign_id}) alterado: "
+         f"{old_profile} → {data.cadence_profile} ({rescheduled} dispatches reagendados)"
+@@ -3666,6 +3800,8 @@ async def pause_cadence_campaign(
+ 
+     campaign.status = "paused_cadence"
+     db.commit()
++    from services.cadence_events import emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_CAMPAIGN_PAUSED as _EVT
++    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {"manual": True}, user_id=getattr(current_user, "id", None))
+     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) pausada")
+     return {"message": "Campanha pausada", "status": "paused_cadence"}
+ 
+@@ -3723,5 +3859,7 @@ async def resume_cadence_campaign(
+ 
+     campaign.status = "firing_cadence"
+     db.commit()
++    from services.cadence_events import emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_CAMPAIGN_RESUMED as _EVT
++    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {"manual": True}, user_id=getattr(current_user, "id", None))
+     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) retomada")
+     return {"message": "Campanha retomada", "status": "firing_cadence"}
+diff --git a/database/models.py b/database/models.py
+index 6e7d3c7..00f3d1c 100644
+--- a/database/models.py
++++ b/database/models.py
+@@ -369,7 +369,11 @@ class CampaignDispatch(Base):
+     priority = Column(Integer, default=3)
+     responded_at = Column(DateTime(timezone=True), nullable=True)
+     retry_count = Column(Integer, default=0)
+-    
++    # Task #221 — última mensagem de erro Z-API recebida (atualizada a cada
++    # tentativa, não só na última que marca como FAILED). Permite ver erros
++    # intermediários como "session not found" antes do retry final.
++    last_error_message = Column(Text, nullable=True)
++
+     campaign = relationship("Campaign", back_populates="dispatches")
+ 
+ 
+@@ -1507,6 +1511,8 @@ class CadenceCampaignContact(Base):
+     delivered = Column(Boolean, default=False)
+     responded_at = Column(DateTime(timezone=True), nullable=True)
+     retry_count = Column(Integer, default=0)
++    # Task #221 — vide CampaignDispatch.last_error_message.
++    last_error_message = Column(Text, nullable=True)
+ 
+     campaign = relationship("CadenceCampaign", back_populates="contacts")
+ 
+@@ -1524,6 +1530,58 @@ class CampaignDailyLog(Base):
+     campaign = relationship("CadenceCampaign", back_populates="daily_logs")
+ 
+ 
++class CadenceEngineState(Base):
++    """
++    Task #221 — Estado persistente do motor de cadência (singleton id=1).
++    Substitui as variáveis Python globais (_last_send_time, _consecutive_failures,
++    _pause_until) que se perdiam a cada reinício. Apenas uma linha existe.
++    """
++    __tablename__ = "cadence_engine_state"
++
++    id = Column(Integer, primary_key=True)  # sempre 1
++    last_tick_at = Column(DateTime(timezone=True), nullable=True)
++    last_send_at = Column(DateTime(timezone=True), nullable=True)
++    pause_until = Column(DateTime(timezone=True), nullable=True)
++    pause_reason = Column(String(64), nullable=True)  # "anti_block" | "manual" | etc.
++    consecutive_failures = Column(Integer, default=0)
++    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
++
++
++class CadenceCampaignEvent(Base):
++    """
++    Task #221 — Timeline polimórfica de eventos para campanhas legadas
++    (cadence_campaigns) e unificadas (campaigns). Armazena criação,
++    pausas/retomadas, trocas de perfil, falhas Z-API significativas,
++    pausas anti-block, limite diário, etc.
++
++    Campos:
++    - campaign_kind: 'unified' (campaigns.id) | 'legacy' (cadence_campaigns.id)
++    - campaign_id: id da campanha (sem FK para suportar polimorfismo)
++    - event_type: ver CadenceEventType abaixo
++    - payload: JSON livre com detalhes (perfil antigo/novo, mensagem de erro,
++      hora prevista de retomada, contagem reagendada, is_backfill, etc.)
++    - user_id: autor humano quando aplicável (pause/resume/profile_change)
++    - occurred_at: quando o evento de fato aconteceu (≠ created_at no backfill)
++    """
++    __tablename__ = "cadence_campaign_events"
++
++    id = Column(Integer, primary_key=True, index=True)
++    campaign_kind = Column(String(16), nullable=False, index=True)
++    campaign_id = Column(Integer, nullable=False, index=True)
++    event_type = Column(String(48), nullable=False, index=True)
++    payload = Column(Text, nullable=True)  # JSON serializado
++    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
++    occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++
++    __table_args__ = (
++        Index("ix_cadence_events_campaign_lookup", "campaign_kind", "campaign_id", "occurred_at"),
++        # Idempotência do backfill: mesma campanha + tipo + timestamp não duplica
++        UniqueConstraint("campaign_kind", "campaign_id", "event_type", "occurred_at",
++                         name="uq_cadence_event_dedupe"),
++    )
++
++
+ class RecommendationEntry(Base):
+     """
+     Registro formal de que um produto está na lista de recomendações do Comitê SVN.
+diff --git a/frontend/templates/campanhas.html b/frontend/templates/campanhas.html
+index e4e891e..7c5970d 100644
+--- a/frontend/templates/campanhas.html
++++ b/frontend/templates/campanhas.html
+@@ -861,6 +861,25 @@
+                 <!-- Aba: Campanhas -->
+                 <div id="tab-campanhas">
+ 
++                <!-- Task #221 — Banner global do motor de cadência + saúde Z-API -->
++                <div id="cadenceEngineBanner" style="display:none;margin-bottom:16px;padding:14px 18px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;">
++                    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between;">
++                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
++                            <span id="cadenceEngineDot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#94a3b8;"></span>
++                            <strong id="cadenceEngineLabel" style="font-size:0.95rem;color:#0f172a;">Motor de cadência</strong>
++                            <span id="cadenceEngineSubtitle" style="font-size:0.85rem;color:#475569;"></span>
++                        </div>
++                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
++                            <span id="zapiHealthPill" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:0.78rem;font-weight:600;background:#e2e8f0;color:#475569;">
++                                <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;"></span>
++                                Z-API: verificando…
++                            </span>
++                            <button type="button" id="refreshCadenceEngineBtn" class="btn btn-secondary" style="padding:4px 10px;font-size:0.78rem;">Atualizar</button>
++                        </div>
++                    </div>
++                    <div id="cadenceEngineDetails" style="margin-top:8px;font-size:0.82rem;color:#64748b;line-height:1.5;"></div>
++                </div>
++
+                 <div class="wizard-container">
+                     <div class="wizard-steps">
+                         <div class="wizard-step active" data-step="1">
+@@ -1463,9 +1482,17 @@ Equipe de Gestao"></textarea>
+                 </h3>
+                 <button class="modal-close" id="closeCadenceDashboardBtn">&times;</button>
+             </div>
+-            <div class="modal-body" id="cadenceDashboardBody" style="max-height: 75vh; overflow-y: auto;">
++            <!-- Task #221 — abas dentro do dashboard de cadência -->
++            <div style="display:flex;border-bottom:1px solid #e5e7eb;padding:0 16px;">
++                <button type="button" id="cadDashTabBtnVisao" data-cad-tab="visao" style="padding:10px 16px;font-size:0.85rem;font-weight:600;border:none;background:transparent;color:#1e40af;border-bottom:2px solid #1e40af;cursor:pointer;margin-bottom:-1px;">Visão geral</button>
++                <button type="button" id="cadDashTabBtnHistorico" data-cad-tab="historico" style="padding:10px 16px;font-size:0.85rem;font-weight:600;border:none;background:transparent;color:#64748b;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;">Histórico</button>
++            </div>
++            <div class="modal-body" id="cadenceDashboardBody" style="max-height: 70vh; overflow-y: auto;">
+                 <div style="text-align: center; padding: 40px;">Carregando...</div>
+             </div>
++            <div class="modal-body" id="cadenceHistoryBody" style="display:none;max-height: 70vh; overflow-y: auto;">
++                <div style="text-align: center; padding: 40px;">Carregando histórico...</div>
++            </div>
+             <div class="modal-footer" style="display: flex; gap: 8px;">
+                 <button class="btn btn-secondary" id="closeCadenceDashboardBtn2">Fechar</button>
+             </div>
+@@ -3204,6 +3231,8 @@ Equipe de Gestao"></textarea>
+ 
+         async function renderCadenceDashboard(cId) {
+             try {
++                currentCadenceModalCampaignId = cId;
++                currentCadenceModalKind = 'unified';
+                 var response = await fetch(API_BASE + '/' + cId + '/cadence-status', { credentials: 'include' });
+                 if (!response.ok) throw new Error('Erro ao carregar status');
+                 var data = await response.json();
+@@ -3223,7 +3252,7 @@ Equipe de Gestao"></textarea>
+                     data.status === 'paused_cadence' ? '#f59e0b' :
+                     data.status === 'cadence_done' ? '#16a34a' : '#6b7280';
+ 
+-                var html = '<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px;">';
++                var html = '<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px;">';
+                 html += '<div style="background: #eff6ff; padding: 14px; border-radius: 8px; text-align: center;"><div style="font-size: 22px; font-weight: 700; color: #2563eb;">' + total + '</div><div style="font-size: 11px; color: #1e40af;">Total</div></div>';
+                 html += '<div style="background: #f0fdf4; padding: 14px; border-radius: 8px; text-align: center;"><div style="font-size: 22px; font-weight: 700; color: #16a34a;">' + sent + '</div><div style="font-size: 11px; color: #166534;">Enviadas</div></div>';
+                 html += '<div style="background: #f8fafc; padding: 14px; border-radius: 8px; text-align: center;"><div style="font-size: 22px; font-weight: 700; color: #6b7280;">' + pending + '</div><div style="font-size: 11px; color: #374151;">Pendentes</div></div>';
+@@ -3231,6 +3260,27 @@ Equipe de Gestao"></textarea>
+                 html += '<div style="background: #fefce8; padding: 14px; border-radius: 8px; text-align: center;"><div style="font-size: 22px; font-weight: 700; color: #ca8a04;">' + responded + '</div><div style="font-size: 11px; color: #854d0e;">Respostas</div></div>';
+                 html += '</div>';
+ 
++                // Task #221 — KPIs ao vivo: última hora + próximo envio + último erro Z-API
++                var sentLastHour = (data.sent_last_hour != null) ? data.sent_last_hour : 0;
++                var nextEtaTxt = '—';
++                if (data.next_send_eta) {
++                    try {
++                        var dt = new Date(data.next_send_eta);
++                        if (!isNaN(dt.getTime())) {
++                            nextEtaTxt = dt.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
++                        }
++                    } catch (e) {}
++                }
++                html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;">';
++                html += '<div style="background:#ecfeff;padding:12px 14px;border-radius:8px;border:1px solid #a5f3fc;"><div style="font-size:11px;color:#155e75;text-transform:uppercase;letter-spacing:0.5px;">Enviadas na última hora</div><div style="font-size:20px;font-weight:700;color:#0e7490;margin-top:4px;">' + sentLastHour + '</div></div>';
++                html += '<div style="background:#fdf4ff;padding:12px 14px;border-radius:8px;border:1px solid #f5d0fe;"><div style="font-size:11px;color:#86198f;text-transform:uppercase;letter-spacing:0.5px;">Próximo envio previsto</div><div style="font-size:14px;font-weight:600;color:#a21caf;margin-top:4px;">' + nextEtaTxt + '</div></div>';
++                html += '</div>';
++
++                if (data.last_error_message) {
++                    var errEsc = String(data.last_error_message).replace(/[<>&]/g, function(c){ return ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c]; });
++                    html += '<div style="margin-bottom:16px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:0.82rem;color:#991b1b;"><strong>Último erro Z-API:</strong> ' + errEsc.substring(0, 280) + '</div>';
++                }
++
+                 html += '<div style="margin-bottom: 24px;">';
+                 html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">';
+                 html += '<span style="font-weight: 600;">Progresso</span>';
+@@ -3326,6 +3376,211 @@ Equipe de Gestao"></textarea>
+             }
+         }
+ 
++        // ============================================================================
++        // Task #221 — Banner do motor de cadência + saúde Z-API + aba Histórico
++        // ============================================================================
++        var cadenceEngineRefreshInterval = null;
++        var currentCadenceModalCampaignId = null;
++        var currentCadenceModalKind = 'unified'; // 'unified' | 'legacy'
++
++        function escapeHtmlSafe(s) {
++            if (s == null) return '';
++            return String(s).replace(/[&<>"']/g, function(c){
++                return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
++            });
++        }
++
++        function fmtRelativeTime(iso) {
++            if (!iso) return '—';
++            try {
++                var dt = new Date(iso);
++                if (isNaN(dt.getTime())) return '—';
++                var diff = Math.floor((Date.now() - dt.getTime()) / 1000);
++                if (diff < 0) {
++                    var future = Math.abs(diff);
++                    if (future < 60) return 'em ' + future + 's';
++                    if (future < 3600) return 'em ' + Math.floor(future / 60) + ' min';
++                    return 'em ' + Math.floor(future / 3600) + ' h';
++                }
++                if (diff < 60) return 'há ' + diff + 's';
++                if (diff < 3600) return 'há ' + Math.floor(diff / 60) + ' min';
++                if (diff < 86400) return 'há ' + Math.floor(diff / 3600) + ' h';
++                return 'há ' + Math.floor(diff / 86400) + ' dia(s)';
++            } catch (e) { return '—'; }
++        }
++
++        async function refreshCadenceEngineBanner() {
++            var banner = document.getElementById('cadenceEngineBanner');
++            if (!banner) return;
++            try {
++                var r = await fetch(API_BASE + '/cadence/engine-state', { credentials: 'include' });
++                if (r.status === 401 || r.status === 403) { banner.style.display = 'none'; return; }
++                if (!r.ok) throw new Error('Falha ao consultar estado do motor');
++                var s = await r.json();
++
++                // Pill Z-API (consulta o cache do health já existente)
++                try {
++                    var rz = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
++                    if (rz.ok) {
++                        var z = await rz.json();
++                        var pill = document.getElementById('zapiHealthPill');
++                        var ok = (z.status === 'connected' || z.connected === true);
++                        if (pill) {
++                            pill.style.background = ok ? '#dcfce7' : '#fee2e2';
++                            pill.style.color = ok ? '#166534' : '#991b1b';
++                            pill.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + (ok ? '#16a34a' : '#dc2626') + ';"></span> Z-API: ' + (ok ? 'conectado' : 'desconectado');
++                        }
++                    }
++                } catch (e) { /* mantém pill anterior */ }
++
++                var dot = document.getElementById('cadenceEngineDot');
++                var label = document.getElementById('cadenceEngineLabel');
++                var sub = document.getElementById('cadenceEngineSubtitle');
++                var details = document.getElementById('cadenceEngineDetails');
++
++                var color = '#16a34a', state = 'ativo, dentro do horário comercial';
++                if (s.is_paused_now) {
++                    color = '#dc2626';
++                    state = 'em pausa anti-bloqueio';
++                    if (s.pause_until) state += ' até ' + new Date(s.pause_until).toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'});
++                } else if (!s.in_business_hours_now) {
++                    color = '#f59e0b';
++                    state = 'fora do horário comercial (09–18, seg–sex)';
++                }
++                if (dot) dot.style.background = color;
++                if (label) label.style.color = color;
++                if (sub) sub.textContent = '— ' + state;
++
++                var detailLines = [];
++                if (s.last_send_at) detailLines.push('Último envio: ' + fmtRelativeTime(s.last_send_at));
++                if (s.last_tick_at) detailLines.push('Último heartbeat: ' + fmtRelativeTime(s.last_tick_at));
++                if (s.consecutive_failures > 0) detailLines.push('Falhas consecutivas: <strong style="color:#b91c1c;">' + s.consecutive_failures + '</strong>');
++                if (details) details.innerHTML = detailLines.join(' &nbsp;·&nbsp; ') || 'Sem atividade recente registrada.';
++
++                banner.style.display = 'block';
++            } catch (e) {
++                banner.style.display = 'none';
++            }
++        }
++
++        function startCadenceEnginePolling() {
++            refreshCadenceEngineBanner();
++            if (cadenceEngineRefreshInterval) clearInterval(cadenceEngineRefreshInterval);
++            cadenceEngineRefreshInterval = setInterval(refreshCadenceEngineBanner, 30000);
++        }
++
++        document.addEventListener('DOMContentLoaded', function() {
++            startCadenceEnginePolling();
++            var b = document.getElementById('refreshCadenceEngineBtn');
++            if (b) b.addEventListener('click', refreshCadenceEngineBanner);
++
++            // Abas do dashboard de cadência (Visão geral / Histórico)
++            var btnVisao = document.getElementById('cadDashTabBtnVisao');
++            var btnHist = document.getElementById('cadDashTabBtnHistorico');
++            if (btnVisao && btnHist) {
++                btnVisao.addEventListener('click', function() { switchCadenceModalTab('visao'); });
++                btnHist.addEventListener('click', function() { switchCadenceModalTab('historico'); });
++            }
++        });
++
++        function switchCadenceModalTab(tab) {
++            var btnVisao = document.getElementById('cadDashTabBtnVisao');
++            var btnHist = document.getElementById('cadDashTabBtnHistorico');
++            var bodyVisao = document.getElementById('cadenceDashboardBody');
++            var bodyHist = document.getElementById('cadenceHistoryBody');
++            if (!btnVisao || !btnHist || !bodyVisao || !bodyHist) return;
++
++            var active = ['#1e40af', '2px solid #1e40af'];
++            var inactive = ['#64748b', '2px solid transparent'];
++
++            if (tab === 'historico') {
++                btnHist.style.color = active[0]; btnHist.style.borderBottom = active[1];
++                btnVisao.style.color = inactive[0]; btnVisao.style.borderBottom = inactive[1];
++                bodyVisao.style.display = 'none';
++                bodyHist.style.display = 'block';
++                if (currentCadenceModalCampaignId) renderCadenceHistory(currentCadenceModalCampaignId, currentCadenceModalKind);
++            } else {
++                btnVisao.style.color = active[0]; btnVisao.style.borderBottom = active[1];
++                btnHist.style.color = inactive[0]; btnHist.style.borderBottom = inactive[1];
++                bodyHist.style.display = 'none';
++                bodyVisao.style.display = 'block';
++            }
++        }
++
++        var EVENT_LABELS = {
++            campaign_created: { label: 'Campanha criada', color: '#1e40af', bg: '#eff6ff' },
++            campaign_started: { label: 'Campanha iniciada', color: '#16a34a', bg: '#f0fdf4' },
++            campaign_paused: { label: 'Pausada manualmente', color: '#92400e', bg: '#fef3c7' },
++            campaign_resumed: { label: 'Retomada', color: '#1e40af', bg: '#eff6ff' },
++            cadence_profile_changed: { label: 'Perfil de velocidade alterado', color: '#7c3aed', bg: '#f3e8ff' },
++            dispatch_sent: { label: 'Mensagem enviada', color: '#16a34a', bg: '#f0fdf4' },
++            dispatch_failed: { label: 'Falha no envio', color: '#dc2626', bg: '#fef2f2' },
++            anti_block_pause: { label: 'Pausa anti-bloqueio', color: '#dc2626', bg: '#fef2f2' },
++            daily_limit_reached: { label: 'Limite diário atingido', color: '#92400e', bg: '#fef3c7' },
++            campaign_done: { label: 'Campanha concluída', color: '#16a34a', bg: '#dcfce7' }
++        };
++
++        async function renderCadenceHistory(cId, kind) {
++            var body = document.getElementById('cadenceHistoryBody');
++            if (!body) return;
++            body.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Carregando histórico…</div>';
++            var url = (kind === 'legacy')
++                ? '/api/cadence-campaigns/' + cId + '/events?limit=200'
++                : API_BASE + '/' + cId + '/events?limit=200';
++            try {
++                var r = await fetch(url, { credentials: 'include' });
++                if (!r.ok) throw new Error('Falha ao carregar histórico (' + r.status + ')');
++                var data = await r.json();
++                var events = data.events || [];
++                if (events.length === 0) {
++                    body.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Sem eventos registrados ainda.</div>';
++                    return;
++                }
++                var html = '<div style="padding:8px 16px 16px;">';
++                html += '<div style="font-size:0.78rem;color:#64748b;margin-bottom:12px;">' + events.length + ' evento(s) — mais recentes primeiro. Eventos marcados como <em>reconstruído</em> foram inferidos retroativamente.</div>';
++                html += '<div style="border-left:2px solid #e5e7eb;padding-left:14px;">';
++                events.forEach(function(ev) {
++                    var meta = EVENT_LABELS[ev.event_type] || { label: ev.event_type, color: '#475569', bg: '#f1f5f9' };
++                    var when = ev.occurred_at ? new Date(ev.occurred_at).toLocaleString('pt-BR') : '—';
++                    var details = '';
++                    var p = ev.payload || {};
++                    if (ev.event_type === 'cadence_profile_changed' && p.old_profile && p.new_profile) {
++                        details = escapeHtmlSafe(p.old_profile) + ' → ' + escapeHtmlSafe(p.new_profile);
++                        if (p.rescheduled_count != null) details += ' · ' + p.rescheduled_count + ' reagendados';
++                    } else if (ev.event_type === 'dispatch_failed') {
++                        details = 'Tentativa ' + (p.retry_count || 1) + (p.is_final ? ' (FINAL)' : '') +
++                                  (p.phone ? ' · ' + escapeHtmlSafe(p.phone) : '') +
++                                  (p.error ? '<br><span style="color:#991b1b;font-size:0.8rem;">' + escapeHtmlSafe(p.error) + '</span>' : '');
++                    } else if (ev.event_type === 'dispatch_sent') {
++                        details = (p.phone ? escapeHtmlSafe(p.phone) : '') + (p.profile ? ' · perfil ' + escapeHtmlSafe(p.profile) : '');
++                    } else if (ev.event_type === 'anti_block_pause') {
++                        details = 'Pausa de ' + (p.duration_minutes || '?') + ' min' + (p.trigger ? ' — ' + escapeHtmlSafe(p.trigger) : '');
++                    } else if (ev.event_type === 'daily_limit_reached') {
++                        details = (p.sent_today != null ? p.sent_today + '/' : '') + (p.limit || '?') + ' envios hoje';
++                    } else if (ev.event_type === 'campaign_created') {
++                        details = (p.total_contacts != null ? p.total_contacts + ' contato(s)' : '') +
++                                  (p.cadence_profile ? ' · ' + escapeHtmlSafe(p.cadence_profile) : '');
++                    } else if (ev.event_type === 'campaign_done') {
++                        details = (p.sent != null ? p.sent + ' enviadas' : '') + (p.failed != null ? ' · ' + p.failed + ' falhas' : '');
++                    }
++                    var actor = ev.user_name ? ' · por ' + escapeHtmlSafe(ev.user_name) : '';
++                    var backfillBadge = ev.is_backfill ? '<span style="margin-left:6px;font-size:10px;padding:1px 6px;background:#e0e7ff;color:#3730a3;border-radius:4px;">reconstruído</span>' : '';
++                    html += '<div style="margin-bottom:14px;">';
++                    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
++                    html += '<span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:' + meta.bg + ';color:' + meta.color + ';">' + escapeHtmlSafe(meta.label) + '</span>';
++                    html += '<span style="font-size:0.78rem;color:#64748b;">' + escapeHtmlSafe(when) + actor + '</span>';
++                    html += backfillBadge;
++                    html += '</div>';
++                    if (details) html += '<div style="font-size:0.85rem;color:#334155;margin-top:4px;margin-left:2px;">' + details + '</div>';
++                    html += '</div>';
++                });
++                html += '</div></div>';
++                body.innerHTML = html;
++            } catch (e) {
++                body.innerHTML = '<div class="alert alert-danger" style="margin:16px;">' + escapeHtmlSafe(e.message) + '</div>';
++            }
++        }
++
+         async function pauseCadenceCampaign(cId) {
+             try {
+                 var response = await fetch(API_BASE + '/' + cId + '/cadence-pause', {
+diff --git a/main.py b/main.py
+index 1f22b86..a3b1650 100644
+--- a/main.py
++++ b/main.py
+@@ -573,6 +573,35 @@ def _apply_incremental_migrations():
+         "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS aliases TEXT DEFAULT '[]'",
+         # Task #214 — Data da última revisão da Carteira Recomendada
+         "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMPTZ",
++        # Task #221 — Observabilidade do motor de cadência
++        "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS last_error_message TEXT",
++        "ALTER TABLE cadence_campaign_contacts ADD COLUMN IF NOT EXISTS last_error_message TEXT",
++        """CREATE TABLE IF NOT EXISTS cadence_engine_state (
++            id INTEGER PRIMARY KEY,
++            last_tick_at TIMESTAMPTZ,
++            last_send_at TIMESTAMPTZ,
++            pause_until TIMESTAMPTZ,
++            pause_reason VARCHAR(64),
++            consecutive_failures INTEGER DEFAULT 0,
++            updated_at TIMESTAMPTZ DEFAULT NOW()
++        )""",
++        "INSERT INTO cadence_engine_state (id, consecutive_failures) VALUES (1, 0) ON CONFLICT (id) DO NOTHING",
++        """CREATE TABLE IF NOT EXISTS cadence_campaign_events (
++            id SERIAL PRIMARY KEY,
++            campaign_kind VARCHAR(16) NOT NULL,
++            campaign_id INTEGER NOT NULL,
++            event_type VARCHAR(48) NOT NULL,
++            payload TEXT,
++            user_id INTEGER REFERENCES users(id),
++            occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++            CONSTRAINT uq_cadence_event_dedupe UNIQUE (campaign_kind, campaign_id, event_type, occurred_at)
++        )""",
++        "CREATE INDEX IF NOT EXISTS ix_cadence_events_kind ON cadence_campaign_events(campaign_kind)",
++        "CREATE INDEX IF NOT EXISTS ix_cadence_events_campaign_id ON cadence_campaign_events(campaign_id)",
++        "CREATE INDEX IF NOT EXISTS ix_cadence_events_event_type ON cadence_campaign_events(event_type)",
++        "CREATE INDEX IF NOT EXISTS ix_cadence_events_occurred_at ON cadence_campaign_events(occurred_at)",
++        "CREATE INDEX IF NOT EXISTS ix_cadence_events_campaign_lookup ON cadence_campaign_events(campaign_kind, campaign_id, occurred_at)",
+     ]
+     db = SessionLocal()
+     ok = 0
+@@ -627,6 +656,159 @@ def _cleanup_orphan_pre_analysis_materials():
+         db.close()
+ 
+ 
++def _backfill_cadence_events():
++    """
++    Task #221 — Backfill leve, idempotente, dos eventos de campanhas
++    pré-existentes a partir das colunas que JÁ existiam no banco antes
++    desta task. Evita timelines vazias para campanhas em curso.
++
++    Eventos gerados:
++    - campaign_created (a partir de created_at)
++    - campaign_started (a partir de start_date / sent_at)
++    - campaign_done (a partir de end_date e status terminal)
++    - dispatch_failed (um por dispatch/contact com status 'failed', usando
++      error_message ou last_error_message como mensagem). NÃO geramos
++      dispatch_sent porque seriam dezenas/centenas por campanha — o motor
++      passará a registrar isso a partir de agora.
++
++    Idempotência: a UNIQUE (campaign_kind, campaign_id, event_type, occurred_at)
++    impede duplicatas. Cada evento gerado leva is_backfill=true no payload
++    para que a UI mostre como "evento reconstruído".
++    """
++    from database.database import SessionLocal
++    from sqlalchemy import text as sql_text
++    db = SessionLocal()
++    inserted = 0
++    try:
++        # Cada CTE roda como statement separado para evitar parsing de
++        # parâmetros pelo SQLAlchemy (':true' no JSON literal seria
++        # interpretado como bind). Usamos jsonb_build_object para construir
++        # o payload de forma segura e idempotente.
++        statements = [
++            # Legacy — created
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'legacy', cc.id, 'campaign_created',
++                      jsonb_build_object('is_backfill', true, 'name', cc.name)::text,
++                      cc.created_at, NOW()
++               FROM cadence_campaigns cc
++               WHERE cc.created_at IS NOT NULL
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Legacy — started
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'legacy', cc.id, 'campaign_started',
++                      jsonb_build_object('is_backfill', true)::text,
++                      cc.start_date, NOW()
++               FROM cadence_campaigns cc
++               WHERE cc.start_date IS NOT NULL
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Legacy — done
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'legacy', cc.id, 'campaign_done',
++                      jsonb_build_object('is_backfill', true)::text,
++                      cc.end_date, NOW()
++               FROM cadence_campaigns cc
++               WHERE cc.end_date IS NOT NULL AND cc.status = 'done'
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Legacy — dispatch_failed (1 por contato falho)
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'legacy', ccc.campaign_id, 'dispatch_failed',
++                      jsonb_build_object(
++                          'is_backfill', true, 'is_final', true,
++                          'phone', ccc.phone, 'contact_id', ccc.id,
++                          'error', LEFT(COALESCE(ccc.last_error_message,''), 300)
++                      )::text,
++                      COALESCE(ccc.sent_at, ccc.scheduled_for, NOW()), NOW()
++               FROM cadence_campaign_contacts ccc
++               WHERE ccc.status = 'failed'
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Unified — created
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'unified', c.id, 'campaign_created',
++                      jsonb_build_object('is_backfill', true, 'name', c.name)::text,
++                      c.created_at, NOW()
++               FROM campaigns c
++               WHERE c.created_at IS NOT NULL
++                 AND (c.delivery_mode = 'cadence'
++                      OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Unified — started
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'unified', c.id, 'campaign_started',
++                      jsonb_build_object('is_backfill', true)::text,
++                      c.sent_at, NOW()
++               FROM campaigns c
++               WHERE c.sent_at IS NOT NULL
++                 AND (c.delivery_mode = 'cadence'
++                      OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Unified — done
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'unified', c.id, 'campaign_done',
++                      jsonb_build_object('is_backfill', true)::text,
++                      COALESCE(c.sent_at, NOW()), NOW()
++               FROM campaigns c
++               WHERE c.status = 'cadence_done'
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++            # Unified — dispatch_failed
++            """INSERT INTO cadence_campaign_events
++                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
++               SELECT 'unified', cd.campaign_id, 'dispatch_failed',
++                      jsonb_build_object(
++                          'is_backfill', true, 'is_final', true,
++                          'phone', COALESCE(cd.assessor_phone,''),
++                          'dispatch_id', cd.id,
++                          'error', LEFT(COALESCE(cd.error_message, cd.last_error_message, ''), 300)
++                      )::text,
++                      COALESCE(cd.sent_at, cd.scheduled_for, NOW()), NOW()
++               FROM campaign_dispatches cd
++               JOIN campaigns c ON c.id = cd.campaign_id
++               WHERE cd.status = 'failed'
++                 AND (c.delivery_mode = 'cadence'
++                      OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
++               ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
++        ]
++        for st in statements:
++            try:
++                r = db.execute(sql_text(st))
++                inserted += int(r.rowcount or 0)
++                db.commit()
++            except Exception as inner:
++                db.rollback()
++                snippet = " ".join(st.split())[:120]
++                print(f"[INIT] Aviso: backfill statement falhou (continuando): {inner} | SQL: {snippet}")
++        if inserted > 0:
++            print(f"[INIT] Backfill de eventos de cadência: {inserted} eventos sintéticos criados")
++        else:
++            print("[INIT] Backfill de eventos de cadência: nada a criar (já idempotente)")
++    except Exception as e:
++        db.rollback()
++        print(f"[INIT] Aviso: backfill de eventos de cadência falhou: {e}")
++    finally:
++        db.close()
++
++
++def _cleanup_old_cadence_events(retention_days: int = 90):
++    """Task #221 — remove eventos com mais de 90 dias para evitar crescimento indefinido."""
++    from database.database import SessionLocal
++    from services.cadence_events import cleanup_old_events
++    db = SessionLocal()
++    try:
++        n = cleanup_old_events(db, retention_days)
++        if n > 0:
++            print(f"[INIT] Cleanup de eventos de cadência > {retention_days}d: {n} removidos")
++    except Exception as e:
++        print(f"[INIT] Aviso: cleanup de eventos de cadência falhou: {e}")
++    finally:
++        db.close()
++
++
+ def _sync_init_database():
+     """Operações síncronas de inicialização do banco (roda em thread separada)."""
+     import os
+@@ -649,6 +831,8 @@ def _sync_init_database():
+     if not is_sqlite:
+         _apply_incremental_migrations()
+         _cleanup_orphan_pre_analysis_materials()
++        _backfill_cadence_events()
++        _cleanup_old_cadence_events()
+ 
+     admin_username = os.getenv("ADMIN_USERNAME", "admin")
+     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+diff --git a/services/cadence_controller.py b/services/cadence_controller.py
+index 934acb3..44e5cbc 100644
+--- a/services/cadence_controller.py
++++ b/services/cadence_controller.py
+@@ -5,14 +5,42 @@ from typing import Optional
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Task #221 — Estas variáveis viraram apenas CACHE em memória do estado
++# persistido em `cadence_engine_state` (singleton id=1). A fonte de verdade
++# agora é o banco; o cache reduz hits durante o tick. São hidratadas no início
++# do tick a partir do banco e gravadas de volta quando mudam.
+ _last_send_time: Optional[datetime] = None
+ _consecutive_failures: int = 0
+ _pause_until: Optional[datetime] = None
++_pause_reason: Optional[str] = None
+ _running: bool = False
+ 
+ 
++def _persist_state(db, **fields):
++    """Wrapper que silencia erros — persistir estado nunca pode quebrar o tick."""
++    try:
++        from services.cadence_events import update_engine_state
++        update_engine_state(db, **fields)
++    except Exception as e:
++        logger.warning(f"[CADENCE-OBS] _persist_state falhou: {e}")
++
++
++def _hydrate_from_db(db):
++    """Carrega o estado persistido para o cache em memória no começo do tick."""
++    global _last_send_time, _consecutive_failures, _pause_until, _pause_reason
++    try:
++        from services.cadence_events import get_engine_state
++        st = get_engine_state(db)
++        _last_send_time = st.get("last_send_at") or _last_send_time
++        _consecutive_failures = int(st.get("consecutive_failures") or 0)
++        _pause_until = st.get("pause_until") or _pause_until
++        _pause_reason = st.get("pause_reason")
++    except Exception as e:
++        logger.warning(f"[CADENCE-OBS] _hydrate_from_db falhou: {e}")
++
++
+ async def run_cadence_tick():
+-    global _last_send_time, _consecutive_failures, _pause_until
++    global _last_send_time, _consecutive_failures, _pause_until, _pause_reason
+ 
+     from database.database import SessionLocal
+     from database.models import (
+@@ -20,6 +48,11 @@ async def run_cadence_tick():
+         Campaign, CampaignDispatch
+     )
+     from services.whatsapp_client import ZAPIClient
++    from services.cadence_events import (
++        emit_event, CAMPAIGN_KIND_LEGACY, CAMPAIGN_KIND_UNIFIED,
++        EVENT_DISPATCH_SENT, EVENT_DISPATCH_FAILED, EVENT_ANTI_BLOCK_PAUSE,
++        EVENT_DAILY_LIMIT_REACHED, EVENT_CAMPAIGN_DONE,
++    )
+     from sqlalchemy import and_
+     from zoneinfo import ZoneInfo
+ 
+@@ -34,11 +67,15 @@ async def run_cadence_tick():
+     if now < work_start or now >= work_end:
+         return
+ 
+-    if _pause_until and now < _pause_until:
+-        return
+-
+     db = SessionLocal()
+     try:
++        # Hidrata do banco e registra tick. Estado persistente sobrevive a reinício.
++        _hydrate_from_db(db)
++        _persist_state(db, last_tick_at=now)
++
++        if _pause_until and now < _pause_until:
++            return
++
+         sent_this_tick = False
+ 
+         from services.cadence_profiles import get_profile
+@@ -49,6 +86,10 @@ async def run_cadence_tick():
+         )
+ 
+         today_date = now.date()
++        # Para evitar emitir N eventos "daily_limit_reached" por tick, marcamos
++        # quais campanhas já tiveram o evento emitido neste tick.
++        daily_limit_emitted_legacy: set = set()
++        daily_limit_emitted_unified: set = set()
+ 
+         for campaign in active_legacy:
+             if sent_this_tick:
+@@ -76,6 +117,13 @@ async def run_cadence_tick():
+ 
+             effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+             if daily_log and daily_log.sent_count >= effective_daily_limit:
++                if campaign.id not in daily_limit_emitted_legacy:
++                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
++                        "limit": effective_daily_limit,
++                        "sent_today": int(daily_log.sent_count or 0),
++                        "profile": campaign_profile.get("label"),
++                    })
++                    daily_limit_emitted_legacy.add(campaign.id)
+                 continue
+ 
+             next_contact = (
+@@ -102,6 +150,9 @@ async def run_cadence_tick():
+                     campaign.status = "done"
+                     campaign.end_date = now
+                     db.commit()
++                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_DONE, {
++                        "ended_at": now.isoformat(),
++                    })
+                     print(f"[CADENCE] Campanha legada '{campaign.name}' (id={campaign.id}) concluída!")
+                 continue
+ 
+@@ -121,6 +172,7 @@ async def run_cadence_tick():
+                     next_contact.status = "sent"
+                     next_contact.sent_at = now
+                     next_contact.delivered = True
++                    next_contact.last_error_message = None
+                     _consecutive_failures = 0
+ 
+                     if not daily_log:
+@@ -135,12 +187,22 @@ async def run_cadence_tick():
+ 
+                     _last_send_time = now
+                     db.commit()
++                    _persist_state(db, last_send_at=now, consecutive_failures=0)
++                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_SENT, {
++                        "phone": next_contact.phone,
++                        "contact_id": next_contact.id,
++                        "profile": campaign_profile.get("label"),
++                    })
+                     print(f"[CADENCE] Enviado para {next_contact.phone} (campanha legada '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
+                 else:
+                     next_contact.retry_count += 1
++                    error_msg = result.get("error", "desconhecido")
++                    # Task #221 — registra erro a cada tentativa, não só na última.
++                    next_contact.last_error_message = str(error_msg)[:1000]
+                     _consecutive_failures += 1
+ 
+-                    if next_contact.retry_count >= 3:
++                    is_final_fail = next_contact.retry_count >= 3
++                    if is_final_fail:
+                         next_contact.status = "failed"
+                         if not daily_log:
+                             daily_log = CampaignDailyLog(
+@@ -153,19 +215,43 @@ async def run_cadence_tick():
+                             daily_log.failed_count += 1
+ 
+                     db.commit()
+-                    error_msg = result.get("error", "desconhecido")
++                    _persist_state(db, consecutive_failures=_consecutive_failures)
++                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
++                        "phone": next_contact.phone,
++                        "contact_id": next_contact.id,
++                        "retry_count": int(next_contact.retry_count or 0),
++                        "is_final": bool(is_final_fail),
++                        "error": str(error_msg)[:500],
++                    })
+                     print(f"[CADENCE] Falha ao enviar para {next_contact.phone}: {error_msg} (tentativa {next_contact.retry_count})")
+ 
+                     if _consecutive_failures >= 2:
+                         _pause_until = now + timedelta(minutes=20)
++                        _pause_reason = "anti_block"
+                         _consecutive_failures = 0
++                        _persist_state(db, pause_until=_pause_until, pause_reason="anti_block",
++                                       consecutive_failures=0)
++                        emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
++                            "duration_minutes": 20,
++                            "pause_until": _pause_until.isoformat(),
++                            "trigger": "2 falhas Z-API consecutivas",
++                        })
+                         print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por 20 minutos até {_pause_until.strftime('%H:%M')}")
+ 
+             except Exception as send_err:
+                 next_contact.retry_count += 1
++                next_contact.last_error_message = str(send_err)[:1000]
+                 if next_contact.retry_count >= 3:
+                     next_contact.status = "failed"
+                 db.commit()
++                emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
++                    "phone": next_contact.phone,
++                    "contact_id": next_contact.id,
++                    "retry_count": int(next_contact.retry_count or 0),
++                    "is_final": bool(next_contact.retry_count >= 3),
++                    "error": str(send_err)[:500],
++                    "exception": True,
++                })
+                 print(f"[CADENCE] Erro ao enviar para {next_contact.phone}: {send_err}")
+ 
+             sent_this_tick = True
+@@ -185,6 +271,7 @@ async def run_cadence_tick():
+                 if stale.retry_count >= 3:
+                     stale.status = "failed"
+                     stale.error_message = "Travado em processing por mais de 10 minutos"
++                    stale.last_error_message = "Travado em processing por mais de 10 minutos"
+                 else:
+                     stale.status = "pending"
+                     stale.scheduled_for = now + timedelta(minutes=5)
+@@ -223,6 +310,13 @@ async def run_cadence_tick():
+ 
+                 effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+                 if today_sent >= effective_daily_limit:
++                    if campaign.id not in daily_limit_emitted_unified:
++                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
++                            "limit": effective_daily_limit,
++                            "sent_today": int(today_sent),
++                            "profile": campaign_profile.get("label"),
++                        })
++                        daily_limit_emitted_unified.add(campaign.id)
+                     continue
+ 
+                 from sqlalchemy import text as sql_text
+@@ -276,6 +370,11 @@ async def run_cadence_tick():
+                             .count()
+                         )
+                         db.commit()
++                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_CAMPAIGN_DONE, {
++                            "ended_at": now.isoformat(),
++                            "sent": int(campaign.messages_sent or 0),
++                            "failed": int(campaign.messages_failed or 0),
++                        })
+                         print(f"[CADENCE] Campanha unificada '{campaign.name}' (id={campaign.id}) concluída!")
+                     continue
+ 
+@@ -285,7 +384,13 @@ async def run_cadence_tick():
+                 if not phone:
+                     next_dispatch.status = "failed"
+                     next_dispatch.error_message = "Telefone não informado"
++                    next_dispatch.last_error_message = "Telefone não informado"
+                     db.commit()
++                    emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
++                        "dispatch_id": next_dispatch.id,
++                        "is_final": True,
++                        "error": "Telefone não informado",
++                    })
+                     continue
+ 
+                 zapi = ZAPIClient()
+@@ -310,7 +415,13 @@ async def run_cadence_tick():
+                             # anexo. Falhar imediatamente sem consumir retries.
+                             next_dispatch.status = "failed"
+                             next_dispatch.error_message = "Arquivo do anexo não encontrado"
++                            next_dispatch.last_error_message = "Arquivo do anexo não encontrado"
+                             db.commit()
++                            emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
++                                "dispatch_id": next_dispatch.id,
++                                "is_final": True,
++                                "error": "Arquivo do anexo não encontrado",
++                            })
+                             print(
+                                 f"[CADENCE] Anexo da campanha '{campaign.name}' (id={campaign.id}) "
+                                 f"não encontrado no disco e sem URL pública configurada. "
+@@ -336,35 +447,61 @@ async def run_cadence_tick():
+                     if result.get("success"):
+                         next_dispatch.status = "sent"
+                         next_dispatch.sent_at = now
++                        next_dispatch.last_error_message = None
+                         _consecutive_failures = 0
+                         _last_send_time = now
+ 
+                         _persist_unified_campaign_message(db, phone, message, campaign.name)
+ 
+                         db.commit()
++                        _persist_state(db, last_send_at=now, consecutive_failures=0)
++                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_SENT, {
++                            "dispatch_id": next_dispatch.id,
++                            "phone": phone,
++                            "profile": campaign_profile.get("label"),
++                        })
+                         print(f"[CADENCE] Enviado para {phone} (campanha '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
+                     else:
+                         next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
++                        error_msg = result.get("error", "desconhecido")
++                        next_dispatch.last_error_message = str(error_msg)[:1000]
+                         _consecutive_failures += 1
+ 
+-                        if next_dispatch.retry_count >= 3:
++                        is_final_fail = next_dispatch.retry_count >= 3
++                        if is_final_fail:
+                             next_dispatch.status = "failed"
+-                            next_dispatch.error_message = result.get("error", "desconhecido")
++                            next_dispatch.error_message = error_msg
+                         else:
+                             next_dispatch.status = "pending"
+                             next_dispatch.scheduled_for = now + timedelta(minutes=10)
+ 
+                         db.commit()
+-                        error_msg = result.get("error", "desconhecido")
++                        _persist_state(db, consecutive_failures=_consecutive_failures)
++                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
++                            "dispatch_id": next_dispatch.id,
++                            "phone": phone,
++                            "retry_count": int(next_dispatch.retry_count or 0),
++                            "is_final": bool(is_final_fail),
++                            "error": str(error_msg)[:500],
++                        })
+                         print(f"[CADENCE] Falha ao enviar para {phone}: {error_msg} (tentativa {next_dispatch.retry_count})")
+ 
+                         if _consecutive_failures >= 2:
+                             _pause_until = now + timedelta(minutes=20)
++                            _pause_reason = "anti_block"
+                             _consecutive_failures = 0
++                            _persist_state(db, pause_until=_pause_until, pause_reason="anti_block",
++                                           consecutive_failures=0)
++                            emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
++                                "duration_minutes": 20,
++                                "pause_until": _pause_until.isoformat(),
++                                "trigger": "2 falhas Z-API consecutivas",
++                            })
+                             print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por 20 minutos até {_pause_until.strftime('%H:%M')}")
+ 
+                 except Exception as send_err:
+                     next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
++                    next_dispatch.last_error_message = str(send_err)[:1000]
+                     if next_dispatch.retry_count >= 3:
+                         next_dispatch.status = "failed"
+                         next_dispatch.error_message = str(send_err)
+@@ -372,6 +509,14 @@ async def run_cadence_tick():
+                         next_dispatch.status = "pending"
+                         next_dispatch.scheduled_for = now + timedelta(minutes=10)
+                     db.commit()
++                    emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
++                        "dispatch_id": next_dispatch.id,
++                        "phone": phone,
++                        "retry_count": int(next_dispatch.retry_count or 0),
++                        "is_final": bool(next_dispatch.retry_count >= 3),
++                        "error": str(send_err)[:500],
++                        "exception": True,
++                    })
+                     print(f"[CADENCE] Erro ao enviar para {phone}: {send_err}")
+ 
+                 sent_this_tick = True

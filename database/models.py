@@ -369,7 +369,11 @@ class CampaignDispatch(Base):
     priority = Column(Integer, default=3)
     responded_at = Column(DateTime(timezone=True), nullable=True)
     retry_count = Column(Integer, default=0)
-    
+    # Task #221 — última mensagem de erro Z-API recebida (atualizada a cada
+    # tentativa, não só na última que marca como FAILED). Permite ver erros
+    # intermediários como "session not found" antes do retry final.
+    last_error_message = Column(Text, nullable=True)
+
     campaign = relationship("Campaign", back_populates="dispatches")
 
 
@@ -1507,6 +1511,8 @@ class CadenceCampaignContact(Base):
     delivered = Column(Boolean, default=False)
     responded_at = Column(DateTime(timezone=True), nullable=True)
     retry_count = Column(Integer, default=0)
+    # Task #221 — vide CampaignDispatch.last_error_message.
+    last_error_message = Column(Text, nullable=True)
 
     campaign = relationship("CadenceCampaign", back_populates="contacts")
 
@@ -1522,6 +1528,58 @@ class CampaignDailyLog(Base):
     responded_count = Column(Integer, default=0)
 
     campaign = relationship("CadenceCampaign", back_populates="daily_logs")
+
+
+class CadenceEngineState(Base):
+    """
+    Task #221 — Estado persistente do motor de cadência (singleton id=1).
+    Substitui as variáveis Python globais (_last_send_time, _consecutive_failures,
+    _pause_until) que se perdiam a cada reinício. Apenas uma linha existe.
+    """
+    __tablename__ = "cadence_engine_state"
+
+    id = Column(Integer, primary_key=True)  # sempre 1
+    last_tick_at = Column(DateTime(timezone=True), nullable=True)
+    last_send_at = Column(DateTime(timezone=True), nullable=True)
+    pause_until = Column(DateTime(timezone=True), nullable=True)
+    pause_reason = Column(String(64), nullable=True)  # "anti_block" | "manual" | etc.
+    consecutive_failures = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CadenceCampaignEvent(Base):
+    """
+    Task #221 — Timeline polimórfica de eventos para campanhas legadas
+    (cadence_campaigns) e unificadas (campaigns). Armazena criação,
+    pausas/retomadas, trocas de perfil, falhas Z-API significativas,
+    pausas anti-block, limite diário, etc.
+
+    Campos:
+    - campaign_kind: 'unified' (campaigns.id) | 'legacy' (cadence_campaigns.id)
+    - campaign_id: id da campanha (sem FK para suportar polimorfismo)
+    - event_type: ver CadenceEventType abaixo
+    - payload: JSON livre com detalhes (perfil antigo/novo, mensagem de erro,
+      hora prevista de retomada, contagem reagendada, is_backfill, etc.)
+    - user_id: autor humano quando aplicável (pause/resume/profile_change)
+    - occurred_at: quando o evento de fato aconteceu (≠ created_at no backfill)
+    """
+    __tablename__ = "cadence_campaign_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_kind = Column(String(16), nullable=False, index=True)
+    campaign_id = Column(Integer, nullable=False, index=True)
+    event_type = Column(String(48), nullable=False, index=True)
+    payload = Column(Text, nullable=True)  # JSON serializado
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_cadence_events_campaign_lookup", "campaign_kind", "campaign_id", "occurred_at"),
+        # Idempotência do backfill: mesma campanha + tipo + timestamp não duplica
+        UniqueConstraint("campaign_kind", "campaign_id", "event_type", "occurred_at",
+                         name="uq_cadence_event_dedupe"),
+    )
 
 
 class RecommendationEntry(Base):

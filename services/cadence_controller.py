@@ -5,14 +5,42 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Task #221 — Estas variáveis viraram apenas CACHE em memória do estado
+# persistido em `cadence_engine_state` (singleton id=1). A fonte de verdade
+# agora é o banco; o cache reduz hits durante o tick. São hidratadas no início
+# do tick a partir do banco e gravadas de volta quando mudam.
 _last_send_time: Optional[datetime] = None
 _consecutive_failures: int = 0
 _pause_until: Optional[datetime] = None
+_pause_reason: Optional[str] = None
 _running: bool = False
 
 
+def _persist_state(db, **fields):
+    """Wrapper que silencia erros — persistir estado nunca pode quebrar o tick."""
+    try:
+        from services.cadence_events import update_engine_state
+        update_engine_state(db, **fields)
+    except Exception as e:
+        logger.warning(f"[CADENCE-OBS] _persist_state falhou: {e}")
+
+
+def _hydrate_from_db(db):
+    """Carrega o estado persistido para o cache em memória no começo do tick."""
+    global _last_send_time, _consecutive_failures, _pause_until, _pause_reason
+    try:
+        from services.cadence_events import get_engine_state
+        st = get_engine_state(db)
+        _last_send_time = st.get("last_send_at") or _last_send_time
+        _consecutive_failures = int(st.get("consecutive_failures") or 0)
+        _pause_until = st.get("pause_until") or _pause_until
+        _pause_reason = st.get("pause_reason")
+    except Exception as e:
+        logger.warning(f"[CADENCE-OBS] _hydrate_from_db falhou: {e}")
+
+
 async def run_cadence_tick():
-    global _last_send_time, _consecutive_failures, _pause_until
+    global _last_send_time, _consecutive_failures, _pause_until, _pause_reason
 
     from database.database import SessionLocal
     from database.models import (
@@ -20,6 +48,11 @@ async def run_cadence_tick():
         Campaign, CampaignDispatch
     )
     from services.whatsapp_client import ZAPIClient
+    from services.cadence_events import (
+        emit_event, CAMPAIGN_KIND_LEGACY, CAMPAIGN_KIND_UNIFIED,
+        EVENT_DISPATCH_SENT, EVENT_DISPATCH_FAILED, EVENT_ANTI_BLOCK_PAUSE,
+        EVENT_DAILY_LIMIT_REACHED, EVENT_CAMPAIGN_DONE,
+    )
     from sqlalchemy import and_
     from zoneinfo import ZoneInfo
 
@@ -34,11 +67,15 @@ async def run_cadence_tick():
     if now < work_start or now >= work_end:
         return
 
-    if _pause_until and now < _pause_until:
-        return
-
     db = SessionLocal()
     try:
+        # Hidrata do banco e registra tick. Estado persistente sobrevive a reinício.
+        _hydrate_from_db(db)
+        _persist_state(db, last_tick_at=now)
+
+        if _pause_until and now < _pause_until:
+            return
+
         sent_this_tick = False
 
         from services.cadence_profiles import get_profile
@@ -49,6 +86,10 @@ async def run_cadence_tick():
         )
 
         today_date = now.date()
+        # Para evitar emitir N eventos "daily_limit_reached" por tick, marcamos
+        # quais campanhas já tiveram o evento emitido neste tick.
+        daily_limit_emitted_legacy: set = set()
+        daily_limit_emitted_unified: set = set()
 
         for campaign in active_legacy:
             if sent_this_tick:
@@ -76,6 +117,13 @@ async def run_cadence_tick():
 
             effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
             if daily_log and daily_log.sent_count >= effective_daily_limit:
+                if campaign.id not in daily_limit_emitted_legacy:
+                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
+                        "limit": effective_daily_limit,
+                        "sent_today": int(daily_log.sent_count or 0),
+                        "profile": campaign_profile.get("label"),
+                    })
+                    daily_limit_emitted_legacy.add(campaign.id)
                 continue
 
             next_contact = (
@@ -102,6 +150,9 @@ async def run_cadence_tick():
                     campaign.status = "done"
                     campaign.end_date = now
                     db.commit()
+                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_DONE, {
+                        "ended_at": now.isoformat(),
+                    })
                     print(f"[CADENCE] Campanha legada '{campaign.name}' (id={campaign.id}) concluída!")
                 continue
 
@@ -121,6 +172,7 @@ async def run_cadence_tick():
                     next_contact.status = "sent"
                     next_contact.sent_at = now
                     next_contact.delivered = True
+                    next_contact.last_error_message = None
                     _consecutive_failures = 0
 
                     if not daily_log:
@@ -135,12 +187,22 @@ async def run_cadence_tick():
 
                     _last_send_time = now
                     db.commit()
+                    _persist_state(db, last_send_at=now, consecutive_failures=0)
+                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_SENT, {
+                        "phone": next_contact.phone,
+                        "contact_id": next_contact.id,
+                        "profile": campaign_profile.get("label"),
+                    })
                     print(f"[CADENCE] Enviado para {next_contact.phone} (campanha legada '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
                 else:
                     next_contact.retry_count += 1
+                    error_msg = result.get("error", "desconhecido")
+                    # Task #221 — registra erro a cada tentativa, não só na última.
+                    next_contact.last_error_message = str(error_msg)[:1000]
                     _consecutive_failures += 1
 
-                    if next_contact.retry_count >= 3:
+                    is_final_fail = next_contact.retry_count >= 3
+                    if is_final_fail:
                         next_contact.status = "failed"
                         if not daily_log:
                             daily_log = CampaignDailyLog(
@@ -153,19 +215,43 @@ async def run_cadence_tick():
                             daily_log.failed_count += 1
 
                     db.commit()
-                    error_msg = result.get("error", "desconhecido")
+                    _persist_state(db, consecutive_failures=_consecutive_failures)
+                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
+                        "phone": next_contact.phone,
+                        "contact_id": next_contact.id,
+                        "retry_count": int(next_contact.retry_count or 0),
+                        "is_final": bool(is_final_fail),
+                        "error": str(error_msg)[:500],
+                    })
                     print(f"[CADENCE] Falha ao enviar para {next_contact.phone}: {error_msg} (tentativa {next_contact.retry_count})")
 
                     if _consecutive_failures >= 2:
                         _pause_until = now + timedelta(minutes=20)
+                        _pause_reason = "anti_block"
                         _consecutive_failures = 0
+                        _persist_state(db, pause_until=_pause_until, pause_reason="anti_block",
+                                       consecutive_failures=0)
+                        emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
+                            "duration_minutes": 20,
+                            "pause_until": _pause_until.isoformat(),
+                            "trigger": "2 falhas Z-API consecutivas",
+                        })
                         print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por 20 minutos até {_pause_until.strftime('%H:%M')}")
 
             except Exception as send_err:
                 next_contact.retry_count += 1
+                next_contact.last_error_message = str(send_err)[:1000]
                 if next_contact.retry_count >= 3:
                     next_contact.status = "failed"
                 db.commit()
+                emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
+                    "phone": next_contact.phone,
+                    "contact_id": next_contact.id,
+                    "retry_count": int(next_contact.retry_count or 0),
+                    "is_final": bool(next_contact.retry_count >= 3),
+                    "error": str(send_err)[:500],
+                    "exception": True,
+                })
                 print(f"[CADENCE] Erro ao enviar para {next_contact.phone}: {send_err}")
 
             sent_this_tick = True
@@ -185,6 +271,7 @@ async def run_cadence_tick():
                 if stale.retry_count >= 3:
                     stale.status = "failed"
                     stale.error_message = "Travado em processing por mais de 10 minutos"
+                    stale.last_error_message = "Travado em processing por mais de 10 minutos"
                 else:
                     stale.status = "pending"
                     stale.scheduled_for = now + timedelta(minutes=5)
@@ -223,6 +310,13 @@ async def run_cadence_tick():
 
                 effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
                 if today_sent >= effective_daily_limit:
+                    if campaign.id not in daily_limit_emitted_unified:
+                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
+                            "limit": effective_daily_limit,
+                            "sent_today": int(today_sent),
+                            "profile": campaign_profile.get("label"),
+                        })
+                        daily_limit_emitted_unified.add(campaign.id)
                     continue
 
                 from sqlalchemy import text as sql_text
@@ -276,6 +370,11 @@ async def run_cadence_tick():
                             .count()
                         )
                         db.commit()
+                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_CAMPAIGN_DONE, {
+                            "ended_at": now.isoformat(),
+                            "sent": int(campaign.messages_sent or 0),
+                            "failed": int(campaign.messages_failed or 0),
+                        })
                         print(f"[CADENCE] Campanha unificada '{campaign.name}' (id={campaign.id}) concluída!")
                     continue
 
@@ -285,7 +384,13 @@ async def run_cadence_tick():
                 if not phone:
                     next_dispatch.status = "failed"
                     next_dispatch.error_message = "Telefone não informado"
+                    next_dispatch.last_error_message = "Telefone não informado"
                     db.commit()
+                    emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
+                        "dispatch_id": next_dispatch.id,
+                        "is_final": True,
+                        "error": "Telefone não informado",
+                    })
                     continue
 
                 zapi = ZAPIClient()
@@ -310,7 +415,13 @@ async def run_cadence_tick():
                             # anexo. Falhar imediatamente sem consumir retries.
                             next_dispatch.status = "failed"
                             next_dispatch.error_message = "Arquivo do anexo não encontrado"
+                            next_dispatch.last_error_message = "Arquivo do anexo não encontrado"
                             db.commit()
+                            emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
+                                "dispatch_id": next_dispatch.id,
+                                "is_final": True,
+                                "error": "Arquivo do anexo não encontrado",
+                            })
                             print(
                                 f"[CADENCE] Anexo da campanha '{campaign.name}' (id={campaign.id}) "
                                 f"não encontrado no disco e sem URL pública configurada. "
@@ -336,35 +447,61 @@ async def run_cadence_tick():
                     if result.get("success"):
                         next_dispatch.status = "sent"
                         next_dispatch.sent_at = now
+                        next_dispatch.last_error_message = None
                         _consecutive_failures = 0
                         _last_send_time = now
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
 
                         db.commit()
+                        _persist_state(db, last_send_at=now, consecutive_failures=0)
+                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_SENT, {
+                            "dispatch_id": next_dispatch.id,
+                            "phone": phone,
+                            "profile": campaign_profile.get("label"),
+                        })
                         print(f"[CADENCE] Enviado para {phone} (campanha '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
                     else:
                         next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
+                        error_msg = result.get("error", "desconhecido")
+                        next_dispatch.last_error_message = str(error_msg)[:1000]
                         _consecutive_failures += 1
 
-                        if next_dispatch.retry_count >= 3:
+                        is_final_fail = next_dispatch.retry_count >= 3
+                        if is_final_fail:
                             next_dispatch.status = "failed"
-                            next_dispatch.error_message = result.get("error", "desconhecido")
+                            next_dispatch.error_message = error_msg
                         else:
                             next_dispatch.status = "pending"
                             next_dispatch.scheduled_for = now + timedelta(minutes=10)
 
                         db.commit()
-                        error_msg = result.get("error", "desconhecido")
+                        _persist_state(db, consecutive_failures=_consecutive_failures)
+                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
+                            "dispatch_id": next_dispatch.id,
+                            "phone": phone,
+                            "retry_count": int(next_dispatch.retry_count or 0),
+                            "is_final": bool(is_final_fail),
+                            "error": str(error_msg)[:500],
+                        })
                         print(f"[CADENCE] Falha ao enviar para {phone}: {error_msg} (tentativa {next_dispatch.retry_count})")
 
                         if _consecutive_failures >= 2:
                             _pause_until = now + timedelta(minutes=20)
+                            _pause_reason = "anti_block"
                             _consecutive_failures = 0
+                            _persist_state(db, pause_until=_pause_until, pause_reason="anti_block",
+                                           consecutive_failures=0)
+                            emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
+                                "duration_minutes": 20,
+                                "pause_until": _pause_until.isoformat(),
+                                "trigger": "2 falhas Z-API consecutivas",
+                            })
                             print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por 20 minutos até {_pause_until.strftime('%H:%M')}")
 
                 except Exception as send_err:
                     next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
+                    next_dispatch.last_error_message = str(send_err)[:1000]
                     if next_dispatch.retry_count >= 3:
                         next_dispatch.status = "failed"
                         next_dispatch.error_message = str(send_err)
@@ -372,6 +509,14 @@ async def run_cadence_tick():
                         next_dispatch.status = "pending"
                         next_dispatch.scheduled_for = now + timedelta(minutes=10)
                     db.commit()
+                    emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
+                        "dispatch_id": next_dispatch.id,
+                        "phone": phone,
+                        "retry_count": int(next_dispatch.retry_count or 0),
+                        "is_final": bool(next_dispatch.retry_count >= 3),
+                        "error": str(send_err)[:500],
+                        "exception": True,
+                    })
                     print(f"[CADENCE] Erro ao enviar para {phone}: {send_err}")
 
                 sent_this_tick = True
