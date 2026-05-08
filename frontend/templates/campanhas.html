@@ -3381,6 +3381,7 @@ Equipe de Gestao"></textarea>
         // Task #221 — Banner do motor de cadência + saúde Z-API + aba Histórico
         // ============================================================================
         var cadenceEngineRefreshInterval = null;
+        var zapiPillRefreshInterval = null;
         var currentCadenceModalCampaignId = null;
         var currentCadenceModalKind = 'unified'; // 'unified' | 'legacy'
 
@@ -3446,6 +3447,35 @@ Equipe de Gestao"></textarea>
             }, 1000);
         }
 
+        // Pill Z-API independente do estado do motor: sempre renderiza/atualiza
+        // (inclusive quando o motor está em estado `ok`).
+        async function refreshZapiHealthPill() {
+            var pill = document.getElementById('zapiHealthPill');
+            if (!pill) return;
+            try {
+                var rz = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
+                if (!rz.ok) return;
+                var z = await rz.json();
+                // Mapeamento 3-state baseado em services/dependency_check.py:
+                //   verde  → 'connected'
+                //   âmbar  → 'unknown' (cache vazio no boot), 'timeout' (Z-API lenta), 'not_configured'
+                //   vermelho → 'disconnected', 'error'
+                var st = (z.status || '').toLowerCase();
+                var color, bg, fg, txt;
+                if (st === 'connected' || z.connected === true) {
+                    color = '#16a34a'; bg = '#dcfce7'; fg = '#166534'; txt = 'conectado';
+                } else if (st === 'disconnected' || st === 'error') {
+                    color = '#dc2626'; bg = '#fee2e2'; fg = '#991b1b'; txt = (st === 'error' ? 'erro' : 'desconectado');
+                } else {
+                    color = '#d97706'; bg = '#fef3c7'; fg = '#92400e';
+                    txt = (st === 'timeout' ? 'lento' : (st === 'not_configured' ? 'não configurado' : 'verificando'));
+                }
+                pill.style.background = bg;
+                pill.style.color = fg;
+                pill.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + color + ';"></span> Z-API: ' + txt;
+            } catch (e) { /* mantém pill anterior */ }
+        }
+
         async function refreshCadenceEngineBanner() {
             var banner = document.getElementById('cadenceEngineBanner');
             if (!banner) return;
@@ -3457,40 +3487,13 @@ Equipe de Gestao"></textarea>
                 lastEngineState = s;
 
                 // Banner é exibido apenas quando o motor NÃO está em estado ok
-                // (critério de aceite). Em ok, mantém oculto e aborta o render.
+                // (critério de aceite). Em ok, mantém oculto e aborta o render
+                // do banner — a pill Z-API atualiza-se em fluxo independente.
                 if ((s.state || 'ok') === 'ok') {
                     banner.style.display = 'none';
                     return;
                 }
                 banner.style.display = 'block';
-
-                // Pill Z-API (cache do health já existente)
-                try {
-                    var rz = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
-                    if (rz.ok) {
-                        var z = await rz.json();
-                        var pill = document.getElementById('zapiHealthPill');
-                        if (pill) {
-                            // Mapeamento 3-state baseado em services/dependency_check.py:
-                            //   verde  → 'connected'
-                            //   âmbar  → 'unknown' (cache vazio no boot), 'timeout' (Z-API lenta), 'not_configured'
-                            //   vermelho → 'disconnected', 'error'
-                            var st = (z.status || '').toLowerCase();
-                            var color, bg, fg, txt;
-                            if (st === 'connected' || z.connected === true) {
-                                color = '#16a34a'; bg = '#dcfce7'; fg = '#166534'; txt = 'conectado';
-                            } else if (st === 'disconnected' || st === 'error') {
-                                color = '#dc2626'; bg = '#fee2e2'; fg = '#991b1b'; txt = (st === 'error' ? 'erro' : 'desconectado');
-                            } else {
-                                color = '#d97706'; bg = '#fef3c7'; fg = '#92400e';
-                                txt = (st === 'timeout' ? 'lento' : (st === 'not_configured' ? 'não configurado' : 'verificando'));
-                            }
-                            pill.style.background = bg;
-                            pill.style.color = fg;
-                            pill.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + color + ';"></span> Z-API: ' + txt;
-                        }
-                    }
-                } catch (e) { /* mantém pill anterior */ }
 
                 var meta = ENGINE_STATE_MAP[s.state] || ENGINE_STATE_MAP['ok'];
                 var dot = document.getElementById('cadenceEngineDot');
@@ -3525,6 +3528,9 @@ Equipe de Gestao"></textarea>
 
         function startCadenceEnginePolling() {
             refreshCadenceEngineBanner();
+            refreshZapiHealthPill();
+            if (zapiPillRefreshInterval) clearInterval(zapiPillRefreshInterval);
+            zapiPillRefreshInterval = setInterval(refreshZapiHealthPill, 30000);
             if (cadenceEngineRefreshInterval) clearInterval(cadenceEngineRefreshInterval);
             cadenceEngineRefreshInterval = setInterval(refreshCadenceEngineBanner, 30000);
             startEngineCountdown();
