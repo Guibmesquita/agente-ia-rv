@@ -34,6 +34,7 @@ def _register_routers():
     app.include_router(assessores.custom_fields_router)
     app.include_router(assessores.upload_router)
     app.include_router(campaigns.router)
+    app.include_router(campaigns.cadence_router)
     app.include_router(knowledge.router)
     app.include_router(agent_test.router)
     app.include_router(conversations.router)

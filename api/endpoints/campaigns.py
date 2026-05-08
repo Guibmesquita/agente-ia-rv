@@ -78,6 +78,11 @@ def format_cell_value(value) -> str:
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
+# Task #221 — Router auxiliar para expor o estado do motor sob o prefixo
+# `/api/cadence` (contrato exigido pela task: GET /api/cadence/engine-state)
+# em paralelo ao endpoint canônico em `/api/campaigns/cadence/engine-state`.
+cadence_router = APIRouter(prefix="/api/cadence", tags=["cadence"])
+
 
 def translate_error_to_natural_language(error_code: str, error_msg: str, phone: str = "") -> str:
     """
@@ -2948,6 +2953,7 @@ async def upload_campaign_diagram(
     }
 
 
+@cadence_router.get("/engine-state")
 @router.get("/cadence/engine-state")
 async def get_cadence_engine_state(
     db: Session = Depends(get_db),

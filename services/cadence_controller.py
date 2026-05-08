@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, date, time, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,23 @@ def _emit_engine_state_transition(db, new_state: str, payload: dict):
 
 _last_tick_persist_at: Optional[datetime] = None
 _TICK_PERSIST_THROTTLE_SECONDS = 60
+
+# Dedupe persistente em memória de daily_limit_reached: {(kind, campaign_id): date}.
+# Evita escrever um evento por tick (a cada 30s) enquanto a campanha ficar
+# travada no limite diário — emitimos apenas uma vez por dia por campanha.
+# Reseta automaticamente em qualquer dia novo (chave de data).
+_daily_limit_emitted_day: Dict[Any, Any] = {}
+
+
+def _should_emit_daily_limit(kind: str, campaign_id: int, today_date) -> bool:
+    """True se ainda não emitimos o evento daily_limit_reached para essa
+    campanha no dia atual. Idempotente em memória (sobrevive entre ticks)."""
+    key = (kind, campaign_id)
+    last = _daily_limit_emitted_day.get(key)
+    if last == today_date:
+        return False
+    _daily_limit_emitted_day[key] = today_date
+    return True
 
 
 def _persist_state(db, **fields):
@@ -169,10 +186,6 @@ async def run_cadence_tick():
         )
 
         today_date = now.date()
-        # Para evitar emitir N eventos "daily_limit_reached" por tick, marcamos
-        # quais campanhas já tiveram o evento emitido neste tick.
-        daily_limit_emitted_legacy: set = set()
-        daily_limit_emitted_unified: set = set()
 
         for campaign in active_legacy:
             if sent_this_tick:
@@ -204,13 +217,12 @@ async def run_cadence_tick():
 
             effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
             if daily_log and daily_log.sent_count >= effective_daily_limit:
-                if campaign.id not in daily_limit_emitted_legacy:
+                if _should_emit_daily_limit(CAMPAIGN_KIND_LEGACY, campaign.id, today_date):
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
                         "limit": effective_daily_limit,
                         "sent_today": int(daily_log.sent_count or 0),
                         "profile": campaign_profile.get("label"),
                     })
-                    daily_limit_emitted_legacy.add(campaign.id)
                 continue
 
             next_contact = (
@@ -399,13 +411,12 @@ async def run_cadence_tick():
 
                 effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
                 if today_sent >= effective_daily_limit:
-                    if campaign.id not in daily_limit_emitted_unified:
+                    if _should_emit_daily_limit(CAMPAIGN_KIND_UNIFIED, campaign.id, today_date):
                         emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
                             "limit": effective_daily_limit,
                             "sent_today": int(today_sent),
                             "profile": campaign_profile.get("label"),
                         })
-                        daily_limit_emitted_unified.add(campaign.id)
                     continue
 
                 from sqlalchemy import text as sql_text
