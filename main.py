@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from contextlib import asynccontextmanager
 import asyncio
 import os
+from typing import Optional
 
 from core.config import is_production
 
@@ -815,10 +816,19 @@ def _backfill_cadence_events():
         db.close()
 
 
-def _cleanup_old_cadence_events(retention_days: int = 90):
-    """Task #221 — remove eventos com mais de 90 dias para evitar crescimento indefinido."""
+def _cleanup_old_cadence_events(retention_days: Optional[int] = None):
+    """Task #221 — remove eventos antigos para evitar crescimento indefinido.
+
+    Configurável via env `CADENCE_EVENTS_RETENTION_DAYS` (default 90).
+    """
+    import os
     from database.database import SessionLocal
     from services.cadence_events import cleanup_old_events
+    if retention_days is None:
+        try:
+            retention_days = int(os.getenv("CADENCE_EVENTS_RETENTION_DAYS", "90"))
+        except (TypeError, ValueError):
+            retention_days = 90
     db = SessionLocal()
     try:
         n = cleanup_old_events(db, retention_days)

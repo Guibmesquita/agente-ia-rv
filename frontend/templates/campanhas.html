@@ -3456,6 +3456,14 @@ Equipe de Gestao"></textarea>
                 var s = await r.json();
                 lastEngineState = s;
 
+                // Banner é exibido apenas quando o motor NÃO está em estado ok
+                // (critério de aceite). Em ok, mantém oculto e aborta o render.
+                if ((s.state || 'ok') === 'ok') {
+                    banner.style.display = 'none';
+                    return;
+                }
+                banner.style.display = 'block';
+
                 // Pill Z-API (cache do health já existente)
                 try {
                     var rz = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
