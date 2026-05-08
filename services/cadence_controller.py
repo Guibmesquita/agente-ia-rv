@@ -15,6 +15,27 @@ _pause_until: Optional[datetime] = None
 _pause_reason: Optional[str] = None
 _running: bool = False
 
+# Task #221 (V2) — rastreia o último estado observável emitido para
+# deduplicar eventos `out_of_business_hours` / `lunch_break` /
+# `global_cooldown` (só emite quando há transição). É só observabilidade;
+# não influencia o comportamento do tick.
+_last_observed_state: Optional[str] = None
+
+
+def _emit_engine_state_transition(db, new_state: str, payload: dict):
+    """Emite evento de mudança de estado do motor, com dedupe em memória.
+    Persiste com kind='engine' e campaign_id=0 (eventos system-wide).
+    """
+    global _last_observed_state
+    if _last_observed_state == new_state:
+        return
+    _last_observed_state = new_state
+    try:
+        from services.cadence_events import emit_event as _emit
+        _emit(db, "engine", 0, new_state, payload)
+    except Exception as e:
+        logger.warning(f"[CADENCE-OBS] _emit_engine_state_transition({new_state}) falhou: {e}")
+
 
 def _persist_state(db, **fields):
     """Wrapper que silencia erros — persistir estado nunca pode quebrar o tick."""
@@ -59,17 +80,24 @@ async def run_cadence_tick():
     tz = ZoneInfo("America/Sao_Paulo")
     now = datetime.now(tz)
 
-    if now.weekday() >= 5:
-        return
-
-    work_start = now.replace(hour=9, minute=0, second=0, microsecond=0)
-    work_end = now.replace(hour=18, minute=0, second=0, microsecond=0)
-    if now < work_start or now >= work_end:
-        return
-
-    # Task #221 — pausa de almoço (12:00-13:00 BRT). Trava anti-bloqueio
-    # adicional: agentes humanos típicos não enviam mensagens nesse horário.
-    if now.hour == 12:
+    # Task #221 (V2) — observabilidade: emitir eventos system-wide de
+    # transição de estado ANTES de retornar. NÃO altera o comportamento
+    # operacional do motor (mesmas condições de retorno e fluxo).
+    # Abrimos uma sessão curta APENAS para o evento de transição se for
+    # o caso. Sucesso ou falha desse insert nunca afeta o tick.
+    if now.weekday() >= 5 or now < now.replace(hour=9, minute=0, second=0, microsecond=0) or now >= now.replace(hour=18, minute=0, second=0, microsecond=0):
+        try:
+            _obs_db = SessionLocal()
+            try:
+                _emit_engine_state_transition(_obs_db, "out_of_business_hours", {
+                    "weekday": now.weekday(),
+                    "hour": now.hour,
+                    "now": now.isoformat(),
+                })
+            finally:
+                _obs_db.close()
+        except Exception as e:
+            logger.warning(f"[CADENCE-OBS] obs session falhou: {e}")
         return
 
     db = SessionLocal()
@@ -79,9 +107,26 @@ async def run_cadence_tick():
         _persist_state(db, last_tick_at=now)
 
         if _pause_until and now < _pause_until:
+            _emit_engine_state_transition(db, "anti_block_pause_active", {
+                "pause_until": _pause_until.isoformat(),
+                "pause_reason": _pause_reason,
+            })
             return
 
+        # Task #221 (V2) — pausa de almoço: APENAS observabilidade (não bloqueia).
+        # Registra que o motor está dentro do horário de almoço para auditoria.
+        if now.hour == 12:
+            _emit_engine_state_transition(db, "lunch_break", {
+                "now": now.isoformat(),
+                "note": "12:00-13:00 BRT — motor segue ativo, evento informativo",
+            })
+
         sent_this_tick = False
+        # Task #221 (V2) — rastreia se TODAS as candidatas foram bloqueadas
+        # apenas pelo cooldown (sem outros impedimentos). Se sim, emitimos
+        # um único `global_cooldown` no fim do tick.
+        had_candidates = False
+        all_blocked_by_cooldown = True
 
         from services.cadence_profiles import get_profile
         active_legacy = (
@@ -108,8 +153,12 @@ async def run_cadence_tick():
             # menor; se é "conservadora", espera o cooldown maior.
             campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
             cooldown = int(campaign_profile["cooldown_seconds"])
+            had_candidates = True
             if _last_send_time and (now - _last_send_time).total_seconds() < cooldown:
                 continue
+            # Saiu do bloqueio de cooldown ao menos uma vez nesta candidata —
+            # então não foi 100% bloqueio por cooldown.
+            all_blocked_by_cooldown = False
 
             daily_log = (
                 db.query(CampaignDailyLog)
@@ -300,8 +349,10 @@ async def run_cadence_tick():
                 # paralelos por campanha.
                 campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
                 cooldown = int(campaign_profile["cooldown_seconds"])
+                had_candidates = True
                 if _last_send_time and (now - _last_send_time).total_seconds() < cooldown:
                     continue
+                all_blocked_by_cooldown = False
 
                 today_sent = (
                     db.query(CampaignDispatch)
@@ -525,6 +576,27 @@ async def run_cadence_tick():
                     print(f"[CADENCE] Erro ao enviar para {phone}: {send_err}")
 
                 sent_this_tick = True
+
+        # Task #221 (V2) — observabilidade de fim de tick:
+        # se havia campanhas elegíveis MAS todas foram bloqueadas pelo cooldown
+        # global, registra um evento dedupe `global_cooldown`. Caso contrário,
+        # a transição volta para "ok" (sem evento, mas reseta o dedupe para
+        # permitir emissão futura de novos estados off-OK).
+        try:
+            if had_candidates and all_blocked_by_cooldown and not sent_this_tick:
+                _emit_engine_state_transition(db, "global_cooldown", {
+                    "last_send_at": _last_send_time.isoformat() if _last_send_time else None,
+                    "now": now.isoformat(),
+                    "note": "todas as campanhas ativas estão dentro do cooldown global",
+                })
+            elif now.hour != 12:
+                # Normaliza o cache para "ok" sempre que o tick chegou ao final
+                # fora dos estados de exceção. Não emite evento; apenas reseta
+                # o dedupe para que a próxima transição off-OK seja registrada.
+                global _last_observed_state
+                _last_observed_state = "ok"
+        except Exception as e:
+            logger.warning(f"[CADENCE-OBS] fim-de-tick falhou: {e}")
 
     except Exception as e:
         print(f"[CADENCE] Erro no tick: {e}")
