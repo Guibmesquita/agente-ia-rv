@@ -112,9 +112,12 @@ async def run_cadence_tick():
     # Abrimos uma sessão curta APENAS para o evento de transição se for
     # o caso. Sucesso ou falha desse insert nunca afeta o tick.
     if now.weekday() >= 5 or now < now.replace(hour=9, minute=0, second=0, microsecond=0) or now >= now.replace(hour=18, minute=0, second=0, microsecond=0):
+        # Persistir last_tick_at + emitir transição em sessão curta dedicada
+        # (não abre a `db` principal para manter o early-return barato).
         try:
             _obs_db = SessionLocal()
             try:
+                _persist_state(_obs_db, last_tick_at=now)
                 _emit_engine_state_transition(_obs_db, "out_of_business_hours", {
                     "weekday": now.weekday(),
                     "hour": now.hour,
@@ -133,6 +136,8 @@ async def run_cadence_tick():
         _persist_state(db, last_tick_at=now)
 
         if _pause_until and now < _pause_until:
+            # last_tick_at já persistido acima — observabilidade preservada
+            # mesmo em retorno antecipado por pausa anti-bloqueio.
             _emit_engine_state_transition(db, "anti_block_pause_active", {
                 "pause_until": _pause_until.isoformat(),
                 "pause_reason": _pause_reason,
