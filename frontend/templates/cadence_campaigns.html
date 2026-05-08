@@ -380,19 +380,24 @@
                 var hasMore = newEvents.length === 50;
                 var html = '<div style="font-size:0.78rem;color:#64748b;margin-bottom:8px;">' + cache.length + ' evento(s) · mais recentes primeiro</div>';
                 html += '<div style="border-left:2px solid #cbd5e1;padding-left:10px;">';
+                function _esc(s) {
+                    return String(s == null ? '' : s)
+                        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+                }
                 cache.forEach(function(ev) {
                     var meta = EVENT_LABELS_LEGACY[ev.event_type] || { label: ev.event_type, color: '#475569' };
                     var when = ev.occurred_at ? new Date(ev.occurred_at).toLocaleString('pt-BR') : '—';
                     var p = ev.payload || {};
                     var extra = '';
-                    if (ev.event_type === 'dispatch_failed' && p.error) extra = ' · <span style="color:#b91c1c;">' + (p.error + '').slice(0,180) + '</span>';
-                    if (ev.event_type === 'cadence_profile_changed' && (p.old_profile || p.new_profile)) extra = ' · ' + (p.old_profile||'?') + ' → ' + (p.new_profile||'?');
-                    if (ev.event_type === 'dispatch_sent' && p.phone) extra = ' · ' + p.phone;
+                    if (ev.event_type === 'dispatch_failed' && p.error) extra = ' · <span style="color:#b91c1c;">' + _esc((p.error + '').slice(0,180)) + '</span>';
+                    if (ev.event_type === 'cadence_profile_changed' && (p.old_profile || p.new_profile)) extra = ' · ' + _esc(p.old_profile||'?') + ' → ' + _esc(p.new_profile||'?');
+                    if (ev.event_type === 'dispatch_sent' && p.phone) extra = ' · ' + _esc(p.phone);
                     var bf = (p.is_backfill || ev.is_backfill) ? ' <em style="color:#94a3b8;">(reconstruído)</em>' : '';
-                    var actor = ev.user_name ? ' · por ' + ev.user_name : '';
+                    var actor = ev.user_name ? ' · por ' + _esc(ev.user_name) : '';
                     html += '<div style="margin-bottom:8px;">';
-                    html += '<strong style="color:' + meta.color + ';">' + meta.label + '</strong>';
-                    html += '<span style="color:#64748b;font-size:0.78rem;"> · ' + when + actor + bf + extra + '</span>';
+                    html += '<strong style="color:' + meta.color + ';">' + _esc(meta.label) + '</strong>';
+                    html += '<span style="color:#64748b;font-size:0.78rem;"> · ' + _esc(when) + actor + bf + extra + '</span>';
                     html += '</div>';
                 });
                 html += '</div>';

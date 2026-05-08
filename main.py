@@ -740,9 +740,10 @@ def _backfill_cadence_events():
                           'phone', ccc.phone, 'contact_id', ccc.id,
                           'error', LEFT(COALESCE(ccc.last_error_message,''), 300)
                       )::text,
-                      COALESCE(ccc.sent_at, ccc.scheduled_for, NOW()), NOW()
+                      COALESCE(ccc.sent_at, ccc.scheduled_for), NOW()
                FROM cadence_campaign_contacts ccc
                WHERE ccc.status = 'failed'
+                 AND COALESCE(ccc.sent_at, ccc.scheduled_for) IS NOT NULL
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
             # Unified — created
             """INSERT INTO cadence_campaign_events
@@ -771,9 +772,9 @@ def _backfill_cadence_events():
                   (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
                SELECT 'unified', c.id, 'campaign_done',
                       jsonb_build_object('is_backfill', true)::text,
-                      COALESCE(c.sent_at, NOW()), NOW()
+                      c.sent_at, NOW()
                FROM campaigns c
-               WHERE c.status = 'cadence_done'
+               WHERE c.status = 'cadence_done' AND c.sent_at IS NOT NULL
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
             # Unified — dispatch_failed
             """INSERT INTO cadence_campaign_events
@@ -785,10 +786,11 @@ def _backfill_cadence_events():
                           'dispatch_id', cd.id,
                           'error', LEFT(COALESCE(cd.error_message, cd.last_error_message, ''), 300)
                       )::text,
-                      COALESCE(cd.sent_at, cd.scheduled_for, NOW()), NOW()
+                      COALESCE(cd.sent_at, cd.scheduled_for), NOW()
                FROM campaign_dispatches cd
                JOIN campaigns c ON c.id = cd.campaign_id
                WHERE cd.status = 'failed'
+                 AND COALESCE(cd.sent_at, cd.scheduled_for) IS NOT NULL
                  AND (c.delivery_mode = 'cadence'
                       OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",

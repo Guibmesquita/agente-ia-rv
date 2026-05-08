@@ -161,15 +161,15 @@ async def run_cadence_tick():
             })
             return
 
-        # Pausa de almoço (12:00-13:00 BRT) — comportamento original do motor:
-        # bloqueia envios para evitar mensagens fora do padrão comercial.
-        # Emite evento de timeline antes de retornar (last_tick_at já persistido).
+        # Pausa de almoço (12:00-13:00 BRT): estado APENAS observado.
+        # Não estava no comportamento original do motor (`git show` confirma
+        # que cadence_controller.py nunca teve gate em hour==12), então a
+        # observabilidade NÃO altera o tick — apenas emite o evento.
         if now.hour == 12:
             _emit_engine_state_transition(db, "lunch_break", {
                 "now": now.isoformat(),
-                "resume_at": now.replace(hour=13, minute=0, second=0, microsecond=0).isoformat(),
+                "note": "informativo — motor segue ativo",
             })
-            return
 
         sent_this_tick = False
         # Task #221 (V2) — rastreia se TODAS as candidatas foram bloqueadas
