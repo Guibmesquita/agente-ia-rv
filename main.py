@@ -604,6 +604,17 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_cadence_events_event_type ON cadence_campaign_events(event_type)",
         "CREATE INDEX IF NOT EXISTS ix_cadence_events_occurred_at ON cadence_campaign_events(occurred_at)",
         "CREATE INDEX IF NOT EXISTS ix_cadence_events_campaign_lookup ON cadence_campaign_events(campaign_kind, campaign_id, occurred_at)",
+        # Task #221 V13 — discriminador para idempotência sem bloquear runtime.
+        # 1) Adiciona coluna dedupe_key (nullable).
+        # 2) Substitui a UNIQUE antiga (que envolvia occurred_at e bloqueava
+        #    múltiplos dispatch_failed no mesmo segundo) por uma UNIQUE em
+        #    (kind, id, type, dedupe_key). NULLs em dedupe_key não colidem,
+        #    preservando inserts de runtime livres.
+        "ALTER TABLE cadence_campaign_events ADD COLUMN IF NOT EXISTS dedupe_key VARCHAR(80)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_events_dedupe_key ON cadence_campaign_events(dedupe_key)",
+        "ALTER TABLE cadence_campaign_events DROP CONSTRAINT IF EXISTS uq_cadence_event_dedupe",
+        "ALTER TABLE cadence_campaign_events ADD CONSTRAINT uq_cadence_event_dedupe "
+        "UNIQUE (campaign_kind, campaign_id, event_type, dedupe_key)",
     ]
     db = SessionLocal()
     ok = 0
@@ -704,54 +715,59 @@ def _backfill_cadence_events():
         # parâmetros pelo SQLAlchemy (':true' no JSON literal seria
         # interpretado como bind). Usamos jsonb_build_object para construir
         # o payload de forma segura e idempotente.
+        # V13: cada INSERT carrega `dedupe_key` único por linha de origem.
+        # Lifecycle único por campanha: 'created'/'started'/'done'.
+        # Falhas: 'contact:<id>'/'disp:<id>' — assim múltiplas falhas no mesmo
+        # segundo NÃO colidem entre si (problema apontado pelo arquiteto).
         statements = [
             # Legacy — created
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'legacy', cc.id, 'campaign_created',
                       jsonb_build_object('is_backfill', true, 'name', cc.name)::text,
-                      cc.created_at, NOW()
+                      cc.created_at, NOW(), 'created'
                FROM cadence_campaigns cc
                WHERE cc.created_at IS NOT NULL
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
             # Legacy — started
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'legacy', cc.id, 'campaign_started',
                       jsonb_build_object('is_backfill', true)::text,
-                      cc.start_date, NOW()
+                      cc.start_date, NOW(), 'started'
                FROM cadence_campaigns cc
                WHERE cc.start_date IS NOT NULL
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
-            # Legacy — done
+            # Legacy — done (legacy tem end_date confiável)
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'legacy', cc.id, 'campaign_done',
                       jsonb_build_object('is_backfill', true)::text,
-                      cc.end_date, NOW()
+                      cc.end_date, NOW(), 'done'
                FROM cadence_campaigns cc
                WHERE cc.end_date IS NOT NULL AND cc.status = 'done'
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
-            # Legacy — dispatch_failed (1 por contato falho)
+            # Legacy — dispatch_failed (1 por contato falho, dedupe por contact_id)
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'legacy', ccc.campaign_id, 'dispatch_failed',
                       jsonb_build_object(
                           'is_backfill', true, 'is_final', true,
                           'phone', ccc.phone, 'contact_id', ccc.id,
                           'error', LEFT(COALESCE(ccc.last_error_message,''), 300)
                       )::text,
-                      COALESCE(ccc.sent_at, ccc.scheduled_for), NOW()
+                      COALESCE(ccc.sent_at, ccc.scheduled_for), NOW(),
+                      'contact:' || ccc.id::text
                FROM cadence_campaign_contacts ccc
                WHERE ccc.status = 'failed'
                  AND COALESCE(ccc.sent_at, ccc.scheduled_for) IS NOT NULL
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
             # Unified — created
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'unified', c.id, 'campaign_created',
                       jsonb_build_object('is_backfill', true, 'name', c.name)::text,
-                      c.created_at, NOW()
+                      c.created_at, NOW(), 'created'
                FROM campaigns c
                WHERE c.created_at IS NOT NULL
                  AND (c.delivery_mode = 'cadence'
@@ -759,27 +775,36 @@ def _backfill_cadence_events():
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
             # Unified — started
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'unified', c.id, 'campaign_started',
                       jsonb_build_object('is_backfill', true)::text,
-                      c.sent_at, NOW()
+                      c.sent_at, NOW(), 'started'
                FROM campaigns c
                WHERE c.sent_at IS NOT NULL
                  AND (c.delivery_mode = 'cadence'
                       OR c.status IN ('firing_cadence','paused_cadence','cadence_done'))
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
-            # Unified — done
+            # Unified — done. `campaigns` não tem end_date; usamos MAX(cd.sent_at)
+            # como melhor proxy do término real, com fallback em c.sent_at e flag
+            # `timestamp_proxy` no payload para sinalizar a aproximação.
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'unified', c.id, 'campaign_done',
-                      jsonb_build_object('is_backfill', true)::text,
-                      c.sent_at, NOW()
+                      jsonb_build_object(
+                          'is_backfill', true,
+                          'timestamp_proxy', CASE WHEN MAX(cd.sent_at) IS NOT NULL
+                                                  THEN 'max_dispatch_sent_at'
+                                                  ELSE 'campaign_sent_at_start' END
+                      )::text,
+                      COALESCE(MAX(cd.sent_at), c.sent_at), NOW(), 'done'
                FROM campaigns c
+               LEFT JOIN campaign_dispatches cd ON cd.campaign_id = c.id
                WHERE c.status = 'cadence_done' AND c.sent_at IS NOT NULL
+               GROUP BY c.id, c.sent_at
                ON CONFLICT ON CONSTRAINT uq_cadence_event_dedupe DO NOTHING""",
-            # Unified — dispatch_failed
+            # Unified — dispatch_failed (dedupe por dispatch_id)
             """INSERT INTO cadence_campaign_events
-                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at)
+                  (campaign_kind, campaign_id, event_type, payload, occurred_at, created_at, dedupe_key)
                SELECT 'unified', cd.campaign_id, 'dispatch_failed',
                       jsonb_build_object(
                           'is_backfill', true, 'is_final', true,
@@ -787,7 +812,8 @@ def _backfill_cadence_events():
                           'dispatch_id', cd.id,
                           'error', LEFT(COALESCE(cd.error_message, cd.last_error_message, ''), 300)
                       )::text,
-                      COALESCE(cd.sent_at, cd.scheduled_for), NOW()
+                      COALESCE(cd.sent_at, cd.scheduled_for), NOW(),
+                      'disp:' || cd.id::text
                FROM campaign_dispatches cd
                JOIN campaigns c ON c.id = cd.campaign_id
                WHERE cd.status = 'failed'

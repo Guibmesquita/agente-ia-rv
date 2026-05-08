@@ -1573,11 +1573,17 @@ class CadenceCampaignEvent(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # Discriminador para idempotência (Task #221, V13). Quando NOT NULL identifica
+    # univocamente a origem do evento (ex.: 'disp:42', 'contact:7', 'created').
+    # Quando NULL, Postgres permite múltiplas linhas (eventos runtime livres).
+    dedupe_key = Column(String(80), nullable=True, index=True)
 
     __table_args__ = (
         Index("ix_cadence_events_campaign_lookup", "campaign_kind", "campaign_id", "occurred_at"),
-        # Idempotência do backfill: mesma campanha + tipo + timestamp não duplica
-        UniqueConstraint("campaign_kind", "campaign_id", "event_type", "occurred_at",
+        # Idempotência do backfill: mesma campanha + tipo + chave estável não duplica.
+        # NULLs em dedupe_key NÃO colidem (semântica padrão Postgres), preservando
+        # múltiplos eventos runtime no mesmo timestamp.
+        UniqueConstraint("campaign_kind", "campaign_id", "event_type", "dedupe_key",
                          name="uq_cadence_event_dedupe"),
     )
 

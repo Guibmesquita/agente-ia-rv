@@ -3850,7 +3850,8 @@ async def get_campaign_events(
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
-    events = list(list_events_for_campaign(db, CAMPAIGN_KIND_UNIFIED, campaign_id, limit=int(limit), before_id=before_id))
+    safe_limit = max(1, min(int(limit), 500))
+    events = list(list_events_for_campaign(db, CAMPAIGN_KIND_UNIFIED, campaign_id, limit=safe_limit, before_id=before_id))
     return {
         "campaign_id": campaign_id,
         "campaign_kind": CAMPAIGN_KIND_UNIFIED,

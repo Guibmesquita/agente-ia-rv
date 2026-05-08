@@ -51,10 +51,16 @@ def emit_event(
     user_id: Optional[int] = None,
     occurred_at: Optional[datetime] = None,
     autocommit: bool = True,
+    dedupe_key: Optional[str] = None,
 ) -> bool:
     """
     Insere um evento. Retorna True se gravou, False em caso de falha.
     Nunca levanta exceção para o chamador (motor não pode quebrar por log).
+
+    `dedupe_key` (Task #221, V13): quando preenchido participa do índice
+    UNIQUE (kind, id, type, dedupe_key) para evitar duplicatas de eventos
+    sintéticos (ex.: backfill). Eventos runtime devem deixar NULL para que
+    múltiplas falhas no mesmo segundo sejam todas registradas.
     """
     try:
         from database.models import CadenceCampaignEvent
@@ -65,6 +71,7 @@ def emit_event(
             payload=json.dumps(payload or {}, default=str, ensure_ascii=False),
             user_id=user_id,
             occurred_at=occurred_at or datetime.utcnow(),
+            dedupe_key=dedupe_key,
         )
         db.add(evt)
         if autocommit:
