@@ -157,7 +157,7 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
     campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
     if not campaign:
         print(f"[CADENCE_PLANNER] Campanha {campaign_id} não encontrada")
-        return
+        return 0
 
     profile_name = getattr(campaign, "cadence_profile", None) or "conservador"
     profile_cfg = get_profile(profile_name)
@@ -176,7 +176,7 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
 
     if not contacts:
         print(f"[CADENCE_PLANNER] Sem contatos para agendar na campanha {campaign_id}")
-        return
+        return 0
 
     today = date.today()
     business_days = _get_business_days(today, campaign.deadline_days)
@@ -232,6 +232,7 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
         f"[CADENCE_PLANNER] {len(contacts)} contatos agendados para campanha "
         f"{campaign_id} (perfil={profile_name}) em {len(business_days)} dias úteis"
     )
+    return len(contacts)
 
 
 def reschedule_unified_pending_dispatches(campaign_id: int, db: Session) -> int:

@@ -9,6 +9,11 @@ _last_send_time: Optional[datetime] = None
 _consecutive_failures: int = 0
 _pause_until: Optional[datetime] = None
 _running: bool = False
+# Cooldown por campanha — chave: (kind, id) onde kind ∈ {"legacy","unified"}.
+# O cooldown agora é checado contra a campanha que está prestes a enviar,
+# usando o cooldown_seconds do perfil dela. Isso garante que uma campanha
+# em modo "acelerado" não fique presa ao cooldown de uma "conservadora".
+_last_send_per_campaign: dict = {}
 
 
 async def run_cadence_tick():
@@ -41,41 +46,27 @@ async def run_cadence_tick():
     try:
         sent_this_tick = False
 
-        # Cooldown global é determinado pelo perfil mais "rápido" entre as
-        # campanhas atualmente ativas — assim uma campanha em modo "acelerado"
-        # não fica refém do cooldown do perfil "conservador" de outra campanha.
         from services.cadence_profiles import get_profile
         active_legacy = (
             db.query(CadenceCampaign)
             .filter(CadenceCampaign.status == "firing")
             .all()
         )
-        active_unified_for_cd = (
-            db.query(Campaign)
-            .filter(Campaign.status == "firing_cadence")
-            .all()
-        )
-        candidate_profiles = [
-            getattr(c, "cadence_profile", None) or "conservador"
-            for c in list(active_legacy) + list(active_unified_for_cd)
-        ]
-        if candidate_profiles:
-            cooldown = min(
-                int(get_profile(p)["cooldown_seconds"]) for p in candidate_profiles
-            )
-        else:
-            cooldown = int(get_profile("conservador")["cooldown_seconds"])
-
-        if _last_send_time:
-            elapsed = (now - _last_send_time).total_seconds()
-            if elapsed < cooldown:
-                return
 
         today_date = now.date()
 
         for campaign in active_legacy:
             if sent_this_tick:
                 break
+
+            # Cooldown por campanha — usa o cooldown_seconds do perfil DESTA
+            # campanha contra o último envio DESTA campanha. Campanhas em
+            # perfis diferentes operam de forma independente.
+            campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
+            cooldown = int(campaign_profile["cooldown_seconds"])
+            last = _last_send_per_campaign.get(("legacy", campaign.id))
+            if last and (now - last).total_seconds() < cooldown:
+                continue
 
             daily_log = (
                 db.query(CampaignDailyLog)
@@ -86,7 +77,6 @@ async def run_cadence_tick():
                 .first()
             )
 
-            campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
             effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
             if daily_log and daily_log.sent_count >= effective_daily_limit:
                 continue
@@ -147,8 +137,9 @@ async def run_cadence_tick():
                         daily_log.sent_count += 1
 
                     _last_send_time = now
+                    _last_send_per_campaign[("legacy", campaign.id)] = now
                     db.commit()
-                    print(f"[CADENCE] Enviado para {next_contact.phone} (campanha legada '{campaign.name}')")
+                    print(f"[CADENCE] Enviado para {next_contact.phone} (campanha legada '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
                 else:
                     next_contact.retry_count += 1
                     _consecutive_failures += 1
@@ -215,6 +206,13 @@ async def run_cadence_tick():
                 if sent_this_tick:
                     break
 
+                # Cooldown por campanha (mesmo padrão do legacy).
+                campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
+                cooldown = int(campaign_profile["cooldown_seconds"])
+                last = _last_send_per_campaign.get(("unified", campaign.id))
+                if last and (now - last).total_seconds() < cooldown:
+                    continue
+
                 today_sent = (
                     db.query(CampaignDispatch)
                     .filter(
@@ -225,7 +223,6 @@ async def run_cadence_tick():
                     .count()
                 )
 
-                campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
                 effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
                 if today_sent >= effective_daily_limit:
                     continue
@@ -343,11 +340,12 @@ async def run_cadence_tick():
                         next_dispatch.sent_at = now
                         _consecutive_failures = 0
                         _last_send_time = now
+                        _last_send_per_campaign[("unified", campaign.id)] = now
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
 
                         db.commit()
-                        print(f"[CADENCE] Enviado para {phone} (campanha '{campaign.name}')")
+                        print(f"[CADENCE] Enviado para {phone} (campanha '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
                     else:
                         next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
                         _consecutive_failures += 1

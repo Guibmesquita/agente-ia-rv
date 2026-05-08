@@ -28,7 +28,9 @@ class ContactInput(BaseModel):
 class CampaignCreateInput(BaseModel):
     name: str
     deadline_days: int = 5
-    daily_limit: int = 50
+    # Optional: quando None, o limite efetivo é derivado do perfil
+    # (50 conservador / 80 padrão / 120 acelerado).
+    daily_limit: Optional[int] = None
     cadence_profile: str = "conservador"
     contacts: List[ContactInput]
 
@@ -150,7 +152,7 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
 
     if data.deadline_days < 1:
         raise HTTPException(status_code=400, detail="deadline_days deve ser >= 1")
-    if data.daily_limit < 1:
+    if data.daily_limit is not None and data.daily_limit < 1:
         raise HTTPException(status_code=400, detail="daily_limit deve ser >= 1")
     if not is_valid_profile(data.cadence_profile):
         raise HTTPException(
@@ -158,13 +160,20 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
             detail=f"Perfil inválido. Opções: {', '.join(PROFILES.keys())}"
         )
 
-    plan = calculate_daily_plan(len(data.contacts), data.deadline_days, data.daily_limit)
+    # Resolve o limite diário efetivo a partir do perfil quando não informado.
+    profile_cfg = PROFILES[str(data.cadence_profile).strip().lower()]
+    effective_daily_limit = data.daily_limit if data.daily_limit is not None else int(profile_cfg["daily_limit"])
+
+    plan = calculate_daily_plan(len(data.contacts), data.deadline_days, effective_daily_limit)
 
     now = datetime.now(tz)
     campaign = CadenceCampaign(
         name=data.name,
         status="scheduled",
         total_contacts=len(data.contacts),
+        # Persistimos None quando o usuário não informa, para que futuras
+        # alterações de perfil (ex: PATCH /profile) recalculem corretamente
+        # contra o novo perfil em vez de ficarem presas ao default antigo.
         daily_limit=data.daily_limit,
         deadline_days=data.deadline_days,
         cadence_profile=str(data.cadence_profile).strip().lower(),
@@ -261,17 +270,19 @@ async def change_profile(
     campaign.cadence_profile = str(data.cadence_profile).strip().lower()
     db.commit()
 
+    rescheduled_count = 0
     if campaign.status in ("firing", "paused"):
-        assign_scheduled_times(campaign.id, db, only_pending=True)
+        rescheduled_count = assign_scheduled_times(campaign.id, db, only_pending=True) or 0
 
     print(
         f"[CADENCE] Perfil da campanha legada '{campaign.name}' (id={campaign_id}) alterado: "
-        f"{old_profile} → {campaign.cadence_profile}"
+        f"{old_profile} → {campaign.cadence_profile} ({rescheduled_count} contatos reagendados)"
     )
 
     return {
         "message": "Perfil atualizado",
         "cadence_profile": campaign.cadence_profile,
+        "rescheduled_count": rescheduled_count,
     }
 
 

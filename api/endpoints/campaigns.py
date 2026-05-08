@@ -3194,12 +3194,17 @@ def _persist_campaign_message(db_session: Session, phone: str, message: str, cam
 
 
 class CadenceDispatchRequest(BaseModel):
-    daily_limit: int = 50
+    # Optional: quando None, o limite efetivo é derivado do perfil
+    # (50 conservador / 80 padrão / 120 acelerado). Mantém compatibilidade
+    # com chamadas que continuam enviando 50 explicitamente.
+    daily_limit: Optional[int] = None
     deadline_days: int = 5
     cadence_profile: str = "conservador"
 
     @validator('daily_limit')
     def validate_daily_limit(cls, v):
+        if v is None:
+            return v
         if v < 1:
             raise ValueError('Limite diário deve ser pelo menos 1')
         if v > 500:
@@ -3371,7 +3376,11 @@ async def dispatch_campaign_cadence(
     if not dispatches_data:
         raise HTTPException(status_code=400, detail="Nenhum destinatário encontrado")
 
-    daily_limit = data.daily_limit
+    # Resolve daily_limit efetivo: se o usuário não informou, usa o valor
+    # do perfil de cadência selecionado (50/80/120).
+    from services.cadence_profiles import get_profile as _get_profile
+    profile_cfg_for_limit = _get_profile(data.cadence_profile)
+    daily_limit = data.daily_limit if data.daily_limit is not None else int(profile_cfg_for_limit["daily_limit"])
     deadline_days = data.deadline_days
 
     tz = ZoneInfo("America/Sao_Paulo")
@@ -3484,7 +3493,9 @@ async def dispatch_campaign_cadence(
             ov_idx += len(batch)
 
     campaign.delivery_mode = "cadence"
-    campaign.daily_limit = daily_limit
+    # Persistimos exatamente o que o usuário enviou (None preserva fallback
+    # dinâmico do perfil em mudanças futuras de cadence_profile).
+    campaign.daily_limit = data.daily_limit
     campaign.deadline_days = deadline_days
     campaign.cadence_profile = data.cadence_profile
     campaign.status = "firing_cadence"
