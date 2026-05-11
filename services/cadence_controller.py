@@ -411,7 +411,14 @@ async def run_cadence_tick():
                 .first()
             )
 
-            effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+            # Task #222 — em modo turbo, o cap diário é SEMPRE o do perfil
+            # turbo (150/dia), ignorando `campaign.daily_limit` salvo (que
+            # tipicamente é menor — 50/80/120 — e impediria a finalização
+            # rápida que o usuário pediu ao acionar "Finalizar agora").
+            if bool(getattr(campaign, "cadence_turbo_active", False)):
+                effective_daily_limit = int(campaign_profile["daily_limit"])
+            else:
+                effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
             if daily_log and daily_log.sent_count >= effective_daily_limit:
                 if _should_emit_daily_limit(CAMPAIGN_KIND_LEGACY, campaign.id, today_date):
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
@@ -638,7 +645,13 @@ async def run_cadence_tick():
                     .count()
                 )
 
-                effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+                # Task #222 — em turbo, prevalece o cap do perfil (150/dia)
+                # sobre `campaign.daily_limit` para honrar o pedido de
+                # "finalizar agora".
+                if bool(getattr(campaign, "cadence_turbo_active", False)):
+                    effective_daily_limit = int(campaign_profile["daily_limit"])
+                else:
+                    effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
                 if today_sent >= effective_daily_limit:
                     if _should_emit_daily_limit(CAMPAIGN_KIND_UNIFIED, campaign.id, today_date):
                         emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
