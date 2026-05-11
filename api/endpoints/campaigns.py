@@ -2953,6 +2953,47 @@ async def upload_campaign_diagram(
     }
 
 
+@cadence_router.get("/recent-turbo-aborts")
+@router.get("/cadence/recent-turbo-aborts")
+async def get_recent_turbo_aborts(
+    since_id: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """
+    Task #222 — Lista eventos `turbo_aborted_safety` recentes (últimos
+    10 min) com id > since_id, para o frontend exibir um toast vermelho
+    com a razão e o perfil restaurado quando o freio do turbo dispara.
+    Retorna até 20 eventos ordenados por id ascendente.
+    """
+    from database.models import CadenceCampaignEvent
+    from datetime import timedelta as _td, timezone as _tz
+
+    cutoff = datetime.now(_tz.utc) - _td(minutes=10)
+    rows = (
+        db.query(CadenceCampaignEvent)
+        .filter(CadenceCampaignEvent.event_type == "turbo_aborted_safety")
+        .filter(CadenceCampaignEvent.id > int(since_id or 0))
+        .filter(CadenceCampaignEvent.occurred_at >= cutoff)
+        .order_by(CadenceCampaignEvent.id.asc())
+        .limit(20)
+        .all()
+    )
+    out = []
+    for r in rows:
+        payload = r.payload or {}
+        out.append({
+            "id": int(r.id),
+            "campaign_kind": r.campaign_kind,
+            "campaign_id": int(r.campaign_id or 0),
+            "occurred_at": r.occurred_at.isoformat() if r.occurred_at else None,
+            "reason": payload.get("reason") or "—",
+            "restored_profile": payload.get("restored_profile") or "conservador",
+            "is_backfill": bool(getattr(r, "is_backfill", False)),
+        })
+    return {"events": out}
+
+
 @cadence_router.get("/engine-state")
 @router.get("/cadence/engine-state")
 async def get_cadence_engine_state(
@@ -4084,6 +4125,9 @@ async def finalize_unified_cadence_now(
     )
     campaign.cadence_turbo_origin_profile = origin_profile
     campaign.cadence_turbo_active = True
+    # Task #222 — persiste o override para que o motor saiba bypassar a
+    # janela 09-18h apenas para esta campanha entre ticks/restarts.
+    campaign.cadence_turbo_override_business_hours = bool(data.override_business_hours)
     campaign.cadence_profile = TURBO_PROFILE_NAME
     if campaign.status == "paused_cadence":
         campaign.status = "firing_cadence"

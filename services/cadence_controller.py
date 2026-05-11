@@ -77,11 +77,14 @@ def _abort_turbo_campaigns(
             c.cadence_profile = origin
             c.cadence_turbo_active = False
             c.cadence_turbo_origin_profile = None
+            # Task #222 — limpa override persistido junto com a flag turbo.
+            c.cadence_turbo_override_business_hours = False
         for c in legacy:
             origin = c.cadence_turbo_origin_profile or "conservador"
             c.cadence_profile = origin
             c.cadence_turbo_active = False
             c.cadence_turbo_origin_profile = None
+            c.cadence_turbo_override_business_hours = False
         db.commit()
 
         # Reagenda pendentes com perfil restaurado
@@ -228,25 +231,69 @@ async def run_cadence_tick():
     # Task #221 (V2) — observabilidade: emitir eventos system-wide de
     # transição de estado ANTES de retornar. NÃO altera o comportamento
     # operacional do motor (mesmas condições de retorno e fluxo).
-    # Abrimos uma sessão curta APENAS para o evento de transição se for
-    # o caso. Sucesso ou falha desse insert nunca afeta o tick.
-    if now.weekday() >= 5 or now < now.replace(hour=9, minute=0, second=0, microsecond=0) or now >= now.replace(hour=18, minute=0, second=0, microsecond=0):
-        # Persistir last_tick_at + emitir transição em sessão curta dedicada
-        # (não abre a `db` principal para manter o early-return barato).
+    # Task #222 — exceção: se houver QUALQUER campanha turbo com override
+    # de janela comercial ATIVO + dispatches pendentes, o tick prossegue
+    # (apenas as campanhas com override conseguem enviar fora de horário;
+    # as demais ficam filtradas dentro do loop). Caso contrário, mantém o
+    # early-return histórico.
+    _is_out_of_hours = (
+        now.weekday() >= 5
+        or now < now.replace(hour=9, minute=0, second=0, microsecond=0)
+        or now >= now.replace(hour=18, minute=0, second=0, microsecond=0)
+    )
+    if _is_out_of_hours:
+        # Verifica em sessão curta se algum override turbo está pedindo passagem.
+        _has_override_pending = False
         try:
             _obs_db = SessionLocal()
             try:
+                from database.models import (
+                    Campaign as _C, CadenceCampaign as _CC,
+                    CampaignDispatch as _CD, CadenceCampaignContact as _CCC,
+                )
+                _u_override_ids = [
+                    cid for (cid,) in _obs_db.query(_C.id).filter(
+                        _C.cadence_turbo_active.is_(True),
+                        _C.cadence_turbo_override_business_hours.is_(True),
+                        _C.status == "firing_cadence",
+                    ).all()
+                ]
+                _l_override_ids = [
+                    cid for (cid,) in _obs_db.query(_CC.id).filter(
+                        _CC.cadence_turbo_active.is_(True),
+                        _CC.cadence_turbo_override_business_hours.is_(True),
+                        _CC.status == "firing",
+                    ).all()
+                ]
+                if _u_override_ids:
+                    _has_override_pending = (
+                        _obs_db.query(_CD.id).filter(
+                            _CD.campaign_id.in_(_u_override_ids),
+                            _CD.status == "pending",
+                        ).first() is not None
+                    )
+                if not _has_override_pending and _l_override_ids:
+                    _has_override_pending = (
+                        _obs_db.query(_CCC.id).filter(
+                            _CCC.campaign_id.in_(_l_override_ids),
+                            _CCC.status == "pending",
+                        ).first() is not None
+                    )
                 _persist_state(_obs_db, last_tick_at=now)
-                _emit_engine_state_transition(_obs_db, "out_of_business_hours", {
-                    "weekday": now.weekday(),
-                    "hour": now.hour,
-                    "now": now.isoformat(),
-                })
+                if not _has_override_pending:
+                    _emit_engine_state_transition(_obs_db, "out_of_business_hours", {
+                        "weekday": now.weekday(),
+                        "hour": now.hour,
+                        "now": now.isoformat(),
+                    })
             finally:
                 _obs_db.close()
         except Exception as e:
             logger.warning(f"[CADENCE-OBS] obs session falhou: {e}")
-        return
+        if not _has_override_pending:
+            return
+        # Caso contrário, prossegue — o gate por-campanha abaixo filtra
+        # campanhas sem override.
 
     db = SessionLocal()
     try:
@@ -331,6 +378,15 @@ async def run_cadence_tick():
             if sent_this_tick:
                 break
 
+            # Task #222 — fora da janela 09-18h, só campanhas turbo com
+            # override explícito podem disparar. Demais permanecem no
+            # comportamento histórico (skip silencioso).
+            if _is_out_of_hours and not (
+                bool(getattr(campaign, "cadence_turbo_active", False))
+                and bool(getattr(campaign, "cadence_turbo_override_business_hours", False))
+            ):
+                continue
+
             # Cooldown global — usa o cooldown_seconds do perfil DESTA
             # campanha (a candidata a enviar agora) contra o último envio
             # GLOBAL. Assim só pode haver um envio por janela de cooldown
@@ -393,6 +449,7 @@ async def run_cadence_tick():
                     _was_turbo = bool(getattr(campaign, "cadence_turbo_active", False))
                     campaign.cadence_turbo_active = False
                     campaign.cadence_turbo_origin_profile = None
+                    campaign.cadence_turbo_override_business_hours = False
                     db.commit()
                     _turbo_failure_streak_by_campaign.pop(("legacy", campaign.id), None)
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_DONE, {
@@ -552,6 +609,14 @@ async def run_cadence_tick():
                 if sent_this_tick:
                     break
 
+                # Task #222 — gate por-campanha: fora de horário, só turbo
+                # com override explícito é despachada.
+                if _is_out_of_hours and not (
+                    bool(getattr(campaign, "cadence_turbo_active", False))
+                    and bool(getattr(campaign, "cadence_turbo_override_business_hours", False))
+                ):
+                    continue
+
                 # Cooldown global — mesma política do bloco legacy: o
                 # cooldown_seconds vem do perfil da campanha CANDIDATA, mas
                 # comparado contra o último envio global. Não há cooldowns
@@ -622,6 +687,7 @@ async def run_cadence_tick():
                         _was_turbo_u = bool(getattr(campaign, "cadence_turbo_active", False))
                         campaign.cadence_turbo_active = False
                         campaign.cadence_turbo_origin_profile = None
+                        campaign.cadence_turbo_override_business_hours = False
                         _turbo_failure_streak_by_campaign.pop(("unified", campaign.id), None)
                         campaign.messages_sent = (
                             db.query(CampaignDispatch)

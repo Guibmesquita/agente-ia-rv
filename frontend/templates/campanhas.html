@@ -3553,6 +3553,42 @@ Equipe de Gestao"></textarea>
             }
         }
 
+        // Task #222 — Poller de eventos de aborto do turbo. Mostra toast
+        // vermelho persistente com a razão + perfil restaurado sempre que
+        // o freio de segurança disparar. Estado por-aba persistido em
+        // `sessionStorage` para evitar re-toast em f5/recarga curta.
+        var _turboAbortPollInterval = null;
+        function _getLastTurboAbortId() {
+            try { return parseInt(sessionStorage.getItem('lastTurboAbortId') || '0', 10) || 0; }
+            catch (e) { return 0; }
+        }
+        function _setLastTurboAbortId(id) {
+            try { sessionStorage.setItem('lastTurboAbortId', String(id)); } catch (e) {}
+        }
+        async function pollTurboAborts() {
+            try {
+                var sinceId = _getLastTurboAbortId();
+                var r = await fetch(API_BASE + '/cadence/recent-turbo-aborts?since_id=' + sinceId, { credentials: 'include' });
+                if (!r.ok) return;
+                var data = await r.json();
+                var events = (data && data.events) || [];
+                if (!events.length) return;
+                events.forEach(function(ev) {
+                    if (ev.is_backfill) { _setLastTurboAbortId(Math.max(_getLastTurboAbortId(), ev.id)); return; }
+                    var msg = '⚠ Modo turbo abortado por segurança — ' +
+                              'razão: ' + (ev.reason || '—') +
+                              ' · perfil restaurado: ' + (ev.restored_profile || 'conservador') +
+                              ' (campanha #' + ev.campaign_id + ')';
+                    if (typeof toast !== 'undefined' && toast.error) {
+                        toast.error(msg, 12000);
+                    } else if (typeof showToast === 'function') {
+                        showToast(msg, 'error');
+                    }
+                    _setLastTurboAbortId(Math.max(_getLastTurboAbortId(), ev.id));
+                });
+            } catch (e) { /* silencioso */ }
+        }
+
         function startCadenceEnginePolling() {
             refreshCadenceEngineBanner();
             refreshZapiHealthPill();
@@ -3560,6 +3596,21 @@ Equipe de Gestao"></textarea>
             zapiPillRefreshInterval = setInterval(refreshZapiHealthPill, 30000);
             if (cadenceEngineRefreshInterval) clearInterval(cadenceEngineRefreshInterval);
             cadenceEngineRefreshInterval = setInterval(refreshCadenceEngineBanner, 30000);
+            // Task #222 — bootstrap o sinceId com a maior id já existente
+            // para não toastar eventos antigos no primeiro load da sessão.
+            (async function _bootstrapTurboAbortCursor() {
+                try {
+                    if (_getLastTurboAbortId() > 0) return;
+                    var r0 = await fetch(API_BASE + '/cadence/recent-turbo-aborts?since_id=0', { credentials: 'include' });
+                    if (!r0.ok) return;
+                    var d0 = await r0.json();
+                    var evs = (d0 && d0.events) || [];
+                    var maxId = evs.reduce(function(m, e) { return Math.max(m, e.id || 0); }, 0);
+                    if (maxId) _setLastTurboAbortId(maxId);
+                } catch (e) {}
+            })();
+            if (_turboAbortPollInterval) clearInterval(_turboAbortPollInterval);
+            _turboAbortPollInterval = setInterval(pollTurboAborts, 30000);
             startEngineCountdown();
         }
 

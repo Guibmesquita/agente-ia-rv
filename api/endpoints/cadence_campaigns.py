@@ -437,6 +437,7 @@ async def finalize_legacy_cadence_now(
     )
     campaign.cadence_turbo_origin_profile = origin_profile
     campaign.cadence_turbo_active = True
+    campaign.cadence_turbo_override_business_hours = bool(data.override_business_hours)
     campaign.cadence_profile = TURBO_PROFILE_NAME
     if campaign.status == "paused":
         campaign.status = "firing"

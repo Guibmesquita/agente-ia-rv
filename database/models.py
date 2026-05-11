@@ -345,6 +345,11 @@ class Campaign(Base):
     # caso o freio de segurança dispare (>=3 falhas Z-API consecutivas).
     cadence_turbo_active = Column(Boolean, default=False, nullable=False)
     cadence_turbo_origin_profile = Column(String(20), nullable=True)
+    # Task #222 — Persistência do override de horário comercial pedido na
+    # ativação do turbo. Sem isso, o motor não saberia entre ticks/restart
+    # se a campanha pode disparar fora da janela 09-18h. Limpada junto com
+    # `cadence_turbo_active` em abort/conclusão.
+    cadence_turbo_override_business_hours = Column(Boolean, default=False, nullable=False)
 
     template = relationship("MessageTemplate", back_populates="campaigns")
     creator = relationship("User", foreign_keys=[created_by])
@@ -1495,6 +1500,7 @@ class CadenceCampaign(Base):
     # Task #222 — modo "Finalizar disparos agora" (turbo seguro)
     cadence_turbo_active = Column(Boolean, default=False, nullable=False)
     cadence_turbo_origin_profile = Column(String(20), nullable=True)
+    cadence_turbo_override_business_hours = Column(Boolean, default=False, nullable=False)
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
