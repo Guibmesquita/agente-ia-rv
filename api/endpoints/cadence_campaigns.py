@@ -446,11 +446,16 @@ async def finalize_legacy_cadence_now(
         campaign_id, db, override_business_hours=bool(data.override_business_hours)
     )
 
+    eta_seconds = int(pending_count) * 60
+
     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_TURBO_STARTED, {
+        "original_profile": origin_profile,
         "origin_profile": origin_profile,
         "override_business_hours": bool(data.override_business_hours),
         "rescheduled_count": int(rescheduled),
         "pending_at_start": int(pending_count),
+        "pending_count": int(pending_count),
+        "eta_seconds": int(eta_seconds),
     }, user_id=getattr(current_user, "id", None))
 
     print(
@@ -462,8 +467,11 @@ async def finalize_legacy_cadence_now(
         "message": "Modo turbo ativado",
         "status": campaign.status,
         "cadence_profile": campaign.cadence_profile,
+        "original_profile": origin_profile,
         "origin_profile": origin_profile,
         "rescheduled_contacts": rescheduled,
+        "pending_count": int(pending_count),
+        "eta_seconds": int(eta_seconds),
         "override_business_hours": bool(data.override_business_hours),
     }
 

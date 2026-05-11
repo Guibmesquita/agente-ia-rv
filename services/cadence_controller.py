@@ -21,19 +21,35 @@ _running: bool = False
 # não influencia o comportamento do tick.
 _last_observed_state: Optional[str] = None
 
-# Task #222 — contador de falhas Z-API consecutivas EXCLUSIVO do freio de
-# segurança do modo turbo (independente de `_consecutive_failures`, que
-# zera após cada anti_block_pause). Reset apenas em send bem-sucedido.
-_turbo_failure_streak: int = 0
+# Task #222 — contador POR CAMPANHA de falhas Z-API consecutivas, exclusivo
+# do freio de segurança do turbo (independente de `_consecutive_failures`,
+# que zera após cada anti_block_pause). Reset apenas em send bem-sucedido
+# da MESMA campanha. Estado em memória (volátil — sobrevive enquanto o
+# processo viver). Chave: (kind, campaign_id) com kind in {"unified","legacy"}.
+_turbo_failure_streak_by_campaign: Dict[tuple, int] = {}
 _TURBO_FAILURE_BRAKE_THRESHOLD = 3
+# Task #222 — pausa anti-bloqueio CURTA aplicada quando a falha ocorre em
+# campanha turbo. Spec: 5 min (vs 20 min do modo normal).
+_TURBO_ANTI_BLOCK_PAUSE_MINUTES = 5
 
 
-def _abort_turbo_campaigns(db, reason: str, trigger_payload: Optional[dict] = None):
-    """Task #222 — Reverte TODAS as campanhas em modo turbo para o perfil
-    de origem e reagenda seus pendentes via planner padrão. Idempotente —
-    seguro de chamar repetidamente.
+def _abort_turbo_campaigns(
+    db,
+    reason: str,
+    trigger_payload: Optional[dict] = None,
+    *,
+    only_unified_ids: Optional[set] = None,
+    only_legacy_ids: Optional[set] = None,
+):
+    """Task #222 — Reverte campanhas em modo turbo para o perfil de origem
+    e reagenda seus pendentes via planner padrão. Idempotente — seguro de
+    chamar repetidamente.
+
+    Quando ``only_unified_ids`` / ``only_legacy_ids`` são fornecidos, age
+    APENAS sobre essas campanhas (uso por-campanha). Sem filtros, aborta
+    TODAS as turbo ativas (uso global, ex: Z-API disconnected).
     """
-    global _turbo_failure_streak
+    global _turbo_failure_streak_by_campaign
     try:
         from database.models import Campaign, CadenceCampaign
         from services.campaign_planner import (
@@ -44,8 +60,14 @@ def _abort_turbo_campaigns(db, reason: str, trigger_payload: Optional[dict] = No
             EVENT_TURBO_ABORTED_SAFETY,
         )
 
-        unified = db.query(Campaign).filter(Campaign.cadence_turbo_active.is_(True)).all()
-        legacy = db.query(CadenceCampaign).filter(CadenceCampaign.cadence_turbo_active.is_(True)).all()
+        u_q = db.query(Campaign).filter(Campaign.cadence_turbo_active.is_(True))
+        if only_unified_ids is not None:
+            u_q = u_q.filter(Campaign.id.in_(list(only_unified_ids)))
+        l_q = db.query(CadenceCampaign).filter(CadenceCampaign.cadence_turbo_active.is_(True))
+        if only_legacy_ids is not None:
+            l_q = l_q.filter(CadenceCampaign.id.in_(list(only_legacy_ids)))
+        unified = u_q.all() if (only_unified_ids is None or only_unified_ids) else []
+        legacy = l_q.all() if (only_legacy_ids is None or only_legacy_ids) else []
 
         if not unified and not legacy:
             return
@@ -88,7 +110,11 @@ def _abort_turbo_campaigns(db, reason: str, trigger_payload: Optional[dict] = No
                 **(trigger_payload or {}),
             })
 
-        _turbo_failure_streak = 0
+        # Limpa apenas as entradas das campanhas afetadas no streak.
+        for c in unified:
+            _turbo_failure_streak_by_campaign.pop(("unified", c.id), None)
+        for c in legacy:
+            _turbo_failure_streak_by_campaign.pop(("legacy", c.id), None)
         print(
             f"[CADENCE-TURBO] ⚠ Freio de segurança disparado ({reason}) — "
             f"turbo abortado em {len(unified)} unificadas e {len(legacy)} legadas."
@@ -180,7 +206,7 @@ def _hydrate_from_db(db):
 
 async def run_cadence_tick():
     global _last_send_time, _consecutive_failures, _pause_until, _pause_reason
-    global _turbo_failure_streak  # Task #222 — leitura/escrita do contador do freio turbo
+    global _turbo_failure_streak_by_campaign  # Task #222 — contador por-campanha
 
     from database.database import SessionLocal
     from database.models import (
@@ -228,24 +254,43 @@ async def run_cadence_tick():
         _hydrate_from_db(db)
         _persist_state(db, last_tick_at=now)
 
-        # Task #222 — freio de segurança do turbo: se houver streak de
-        # falhas Z-API consecutivas, aborta TODAS as campanhas em modo
-        # turbo no início do tick (idempotente; reseta o streak).
-        if _turbo_failure_streak >= _TURBO_FAILURE_BRAKE_THRESHOLD:
-            from database.models import Campaign as _C, CadenceCampaign as _CC
-            has_turbo = (
-                db.query(_C.id).filter(_C.cadence_turbo_active.is_(True)).first() is not None
-                or db.query(_CC.id).filter(_CC.cadence_turbo_active.is_(True)).first() is not None
-            )
-            if has_turbo:
-                _abort_turbo_campaigns(db, "consecutive_zapi_failures", {
-                    "streak": int(_turbo_failure_streak),
+        # Task #222 — freio de segurança do turbo (POR CAMPANHA): aborta
+        # apenas as campanhas turbo cujo streak local tenha estourado o
+        # threshold. Idempotente; chave em RAM zera junto com a campanha.
+        unified_offenders = {
+            cid for (kind, cid), streak in _turbo_failure_streak_by_campaign.items()
+            if kind == "unified" and streak >= _TURBO_FAILURE_BRAKE_THRESHOLD
+        }
+        legacy_offenders = {
+            cid for (kind, cid), streak in _turbo_failure_streak_by_campaign.items()
+            if kind == "legacy" and streak >= _TURBO_FAILURE_BRAKE_THRESHOLD
+        }
+        if unified_offenders or legacy_offenders:
+            _abort_turbo_campaigns(
+                db,
+                "consecutive_zapi_failures",
+                {
                     "threshold": _TURBO_FAILURE_BRAKE_THRESHOLD,
-                })
-            else:
-                # Não há nenhuma campanha turbo ativa — apenas reseta o streak
-                # para não disparar abort fantasma quando alguém ativar turbo.
-                _turbo_failure_streak = 0
+                    "scope": "per_campaign",
+                },
+                only_unified_ids=unified_offenders or None,
+                only_legacy_ids=legacy_offenders or None,
+            )
+
+        # Task #222 — abort GLOBAL adicional: Z-API desconectado/erro força
+        # o turbo a recuar para o perfil de origem em TODAS as campanhas.
+        # Mantém o motor rodando (envios normais já tratam falhas isoladas).
+        try:
+            from services.dependency_check import get_zapi_status_cache
+            zapi_health = (get_zapi_status_cache() or {}).get("status")
+            if zapi_health in ("disconnected", "error"):
+                _abort_turbo_campaigns(
+                    db,
+                    "zapi_health_unhealthy",
+                    {"zapi_status": zapi_health, "scope": "global"},
+                )
+        except Exception as _e:
+            logger.warning(f"[CADENCE-TURBO] verificação Z-API health falhou: {_e}")
 
         if _pause_until and now < _pause_until:
             # last_tick_at já persistido acima — observabilidade preservada
@@ -343,12 +388,16 @@ async def run_cadence_tick():
                 if pending_count == 0:
                     campaign.status = "done"
                     campaign.end_date = now
-                    # Task #222 — limpa flags do turbo ao concluir
+                    # Task #222 — captura flag turbo ANTES de limpar para
+                    # marcar via_turbo no evento de conclusão.
+                    _was_turbo = bool(getattr(campaign, "cadence_turbo_active", False))
                     campaign.cadence_turbo_active = False
                     campaign.cadence_turbo_origin_profile = None
                     db.commit()
+                    _turbo_failure_streak_by_campaign.pop(("legacy", campaign.id), None)
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_DONE, {
                         "ended_at": now.isoformat(),
+                        "via_turbo": _was_turbo,
                     })
                     print(f"[CADENCE] Campanha legada '{campaign.name}' (id={campaign.id}) concluída!")
                 continue
@@ -371,7 +420,8 @@ async def run_cadence_tick():
                     next_contact.delivered = True
                     next_contact.last_error_message = None
                     _consecutive_failures = 0
-                    _turbo_failure_streak = 0  # Task #222 — reset do freio turbo
+                    # Task #222 — reset do streak APENAS desta campanha turbo.
+                    _turbo_failure_streak_by_campaign.pop(("legacy", campaign.id), None)
 
                     if not daily_log:
                         daily_log = CampaignDailyLog(
@@ -398,12 +448,15 @@ async def run_cadence_tick():
                     # Task #221 — registra erro a cada tentativa, não só na última.
                     next_contact.last_error_message = str(error_msg)[:1000]
                     _consecutive_failures += 1
-                    # Task #222 — freio do turbo: contabiliza somente falhas
-                    # ocorridas em campanhas em modo turbo, evitando que o
-                    # streak suba durante envios normais e dispare abort
-                    # logo no primeiro tick após a campanha entrar em turbo.
-                    if bool(getattr(campaign, "cadence_turbo_active", False)):
-                        _turbo_failure_streak += 1
+                    # Task #222 — incrementa streak POR CAMPANHA somente se
+                    # esta campanha está em turbo. Evita que falhas em
+                    # campanhas normais contaminem o freio do turbo.
+                    _is_turbo_now = bool(getattr(campaign, "cadence_turbo_active", False))
+                    if _is_turbo_now:
+                        _key = ("legacy", campaign.id)
+                        _turbo_failure_streak_by_campaign[_key] = (
+                            _turbo_failure_streak_by_campaign.get(_key, 0) + 1
+                        )
 
                     is_final_fail = next_contact.retry_count >= 3
                     if is_final_fail:
@@ -430,17 +483,23 @@ async def run_cadence_tick():
                     print(f"[CADENCE] Falha ao enviar para {next_contact.phone}: {error_msg} (tentativa {next_contact.retry_count})")
 
                     if _consecutive_failures >= 2:
-                        _pause_until = now + timedelta(minutes=20)
+                        # Task #222 — em campanha turbo, pausa anti-bloqueio
+                        # CURTA de 5 min (vs 20 min do modo normal).
+                        _pause_minutes = (
+                            _TURBO_ANTI_BLOCK_PAUSE_MINUTES if _is_turbo_now else 20
+                        )
+                        _pause_until = now + timedelta(minutes=_pause_minutes)
                         _pause_reason = "anti_block"
                         _consecutive_failures = 0
                         _persist_state(db, pause_until=_pause_until, pause_reason="anti_block",
                                        consecutive_failures=0)
                         emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
-                            "duration_minutes": 20,
+                            "duration_minutes": _pause_minutes,
                             "pause_until": _pause_until.isoformat(),
                             "trigger": "2 falhas Z-API consecutivas",
+                            "turbo": _is_turbo_now,
                         })
-                        print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por 20 minutos até {_pause_until.strftime('%H:%M')}")
+                        print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por {_pause_minutes} minutos até {_pause_until.strftime('%H:%M')}")
 
             except Exception as send_err:
                 next_contact.retry_count += 1
@@ -558,9 +617,12 @@ async def run_cadence_tick():
                     )
                     if remaining == 0:
                         campaign.status = "cadence_done"
-                        # Task #222 — limpa flags do turbo ao concluir
+                        # Task #222 — captura flag turbo ANTES de limpar para
+                        # marcar via_turbo no evento de conclusão.
+                        _was_turbo_u = bool(getattr(campaign, "cadence_turbo_active", False))
                         campaign.cadence_turbo_active = False
                         campaign.cadence_turbo_origin_profile = None
+                        _turbo_failure_streak_by_campaign.pop(("unified", campaign.id), None)
                         campaign.messages_sent = (
                             db.query(CampaignDispatch)
                             .filter(
@@ -582,6 +644,7 @@ async def run_cadence_tick():
                             "ended_at": now.isoformat(),
                             "sent": int(campaign.messages_sent or 0),
                             "failed": int(campaign.messages_failed or 0),
+                            "via_turbo": _was_turbo_u,
                         })
                         print(f"[CADENCE] Campanha unificada '{campaign.name}' (id={campaign.id}) concluída!")
                     continue
@@ -657,7 +720,8 @@ async def run_cadence_tick():
                         next_dispatch.sent_at = now
                         next_dispatch.last_error_message = None
                         _consecutive_failures = 0
-                        _turbo_failure_streak = 0  # Task #222 — reset do freio turbo
+                        # Task #222 — reset do streak APENAS desta campanha turbo.
+                        _turbo_failure_streak_by_campaign.pop(("unified", campaign.id), None)
                         _last_send_time = now
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
@@ -675,9 +739,13 @@ async def run_cadence_tick():
                         error_msg = result.get("error", "desconhecido")
                         next_dispatch.last_error_message = str(error_msg)[:1000]
                         _consecutive_failures += 1
-                        # Task #222 — freio só conta falhas em campanhas turbo.
-                        if bool(getattr(campaign, "cadence_turbo_active", False)):
-                            _turbo_failure_streak += 1
+                        # Task #222 — streak por-campanha (somente turbo).
+                        _is_turbo_now_u = bool(getattr(campaign, "cadence_turbo_active", False))
+                        if _is_turbo_now_u:
+                            _key_u = ("unified", campaign.id)
+                            _turbo_failure_streak_by_campaign[_key_u] = (
+                                _turbo_failure_streak_by_campaign.get(_key_u, 0) + 1
+                            )
 
                         is_final_fail = next_dispatch.retry_count >= 3
                         if is_final_fail:
@@ -699,17 +767,22 @@ async def run_cadence_tick():
                         print(f"[CADENCE] Falha ao enviar para {phone}: {error_msg} (tentativa {next_dispatch.retry_count})")
 
                         if _consecutive_failures >= 2:
-                            _pause_until = now + timedelta(minutes=20)
+                            # Task #222 — pausa anti-bloqueio CURTA em turbo.
+                            _pause_minutes_u = (
+                                _TURBO_ANTI_BLOCK_PAUSE_MINUTES if _is_turbo_now_u else 20
+                            )
+                            _pause_until = now + timedelta(minutes=_pause_minutes_u)
                             _pause_reason = "anti_block"
                             _consecutive_failures = 0
                             _persist_state(db, pause_until=_pause_until, pause_reason="anti_block",
                                            consecutive_failures=0)
                             emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
-                                "duration_minutes": 20,
+                                "duration_minutes": _pause_minutes_u,
+                                "turbo": _is_turbo_now_u,
                                 "pause_until": _pause_until.isoformat(),
                                 "trigger": "2 falhas Z-API consecutivas",
                             })
-                            print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por 20 minutos até {_pause_until.strftime('%H:%M')}")
+                            print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por {_pause_minutes_u} minutos até {_pause_until.strftime('%H:%M')}")
 
                 except Exception as send_err:
                     next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1

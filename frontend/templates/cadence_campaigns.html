@@ -262,9 +262,14 @@
                     : c.status === 'paused'
                         ? '<button class="btn btn-resume" data-action="resume" data-id="' + c.id + '">Retomar</button>'
                         : '';
-                // Task #222 — botão "Finalizar disparos agora" (turbo)
-                const finalizeBtn = (c.status === 'firing' || c.status === 'paused') && !c.cadence_turbo_active
-                    ? '<button class="btn" style="background:#dc2626;color:white;margin-left:8px;" data-action="finalize-now" data-id="' + c.id + '">⚡ Finalizar disparos agora</button>'
+                // Task #222 — botão "Finalizar disparos agora" (turbo).
+                // Spec do validador: aparece SÓ em firing (não em paused).
+                const _pend = (c.contacts_pending != null ? c.contacts_pending : (c.pending != null ? c.pending : 0));
+                const _eta = Number(_pend) * 60;
+                const finalizeBtn = (c.status === 'firing') && !c.cadence_turbo_active
+                    ? '<button class="btn" style="background:#dc2626;color:white;margin-left:8px;" '
+                      + 'data-action="finalize-now" data-id="' + c.id + '" '
+                      + 'data-pending="' + _pend + '" data-eta="' + _eta + '">⚡ Finalizar disparos agora</button>'
                     : '';
                 const turboBadge = c.cadence_turbo_active
                     ? '<span style="background:#dc2626;color:white;font-weight:700;font-size:0.65rem;padding:2px 8px;border-radius:4px;letter-spacing:0.5px;margin-left:8px;">TURBO</span>'
@@ -498,7 +503,20 @@
 
         // Task #222 — Modo "Finalizar disparos agora" (turbo seguro).
         // Confirmação dupla: digitar "FINALIZAR" + checkbox de override de horário.
-        async function finalizeNow(id) {
+        function _formatTurboEtaLegacy(seconds) {
+            seconds = Number(seconds) || 0;
+            if (seconds <= 0) return '—';
+            var mins = Math.round(seconds / 60);
+            if (mins < 60) return '~' + mins + ' min';
+            var hours = Math.floor(mins / 60); var rem = mins % 60;
+            if (hours < 24) return '~' + hours + 'h' + (rem ? (' ' + rem + 'min') : '');
+            var days = Math.floor(hours / 24); var hRem = hours % 24;
+            return '~' + days + 'd' + (hRem ? (' ' + hRem + 'h') : '');
+        }
+
+        async function finalizeNow(id, pendingCount, etaSeconds) {
+            pendingCount = Number(pendingCount) || 0;
+            etaSeconds = Number(etaSeconds) || (pendingCount * 60);
             var existing = document.getElementById('turboFinalizeModalLegacy');
             if (existing) existing.remove();
             var modal = document.createElement('div');
@@ -509,6 +527,16 @@
                 + '  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
                 + '    <span style="background:#dc2626;color:white;font-weight:700;font-size:0.7rem;padding:4px 10px;border-radius:4px;letter-spacing:0.5px;">TURBO</span>'
                 + '    <h3 style="margin:0;font-size:1.1rem;color:#7f1d1d;">Finalizar disparos agora?</h3>'
+                + '  </div>'
+                + '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
+                + '    <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;">'
+                + '      <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Pendentes</div>'
+                + '      <div style="font-size:1.4rem;font-weight:700;color:#0f172a;">' + pendingCount + '</div>'
+                + '    </div>'
+                + '    <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;">'
+                + '      <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Tempo estimado</div>'
+                + '      <div style="font-size:1.4rem;font-weight:700;color:#0f172a;">' + _formatTurboEtaLegacy(etaSeconds) + '</div>'
+                + '    </div>'
                 + '  </div>'
                 + '  <p style="color:#475569;font-size:0.9rem;line-height:1.5;margin:0 0 14px;">'
                 + '    Comprime os pendentes com intervalo <strong>30-90s</strong>. Defesas mínimas mantidas: janela comercial, soft cap 150/dia e <strong>freio automático</strong> em 3+ falhas Z-API.'
@@ -595,7 +623,14 @@
             else if (action === 'delete-campaign') { e.stopPropagation(); deleteCampaign(el.dataset.id); }
             else if (action === 'show-timeline') { e.stopPropagation(); showLegacyTimeline(el.dataset.id, false); }
             else if (action === 'timeline-more') { e.stopPropagation(); showLegacyTimeline(el.dataset.id, true); }
-            else if (action === 'finalize-now') { e.stopPropagation(); finalizeNow(el.dataset.id); }
+            else if (action === 'finalize-now') {
+                e.stopPropagation();
+                finalizeNow(
+                    el.dataset.id,
+                    parseInt(el.dataset.pending || '0', 10) || 0,
+                    parseInt(el.dataset.eta || '0', 10) || 0
+                );
+            }
         });
 
         fetchCampaigns();

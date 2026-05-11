@@ -244,12 +244,12 @@ def _build_turbo_schedule(
     Task #222 — Constrói o cronograma do modo turbo (finalizar agora).
 
     Comprime os pendentes com intervalos randomizados de 30-90s, com uma
-    pausa longa de 60-90s a cada 10-12 envios. A janela comercial 09-18h
+    pausa longa de 60-90s a cada 12-15 envios. A janela comercial 09-18h
     seg-sex é mantida por padrão; se ``override_business_hours`` for True,
     o cronograma segue independentemente do horário (mesmo assim, o motor
-    de envio não disparará fora da janela — o override é informativo: ao
-    se aproximar do fim do dia, o usuário aceita que sobras serão enviadas
-    no próximo dia útil).
+    de envio não disparará fora da janela — o override é informativo).
+    Aplica soft cap de 150 envios/dia: ao atingir o limite no dia atual,
+    avança para o próximo dia útil 09:00 BRT (mesmo com override ligado).
     """
     from zoneinfo import ZoneInfo
     from services.cadence_profiles import get_profile
@@ -259,11 +259,15 @@ def _build_turbo_schedule(
     int_max = int(cfg["interval_seconds_max"])
     long_min = int(cfg["long_pause_seconds_min"])
     long_max = int(cfg["long_pause_seconds_max"])
+    daily_cap = int(cfg.get("daily_limit", 150))
 
     tz = start_dt.tzinfo or ZoneInfo("America/Sao_Paulo")
     current = start_dt
     scheduled: List[datetime] = []
     block_count = 0
+    # Soft cap diário (150) — conta envios já posicionados no dia corrente.
+    day_cursor_date = current.date()
+    day_count = 0
 
     def _next_business_open(dt: datetime) -> datetime:
         nxt = dt
@@ -279,13 +283,34 @@ def _build_turbo_schedule(
                 continue
             return nxt
 
+    def _advance_to_next_day(dt: datetime) -> datetime:
+        nxt = (dt + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        # pula fins de semana
+        while nxt.weekday() >= 5:
+            nxt = nxt + timedelta(days=1)
+        return nxt
+
     for _ in range(num_contacts):
         if not override_business_hours:
             current = _next_business_open(current)
+
+        # Reset do contador diário quando o dia muda
+        if current.date() != day_cursor_date:
+            day_cursor_date = current.date()
+            day_count = 0
+
+        # Soft cap 150/dia: se já alcançou no dia, joga para o próximo dia útil.
+        if day_count >= daily_cap:
+            current = _advance_to_next_day(current)
+            day_cursor_date = current.date()
+            day_count = 0
+            block_count = 0
+
         scheduled.append(current)
+        day_count += 1
         block_count += 1
 
-        if block_count >= random.randint(10, 12):
+        if block_count >= random.randint(12, 15):
             current = current + timedelta(seconds=random.randint(long_min, long_max))
             block_count = 0
         else:

@@ -4093,11 +4093,17 @@ async def finalize_unified_cadence_now(
         campaign_id, db, override_business_hours=bool(data.override_business_hours)
     )
 
+    # Task #222 — ETA aproximada: pending × intervalo médio (60s).
+    eta_seconds = int(pending_count) * 60
+
     _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_TURBO_STARTED, {
-        "origin_profile": origin_profile,
+        "original_profile": origin_profile,
+        "origin_profile": origin_profile,  # alias retrocompatível
         "override_business_hours": bool(data.override_business_hours),
         "rescheduled_count": int(rescheduled),
         "pending_at_start": int(pending_count),
+        "pending_count": int(pending_count),
+        "eta_seconds": int(eta_seconds),
     }, user_id=getattr(current_user, "id", None))
 
     print(
@@ -4110,7 +4116,10 @@ async def finalize_unified_cadence_now(
         "message": "Modo turbo ativado",
         "status": campaign.status,
         "cadence_profile": campaign.cadence_profile,
+        "original_profile": origin_profile,
         "origin_profile": origin_profile,
         "rescheduled_dispatches": rescheduled,
+        "pending_count": int(pending_count),
+        "eta_seconds": int(eta_seconds),
         "override_business_hours": bool(data.override_business_hours),
     }

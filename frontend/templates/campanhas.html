@@ -3339,9 +3339,18 @@ Equipe de Gestao"></textarea>
                 } else if (data.status === 'paused_cadence') {
                     html += '<button class="btn btn-primary" data-action="resumeCadence" data-id="' + cId + '">Retomar Campanha</button>';
                 }
-                // Task #222 — botão "Finalizar disparos agora" (turbo)
-                if ((data.status === 'firing_cadence' || data.status === 'paused_cadence') && !data.cadence_turbo_active) {
-                    html += '<button class="btn" style="background:#dc2626;color:white;border:none;" data-action="finalizeCadenceNow" data-id="' + cId + '" data-kind="unified">⚡ Finalizar disparos agora</button>';
+                // Task #222 — botão "Finalizar disparos agora" (turbo).
+                // Spec do validador: aparece SÓ em firing_cadence (não em paused).
+                // Passa pending count + eta para alimentar o modal.
+                if (data.status === 'firing_cadence' && !data.cadence_turbo_active) {
+                    var _pend = (data.contacts && (data.contacts.pending != null)) ? data.contacts.pending
+                              : (data.pending_dispatches != null ? data.pending_dispatches
+                              : (data.pending != null ? data.pending : 0));
+                    var _eta = Number(_pend) * 60;
+                    html += '<button class="btn" style="background:#dc2626;color:white;border:none;" '
+                          + 'data-action="finalizeCadenceNow" data-id="' + cId + '" data-kind="unified" '
+                          + 'data-pending="' + _pend + '" data-eta="' + _eta + '">'
+                          + '⚡ Finalizar disparos agora</button>';
                 }
                 html += '</div>';
 
@@ -3750,8 +3759,22 @@ Equipe de Gestao"></textarea>
         // Modal com confirmação dupla: exige digitar "FINALIZAR" + checkbox
         // override de horário comercial (opt-in). Suporta campanhas
         // unificadas (kind='unified') e legadas (kind='legacy').
-        async function finalizeCadenceNow(cId, kind) {
+        // Task #222 — formata ETA em "X min" / "X h Y min" / "Z dias".
+        function _formatTurboEta(seconds) {
+            seconds = Number(seconds) || 0;
+            if (seconds <= 0) return '—';
+            var mins = Math.round(seconds / 60);
+            if (mins < 60) return '~' + mins + ' min';
+            var hours = Math.floor(mins / 60); var rem = mins % 60;
+            if (hours < 24) return '~' + hours + 'h' + (rem ? (' ' + rem + 'min') : '');
+            var days = Math.floor(hours / 24); var hRem = hours % 24;
+            return '~' + days + 'd' + (hRem ? (' ' + hRem + 'h') : '');
+        }
+
+        async function finalizeCadenceNow(cId, kind, pendingCount, etaSeconds) {
             kind = kind || 'unified';
+            pendingCount = Number(pendingCount) || 0;
+            etaSeconds = Number(etaSeconds) || (pendingCount * 60);
             var existing = document.getElementById('turboFinalizeModal');
             if (existing) existing.remove();
             var modal = document.createElement('div');
@@ -3762,6 +3785,16 @@ Equipe de Gestao"></textarea>
                 + '  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
                 + '    <span style="background:#dc2626;color:white;font-weight:700;font-size:0.7rem;padding:4px 10px;border-radius:4px;letter-spacing:0.5px;">TURBO</span>'
                 + '    <h3 style="margin:0;font-size:1.1rem;color:#7f1d1d;">Finalizar disparos agora?</h3>'
+                + '  </div>'
+                + '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
+                + '    <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;">'
+                + '      <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Pendentes</div>'
+                + '      <div style="font-size:1.4rem;font-weight:700;color:#0f172a;">' + pendingCount + '</div>'
+                + '    </div>'
+                + '    <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;">'
+                + '      <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Tempo estimado</div>'
+                + '      <div style="font-size:1.4rem;font-weight:700;color:#0f172a;">' + _formatTurboEta(etaSeconds) + '</div>'
+                + '    </div>'
                 + '  </div>'
                 + '  <p style="color:#475569;font-size:0.9rem;line-height:1.5;margin:0 0 14px;">'
                 + '    Esta ação <strong>comprime os disparos pendentes</strong> com intervalo aleatório de <strong>30-90 segundos</strong>. '
@@ -4476,7 +4509,12 @@ Equipe de Gestao"></textarea>
             } else if (action === 'changeCadenceProfile') {
                 changeCadenceProfileFn(parseInt(actionEl.dataset.id));
             } else if (action === 'finalizeCadenceNow') {
-                finalizeCadenceNow(parseInt(actionEl.dataset.id), actionEl.dataset.kind || 'unified');
+                finalizeCadenceNow(
+                    parseInt(actionEl.dataset.id),
+                    actionEl.dataset.kind || 'unified',
+                    parseInt(actionEl.dataset.pending || '0', 10) || 0,
+                    parseInt(actionEl.dataset.eta || '0', 10) || 0
+                );
             } else if (action === 'editTemplate') {
                 editTemplate(parseInt(actionEl.dataset.id));
             } else if (action === 'deleteTemplate') {
