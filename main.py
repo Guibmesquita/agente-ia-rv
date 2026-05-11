@@ -380,6 +380,11 @@ def _apply_incremental_migrations():
         # Task #220: perfis de velocidade da cadência
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cadence_profile VARCHAR(20) NOT NULL DEFAULT 'conservador'",
         "ALTER TABLE cadence_campaigns ADD COLUMN IF NOT EXISTS cadence_profile VARCHAR(20) NOT NULL DEFAULT 'conservador'",
+        # Task #222: flag do modo "Finalizar disparos agora" (turbo seguro)
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cadence_turbo_active BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cadence_turbo_origin_profile VARCHAR(20)",
+        "ALTER TABLE cadence_campaigns ADD COLUMN IF NOT EXISTS cadence_turbo_active BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE cadence_campaigns ADD COLUMN IF NOT EXISTS cadence_turbo_origin_profile VARCHAR(20)",
         "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ",
         "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 3",
         "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ",

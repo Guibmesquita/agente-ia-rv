@@ -21,6 +21,81 @@ _running: bool = False
 # não influencia o comportamento do tick.
 _last_observed_state: Optional[str] = None
 
+# Task #222 — contador de falhas Z-API consecutivas EXCLUSIVO do freio de
+# segurança do modo turbo (independente de `_consecutive_failures`, que
+# zera após cada anti_block_pause). Reset apenas em send bem-sucedido.
+_turbo_failure_streak: int = 0
+_TURBO_FAILURE_BRAKE_THRESHOLD = 3
+
+
+def _abort_turbo_campaigns(db, reason: str, trigger_payload: Optional[dict] = None):
+    """Task #222 — Reverte TODAS as campanhas em modo turbo para o perfil
+    de origem e reagenda seus pendentes via planner padrão. Idempotente —
+    seguro de chamar repetidamente.
+    """
+    global _turbo_failure_streak
+    try:
+        from database.models import Campaign, CadenceCampaign
+        from services.campaign_planner import (
+            reschedule_unified_pending_dispatches, assign_scheduled_times,
+        )
+        from services.cadence_events import (
+            emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, CAMPAIGN_KIND_LEGACY,
+            EVENT_TURBO_ABORTED_SAFETY,
+        )
+
+        unified = db.query(Campaign).filter(Campaign.cadence_turbo_active.is_(True)).all()
+        legacy = db.query(CadenceCampaign).filter(CadenceCampaign.cadence_turbo_active.is_(True)).all()
+
+        if not unified and not legacy:
+            return
+
+        for c in unified:
+            origin = c.cadence_turbo_origin_profile or "conservador"
+            c.cadence_profile = origin
+            c.cadence_turbo_active = False
+            c.cadence_turbo_origin_profile = None
+        for c in legacy:
+            origin = c.cadence_turbo_origin_profile or "conservador"
+            c.cadence_profile = origin
+            c.cadence_turbo_active = False
+            c.cadence_turbo_origin_profile = None
+        db.commit()
+
+        # Reagenda pendentes com perfil restaurado
+        for c in unified:
+            try:
+                reschedule_unified_pending_dispatches(c.id, db)
+            except Exception as e:
+                logger.warning(f"[CADENCE-TURBO] reagendar unificada {c.id} falhou: {e}")
+        for c in legacy:
+            try:
+                assign_scheduled_times(c.id, db, only_pending=True)
+            except Exception as e:
+                logger.warning(f"[CADENCE-TURBO] reagendar legada {c.id} falhou: {e}")
+
+        # Emite evento auditável por campanha afetada
+        for c in unified:
+            _obs_emit(db, CAMPAIGN_KIND_UNIFIED, c.id, EVENT_TURBO_ABORTED_SAFETY, {
+                "reason": reason,
+                "restored_profile": c.cadence_profile,
+                **(trigger_payload or {}),
+            })
+        for c in legacy:
+            _obs_emit(db, CAMPAIGN_KIND_LEGACY, c.id, EVENT_TURBO_ABORTED_SAFETY, {
+                "reason": reason,
+                "restored_profile": c.cadence_profile,
+                **(trigger_payload or {}),
+            })
+
+        _turbo_failure_streak = 0
+        print(
+            f"[CADENCE-TURBO] ⚠ Freio de segurança disparado ({reason}) — "
+            f"turbo abortado em {len(unified)} unificadas e {len(legacy)} legadas."
+        )
+    except Exception as e:
+        logger.warning(f"[CADENCE-TURBO] _abort_turbo_campaigns falhou: {e}")
+
 
 def _emit_engine_state_transition(db, new_state: str, payload: dict):
     """Emite evento de mudança de estado do motor, com dedupe em memória.
@@ -105,6 +180,7 @@ def _hydrate_from_db(db):
 
 async def run_cadence_tick():
     global _last_send_time, _consecutive_failures, _pause_until, _pause_reason
+    global _turbo_failure_streak  # Task #222 — leitura/escrita do contador do freio turbo
 
     from database.database import SessionLocal
     from database.models import (
@@ -151,6 +227,25 @@ async def run_cadence_tick():
         # Hidrata do banco e registra tick. Estado persistente sobrevive a reinício.
         _hydrate_from_db(db)
         _persist_state(db, last_tick_at=now)
+
+        # Task #222 — freio de segurança do turbo: se houver streak de
+        # falhas Z-API consecutivas, aborta TODAS as campanhas em modo
+        # turbo no início do tick (idempotente; reseta o streak).
+        if _turbo_failure_streak >= _TURBO_FAILURE_BRAKE_THRESHOLD:
+            from database.models import Campaign as _C, CadenceCampaign as _CC
+            has_turbo = (
+                db.query(_C.id).filter(_C.cadence_turbo_active.is_(True)).first() is not None
+                or db.query(_CC.id).filter(_CC.cadence_turbo_active.is_(True)).first() is not None
+            )
+            if has_turbo:
+                _abort_turbo_campaigns(db, "consecutive_zapi_failures", {
+                    "streak": int(_turbo_failure_streak),
+                    "threshold": _TURBO_FAILURE_BRAKE_THRESHOLD,
+                })
+            else:
+                # Não há nenhuma campanha turbo ativa — apenas reseta o streak
+                # para não disparar abort fantasma quando alguém ativar turbo.
+                _turbo_failure_streak = 0
 
         if _pause_until and now < _pause_until:
             # last_tick_at já persistido acima — observabilidade preservada
@@ -248,6 +343,9 @@ async def run_cadence_tick():
                 if pending_count == 0:
                     campaign.status = "done"
                     campaign.end_date = now
+                    # Task #222 — limpa flags do turbo ao concluir
+                    campaign.cadence_turbo_active = False
+                    campaign.cadence_turbo_origin_profile = None
                     db.commit()
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_CAMPAIGN_DONE, {
                         "ended_at": now.isoformat(),
@@ -273,6 +371,7 @@ async def run_cadence_tick():
                     next_contact.delivered = True
                     next_contact.last_error_message = None
                     _consecutive_failures = 0
+                    _turbo_failure_streak = 0  # Task #222 — reset do freio turbo
 
                     if not daily_log:
                         daily_log = CampaignDailyLog(
@@ -299,6 +398,12 @@ async def run_cadence_tick():
                     # Task #221 — registra erro a cada tentativa, não só na última.
                     next_contact.last_error_message = str(error_msg)[:1000]
                     _consecutive_failures += 1
+                    # Task #222 — freio do turbo: contabiliza somente falhas
+                    # ocorridas em campanhas em modo turbo, evitando que o
+                    # streak suba durante envios normais e dispare abort
+                    # logo no primeiro tick após a campanha entrar em turbo.
+                    if bool(getattr(campaign, "cadence_turbo_active", False)):
+                        _turbo_failure_streak += 1
 
                     is_final_fail = next_contact.retry_count >= 3
                     if is_final_fail:
@@ -453,6 +558,9 @@ async def run_cadence_tick():
                     )
                     if remaining == 0:
                         campaign.status = "cadence_done"
+                        # Task #222 — limpa flags do turbo ao concluir
+                        campaign.cadence_turbo_active = False
+                        campaign.cadence_turbo_origin_profile = None
                         campaign.messages_sent = (
                             db.query(CampaignDispatch)
                             .filter(
@@ -549,6 +657,7 @@ async def run_cadence_tick():
                         next_dispatch.sent_at = now
                         next_dispatch.last_error_message = None
                         _consecutive_failures = 0
+                        _turbo_failure_streak = 0  # Task #222 — reset do freio turbo
                         _last_send_time = now
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
@@ -566,6 +675,9 @@ async def run_cadence_tick():
                         error_msg = result.get("error", "desconhecido")
                         next_dispatch.last_error_message = str(error_msg)[:1000]
                         _consecutive_failures += 1
+                        # Task #222 — freio só conta falhas em campanhas turbo.
+                        if bool(getattr(campaign, "cadence_turbo_active", False)):
+                            _turbo_failure_streak += 1
 
                         is_final_fail = next_dispatch.retry_count >= 3
                         if is_final_fail:

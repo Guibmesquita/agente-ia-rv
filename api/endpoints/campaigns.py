@@ -3383,9 +3383,9 @@ class CadenceDispatchRequest(BaseModel):
 
     @validator('cadence_profile')
     def validate_cadence_profile(cls, v):
-        from services.cadence_profiles import is_valid_profile, PROFILES
+        from services.cadence_profiles import is_valid_profile, PROFILES, USER_SELECTABLE_PROFILES
         if not is_valid_profile(v):
-            raise ValueError(f'Perfil inválido. Opções: {", ".join(PROFILES.keys())}')
+            raise ValueError(f'Perfil inválido. Opções: {", ".join(USER_SELECTABLE_PROFILES)}')
         return str(v).strip().lower()
 
 
@@ -3394,10 +3394,29 @@ class CadenceProfileChangeRequest(BaseModel):
 
     @validator('cadence_profile')
     def validate_cadence_profile(cls, v):
-        from services.cadence_profiles import is_valid_profile, PROFILES
+        from services.cadence_profiles import is_valid_profile, PROFILES, USER_SELECTABLE_PROFILES
         if not is_valid_profile(v):
-            raise ValueError(f'Perfil inválido. Opções: {", ".join(PROFILES.keys())}')
+            raise ValueError(f'Perfil inválido. Opções: {", ".join(USER_SELECTABLE_PROFILES)}')
         return str(v).strip().lower()
+
+
+class CadenceFinalizeNowRequest(BaseModel):
+    """Task #222 — payload do modo "Finalizar disparos agora" (turbo seguro).
+
+    ``confirmation`` deve ser exatamente "FINALIZAR" para evitar acionamento
+    acidental. ``override_business_hours`` é opt-in: quando True, o
+    cronograma turbo não respeita 09-18h ao distribuir os horários (mesmo
+    assim, o motor de envio mantém a janela comercial — o override sinaliza
+    que sobras serão enviadas no próximo dia útil).
+    """
+    confirmation: str
+    override_business_hours: bool = False
+
+    @validator('confirmation')
+    def validate_confirmation(cls, v):
+        if (v or "").strip().upper() != "FINALIZAR":
+            raise ValueError('Confirmação inválida — digite exatamente "FINALIZAR".')
+        return "FINALIZAR"
 
 
 @router.post("/{campaign_id}/dispatch-cadence")
@@ -3417,6 +3436,16 @@ async def dispatch_campaign_cadence(
 
     if campaign.status == CampaignStatus.SENT.value:
         raise HTTPException(status_code=400, detail="Esta campanha já foi enviada")
+
+    # Task #222 — quando a campanha está em turbo, o reagendamento via
+    # dispatch-cadence sobrescreveria o perfil sem limpar a flag, criando
+    # estado contraditório (turbo ativo + perfil normal). Bloqueia até o
+    # operador finalizar/cancelar o turbo.
+    if bool(getattr(campaign, "cadence_turbo_active", False)):
+        raise HTTPException(
+            status_code=409,
+            detail="Campanha em modo turbo — finalize os disparos atuais antes de reagendar.",
+        )
 
     existing_dispatches = db.query(CampaignDispatch).filter(
         CampaignDispatch.campaign_id == campaign_id,
@@ -3828,6 +3857,9 @@ async def get_cadence_status(
         "daily_limit": campaign.daily_limit,
         "deadline_days": campaign.deadline_days,
         "cadence_profile": getattr(campaign, "cadence_profile", None) or "conservador",
+        # Task #222 — flags do modo "Finalizar disparos agora" para a UI
+        "cadence_turbo_active": bool(getattr(campaign, "cadence_turbo_active", False)),
+        "cadence_turbo_origin_profile": getattr(campaign, "cadence_turbo_origin_profile", None),
         "available_profiles": list_profiles(),
         "daily_log": daily_log,
     }
@@ -3877,6 +3909,14 @@ async def change_cadence_profile(
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    # Task #222 — bloqueia troca manual enquanto a campanha está em modo turbo
+    # para evitar estado inconsistente (flag turbo + perfil normal selecionado).
+    if bool(getattr(campaign, "cadence_turbo_active", False)):
+        raise HTTPException(
+            status_code=409,
+            detail="Campanha em modo turbo — não é possível trocar o perfil agora. Aguarde a conclusão dos disparos.",
+        )
 
     old_profile = getattr(campaign, "cadence_profile", None) or "conservador"
     campaign.cadence_profile = data.cadence_profile
@@ -3954,27 +3994,37 @@ async def resume_cadence_campaign(
     )
 
     if pending_dispatches:
-        # Usa o perfil atual da campanha — assim retomadas após troca de perfil
-        # respeitam a velocidade configurada e o limite diário sugerido.
-        profile_name = getattr(campaign, "cadence_profile", None) or "conservador"
-        profile_cfg = get_profile(profile_name)
-        tz = ZoneInfo("America/Sao_Paulo")
-        today = datetime.now(tz).date()
-        daily_limit = campaign.daily_limit or int(profile_cfg["daily_limit"])
-        deadline_days = campaign.deadline_days or 5
-        business_days = _get_business_days(today, deadline_days)
-        daily_cap = min(daily_limit, math.ceil(len(pending_dispatches) / len(business_days))) if business_days else daily_limit
+        # Task #222 — campanhas em modo turbo retomam usando o cronograma turbo
+        # (30-90s) em vez do scheduler padrão de minutos.
+        if bool(getattr(campaign, "cadence_turbo_active", False)):
+            from services.campaign_planner import reschedule_unified_for_turbo
+            reschedule_unified_for_turbo(
+                campaign.id,
+                db,
+                override_business_hours=False,
+            )
+        else:
+            # Usa o perfil atual da campanha — assim retomadas após troca de perfil
+            # respeitam a velocidade configurada e o limite diário sugerido.
+            profile_name = getattr(campaign, "cadence_profile", None) or "conservador"
+            profile_cfg = get_profile(profile_name)
+            tz = ZoneInfo("America/Sao_Paulo")
+            today = datetime.now(tz).date()
+            daily_limit = campaign.daily_limit or int(profile_cfg["daily_limit"])
+            deadline_days = campaign.deadline_days or 5
+            business_days = _get_business_days(today, deadline_days)
+            daily_cap = min(daily_limit, math.ceil(len(pending_dispatches) / len(business_days))) if business_days else daily_limit
 
-        idx = 0
-        for day in business_days:
-            if idx >= len(pending_dispatches):
-                break
-            batch = pending_dispatches[idx:idx + daily_cap]
-            times = _build_daily_schedule(len(batch), day, profile=profile_name)
-            for j, d in enumerate(batch):
-                if j < len(times):
-                    d.scheduled_for = times[j]
-            idx += len(batch)
+            idx = 0
+            for day in business_days:
+                if idx >= len(pending_dispatches):
+                    break
+                batch = pending_dispatches[idx:idx + daily_cap]
+                times = _build_daily_schedule(len(batch), day, profile=profile_name)
+                for j, d in enumerate(batch):
+                    if j < len(times):
+                        d.scheduled_for = times[j]
+                idx += len(batch)
 
     campaign.status = "firing_cadence"
     db.commit()
@@ -3982,3 +4032,85 @@ async def resume_cadence_campaign(
     _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, _EVT, {"manual": True}, user_id=getattr(current_user, "id", None))
     print(f"[CADENCE] Campanha '{campaign.name}' (id={campaign_id}) retomada")
     return {"message": "Campanha retomada", "status": "firing_cadence"}
+
+
+@router.post("/{campaign_id}/cadence-finalize-now")
+async def finalize_unified_cadence_now(
+    campaign_id: int,
+    data: CadenceFinalizeNowRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """
+    Task #222 — Aciona o modo "Finalizar disparos agora" (turbo seguro)
+    para uma campanha unificada em ``firing_cadence`` ou ``paused_cadence``.
+
+    Comprime os dispatches pendentes com intervalo 30-90s, soft cap 150/dia,
+    cooldown global 30s. Mantém defesas anti-bloqueio mínimas: janela
+    comercial (com override opt-in), pausa 20min após 2 falhas Z-API
+    consecutivas e freio automático que reverte para o perfil de origem
+    em caso de falhas seguidas.
+
+    Idempotente: se já estiver em turbo, apenas reagenda os pendentes.
+    """
+    from services.campaign_planner import reschedule_unified_for_turbo
+    from services.cadence_profiles import TURBO_PROFILE_NAME
+    from services.cadence_events import (
+        emit_event as _obs_emit, CAMPAIGN_KIND_UNIFIED, EVENT_TURBO_STARTED,
+    )
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+    if campaign.status not in ("firing_cadence", "paused_cadence"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Apenas campanhas em disparo podem ser finalizadas (status: {campaign.status})",
+        )
+
+    pending_count = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.status == "pending",
+        )
+        .count()
+    )
+    if pending_count == 0:
+        raise HTTPException(status_code=400, detail="Sem dispatches pendentes para finalizar.")
+
+    origin_profile = campaign.cadence_turbo_origin_profile or (
+        getattr(campaign, "cadence_profile", None) or "conservador"
+    )
+    campaign.cadence_turbo_origin_profile = origin_profile
+    campaign.cadence_turbo_active = True
+    campaign.cadence_profile = TURBO_PROFILE_NAME
+    if campaign.status == "paused_cadence":
+        campaign.status = "firing_cadence"
+    db.commit()
+
+    rescheduled = reschedule_unified_for_turbo(
+        campaign_id, db, override_business_hours=bool(data.override_business_hours)
+    )
+
+    _obs_emit(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_TURBO_STARTED, {
+        "origin_profile": origin_profile,
+        "override_business_hours": bool(data.override_business_hours),
+        "rescheduled_count": int(rescheduled),
+        "pending_at_start": int(pending_count),
+    }, user_id=getattr(current_user, "id", None))
+
+    print(
+        f"[CADENCE-TURBO] Campanha unificada '{campaign.name}' (id={campaign_id}) "
+        f"em modo turbo. {rescheduled} dispatches reagendados "
+        f"(origin={origin_profile}, override_horario={data.override_business_hours})."
+    )
+
+    return {
+        "message": "Modo turbo ativado",
+        "status": campaign.status,
+        "cadence_profile": campaign.cadence_profile,
+        "origin_profile": origin_profile,
+        "rescheduled_dispatches": rescheduled,
+        "override_business_hours": bool(data.override_business_hours),
+    }

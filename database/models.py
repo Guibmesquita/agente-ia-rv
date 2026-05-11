@@ -339,7 +339,13 @@ class Campaign(Base):
     daily_limit = Column(Integer, nullable=True)
     deadline_days = Column(Integer, nullable=True)
     cadence_profile = Column(String(20), nullable=False, default="conservador")
-    
+    # Task #222 — flag do modo "Finalizar disparos agora" (turbo seguro).
+    # Quando ativo, o planner comprime os pendentes com intervalos 30-90s
+    # e o motor reverte automaticamente para `cadence_turbo_origin_profile`
+    # caso o freio de segurança dispare (>=3 falhas Z-API consecutivas).
+    cadence_turbo_active = Column(Boolean, default=False, nullable=False)
+    cadence_turbo_origin_profile = Column(String(20), nullable=True)
+
     template = relationship("MessageTemplate", back_populates="campaigns")
     creator = relationship("User", foreign_keys=[created_by])
     dispatches = relationship("CampaignDispatch", back_populates="campaign", cascade="all, delete-orphan")
@@ -1486,6 +1492,9 @@ class CadenceCampaign(Base):
     daily_limit = Column(Integer, default=50)
     deadline_days = Column(Integer, default=5)
     cadence_profile = Column(String(20), nullable=False, default="conservador")
+    # Task #222 — modo "Finalizar disparos agora" (turbo seguro)
+    cadence_turbo_active = Column(Boolean, default=False, nullable=False)
+    cadence_turbo_origin_profile = Column(String(20), nullable=True)
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)

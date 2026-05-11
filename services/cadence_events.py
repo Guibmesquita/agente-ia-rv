@@ -30,6 +30,9 @@ EVENT_LUNCH_BREAK = "lunch_break"
 EVENT_OUT_OF_BUSINESS_HOURS = "out_of_business_hours"
 EVENT_GLOBAL_COOLDOWN = "global_cooldown"
 EVENT_CAMPAIGN_DONE = "campaign_done"
+# Task #222 — Modo "Finalizar disparos agora" (turbo seguro)
+EVENT_TURBO_STARTED = "turbo_started"
+EVENT_TURBO_ABORTED_SAFETY = "turbo_aborted_safety"
 
 # Estados normalizados expostos pelo /engine-state (task #221)
 ENGINE_STATE_OK = "ok"

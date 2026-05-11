@@ -262,6 +262,13 @@
                     : c.status === 'paused'
                         ? '<button class="btn btn-resume" data-action="resume" data-id="' + c.id + '">Retomar</button>'
                         : '';
+                // Task #222 — botão "Finalizar disparos agora" (turbo)
+                const finalizeBtn = (c.status === 'firing' || c.status === 'paused') && !c.cadence_turbo_active
+                    ? '<button class="btn" style="background:#dc2626;color:white;margin-left:8px;" data-action="finalize-now" data-id="' + c.id + '">⚡ Finalizar disparos agora</button>'
+                    : '';
+                const turboBadge = c.cadence_turbo_active
+                    ? '<span style="background:#dc2626;color:white;font-weight:700;font-size:0.65rem;padding:2px 8px;border-radius:4px;letter-spacing:0.5px;margin-left:8px;">TURBO</span>'
+                    : '';
                 const deleteBtn = c.status !== 'firing'
                     ? '<button class="btn btn-delete" data-action="delete-campaign" data-id="' + c.id + '">Excluir</button>'
                     : '';
@@ -269,7 +276,7 @@
                 return '<div class="campaign-card" data-action="toggle-details" data-target="details-' + c.id + '">' +
                     '<div class="campaign-header">' +
                         '<span class="campaign-name">' + (c.name || 'Sem nome') + '</span>' +
-                        getStatusBadge(c.status) +
+                        getStatusBadge(c.status) + turboBadge +
                     '</div>' +
                     '<div class="progress-bar-container"><div class="progress-bar-fill ' + c.status + '" style="width:' + pct + '%"></div></div>' +
                     '<div class="campaign-progress-pct">' + pct + '% concluído</div>' +
@@ -299,7 +306,7 @@
                             '</div>'
                         ) : '') +
                         '<div class="chart-container"><canvas id="chart-' + c.id + '"></canvas></div>' +
-                        '<div style="margin-top:12px">' + actionBtn + deleteBtn +
+                        '<div style="margin-top:12px">' + actionBtn + deleteBtn + finalizeBtn +
                             ' <button class="btn btn-resume" data-action="show-timeline" data-id="' + c.id + '" style="margin-left:8px;background:#475569;">Histórico</button>' +
                         '</div>' +
                         '<div id="timeline-' + c.id + '" class="timeline-panel" style="display:none;margin-top:14px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;max-height:360px;overflow:auto;font-size:0.85rem;"></div>' +
@@ -354,7 +361,10 @@
             dispatch_failed:  { label: 'Falha no envio', color: '#b91c1c' },
             anti_block_pause: { label: 'Pausa anti-bloqueio', color: '#b91c1c' },
             daily_limit_reached: { label: 'Limite diário atingido', color: '#92400e' },
-            campaign_done:    { label: 'Campanha concluída', color: '#16a34a' }
+            campaign_done:    { label: 'Campanha concluída', color: '#16a34a' },
+            // Task #222 — modo "Finalizar disparos agora"
+            turbo_started:        { label: '⚡ Modo turbo ativado (finalizar agora)', color: '#b91c1c' },
+            turbo_aborted_safety: { label: '⚠ Turbo abortado por segurança', color: '#9a3412' }
         };
         var legacyHistoryCache = {};
 
@@ -486,6 +496,80 @@
             } catch (e) { showToast('Erro: ' + e.message, 'error'); }
         }
 
+        // Task #222 — Modo "Finalizar disparos agora" (turbo seguro).
+        // Confirmação dupla: digitar "FINALIZAR" + checkbox de override de horário.
+        async function finalizeNow(id) {
+            var existing = document.getElementById('turboFinalizeModalLegacy');
+            if (existing) existing.remove();
+            var modal = document.createElement('div');
+            modal.id = 'turboFinalizeModalLegacy';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+            modal.innerHTML = ''
+                + '<div style="background:white;border-radius:12px;padding:24px;max-width:520px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.25);font-family:inherit;">'
+                + '  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+                + '    <span style="background:#dc2626;color:white;font-weight:700;font-size:0.7rem;padding:4px 10px;border-radius:4px;letter-spacing:0.5px;">TURBO</span>'
+                + '    <h3 style="margin:0;font-size:1.1rem;color:#7f1d1d;">Finalizar disparos agora?</h3>'
+                + '  </div>'
+                + '  <p style="color:#475569;font-size:0.9rem;line-height:1.5;margin:0 0 14px;">'
+                + '    Comprime os pendentes com intervalo <strong>30-90s</strong>. Defesas mínimas mantidas: janela comercial, soft cap 150/dia e <strong>freio automático</strong> em 3+ falhas Z-API.'
+                + '  </p>'
+                + '  <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:#78350f;">'
+                + '    ⚠ Use apenas com número aquecido — risco de bloqueio aumenta com volumes altos em janela curta.'
+                + '  </div>'
+                + '  <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.85rem;color:#334155;margin-bottom:14px;cursor:pointer;">'
+                + '    <input type="checkbox" id="turboOverrideBHLegacy" style="margin-top:3px;">'
+                + '    <span>Ignorar janela comercial 09-18h ao distribuir o cronograma</span>'
+                + '  </label>'
+                + '  <label style="display:block;font-size:0.85rem;color:#334155;margin-bottom:6px;font-weight:600;">'
+                + '    Para confirmar, digite <code style="background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:3px;">FINALIZAR</code>:'
+                + '  </label>'
+                + '  <input type="text" id="turboConfirmInputLegacy" autocomplete="off" placeholder="FINALIZAR" '
+                + '         style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:6px;font-family:monospace;font-size:0.95rem;text-transform:uppercase;letter-spacing:1px;box-sizing:border-box;">'
+                + '  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">'
+                + '    <button class="btn" id="turboCancelBtnLegacy" style="background:#64748b;color:white;">Cancelar</button>'
+                + '    <button class="btn" id="turboConfirmBtnLegacy" disabled '
+                + '            style="background:#dc2626;color:white;opacity:0.5;cursor:not-allowed;">⚡ Finalizar agora</button>'
+                + '  </div>'
+                + '</div>';
+            document.body.appendChild(modal);
+
+            var input = document.getElementById('turboConfirmInputLegacy');
+            var confirmBtn = document.getElementById('turboConfirmBtnLegacy');
+            input.focus();
+            input.addEventListener('input', function() {
+                var ok = (input.value || '').trim().toUpperCase() === 'FINALIZAR';
+                confirmBtn.disabled = !ok;
+                confirmBtn.style.opacity = ok ? '1' : '0.5';
+                confirmBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+            });
+            document.getElementById('turboCancelBtnLegacy').addEventListener('click', function() { modal.remove(); });
+            modal.addEventListener('click', function(ev) { if (ev.target === modal) modal.remove(); });
+
+            confirmBtn.addEventListener('click', async function() {
+                if (confirmBtn.disabled) return;
+                var override = !!document.getElementById('turboOverrideBHLegacy').checked;
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Aplicando…';
+                try {
+                    var res = await fetch(API + '/' + id + '/finalize-now', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ confirmation: 'FINALIZAR', override_business_hours: override })
+                    });
+                    var result = await res.json().catch(function(){ return {}; });
+                    if (!res.ok) throw new Error(result.detail || ('HTTP ' + res.status));
+                    showToast('Modo turbo ativado — ' + (result.rescheduled_contacts || 0) + ' contatos reagendados', 'success');
+                    modal.remove();
+                    fetchCampaigns();
+                } catch (e) {
+                    showToast('Erro: ' + (e.message || e), 'error');
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = '⚡ Finalizar agora';
+                }
+            });
+        }
+
         async function deleteCampaign(id) {
             if (!confirm('Tem certeza que deseja excluir esta campanha?')) return;
             try {
@@ -511,6 +595,7 @@
             else if (action === 'delete-campaign') { e.stopPropagation(); deleteCampaign(el.dataset.id); }
             else if (action === 'show-timeline') { e.stopPropagation(); showLegacyTimeline(el.dataset.id, false); }
             else if (action === 'timeline-more') { e.stopPropagation(); showLegacyTimeline(el.dataset.id, true); }
+            else if (action === 'finalize-now') { e.stopPropagation(); finalizeNow(el.dataset.id); }
         });
 
         fetchCampaigns();

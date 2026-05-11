@@ -235,6 +235,151 @@ def assign_scheduled_times(campaign_id: int, db: Session, only_pending: bool = F
     return len(contacts)
 
 
+def _build_turbo_schedule(
+    num_contacts: int,
+    start_dt: datetime,
+    override_business_hours: bool = False,
+) -> List[datetime]:
+    """
+    Task #222 — Constrói o cronograma do modo turbo (finalizar agora).
+
+    Comprime os pendentes com intervalos randomizados de 30-90s, com uma
+    pausa longa de 60-90s a cada 10-12 envios. A janela comercial 09-18h
+    seg-sex é mantida por padrão; se ``override_business_hours`` for True,
+    o cronograma segue independentemente do horário (mesmo assim, o motor
+    de envio não disparará fora da janela — o override é informativo: ao
+    se aproximar do fim do dia, o usuário aceita que sobras serão enviadas
+    no próximo dia útil).
+    """
+    from zoneinfo import ZoneInfo
+    from services.cadence_profiles import get_profile
+
+    cfg = get_profile("turbo")
+    int_min = int(cfg["interval_seconds_min"])
+    int_max = int(cfg["interval_seconds_max"])
+    long_min = int(cfg["long_pause_seconds_min"])
+    long_max = int(cfg["long_pause_seconds_max"])
+
+    tz = start_dt.tzinfo or ZoneInfo("America/Sao_Paulo")
+    current = start_dt
+    scheduled: List[datetime] = []
+    block_count = 0
+
+    def _next_business_open(dt: datetime) -> datetime:
+        nxt = dt
+        while True:
+            if nxt.weekday() >= 5:
+                nxt = (nxt + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+                continue
+            if nxt.hour < 9:
+                nxt = nxt.replace(hour=9, minute=0, second=0, microsecond=0)
+                continue
+            if nxt.hour >= 18:
+                nxt = (nxt + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+                continue
+            return nxt
+
+    for _ in range(num_contacts):
+        if not override_business_hours:
+            current = _next_business_open(current)
+        scheduled.append(current)
+        block_count += 1
+
+        if block_count >= random.randint(10, 12):
+            current = current + timedelta(seconds=random.randint(long_min, long_max))
+            block_count = 0
+        else:
+            current = current + timedelta(seconds=random.randint(int_min, int_max))
+
+    return scheduled
+
+
+def reschedule_unified_for_turbo(
+    campaign_id: int, db: Session, override_business_hours: bool = False
+) -> int:
+    """
+    Task #222 — Reagenda dispatches pendentes da campanha unificada com
+    intervalos do modo turbo (30-90s). Não toca em sent/processing/failed.
+    Retorna a quantidade reagendada.
+    """
+    from database.models import Campaign, CampaignDispatch
+    from zoneinfo import ZoneInfo
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        return 0
+
+    pending = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.status == "pending",
+        )
+        .order_by(
+            CampaignDispatch.priority.asc(),
+            CampaignDispatch.scheduled_for.asc(),
+        )
+        .all()
+    )
+
+    if not pending:
+        return 0
+
+    tz = ZoneInfo("America/Sao_Paulo")
+    now = datetime.now(tz)
+    times = _build_turbo_schedule(len(pending), now, override_business_hours)
+    for i, d in enumerate(pending):
+        d.scheduled_for = times[i] if i < len(times) else now
+
+    db.commit()
+    print(
+        f"[CADENCE_TURBO] {len(pending)} dispatches comprimidos para campanha "
+        f"unificada {campaign_id} (override_horario={override_business_hours})"
+    )
+    return len(pending)
+
+
+def reschedule_legacy_for_turbo(
+    campaign_id: int, db: Session, override_business_hours: bool = False
+) -> int:
+    """Task #222 — Versão para campanhas legadas (CadenceCampaignContact)."""
+    from database.models import CadenceCampaign, CadenceCampaignContact
+    from zoneinfo import ZoneInfo
+
+    campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
+    if not campaign:
+        return 0
+
+    pending = (
+        db.query(CadenceCampaignContact)
+        .filter(
+            CadenceCampaignContact.campaign_id == campaign_id,
+            CadenceCampaignContact.status == "pending",
+        )
+        .order_by(
+            CadenceCampaignContact.priority.asc(),
+            CadenceCampaignContact.scheduled_for.asc(),
+        )
+        .all()
+    )
+
+    if not pending:
+        return 0
+
+    tz = ZoneInfo("America/Sao_Paulo")
+    now = datetime.now(tz)
+    times = _build_turbo_schedule(len(pending), now, override_business_hours)
+    for i, c in enumerate(pending):
+        c.scheduled_for = times[i] if i < len(times) else now
+
+    db.commit()
+    print(
+        f"[CADENCE_TURBO] {len(pending)} contatos comprimidos para campanha "
+        f"legada {campaign_id} (override_horario={override_business_hours})"
+    )
+    return len(pending)
+
+
 def reschedule_unified_pending_dispatches(campaign_id: int, db: Session) -> int:
     """
     Reagenda apenas os ``CampaignDispatch`` com ``status='pending'`` da

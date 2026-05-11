@@ -3307,7 +3307,17 @@ Equipe de Gestao"></textarea>
                 }
 
                 var currentProfile = data.cadence_profile || 'conservador';
-                var profileLabels = { 'conservador': 'Conservador (8-25 min)', 'padrao': 'Padrão (4-12 min)', 'acelerado': 'Acelerado (2-6 min)' };
+                var profileLabels = { 'conservador': 'Conservador (8-25 min)', 'padrao': 'Padrão (4-12 min)', 'acelerado': 'Acelerado (2-6 min)', 'turbo': 'Turbo (30-90s — finalizar agora)' };
+
+                // Task #222 — Badge TURBO ativo
+                if (data.cadence_turbo_active) {
+                    var origin = data.cadence_turbo_origin_profile || 'conservador';
+                    html += '<div style="margin-bottom:16px;padding:10px 14px;background:#fee2e2;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:8px;display:flex;align-items:center;gap:10px;">';
+                    html += '<span style="background:#dc2626;color:white;font-weight:700;font-size:0.7rem;padding:3px 8px;border-radius:4px;letter-spacing:0.5px;">TURBO</span>';
+                    html += '<span style="font-size:0.85rem;color:#7f1d1d;">Modo "Finalizar disparos agora" ativo — intervalo 30-90s. Reverte automaticamente para <strong>' + escapeHtmlSafe(origin) + '</strong> em caso de falhas Z-API.</span>';
+                    html += '</div>';
+                }
+
                 if (data.status === 'firing_cadence' || data.status === 'paused_cadence') {
                     html += '<div style="margin-bottom: 24px; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">';
                     html += '<div style="font-weight: 600; margin-bottom: 8px;">Velocidade de envio</div>';
@@ -3323,11 +3333,15 @@ Equipe de Gestao"></textarea>
                     html += '</div>';
                 }
 
-                html += '<div style="display: flex; gap: 8px; justify-content: center;">';
+                html += '<div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">';
                 if (data.status === 'firing_cadence') {
                     html += '<button class="btn" style="background: #f59e0b; color: white; border: none;" data-action="pauseCadence" data-id="' + cId + '">Pausar Campanha</button>';
                 } else if (data.status === 'paused_cadence') {
                     html += '<button class="btn btn-primary" data-action="resumeCadence" data-id="' + cId + '">Retomar Campanha</button>';
+                }
+                // Task #222 — botão "Finalizar disparos agora" (turbo)
+                if ((data.status === 'firing_cadence' || data.status === 'paused_cadence') && !data.cadence_turbo_active) {
+                    html += '<button class="btn" style="background:#dc2626;color:white;border:none;" data-action="finalizeCadenceNow" data-id="' + cId + '" data-kind="unified">⚡ Finalizar disparos agora</button>';
                 }
                 html += '</div>';
 
@@ -3588,7 +3602,10 @@ Equipe de Gestao"></textarea>
             dispatch_failed: { label: 'Falha no envio', color: '#dc2626', bg: '#fef2f2' },
             anti_block_pause: { label: 'Pausa anti-bloqueio', color: '#dc2626', bg: '#fef2f2' },
             daily_limit_reached: { label: 'Limite diário atingido', color: '#92400e', bg: '#fef3c7' },
-            campaign_done: { label: 'Campanha concluída', color: '#16a34a', bg: '#dcfce7' }
+            campaign_done: { label: 'Campanha concluída', color: '#16a34a', bg: '#dcfce7' },
+            // Task #222 — modo "Finalizar disparos agora"
+            turbo_started: { label: '⚡ Modo turbo ativado (finalizar agora)', color: '#b91c1c', bg: '#fee2e2' },
+            turbo_aborted_safety: { label: '⚠ Turbo abortado por segurança', color: '#9a3412', bg: '#ffedd5' }
         };
 
         // Cache local dos eventos por campanha para suportar paginação "carregar mais"
@@ -3727,6 +3744,89 @@ Equipe de Gestao"></textarea>
             } catch (error) {
                 toast.error(error.message);
             }
+        }
+
+        // Task #222 — Modo "Finalizar disparos agora" (turbo seguro).
+        // Modal com confirmação dupla: exige digitar "FINALIZAR" + checkbox
+        // override de horário comercial (opt-in). Suporta campanhas
+        // unificadas (kind='unified') e legadas (kind='legacy').
+        async function finalizeCadenceNow(cId, kind) {
+            kind = kind || 'unified';
+            var existing = document.getElementById('turboFinalizeModal');
+            if (existing) existing.remove();
+            var modal = document.createElement('div');
+            modal.id = 'turboFinalizeModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+            modal.innerHTML = ''
+                + '<div style="background:white;border-radius:12px;padding:24px;max-width:520px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.25);">'
+                + '  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+                + '    <span style="background:#dc2626;color:white;font-weight:700;font-size:0.7rem;padding:4px 10px;border-radius:4px;letter-spacing:0.5px;">TURBO</span>'
+                + '    <h3 style="margin:0;font-size:1.1rem;color:#7f1d1d;">Finalizar disparos agora?</h3>'
+                + '  </div>'
+                + '  <p style="color:#475569;font-size:0.9rem;line-height:1.5;margin:0 0 14px;">'
+                + '    Esta ação <strong>comprime os disparos pendentes</strong> com intervalo aleatório de <strong>30-90 segundos</strong>. '
+                + '    Defesas anti-bloqueio mínimas continuam ativas: janela comercial 09-18h seg-sex, soft cap 150/dia e '
+                + '    <strong>freio automático</strong> que reverte ao perfil original em caso de 3+ falhas Z-API consecutivas.'
+                + '  </p>'
+                + '  <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:#78350f;">'
+                + '    ⚠ Use apenas com número aquecido e em casos urgentes — o risco de bloqueio aumenta com volumes altos em janela curta.'
+                + '  </div>'
+                + '  <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.85rem;color:#334155;margin-bottom:14px;cursor:pointer;">'
+                + '    <input type="checkbox" id="turboOverrideBH" style="margin-top:3px;">'
+                + '    <span>Ignorar janela comercial 09-18h ao distribuir o cronograma <em style="color:#64748b;">(o motor ainda respeita o horário; sobras irão para o próximo dia útil)</em></span>'
+                + '  </label>'
+                + '  <label style="display:block;font-size:0.85rem;color:#334155;margin-bottom:6px;font-weight:600;">'
+                + '    Para confirmar, digite <code style="background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:3px;">FINALIZAR</code>:'
+                + '  </label>'
+                + '  <input type="text" id="turboConfirmInput" autocomplete="off" placeholder="FINALIZAR" '
+                + '         style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:6px;font-family:monospace;font-size:0.95rem;text-transform:uppercase;letter-spacing:1px;">'
+                + '  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">'
+                + '    <button class="btn btn-secondary" id="turboCancelBtn">Cancelar</button>'
+                + '    <button class="btn" id="turboConfirmBtn" disabled '
+                + '            style="background:#dc2626;color:white;border:none;opacity:0.5;cursor:not-allowed;">⚡ Finalizar agora</button>'
+                + '  </div>'
+                + '</div>';
+            document.body.appendChild(modal);
+
+            var input = document.getElementById('turboConfirmInput');
+            var confirmBtn = document.getElementById('turboConfirmBtn');
+            input.focus();
+            input.addEventListener('input', function() {
+                var ok = (input.value || '').trim().toUpperCase() === 'FINALIZAR';
+                confirmBtn.disabled = !ok;
+                confirmBtn.style.opacity = ok ? '1' : '0.5';
+                confirmBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+            });
+            document.getElementById('turboCancelBtn').addEventListener('click', function() { modal.remove(); });
+            modal.addEventListener('click', function(ev) { if (ev.target === modal) modal.remove(); });
+
+            confirmBtn.addEventListener('click', async function() {
+                if (confirmBtn.disabled) return;
+                var override = !!document.getElementById('turboOverrideBH').checked;
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Aplicando…';
+                try {
+                    var url = (kind === 'legacy')
+                        ? ('/api/cadence-campaigns/' + cId + '/finalize-now')
+                        : (API_BASE + '/' + cId + '/cadence-finalize-now');
+                    var response = await fetch(url, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ confirmation: 'FINALIZAR', override_business_hours: override })
+                    });
+                    var result = await response.json().catch(function(){ return {}; });
+                    if (!response.ok) throw new Error(result.detail || ('HTTP ' + response.status));
+                    var n = result.rescheduled_dispatches != null ? result.rescheduled_dispatches : (result.rescheduled_contacts || 0);
+                    toast.success('Modo turbo ativado — ' + n + ' envios reagendados');
+                    modal.remove();
+                    if (kind === 'unified') { await renderCadenceDashboard(cId); }
+                } catch (error) {
+                    toast.error(error.message || 'Erro ao ativar turbo');
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = '⚡ Finalizar agora';
+                }
+            });
         }
 
         async function resumeCadenceCampaign(cId) {
@@ -4375,6 +4475,8 @@ Equipe de Gestao"></textarea>
                 resumeCadenceCampaign(parseInt(actionEl.dataset.id));
             } else if (action === 'changeCadenceProfile') {
                 changeCadenceProfileFn(parseInt(actionEl.dataset.id));
+            } else if (action === 'finalizeCadenceNow') {
+                finalizeCadenceNow(parseInt(actionEl.dataset.id), actionEl.dataset.kind || 'unified');
             } else if (action === 'editTemplate') {
                 editTemplate(parseInt(actionEl.dataset.id));
             } else if (action === 'deleteTemplate') {

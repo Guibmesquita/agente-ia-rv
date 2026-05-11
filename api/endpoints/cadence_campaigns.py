@@ -39,6 +39,16 @@ class CadenceProfileInput(BaseModel):
     cadence_profile: str
 
 
+class CadenceFinalizeNowInput(BaseModel):
+    """Task #222 — payload do "Finalizar disparos agora" (legada).
+
+    ``confirmation`` deve ser exatamente "FINALIZAR" para evitar acionamento
+    acidental. ``override_business_hours`` é opt-in.
+    """
+    confirmation: str
+    override_business_hours: bool = False
+
+
 def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_contacts: bool = False):
     from datetime import datetime, timedelta
     from services.cadence_profiles import get_profile
@@ -118,6 +128,9 @@ def _build_campaign_response(campaign: CadenceCampaign, db: Session, include_con
         "daily_limit": campaign.daily_limit,
         "deadline_days": campaign.deadline_days,
         "cadence_profile": getattr(campaign, "cadence_profile", None) or "conservador",
+        # Task #222 — flags do modo "Finalizar disparos agora"
+        "cadence_turbo_active": bool(getattr(campaign, "cadence_turbo_active", False)),
+        "cadence_turbo_origin_profile": getattr(campaign, "cadence_turbo_origin_profile", None),
         "start_date": campaign.start_date.isoformat() if campaign.start_date else None,
         "end_date": campaign.end_date.isoformat() if campaign.end_date else None,
         "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
@@ -185,7 +198,7 @@ async def get_campaign(campaign_id: int, db: Session = Depends(get_db), current_
 @router.post("")
 async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_db), current_user=Depends(_get_auth())):
     from services.campaign_planner import calculate_daily_plan, prioritize_contacts, assign_scheduled_times
-    from services.cadence_profiles import is_valid_profile, PROFILES
+    from services.cadence_profiles import is_valid_profile, PROFILES, USER_SELECTABLE_PROFILES
 
     if not data.contacts:
         raise HTTPException(status_code=400, detail="Lista de contatos não pode estar vazia")
@@ -197,7 +210,7 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
     if not is_valid_profile(data.cadence_profile):
         raise HTTPException(
             status_code=400,
-            detail=f"Perfil inválido. Opções: {', '.join(PROFILES.keys())}"
+            detail=f"Perfil inválido. Opções: {', '.join(USER_SELECTABLE_PROFILES)}"
         )
 
     # Resolve o limite diário efetivo a partir do perfil quando não informado.
@@ -295,7 +308,16 @@ async def resume_campaign(campaign_id: int, db: Session = Depends(get_db), curre
     if campaign.status != "paused":
         raise HTTPException(status_code=400, detail=f"Campanha não pode ser retomada (status atual: {campaign.status})")
 
-    assign_scheduled_times(campaign.id, db, only_pending=True)
+    # Task #222 — em turbo, reagenda com o cronograma turbo (30-90s).
+    if bool(getattr(campaign, "cadence_turbo_active", False)):
+        from services.campaign_planner import reschedule_legacy_for_turbo
+        reschedule_legacy_for_turbo(
+            campaign.id,
+            db,
+            override_business_hours=False,
+        )
+    else:
+        assign_scheduled_times(campaign.id, db, only_pending=True)
 
     campaign.status = "firing"
     db.commit()
@@ -319,17 +341,25 @@ async def change_profile(
     contatos com status 'pending'. Os já enviados/falhados não são tocados.
     """
     from services.campaign_planner import assign_scheduled_times
-    from services.cadence_profiles import is_valid_profile, PROFILES
+    from services.cadence_profiles import is_valid_profile, PROFILES, USER_SELECTABLE_PROFILES
 
     if not is_valid_profile(data.cadence_profile):
         raise HTTPException(
             status_code=400,
-            detail=f"Perfil inválido. Opções: {', '.join(PROFILES.keys())}"
+            detail=f"Perfil inválido. Opções: {', '.join(USER_SELECTABLE_PROFILES)}"
         )
 
     campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    # Task #222 — não permitir troca manual de perfil enquanto a campanha está
+    # em modo turbo, para evitar estado contraditório (flag turbo + perfil normal).
+    if bool(getattr(campaign, "cadence_turbo_active", False)):
+        raise HTTPException(
+            status_code=409,
+            detail="Campanha em modo turbo — não é possível trocar o perfil agora. Aguarde a conclusão dos disparos.",
+        )
 
     old_profile = getattr(campaign, "cadence_profile", None) or "conservador"
     campaign.cadence_profile = str(data.cadence_profile).strip().lower()
@@ -355,6 +385,86 @@ async def change_profile(
         "message": "Perfil atualizado",
         "cadence_profile": campaign.cadence_profile,
         "rescheduled_count": rescheduled_count,
+    }
+
+
+@router.post("/{campaign_id}/finalize-now")
+async def finalize_legacy_cadence_now(
+    campaign_id: int,
+    data: CadenceFinalizeNowInput,
+    db: Session = Depends(get_db),
+    current_user=Depends(_get_auth()),
+):
+    """
+    Task #222 — Modo "Finalizar disparos agora" (turbo seguro) para
+    campanhas legadas. Comprime os contatos pendentes com intervalo
+    30-90s. Mantém defesas anti-bloqueio mínimas. Idempotente.
+    """
+    from services.campaign_planner import reschedule_legacy_for_turbo
+    from services.cadence_profiles import TURBO_PROFILE_NAME
+    from services.cadence_events import (
+        emit_event, CAMPAIGN_KIND_LEGACY, EVENT_TURBO_STARTED,
+    )
+
+    if (data.confirmation or "").strip().upper() != "FINALIZAR":
+        raise HTTPException(
+            status_code=400,
+            detail='Confirmação inválida — digite exatamente "FINALIZAR".',
+        )
+
+    campaign = db.query(CadenceCampaign).filter(CadenceCampaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+    if campaign.status not in ("firing", "paused"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Apenas campanhas em disparo podem ser finalizadas (status: {campaign.status})",
+        )
+
+    pending_count = (
+        db.query(CadenceCampaignContact)
+        .filter(
+            CadenceCampaignContact.campaign_id == campaign_id,
+            CadenceCampaignContact.status == "pending",
+        )
+        .count()
+    )
+    if pending_count == 0:
+        raise HTTPException(status_code=400, detail="Sem contatos pendentes para finalizar.")
+
+    origin_profile = campaign.cadence_turbo_origin_profile or (
+        getattr(campaign, "cadence_profile", None) or "conservador"
+    )
+    campaign.cadence_turbo_origin_profile = origin_profile
+    campaign.cadence_turbo_active = True
+    campaign.cadence_profile = TURBO_PROFILE_NAME
+    if campaign.status == "paused":
+        campaign.status = "firing"
+    db.commit()
+
+    rescheduled = reschedule_legacy_for_turbo(
+        campaign_id, db, override_business_hours=bool(data.override_business_hours)
+    )
+
+    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_TURBO_STARTED, {
+        "origin_profile": origin_profile,
+        "override_business_hours": bool(data.override_business_hours),
+        "rescheduled_count": int(rescheduled),
+        "pending_at_start": int(pending_count),
+    }, user_id=getattr(current_user, "id", None))
+
+    print(
+        f"[CADENCE-TURBO] Campanha legada '{campaign.name}' (id={campaign_id}) em modo turbo. "
+        f"{rescheduled} contatos reagendados (origin={origin_profile})."
+    )
+
+    return {
+        "message": "Modo turbo ativado",
+        "status": campaign.status,
+        "cadence_profile": campaign.cadence_profile,
+        "origin_profile": origin_profile,
+        "rescheduled_contacts": rescheduled,
+        "override_business_hours": bool(data.override_business_hours),
     }
 
 

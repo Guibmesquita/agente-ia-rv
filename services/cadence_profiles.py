@@ -62,9 +62,40 @@ PROFILES: Dict[str, Dict[str, Any]] = {
         "cooldown_seconds": 120,
         "daily_limit": 120,
     },
+    # Task #222 — Perfil interno usado APENAS pelo modo "Finalizar disparos
+    # agora". NÃO é selecionável na criação ou no PATCH /cadence-profile —
+    # `list_profiles()` o omite e os endpoints de troca rejeitam "turbo".
+    # Intervalos comprimidos (30-90s entre envios), cooldown global mínimo
+    # (30s), pausa longa curta (60-90s) e soft cap diário 150 contatos.
+    # As travas anti-bloqueio fixas (janela 09-18h seg-sex, pausa 20min após
+    # 2 falhas Z-API, freio automático em 3+ falhas consecutivas) continuam
+    # ativas. Os intervalos de minutos são fracionários propositais — o
+    # planner os converte em segundos via _build_turbo_schedule().
+    "turbo": {
+        "label": "Turbo (finalizar agora)",
+        "description": (
+            "Modo turbo seguro — comprime o cronograma com intervalo "
+            "30-90s. Defesas anti-bloqueio mínimas mantidas."
+        ),
+        "interval_min": 1,  # placeholder; turbo usa segundos via _build_turbo_schedule
+        "interval_max": 2,
+        "pause_min": 1,
+        "pause_max": 2,
+        "cooldown_seconds": 30,
+        "daily_limit": 150,
+        # Intervalos REAIS em segundos para o turbo (consumidos pelo planner)
+        "interval_seconds_min": 30,
+        "interval_seconds_max": 90,
+        "long_pause_seconds_min": 60,
+        "long_pause_seconds_max": 90,
+    },
 }
 
 DEFAULT_PROFILE = "conservador"
+TURBO_PROFILE_NAME = "turbo"
+
+# Perfis selecionáveis pelo usuário (turbo é interno, ativado via finalize-now)
+USER_SELECTABLE_PROFILES = ("conservador", "padrao", "acelerado")
 
 
 def get_profile(name: Optional[str]) -> Dict[str, Any]:
@@ -80,25 +111,27 @@ def get_profile(name: Optional[str]) -> Dict[str, Any]:
 
 
 def list_profiles() -> Dict[str, Dict[str, Any]]:
-    """Lista todos os perfis disponíveis (para serialização em endpoints)."""
+    """Lista os perfis selecionáveis pelo usuário (omite o ``turbo`` interno)."""
     return {
         key: {
             "name": key,
-            "label": cfg["label"],
-            "description": cfg["description"],
-            "interval_min": cfg["interval_min"],
-            "interval_max": cfg["interval_max"],
-            "pause_min": cfg["pause_min"],
-            "pause_max": cfg["pause_max"],
-            "cooldown_seconds": cfg["cooldown_seconds"],
-            "daily_limit": cfg["daily_limit"],
+            "label": PROFILES[key]["label"],
+            "description": PROFILES[key]["description"],
+            "interval_min": PROFILES[key]["interval_min"],
+            "interval_max": PROFILES[key]["interval_max"],
+            "pause_min": PROFILES[key]["pause_min"],
+            "pause_max": PROFILES[key]["pause_max"],
+            "cooldown_seconds": PROFILES[key]["cooldown_seconds"],
+            "daily_limit": PROFILES[key]["daily_limit"],
         }
-        for key, cfg in PROFILES.items()
+        for key in USER_SELECTABLE_PROFILES
     }
 
 
 def is_valid_profile(name: Optional[str]) -> bool:
-    """True se ``name`` corresponde a um perfil conhecido."""
+    """True se ``name`` corresponde a um perfil SELECIONÁVEL pelo usuário.
+    O perfil interno ``turbo`` é rejeitado aqui de propósito — só pode ser
+    ativado via ``POST /cadence-finalize-now``."""
     if not name:
         return False
-    return str(name).strip().lower() in PROFILES
+    return str(name).strip().lower() in USER_SELECTABLE_PROFILES
