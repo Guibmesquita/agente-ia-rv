@@ -635,6 +635,51 @@
 
         fetchCampaigns();
         setInterval(fetchCampaigns, 60000);
+
+        // Task #222 — Toast vermelho global em tempo real para
+        // `turbo_aborted_safety` (paridade com a tela unificada).
+        // Cursor por-aba em sessionStorage evita replay; bootstrap inicial
+        // aterra na maior id existente para não toastar histórico.
+        (function setupTurboAbortToast() {
+            function _getCursor() {
+                try { return parseInt(sessionStorage.getItem('lastTurboAbortIdLegacy') || '0', 10) || 0; }
+                catch (e) { return 0; }
+            }
+            function _setCursor(id) {
+                try { sessionStorage.setItem('lastTurboAbortIdLegacy', String(id)); } catch (e) {}
+            }
+            async function poll() {
+                try {
+                    var since = _getCursor();
+                    var r = await fetch('/api/cadence/recent-turbo-aborts?since_id=' + since, { credentials: 'include' });
+                    if (!r.ok) return;
+                    var d = await r.json();
+                    var evs = (d && d.events) || [];
+                    if (!evs.length) return;
+                    evs.forEach(function(ev) {
+                        var maxId = Math.max(_getCursor(), ev.id || 0);
+                        if (!ev.is_backfill) {
+                            var msg = '⚠ Turbo abortado por segurança — razão: ' + (ev.reason || '—')
+                                    + ' · perfil restaurado: ' + (ev.restored_profile || 'conservador')
+                                    + ' (campanha #' + ev.campaign_id + ')';
+                            showToast(msg, 'error');
+                        }
+                        _setCursor(maxId);
+                    });
+                } catch (e) {}
+            }
+            (async function bootstrap() {
+                try {
+                    if (_getCursor() > 0) return;
+                    var r0 = await fetch('/api/cadence/recent-turbo-aborts?since_id=0', { credentials: 'include' });
+                    if (!r0.ok) return;
+                    var d0 = await r0.json();
+                    var max = ((d0 && d0.events) || []).reduce(function(m, e) { return Math.max(m, e.id || 0); }, 0);
+                    if (max) _setCursor(max);
+                } catch (e) {}
+            })();
+            setInterval(poll, 30000);
+        })();
     </script>
 </body>
 </html>
