@@ -533,17 +533,8 @@ async def run_cadence_tick():
             had_candidates = True
             all_blocked_by_cooldown = False  # chegou aqui, ao menos um canal disponível
 
-            # Cliente Z-API específico do canal.
-            from services.whatsapp_client import get_zapi_client_for_channel as _gzc_leg
-            try:
-                zapi = _gzc_leg(channel_id, db)
-            except Exception:
-                zapi = ZAPIClient()
-            if not zapi.is_configured():
-                print(f"[CADENCE] Z-API canal {channel_id} não configurada — campanha '{campaign.name}' pulada")
-                continue  # Task #224: não bloqueia outros canais
-
-            # Verifica se o canal explícito está ativo.
+            # Verifica se o canal explícito está ativo ANTES de obter o cliente
+            # (Task #224: inativo → falha determinística, não "não configurada").
             if channel_id is not None:
                 from database.models import ZAPIChannel as _ZCh_L
                 _ch_row_l = db.query(_ZCh_L).filter(
@@ -563,6 +554,16 @@ async def run_cadence_tick():
                     })
                     sent_this_tick = True
                     continue
+
+            # Cliente Z-API específico do canal.
+            from services.whatsapp_client import get_zapi_client_for_channel as _gzc_leg
+            try:
+                zapi = _gzc_leg(channel_id, db)
+            except Exception:
+                zapi = ZAPIClient()
+            if not zapi.is_configured():
+                print(f"[CADENCE] Z-API canal {channel_id} não configurada — campanha '{campaign.name}' pulada")
+                continue  # Task #224: não bloqueia outros canais
 
             try:
                 result = await zapi.send_text(

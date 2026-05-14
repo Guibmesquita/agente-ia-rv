@@ -1708,19 +1708,23 @@ def build_structured_message(
 def _batch_resolve_channels(emails: list, db) -> dict:
     """Resolve channel_id Z-API por e-mail de assessor (Task #224).
     Prioridade: Assessor.channel_id direto → UnidadeChannelMapping → None.
-    Retorna {email: channel_id | None}.
+    Retorna {email_original: channel_id | None}.
+    Normaliza e-mails (lower + strip) para evitar miss por capitalização.
     """
     from database.models import UnidadeChannelMapping
+    from sqlalchemy import func as _sa_func
     if not emails:
         return {}
 
+    emails_norm = [e.lower().strip() for e in emails]
+
     assessors = (
         db.query(Assessor.email, Assessor.channel_id, Assessor.unidade)
-        .filter(Assessor.email.in_(emails))
+        .filter(_sa_func.lower(_sa_func.trim(Assessor.email)).in_(emails_norm))
         .all()
     )
 
-    email_map = {a.email: (a.channel_id, a.unidade) for a in assessors}
+    email_map = {a.email.lower().strip(): (a.channel_id, a.unidade) for a in assessors}
 
     missing_unidades = {
         u for (_ch, u) in email_map.values()
@@ -1736,8 +1740,9 @@ def _batch_resolve_channels(emails: list, db) -> dict:
 
     result = {}
     for email in emails:
-        if email in email_map:
-            ch, unidade = email_map[email]
+        key = email.lower().strip()
+        if key in email_map:
+            ch, unidade = email_map[key]
             if ch:
                 result[email] = ch
             elif unidade and unidade in unidade_channel:
@@ -1748,6 +1753,30 @@ def _batch_resolve_channels(emails: list, db) -> dict:
             result[email] = None
 
     return result
+
+
+def _resolve_channel_client_for_dispatch(channel_id, db_session):
+    """Task #224 — resolve cliente Z-API para dispatch imediato (não-cadência).
+
+    Returns:
+        (client, is_configured, is_inactive)
+        - is_inactive=True  → canal inativo; caller deve falhar com "Canal desativado"
+        - is_inactive=False, is_configured=True  → client pronto para envio
+        - is_inactive=False, is_configured=False → Z-API não configurada; caller pode simular
+    """
+    from services.whatsapp_client import get_zapi_client_for_channel as _gzc
+    from services.whatsapp_client import zapi_client as _legacy
+
+    if channel_id is None:
+        return _legacy, _legacy.is_configured(), False
+
+    from database.models import ZAPIChannel as _ZCh
+    ch_row = db_session.query(_ZCh).filter(_ZCh.id == channel_id).first()
+    if not ch_row or not ch_row.is_active:
+        return None, False, True
+
+    client = _gzc(channel_id, db_session)
+    return client, client.is_configured(), False
 
 
 @router.post("/{campaign_id}/dispatch")
@@ -1830,24 +1859,16 @@ async def dispatch_campaign(
         db.add(dispatch)
         db.flush()
 
-        # Seleciona cliente Z-API por canal (Task #224).
-        # Canal explicitamente inativo → falha imediata, sem fallback para legado.
-        _zapi_configured = False
-        if _a_channel_id is not None:
-            from database.models import ZAPIChannel as _ZChD
-            _ch_disp_row = db.query(_ZChD).filter(_ZChD.id == _a_channel_id).first()
-            if not _ch_disp_row or not _ch_disp_row.is_active:
-                dispatch.status = "failed"
-                dispatch.error_message = "Canal desativado"
-                dispatch.error_details = "O canal Z-API associado a este assessor está inativo."
-                failed_count += 1
-                db.flush()
-                continue
-            _active_zapi = _gzc_disp(_a_channel_id, db)
-            _zapi_configured = _active_zapi.is_configured()
-        else:
-            _active_zapi = _legacy_zapi_disp
-            _zapi_configured = _legacy_zapi_disp.is_configured()
+        # Seleciona cliente Z-API por canal (Task #224) — helper compartilhado.
+        _active_zapi, _zapi_configured, _chan_inactive_disp = \
+            _resolve_channel_client_for_dispatch(_a_channel_id, db)
+        if _chan_inactive_disp:
+            dispatch.status = "failed"
+            dispatch.error_message = "Canal desativado"
+            dispatch.error_details = "O canal Z-API associado a este assessor está inativo."
+            failed_count += 1
+            db.flush()
+            continue
 
         if phone and _zapi_configured:
             try:
@@ -1984,12 +2005,10 @@ async def dispatch_campaign_stream(
     _sse_channel_map = _batch_resolve_channels(_sse_all_emails, db) if _sse_all_emails else {}
 
     async def generate_events():
-        from services.whatsapp_client import zapi_client as _sse_legacy_client
-        from services.whatsapp_client import get_zapi_client_for_channel as _gzc_sse
         from core.config import resolve_attachment_for_send
         import os
         
-        # Task #224 — sem zapi_configured global; validação é per-dispatch.
+        # Task #224 — sem zapi_configured global; validação é per-dispatch via helper.
         # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
         # arquivo existe localmente (elimina problema de URL inacessível pelo
         # Z-API, como janeway.replit.dev). Fallback para URL pública se o
@@ -2045,33 +2064,19 @@ async def dispatch_campaign_stream(
                     db_session.add(dispatch)
                     db_session.flush()
 
-                    # Task #224 — resolve cliente por canal; canal inativo → falha explícita,
-                    # sem fallback silencioso para o cliente legado.
-                    _active_client = None
-                    _act_cfg = False
-                    _chan_inactive_sse = False
-                    if _sse_channel_id is not None:
-                        from database.models import ZAPIChannel as _ZChSSE
-                        _ch_sse_row = db_session.query(_ZChSSE).filter(
-                            _ZChSSE.id == _sse_channel_id
-                        ).first()
-                        if not _ch_sse_row or not _ch_sse_row.is_active:
-                            dispatch.status = "failed"
-                            dispatch.error_message = "Canal desativado"
-                            dispatch.error_details = (
-                                "O canal Z-API associado a este assessor está "
-                                "inativo. Ative o canal em Integrações → Canais."
-                            )
-                            failed_count += 1
-                            status = "failed"
-                            error_msg = "Canal desativado"
-                            _chan_inactive_sse = True
-                        else:
-                            _active_client = _gzc_sse(_sse_channel_id, db_session)
-                            _act_cfg = _active_client.is_configured()
-                    else:
-                        _active_client = _sse_legacy_client
-                        _act_cfg = _sse_legacy_client.is_configured()
+                    # Task #224 — resolve cliente por canal via helper compartilhado.
+                    _active_client, _act_cfg, _chan_inactive_sse = \
+                        _resolve_channel_client_for_dispatch(_sse_channel_id, db_session)
+                    if _chan_inactive_sse:
+                        dispatch.status = "failed"
+                        dispatch.error_message = "Canal desativado"
+                        dispatch.error_details = (
+                            "O canal Z-API associado a este assessor está "
+                            "inativo. Ative o canal em Integrações → Canais."
+                        )
+                        failed_count += 1
+                        status = "failed"
+                        error_msg = "Canal desativado"
 
                     if not _chan_inactive_sse:
                         status = "pending"
@@ -2419,10 +2424,8 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     attachment_filename = campaign.attachment_filename
     
     async def generate_events():
-        from services.whatsapp_client import zapi_client as _base_legacy_client
-        from services.whatsapp_client import get_zapi_client_for_channel as _gzc_base
         from core.config import resolve_attachment_for_send
-        # Task #224 — sem zapi_configured global; validação é per-dispatch.
+        # Task #224 — sem zapi_configured global; validação é per-dispatch via helper.
         # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
         # arquivo existe localmente (elimina problema de URL inacessível pelo
         # Z-API, como janeway.replit.dev). Fallback para URL pública se o
@@ -2502,33 +2505,19 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                     db_session.add(dispatch)
                     db_session.flush()
 
-                    # Task #224 — resolve cliente por canal; canal inativo → falha explícita,
-                    # sem fallback silencioso para o cliente legado.
-                    _base_active_client = None
-                    _base_act_cfg = False
-                    _chan_inactive_base = False
-                    if _base_channel_id is not None:
-                        from database.models import ZAPIChannel as _ZChBase
-                        _ch_base_row = db_session.query(_ZChBase).filter(
-                            _ZChBase.id == _base_channel_id
-                        ).first()
-                        if not _ch_base_row or not _ch_base_row.is_active:
-                            dispatch.status = "failed"
-                            dispatch.error_message = "Canal desativado"
-                            dispatch.error_details = (
-                                "O canal Z-API associado a este assessor está "
-                                "inativo. Ative o canal em Integrações → Canais."
-                            )
-                            failed_count += 1
-                            status = "failed"
-                            error_msg = "Canal desativado"
-                            _chan_inactive_base = True
-                        else:
-                            _base_active_client = _gzc_base(_base_channel_id, db_session)
-                            _base_act_cfg = _base_active_client.is_configured()
-                    else:
-                        _base_active_client = _base_legacy_client
-                        _base_act_cfg = _base_legacy_client.is_configured()
+                    # Task #224 — resolve cliente por canal via helper compartilhado.
+                    _base_active_client, _base_act_cfg, _chan_inactive_base = \
+                        _resolve_channel_client_for_dispatch(_base_channel_id, db_session)
+                    if _chan_inactive_base:
+                        dispatch.status = "failed"
+                        dispatch.error_message = "Canal desativado"
+                        dispatch.error_details = (
+                            "O canal Z-API associado a este assessor está "
+                            "inativo. Ative o canal em Integrações → Canais."
+                        )
+                        failed_count += 1
+                        status = "failed"
+                        error_msg = "Canal desativado"
 
                     if not _chan_inactive_base:
                         status = "pending"
