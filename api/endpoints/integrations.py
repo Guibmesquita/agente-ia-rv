@@ -460,6 +460,48 @@ async def save_integration_secrets(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #232 — Helpers e Pydantic models para CRUD de canais Z-API
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ZAPIChannelCreate(BaseModel):
+    name: str
+    label: Optional[str] = None
+    instance_id: str
+    token: str
+    client_token: Optional[str] = None
+    phone_number: Optional[str] = None
+    description: Optional[str] = None
+
+
+class ZAPIChannelUpdate(BaseModel):
+    name: Optional[str] = None
+    label: Optional[str] = None
+    instance_id: Optional[str] = None
+    token: Optional[str] = None
+    client_token: Optional[str] = None
+    phone_number: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+def _build_webhook_url_suggested(request: Request, channel_id: int) -> str:
+    """Monta a URL de webhook sugerida para o canal a partir do host da requisição."""
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/whatsapp/webhook/{channel_id}"
+
+
+def _auth_zapi_channel(request: Request) -> dict:
+    """Valida autenticação (admin/gestao_rv) e retorna user_data."""
+    token_data = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token_data:
+        token_data = request.cookies.get("access_token", "")
+    user_data = decode_token(token_data)
+    if not user_data or user_data.get("role") not in ("admin", "gestao_rv"):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    return user_data
+
+
 @router.get("/zapi/health")
 async def zapi_health_check(request: Request):
     """
@@ -558,6 +600,7 @@ async def list_zapi_channels(
                 "assessor_count": assessor_count_by_channel.get(ch.id, 0),
                 "unidades_assigned": mapping_by_channel.get(ch.id, []),
                 "unidades_mapeadas": mapping_by_channel.get(ch.id, []),  # alias para compatibilidade
+                "webhook_url_suggested": _build_webhook_url_suggested(request, ch.id),
                 "created_at": ch.created_at.isoformat() if ch.created_at else None,
                 "updated_at": ch.updated_at.isoformat() if ch.updated_at else None,
             }
@@ -565,3 +608,170 @@ async def list_zapi_channels(
         ],
         "total": len(channels),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #232 — CRUD de canais Z-API
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/zapi/channels", status_code=201)
+async def create_zapi_channel(
+    data: ZAPIChannelCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #232 — Cria um novo canal Z-API.
+    Testa conectividade das credenciais antes de persistir (não bloqueia em caso de
+    instância ainda não conectada — apenas informa o status).
+    Retorna o canal criado com webhook_url_suggested.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel
+    from services.whatsapp_client import ZAPIClient
+
+    client = ZAPIClient(
+        instance_id=data.instance_id,
+        token=data.token,
+        client_token=data.client_token,
+    )
+    connectivity = await client.check_connectivity(timeout=8.0)
+
+    channel = ZAPIChannel(
+        name=data.name,
+        label=data.label or data.name,
+        instance_id=data.instance_id,
+        token=data.token,
+        client_token=data.client_token,
+        phone_number=data.phone_number,
+        description=data.description,
+        is_legacy=False,
+        is_active=True,
+    )
+    db.add(channel)
+    db.commit()
+    db.refresh(channel)
+
+    webhook_url = _build_webhook_url_suggested(request, channel.id)
+    channel.webhook_url = webhook_url
+    db.commit()
+
+    return {
+        "id": channel.id,
+        "name": channel.name,
+        "label": channel.label,
+        "phone_number": channel.phone_number,
+        "instance_id": data.instance_id[:4] + "****" if len(data.instance_id) >= 8 else "****",
+        "is_legacy": channel.is_legacy,
+        "is_active": channel.is_active,
+        "connectivity_status": connectivity,
+        "webhook_url_suggested": webhook_url,
+        "created_at": channel.created_at.isoformat() if channel.created_at else None,
+    }
+
+
+@router.patch("/zapi/channels/{channel_id}")
+async def update_zapi_channel(
+    channel_id: int,
+    data: ZAPIChannelUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #232 — Atualiza um canal Z-API.
+    Canais legados: apenas label, phone_number, description e is_active.
+    Canais normais: todos os campos.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    if channel.is_legacy:
+        # Credenciais do canal legado são gerenciadas via variáveis de ambiente
+        if data.label is not None:
+            channel.label = data.label
+        if data.phone_number is not None:
+            channel.phone_number = data.phone_number
+        if data.description is not None:
+            channel.description = data.description
+        if data.is_active is not None:
+            channel.is_active = data.is_active
+    else:
+        if data.name is not None:
+            channel.name = data.name
+        if data.label is not None:
+            channel.label = data.label
+        if data.instance_id is not None:
+            channel.instance_id = data.instance_id
+        if data.token is not None:
+            channel.token = data.token
+        if data.client_token is not None:
+            channel.client_token = data.client_token
+        if data.phone_number is not None:
+            channel.phone_number = data.phone_number
+        if data.description is not None:
+            channel.description = data.description
+        if data.is_active is not None:
+            channel.is_active = data.is_active
+
+    db.commit()
+    db.refresh(channel)
+
+    return {
+        "id": channel.id,
+        "name": channel.name,
+        "label": channel.label,
+        "phone_number": channel.phone_number,
+        "is_legacy": channel.is_legacy,
+        "is_active": channel.is_active,
+        "webhook_url_suggested": _build_webhook_url_suggested(request, channel.id),
+    }
+
+
+@router.delete("/zapi/channels/{channel_id}")
+async def delete_zapi_channel(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #232 — Remove um canal Z-API.
+    Bloqueado para: canais legados e canais com assessores vinculados.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel, Assessor
+    from sqlalchemy import func as _func
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    if channel.is_legacy:
+        raise HTTPException(
+            status_code=400,
+            detail="Canais legados não podem ser excluídos pois são gerenciados via variáveis de ambiente."
+        )
+
+    assessor_count = (
+        db.query(_func.count(Assessor.id))
+        .filter(Assessor.channel_id == channel_id)
+        .scalar()
+    ) or 0
+
+    if assessor_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Canal possui {assessor_count} assessor(es) vinculado(s). Desvincule-os antes de excluir o canal."
+        )
+
+    label = channel.label or channel.name
+    db.delete(channel)
+    db.commit()
+
+    return {"message": f"Canal '{label}' removido com sucesso"}

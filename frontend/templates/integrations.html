@@ -259,6 +259,55 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* ── Task #232: Canais Z-API ── */
+        .zc-channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
+        .zc-channel-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; background: var(--bg-color); position: relative; transition: box-shadow 0.2s; }
+        .zc-channel-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+        .zc-channel-card.inactive { opacity: 0.6; }
+        .zc-conn-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+        .zc-conn-pill.connected { background: #d1fae5; color: #065f46; }
+        .zc-conn-pill.disconnected { background: #fee2e2; color: #991b1b; }
+        .zc-conn-pill.unreachable, .zc-conn-pill.unknown { background: #fef3c7; color: #92400e; }
+        .zc-legacy-badge { font-size: 0.7rem; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 6px; }
+        .zc-inactive-badge { font-size: 0.7rem; background: #f3f4f6; color: #6b7280; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 6px; }
+        .zc-channel-name { font-weight: 600; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 2px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+        .zc-channel-phone { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px; }
+        .zc-channel-meta { font-size: 0.78rem; color: var(--text-secondary); margin-top: 8px; }
+        .zc-card-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+        .zc-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+        .zc-modal-overlay.active { display: flex; }
+        .zc-modal { background: var(--card-bg); border-radius: 16px; width: 100%; max-width: 600px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+        .zc-modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .zc-modal-header h3 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+        .zc-modal-close { background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 8px; border-radius: 6px; font-size: 1.3rem; line-height: 1; }
+        .zc-modal-close:hover { color: var(--text-primary); background: var(--bg-color); }
+        .zc-modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+        .zc-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
+        .zc-wh-section { margin-bottom: 20px; }
+        .zc-wh-section-title { font-weight: 600; font-size: 0.875rem; color: var(--text-primary); margin-bottom: 12px; }
+        .zc-wh-field { margin-bottom: 8px; }
+        .zc-wh-label { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+        .zc-wh-row { display: flex; gap: 8px; align-items: stretch; }
+        .zc-wh-url { flex: 1; padding: 8px 12px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 0.78rem; color: var(--text-primary); word-break: break-all; line-height: 1.5; }
+        .zc-copy-btn { flex-shrink: 0; padding: 6px 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 0.8rem; color: var(--text-secondary); transition: all 0.15s; white-space: nowrap; }
+        .zc-copy-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+        .zc-copy-btn.copied { background: #d1fae5; border-color: #059669; color: #059669; }
+        .zc-toggles-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; margin-bottom: 6px; }
+        .zc-toggles-table th { text-align: left; padding: 8px 14px; background: var(--bg-color); font-weight: 600; font-size: 0.78rem; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+        .zc-toggles-table td { padding: 8px 14px; border-bottom: 1px solid var(--border-color); }
+        .zc-toggles-table tr:last-child td { border-bottom: none; }
+        .zc-on-badge { display: inline-block; padding: 2px 8px; background: #d1fae5; color: #065f46; border-radius: 4px; font-size: 0.78rem; font-weight: 700; }
+        .zc-off-badge { display: inline-block; padding: 2px 8px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-size: 0.78rem; font-weight: 700; }
+        .zc-steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+        .zc-step { display: flex; gap: 12px; align-items: flex-start; }
+        .zc-step-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: #25d366; color: white; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .zc-step-text { font-size: 0.875rem; color: var(--text-primary); padding-top: 4px; line-height: 1.5; }
+        .zc-divider { border: none; border-top: 1px solid var(--border-color); margin: 20px 0; }
+        .zc-conn-result { margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 0.875rem; display: none; }
+        .zc-conn-result.ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; display: block; }
+        .zc-conn-result.fail { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; display: block; }
+        .zc-conn-result.warn { background: #fefce8; border: 1px solid #fef08a; color: #713f12; display: block; }
     </style>
 </head>
 <body>
@@ -278,6 +327,27 @@
 
                 <div id="integrationsContainer">
                     <div class="loading"><div class="spinner"></div></div>
+                </div>
+
+                <!-- Task #232: Canais Z-API -->
+                <div class="integration-card" id="zapiChannelsSection" style="margin-top: 32px;">
+                    <div class="integration-header" style="background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);">
+                        <div class="integration-title">
+                            <div class="integration-icon">📡</div>
+                            <div>
+                                <h2>Canais Z-API</h2>
+                                <p style="font-size: 0.85rem; opacity: 0.9; margin-top: 4px;">Instâncias WhatsApp — gerencie e configure webhooks</p>
+                            </div>
+                        </div>
+                        <button id="btnAddChannel" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); backdrop-filter: blur(4px);">
+                            + Adicionar Canal
+                        </button>
+                    </div>
+                    <div class="integration-body">
+                        <div id="zapiChannelsList">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="integration-card" style="margin-top: 32px;">
@@ -594,6 +664,336 @@
 
         loadIntegrations();
         loadTrustedSources();
+        loadZAPIChannels();
+
+        // ══════════════════════════════════════════════════════════════
+        // Task #232 — Canais Z-API
+        // ══════════════════════════════════════════════════════════════
+
+        const ZC_API = '/api/integrations/zapi/channels';
+        let _zcChannels = [];
+        let _zcEditingId = null;
+
+        async function loadZAPIChannels() {
+            try {
+                const res = await fetch(ZC_API, { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                _zcChannels = data.channels || [];
+                renderZAPIChannels(_zcChannels);
+            } catch (err) {
+                document.getElementById('zapiChannelsList').innerHTML =
+                    `<div class="alert alert-danger">Erro ao carregar canais: ${err.message}</div>`;
+            }
+        }
+
+        function _connLabel(status) {
+            const map = {
+                connected: ['connected', '● Conectado'],
+                disconnected: ['disconnected', '● Desconectado'],
+                unreachable: ['unreachable', '● Inacessível'],
+                unknown: ['unknown', '● Desconhecido'],
+            };
+            const [cls, txt] = map[status] || map.unknown;
+            return `<span class="zc-conn-pill ${cls}">${txt}</span>`;
+        }
+
+        function renderZAPIChannels(channels) {
+            const container = document.getElementById('zapiChannelsList');
+            if (!channels.length) {
+                container.innerHTML = `<div class="alert alert-info">Nenhum canal configurado.</div>`;
+                return;
+            }
+            let html = '<div class="zc-channel-grid">';
+            for (const ch of channels) {
+                const inactive = !ch.is_active ? ' inactive' : '';
+                const legacyBadge = ch.is_legacy ? '<span class="zc-legacy-badge">Legado</span>' : '';
+                const inactiveBadge = !ch.is_active ? '<span class="zc-inactive-badge">Inativo</span>' : '';
+                const phone = ch.phone_number || '<em style="color:var(--text-secondary)">Número não configurado</em>';
+                const assessorTxt = ch.assessor_count === 1 ? '1 assessor vinculado' : `${ch.assessor_count} assessores vinculados`;
+                const unidadesTxt = ch.unidades_assigned && ch.unidades_assigned.length
+                    ? `Unidades: ${ch.unidades_assigned.slice(0, 3).join(', ')}${ch.unidades_assigned.length > 3 ? ` +${ch.unidades_assigned.length - 3}` : ''}`
+                    : 'Sem unidades mapeadas';
+
+                html += `
+                <div class="zc-channel-card${inactive}" data-id="${ch.id}">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div class="zc-channel-name">
+                            ${ch.label || ch.name}
+                            ${legacyBadge}${inactiveBadge}
+                        </div>
+                        ${_connLabel(ch.connectivity_status)}
+                    </div>
+                    <div class="zc-channel-phone">📱 ${phone}</div>
+                    <div class="zc-channel-meta">👥 ${assessorTxt}</div>
+                    <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
+                    <div class="zc-card-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="zcOpenConfig(${ch.id})">
+                            🔧 Como configurar
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="zcOpenEdit(${ch.id})">
+                            ✏️ Editar
+                        </button>
+                        ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm" style="color:var(--danger-color)" onclick="zcDelete(${ch.id})">🗑️</button>` : ''}
+                    </div>
+                </div>`;
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // ── Modal "Como configurar" ──
+
+        function zcOpenConfig(channelId) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+            const wh = ch.webhook_url_suggested || `${location.origin}/api/whatsapp/webhook/${ch.id}`;
+
+            document.getElementById('zcConfigTitle').textContent = `Como configurar — ${ch.label || ch.name}`;
+            document.getElementById('zcConfigBody').innerHTML = `
+                <div class="zc-wh-section">
+                    <div class="zc-wh-section-title">1. URL de Webhook para o Z-API</div>
+                    <p style="font-size:0.875rem; color:var(--text-secondary); margin-bottom:12px;">
+                        Registre esta URL no painel do Z-API para que as mensagens recebidas sejam entregues ao Stevan.
+                    </p>
+                    <div class="zc-wh-field">
+                        <div class="zc-wh-label">Webhook principal (recomendado)</div>
+                        <div class="zc-wh-row">
+                            <div class="zc-wh-url">${wh}</div>
+                            <button class="zc-copy-btn" onclick="zcCopy(this, ${JSON.stringify(wh)})">📋 Copiar</button>
+                        </div>
+                    </div>
+                    <div class="zc-wh-field">
+                        <div class="zc-wh-label">Webhook de status de entrega (opcional)</div>
+                        <div class="zc-wh-row">
+                            <div class="zc-wh-url">${wh}</div>
+                            <button class="zc-copy-btn" onclick="zcCopy(this, ${JSON.stringify(wh)})">📋 Copiar</button>
+                        </div>
+                    </div>
+                </div>
+                <hr class="zc-divider">
+                <div class="zc-wh-section">
+                    <div class="zc-wh-section-title">2. Configurações recomendadas no painel Z-API</div>
+                    <table class="zc-toggles-table">
+                        <thead><tr><th>Configuração</th><th>Valor</th><th>Motivo</th></tr></thead>
+                        <tbody>
+                            <tr><td>Mensagens recebidas</td><td><span class="zc-on-badge">ON</span></td><td>Habilita recebimento via webhook</td></tr>
+                            <tr><td>Desconexão do WhatsApp</td><td><span class="zc-on-badge">ON</span></td><td>Notifica quando a sessão cair</td></tr>
+                            <tr><td>Status de entrega</td><td><span class="zc-on-badge">ON</span></td><td>Confirma leitura das mensagens</td></tr>
+                            <tr><td>Enviar mensagens próprias</td><td><span class="zc-off-badge">OFF</span></td><td>Evita duplicação de eventos</td></tr>
+                            <tr><td>Ignorar grupos</td><td><span class="zc-on-badge">ON</span></td><td>Agente atende apenas chats individuais</td></tr>
+                            <tr><td>Ignorar broadcast</td><td><span class="zc-on-badge">ON</span></td><td>Evita processamento de listas de transmissão</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <hr class="zc-divider">
+                <div class="zc-wh-section">
+                    <div class="zc-wh-section-title">3. Passo a passo</div>
+                    <ol class="zc-steps">
+                        <li class="zc-step"><span class="zc-step-num">1</span><span class="zc-step-text">Acesse <strong>app.z-api.io</strong> e selecione a instância correspondente a este canal.</span></li>
+                        <li class="zc-step"><span class="zc-step-num">2</span><span class="zc-step-text">No menu lateral, acesse <strong>Webhooks</strong> e cole a URL copiada acima no campo "Ao receber".</span></li>
+                        <li class="zc-step"><span class="zc-step-num">3</span><span class="zc-step-text">Ative as opções recomendadas na tabela acima e clique em <strong>Salvar</strong>.</span></li>
+                        <li class="zc-step"><span class="zc-step-num">4</span><span class="zc-step-text">Escaneie o QR Code da instância com o WhatsApp do número <strong>${ch.phone_number || 'configurado'}</strong>.</span></li>
+                        <li class="zc-step"><span class="zc-step-num">5</span><span class="zc-step-text">Volte a esta página e verifique se o status do canal aparece como <strong>Conectado</strong>.</span></li>
+                    </ol>
+                </div>`;
+            document.getElementById('zcConfigModal').classList.add('active');
+        }
+
+        function zcCopy(btn, text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.textContent;
+                btn.textContent = '✓ Copiado!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
+            }).catch(() => toast.error('Não foi possível copiar'));
+        }
+
+        document.getElementById('zcConfigModalClose').addEventListener('click', () => {
+            document.getElementById('zcConfigModal').classList.remove('active');
+        });
+        document.getElementById('zcConfigModalCloseBtn').addEventListener('click', () => {
+            document.getElementById('zcConfigModal').classList.remove('active');
+        });
+        document.getElementById('zcConfigModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+        });
+
+        // ── Modal Adicionar/Editar Canal ──
+
+        function zcOpenAdd() {
+            _zcEditingId = null;
+            document.getElementById('zcFormTitle').textContent = 'Adicionar Canal Z-API';
+            document.getElementById('zcFormName').value = '';
+            document.getElementById('zcFormLabel').value = '';
+            document.getElementById('zcFormInstanceId').value = '';
+            document.getElementById('zcFormToken').value = '';
+            document.getElementById('zcFormClientToken').value = '';
+            document.getElementById('zcFormPhone').value = '';
+            document.getElementById('zcFormDescription').value = '';
+            document.getElementById('zcFormCredFields').style.display = '';
+            document.getElementById('zcFormLegacyNote').style.display = 'none';
+            document.getElementById('zcConnResult').className = 'zc-conn-result';
+            document.getElementById('zcConnResult').textContent = '';
+            document.getElementById('zcFormModal').classList.add('active');
+        }
+
+        function zcOpenEdit(channelId) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+            _zcEditingId = channelId;
+            document.getElementById('zcFormTitle').textContent = `Editar Canal — ${ch.label || ch.name}`;
+            document.getElementById('zcFormName').value = ch.name || '';
+            document.getElementById('zcFormLabel').value = ch.label || '';
+            document.getElementById('zcFormInstanceId').value = '';
+            document.getElementById('zcFormToken').value = '';
+            document.getElementById('zcFormClientToken').value = '';
+            document.getElementById('zcFormPhone').value = ch.phone_number || '';
+            document.getElementById('zcFormDescription').value = ch.description || '';
+            // Legado: oculta campos de credenciais
+            document.getElementById('zcFormCredFields').style.display = ch.is_legacy ? 'none' : '';
+            document.getElementById('zcFormLegacyNote').style.display = ch.is_legacy ? '' : 'none';
+            document.getElementById('zcConnResult').className = 'zc-conn-result';
+            document.getElementById('zcConnResult').textContent = '';
+            document.getElementById('zcFormModal').classList.add('active');
+        }
+
+        document.getElementById('zcFormModalClose').addEventListener('click', () => {
+            document.getElementById('zcFormModal').classList.remove('active');
+        });
+        document.getElementById('zcFormModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+        });
+        document.getElementById('btnAddChannel').addEventListener('click', zcOpenAdd);
+
+        document.getElementById('zcBtnTestConn').addEventListener('click', async () => {
+            const btn = document.getElementById('zcBtnTestConn');
+            const instanceId = document.getElementById('zcFormInstanceId').value.trim();
+            const token = document.getElementById('zcFormToken').value.trim();
+            const clientToken = document.getElementById('zcFormClientToken').value.trim();
+            const resultDiv = document.getElementById('zcConnResult');
+
+            if (!instanceId || !token) {
+                resultDiv.className = 'zc-conn-result warn';
+                resultDiv.textContent = 'Preencha ao menos Instance ID e Token para testar.';
+                return;
+            }
+
+            const orig = btn.textContent;
+            btn.textContent = 'Testando...';
+            btn.disabled = true;
+            resultDiv.className = 'zc-conn-result';
+            resultDiv.textContent = '';
+
+            try {
+                // Teste indireto: cria objeto via POST e usa o status retornado.
+                // Como não há endpoint de teste avulso, usamos o resultado do create.
+                // Aqui fazemos uma chamada GET ao endpoint de saúde e exibimos inline.
+                const res = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
+                // O health não testa credenciais ad-hoc, apenas informa cache.
+                // Informamos ao usuário que o teste real ocorre ao salvar.
+                resultDiv.className = 'zc-conn-result warn';
+                resultDiv.textContent = 'A verificação completa das credenciais ocorre ao salvar. O status de conectividade será exibido após o cadastro.';
+            } catch (err) {
+                resultDiv.className = 'zc-conn-result fail';
+                resultDiv.textContent = `Erro: ${err.message}`;
+            }
+            btn.textContent = orig;
+            btn.disabled = false;
+        });
+
+        document.getElementById('zcBtnSaveChannel').addEventListener('click', async () => {
+            const btn = document.getElementById('zcBtnSaveChannel');
+            const name = document.getElementById('zcFormName').value.trim();
+            const label = document.getElementById('zcFormLabel').value.trim();
+            const instanceId = document.getElementById('zcFormInstanceId').value.trim();
+            const token = document.getElementById('zcFormToken').value.trim();
+            const clientToken = document.getElementById('zcFormClientToken').value.trim();
+            const phone = document.getElementById('zcFormPhone').value.trim();
+            const description = document.getElementById('zcFormDescription').value.trim();
+            const resultDiv = document.getElementById('zcConnResult');
+
+            const isEdit = _zcEditingId !== null;
+
+            if (!isEdit && (!name || !instanceId || !token)) {
+                resultDiv.className = 'zc-conn-result fail';
+                resultDiv.textContent = 'Nome, Instance ID e Token são obrigatórios.';
+                return;
+            }
+
+            const orig = btn.textContent;
+            btn.textContent = 'Salvando...';
+            btn.disabled = true;
+
+            try {
+                let res;
+                if (isEdit) {
+                    const body = {};
+                    if (name) body.name = name;
+                    if (label) body.label = label;
+                    if (instanceId) body.instance_id = instanceId;
+                    if (token) body.token = token;
+                    if (clientToken) body.client_token = clientToken;
+                    if (phone) body.phone_number = phone;
+                    if (description !== undefined) body.description = description;
+                    res = await fetch(`${ZC_API}/${_zcEditingId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify(body),
+                    });
+                } else {
+                    res = await fetch(ZC_API, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ name, label: label || name, instance_id: instanceId, token, client_token: clientToken || undefined, phone_number: phone || undefined, description: description || undefined }),
+                    });
+                }
+
+                const data = await res.json();
+                if (!res.ok) {
+                    resultDiv.className = 'zc-conn-result fail';
+                    resultDiv.textContent = `Erro: ${data.detail || 'Não foi possível salvar o canal'}`;
+                    btn.textContent = orig;
+                    btn.disabled = false;
+                    return;
+                }
+
+                document.getElementById('zcFormModal').classList.remove('active');
+                toast.success(isEdit ? 'Canal atualizado com sucesso!' : 'Canal criado com sucesso!');
+                await loadZAPIChannels();
+
+                // Abre o guia de configuração automaticamente após criar um novo canal
+                if (!isEdit && data.id) {
+                    setTimeout(() => zcOpenConfig(data.id), 400);
+                }
+            } catch (err) {
+                resultDiv.className = 'zc-conn-result fail';
+                resultDiv.textContent = `Erro inesperado: ${err.message}`;
+            }
+
+            btn.textContent = orig;
+            btn.disabled = false;
+        });
+
+        async function zcDelete(channelId) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+            if (!confirm(`Tem certeza que deseja remover o canal "${ch.label || ch.name}"?\n\nEsta ação não pode ser desfeita.`)) return;
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}`, { method: 'DELETE', credentials: 'include' });
+                const data = await res.json();
+                if (!res.ok) {
+                    toast.error(`Erro: ${data.detail || 'Não foi possível remover'}`);
+                    return;
+                }
+                toast.success(data.message || 'Canal removido com sucesso');
+                await loadZAPIChannels();
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            }
+        }
 
         async function loadTrustedSources() {
             try {
@@ -770,5 +1170,82 @@
             }
         });
     </script>
+
+    <!-- Task #232: Modal "Como configurar" -->
+    <!-- NOTE: listeners are in the main script block above (CSP nonce compliance) -->
+    <div class="zc-modal-overlay" id="zcConfigModal">
+        <div class="zc-modal" style="max-width: 660px;">
+            <div class="zc-modal-header" style="background: linear-gradient(135deg, #25d366 0%, #128c7e 100%); color: white; border-bottom: none;">
+                <h3 id="zcConfigTitle" style="color: white;">Como configurar</h3>
+                <button class="zc-modal-close" id="zcConfigModalClose" style="color: rgba(255,255,255,0.8);">✕</button>
+            </div>
+            <div class="zc-modal-body" id="zcConfigBody">
+            </div>
+            <div class="zc-modal-footer">
+                <button class="btn btn-secondary" id="zcConfigModalCloseBtn">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task #232: Modal Adicionar/Editar Canal -->
+    <div class="zc-modal-overlay" id="zcFormModal">
+        <div class="zc-modal">
+            <div class="zc-modal-header">
+                <h3 id="zcFormTitle">Adicionar Canal Z-API</h3>
+                <button class="zc-modal-close" id="zcFormModalClose">✕</button>
+            </div>
+            <div class="zc-modal-body">
+                <div id="zcFormLegacyNote" style="display:none; margin-bottom:16px; padding:12px 16px; background:#fef3c7; border:1px solid #fde68a; border-radius:8px; font-size:0.875rem; color:#92400e;">
+                    <strong>Canal legado:</strong> As credenciais deste canal são gerenciadas via variáveis de ambiente (<code>ZAPI_INSTANCE_ID</code>, <code>ZAPI_TOKEN</code>, <code>ZAPI_CLIENT_TOKEN</code>). Aqui você pode atualizar apenas o rótulo, número e descrição.
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px;">
+                    <div class="form-group" style="margin-bottom:0">
+                        <label class="form-label">Nome interno <span style="color:var(--danger-color)">*</span></label>
+                        <input type="text" id="zcFormName" class="form-control" placeholder="Ex: Canal Principal SVN SP">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0">
+                        <label class="form-label">Rótulo curto</label>
+                        <input type="text" id="zcFormLabel" class="form-control" placeholder="Ex: SVN SP">
+                    </div>
+                </div>
+
+                <div id="zcFormCredFields">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px;">
+                        <div class="form-group" style="margin-bottom:0">
+                            <label class="form-label">Instance ID <span style="color:var(--danger-color)">*</span></label>
+                            <input type="text" id="zcFormInstanceId" class="form-control" placeholder="ID da instância Z-API" autocomplete="off">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0">
+                            <label class="form-label">Token <span style="color:var(--danger-color)">*</span></label>
+                            <input type="password" id="zcFormToken" class="form-control" placeholder="Token Z-API" autocomplete="new-password">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:14px;">
+                        <label class="form-label">Client Token</label>
+                        <input type="password" id="zcFormClientToken" class="form-control" placeholder="Client-Token (Security Token do Z-API)" autocomplete="new-password">
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px;">
+                    <div class="form-group" style="margin-bottom:0">
+                        <label class="form-label">Número WhatsApp</label>
+                        <input type="text" id="zcFormPhone" class="form-control" placeholder="+55 11 99999-9999">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0">
+                        <label class="form-label">Descrição</label>
+                        <input type="text" id="zcFormDescription" class="form-control" placeholder="Uso deste canal (opcional)">
+                    </div>
+                </div>
+
+                <div id="zcConnResult" class="zc-conn-result"></div>
+            </div>
+            <div class="zc-modal-footer">
+                <button class="btn btn-secondary" id="zcBtnTestConn">🔌 Testar conexão</button>
+                <button class="btn" id="zcBtnSaveChannel" style="background: var(--primary-color); color: white;">Salvar Canal</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
