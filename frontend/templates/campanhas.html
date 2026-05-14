@@ -5261,6 +5261,7 @@ Equipe de Gestao"></textarea>
                 const { valid, invalid } = parsePhones(text);
                 const counter = el('tsPhoneCounter');
                 const warning = el('tsPhoneWarning');
+                const invalidList = el('tsInvalidList');
                 let msg = '';
                 if (valid.length > 0) msg += `<span class="ts-valid">${valid.length} número${valid.length !== 1 ? 's' : ''} válido${valid.length !== 1 ? 's' : ''}</span>`;
                 if (invalid.length > 0) {
@@ -5269,6 +5270,17 @@ Equipe de Gestao"></textarea>
                 }
                 if (!msg) msg = 'Digite os números acima';
                 counter.innerHTML = msg;
+                // Destacar números inválidos individualmente
+                if (invalidList) {
+                    if (invalid.length > 0) {
+                        invalidList.style.display = 'block';
+                        invalidList.innerHTML = '<span style="font-size:0.78rem;color:#dc2626;font-weight:600;">Números inválidos:</span> '
+                            + invalid.map(n => `<span style="text-decoration:underline;text-decoration-color:#dc2626;color:#dc2626;font-family:monospace;font-size:0.82rem;">${n}</span>`).join(', ');
+                    } else {
+                        invalidList.style.display = 'none';
+                        invalidList.innerHTML = '';
+                    }
+                }
                 if (valid.length > MAX_PHONES) {
                     warning.style.display = 'block';
                     warning.textContent = `⚠ Limite de ${MAX_PHONES} números por disparo de teste (você tem ${valid.length}).`;
@@ -5485,12 +5497,17 @@ Equipe de Gestao"></textarea>
                         }
                     }
                 } catch (e) {
-                    if (e.name !== 'AbortError') {
-                        toast.error('Erro no disparo de teste: ' + e.message);
+                    if (e.name === 'AbortError') {
+                        // Usuário abortou — preservar mensagem "interrompido" já definida pelo botão Abortar
+                        el('tsBtnAbort').style.display = 'none';
+                        el('tsBtnNew').style.display = '';
+                        tsState.abortController = null;
+                        return;
                     }
+                    toast.error('Erro no disparo de teste: ' + e.message);
                 }
 
-                // Finalizado
+                // Finalizado normalmente
                 el('tsProgressBar').style.width = '100%';
                 const icon = failedCount === 0 ? '✓' : (sentCount === 0 ? '✗' : '⚠');
                 const color = failedCount === 0 ? '#059669' : (sentCount === 0 ? '#dc2626' : '#d97706');
@@ -5623,6 +5640,7 @@ Equipe de Gestao"></textarea>
                     <textarea id="tsPhonesArea" class="ts-phone-textarea"
                         placeholder="Um número por linha. Ex:&#10;11987654321&#10;+55 11 98765-4321&#10;5511912345678"></textarea>
                     <div class="ts-phone-counter" id="tsPhoneCounter">Digite os números acima</div>
+                    <div id="tsInvalidList" style="display:none;margin-top:6px;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;line-height:1.8;"></div>
                     <div class="ts-phone-warning" id="tsPhoneWarning"></div>
                     <div style="margin-top:14px;padding:10px 14px;background:var(--bg-color);border-radius:8px;font-size:0.8rem;color:var(--text-secondary);">
                         <strong>Formatos aceitos:</strong> DDD + número (10-11 dígitos), com ou sem +55, espaços e traços são removidos automaticamente. Máximo de 20 números por disparo.

@@ -502,15 +502,15 @@ async def test_send_stream(
                 error = None if success else result.get("error", "Erro desconhecido")
                 if success:
                     sent_count += 1
-                    _log.info(f"[TEST-SEND] Canal={channel_label} Phone={phone} OK ({idx+1}/{total})")
+                    _log.info(f"[TEST-SEND] status=sent canal={channel_label} phone={phone} ({idx+1}/{total})")
                 else:
                     failed_count += 1
-                    _log.warning(f"[TEST-SEND] Canal={channel_label} Phone={phone} FAIL={error} ({idx+1}/{total})")
+                    _log.info(f"[TEST-SEND] status=failed canal={channel_label} phone={phone} error={error!r} ({idx+1}/{total})")
             except Exception as exc:
                 success = False
                 error = str(exc)
                 failed_count += 1
-                _log.error(f"[TEST-SEND] Canal={channel_label} Phone={phone} EXC={error} ({idx+1}/{total})")
+                _log.info(f"[TEST-SEND] status=exception canal={channel_label} phone={phone} exc={error!r} ({idx+1}/{total})")
 
             progress_evt = json.dumps({
                 "type": "progress",
