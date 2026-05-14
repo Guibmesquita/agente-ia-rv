@@ -3906,35 +3906,54 @@ async def get_campaign_channel_preview(
 
     channel_map = _batch_resolve_channels(list(set(emails)), db) if emails else {}
 
-    # Agrupa: channel_id → contagem de linhas (cada linha = um assessor/contato).
-    channel_counts: dict = {}
+    # Agrupa: channel_id → {emails únicos, contagem total}.
+    channel_groups: dict = {}
     for email in emails:
         ch_id = channel_map.get(email)
-        channel_counts[ch_id] = channel_counts.get(ch_id, 0) + 1
+        if ch_id not in channel_groups:
+            channel_groups[ch_id] = {"emails": set(), "total": 0}
+        channel_groups[ch_id]["emails"].add(email)
+        channel_groups[ch_id]["total"] += 1
 
     # Se não há dados de processed_data ainda, retorna lista vazia.
-    if not channel_counts:
+    if not channel_groups:
         return {"campaign_id": campaign_id, "channels": [], "source": "preview"}
 
+    # Resolve unidades dos assessores agrupados por canal.
+    all_unique_emails = list({e for g in channel_groups.values() for e in g["emails"]})
+    assessor_unidade_map: dict[str, str | None] = {}
+    if all_unique_emails:
+        for a in db.query(Assessor.email, Assessor.unidade).filter(
+            Assessor.email.in_(all_unique_emails)
+        ).all():
+            assessor_unidade_map[a.email] = a.unidade
+
     # Enriquece com labels dos canais em batch.
-    channel_ids = [cid for cid in channel_counts if cid is not None]
+    channel_ids = [cid for cid in channel_groups if cid is not None]
     channels_by_id: dict = {}
     if channel_ids:
         for ch in db.query(ZAPIChannel).filter(ZAPIChannel.id.in_(channel_ids)).all():
             channels_by_id[ch.id] = ch
 
     summary = []
-    for ch_id, count in channel_counts.items():
+    for ch_id, grp in channel_groups.items():
         ch = channels_by_id.get(ch_id) if ch_id else None
+        unidades = sorted({
+            assessor_unidade_map.get(e)
+            for e in grp["emails"]
+            if assessor_unidade_map.get(e)
+        })
         summary.append({
             "channel_id": ch_id,
             "channel_label": ch.label if ch else "Canal legado (env vars)",
             "channel_phone": ch.phone_number if ch else None,
             "channel_is_active": ch.is_active if ch else True,
-            "total": count,
+            "total": grp["total"],
+            "assessor_count": len(grp["emails"]),
+            "unidades": unidades,
             "sent": 0,
             "failed": 0,
-            "pending": count,
+            "pending": grp["total"],
         })
 
     # Ordena pelo total decrescente para exibição consistente.
@@ -3988,15 +4007,50 @@ async def get_campaign_channel_summary(
         for ch in db.query(ZAPIChannel).filter(ZAPIChannel.id.in_(channel_ids)).all():
             channels_by_id[ch.id] = ch
 
+    # Busca assessor_count e unidades por canal via dispatches (Task #224 Fix B).
+    # Cada dispatch tem assessor_phone; usamos email do assessor para agrupar.
+    ch_id_to_phones: dict = {}
+    for d in (
+        db.query(CampaignDispatch.channel_id, CampaignDispatch.assessor_phone)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.assessor_phone.isnot(None),
+        )
+        .distinct()
+        .all()
+    ):
+        ch_id_to_phones.setdefault(d.channel_id, set()).add(d.assessor_phone)
+
+    # Resolve unidades via Assessor.telefone_whatsapp (últimos 10 dígitos).
+    all_phones = {p for phones in ch_id_to_phones.values() for p in phones}
+    phone_to_unidade: dict[str, str | None] = {}
+    if all_phones:
+        def _norm10_cs(p: str) -> str:
+            return p.lstrip("+").replace(" ", "").replace("-", "")[-10:]
+        from sqlalchemy import or_ as _or_cs
+        _cs_filters = [Assessor.telefone_whatsapp.ilike(f"%{_norm10_cs(p)}%") for p in all_phones]
+        for a in db.query(Assessor.telefone_whatsapp, Assessor.unidade).filter(
+            _or_cs(*_cs_filters)
+        ).all():
+            phone_to_unidade[_norm10_cs(a.telefone_whatsapp or "")] = a.unidade
+
     summary = []
     for r in rows:
         ch = channels_by_id.get(r.channel_id) if r.channel_id else None
+        phones_for_ch = ch_id_to_phones.get(r.channel_id, set())
+        unidades = sorted({
+            phone_to_unidade.get(_norm10_cs(p) if all_phones else p)
+            for p in phones_for_ch
+            if phone_to_unidade.get(_norm10_cs(p) if all_phones else p)
+        }) if phones_for_ch else []
         summary.append({
             "channel_id": r.channel_id,
             "channel_label": ch.label if ch else "Canal legado (env vars)",
             "channel_phone": ch.phone_number if ch else None,
             "channel_is_active": ch.is_active if ch else True,
             "total": int(r.total or 0),
+            "assessor_count": len(phones_for_ch),
+            "unidades": unidades,
             "sent": int(r.sent or 0),
             "failed": int(r.failed or 0),
             "pending": int(r.pending or 0),

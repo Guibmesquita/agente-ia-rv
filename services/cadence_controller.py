@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, date, time, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +170,13 @@ _TICK_PERSIST_THROTTLE_SECONDS = 60
 # travada no limite diário — emitimos apenas uma vez por dia por campanha.
 # Reseta automaticamente em qualquer dia novo (chave de data).
 _daily_limit_emitted_day: Dict[Any, Any] = {}
+
+# Task #224 — contadores diários por canal para isolamento de quota.
+# Chave: (campaign_kind, campaign_id, channel_id_or_None) → int enviados hoje.
+# Reseta automaticamente na virada do dia BRT sem necessidade de migration.
+# Efeito: canal A atingindo seu limite não bloqueia canal B da mesma campanha.
+_channel_daily_sent: Dict[Tuple, int] = {}
+_channel_daily_reset_date: Optional[date] = None
 
 
 def _should_emit_daily_limit(kind: str, campaign_id: int, today_date) -> bool:
@@ -387,6 +394,12 @@ async def run_cadence_tick():
         had_candidates = False
         all_blocked_by_cooldown = True
 
+        # Task #224 — reset diário dos contadores por canal na virada do dia.
+        global _channel_daily_sent, _channel_daily_reset_date
+        if _channel_daily_reset_date != today_date:
+            _channel_daily_sent.clear()
+            _channel_daily_reset_date = today_date
+
         from services.cadence_profiles import get_profile
         active_legacy = (
             db.query(CadenceCampaign)
@@ -429,18 +442,9 @@ async def run_cadence_tick():
                 effective_daily_limit = int(campaign_profile["daily_limit"])
             else:
                 effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
-            if daily_log and daily_log.sent_count >= effective_daily_limit:
-                if _should_emit_daily_limit(CAMPAIGN_KIND_LEGACY, campaign.id, today_date):
-                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
-                        "limit": effective_daily_limit,
-                        "sent_today": int(daily_log.sent_count or 0),
-                        "profile": campaign_profile.get("label"),
-                    })
-                continue
-
-            # Task #224 — construir conjunto de canais bloqueados (cooldown + pausa)
-            # ANTES da query, para que um canal bloqueado não impeça contatos de
-            # outros canais dentro da mesma campanha.
+            # Task #224 — construir conjunto de canais bloqueados (cooldown + pausa +
+            # cota diária por canal) ANTES da query, para que cada canal seja
+            # bloqueado de forma independente sem afetar os demais.
             _leg_blocked: set = set()
             for _ch_id, _last in _last_send_time_by_channel.items():
                 if _last and (now - _last).total_seconds() < cooldown:
@@ -448,6 +452,26 @@ async def run_cadence_tick():
             for _ch_id, _pu in _pause_until_by_channel.items():
                 if _pu and now < _pu:
                     _leg_blocked.add(_ch_id)
+            # Bloqueia apenas os canais que atingiram sua cota diária (Task #224).
+            # Canal A não bloqueia Canal B — cada um tem contador independente.
+            for (_dl_kind, _dl_cid, _dl_ch), _dl_cnt in list(_channel_daily_sent.items()):
+                if (
+                    _dl_kind == CAMPAIGN_KIND_LEGACY
+                    and _dl_cid == campaign.id
+                    and _dl_cnt >= effective_daily_limit
+                ):
+                    _leg_blocked.add(_dl_ch)
+
+            # Observabilidade: emite daily_limit_reached se o log global de campanha
+            # indica que o total global atingiu o limite. Não bloqueia o loop —
+            # o bloqueio por-canal via _leg_blocked já isola os canais corretos.
+            if daily_log and daily_log.sent_count >= effective_daily_limit:
+                if _should_emit_daily_limit(CAMPAIGN_KIND_LEGACY, campaign.id, today_date):
+                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
+                        "limit": effective_daily_limit,
+                        "sent_today": int(daily_log.sent_count or 0),
+                        "profile": campaign_profile.get("label"),
+                    })
 
             _cq = (
                 db.query(CadenceCampaignContact)
@@ -568,6 +592,9 @@ async def run_cadence_tick():
 
                     _last_send_time = now
                     _last_send_time_by_channel[channel_id] = now
+                    # Task #224 — incrementa contador diário por canal (isolamento de cota).
+                    _cds_key_leg = (CAMPAIGN_KIND_LEGACY, campaign.id, channel_id)
+                    _channel_daily_sent[_cds_key_leg] = _channel_daily_sent.get(_cds_key_leg, 0) + 1
                     db.commit()
                     _persist_state(db, last_send_at=now, consecutive_failures=0)
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_SENT, {
@@ -707,6 +734,34 @@ async def run_cadence_tick():
                 campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
                 cooldown = int(campaign_profile["cooldown_seconds"])
 
+                # Task #222 — em turbo, prevalece o cap do perfil (150/dia).
+                if bool(getattr(campaign, "cadence_turbo_active", False)):
+                    effective_daily_limit = int(campaign_profile["daily_limit"])
+                else:
+                    effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
+
+                # Task #224 — construir conjunto de canais bloqueados ANTES de
+                # selecionar/clammar o dispatch (cooldown + pausa + cota diária).
+                # Cada canal tem contador independente: canal A não bloqueia canal B.
+                _uni_blocked: set = set()
+                for _ch_id, _last in _last_send_time_by_channel.items():
+                    if _last and (now - _last).total_seconds() < cooldown:
+                        _uni_blocked.add(_ch_id)
+                for _ch_id, _pu in _pause_until_by_channel.items():
+                    if _pu and now < _pu:
+                        _uni_blocked.add(_ch_id)
+                # Bloqueia apenas os canais que atingiram a cota diária (Task #224).
+                for (_dl_kind, _dl_cid, _dl_ch), _dl_cnt in list(_channel_daily_sent.items()):
+                    if (
+                        _dl_kind == CAMPAIGN_KIND_UNIFIED
+                        and _dl_cid == campaign.id
+                        and _dl_cnt >= effective_daily_limit
+                    ):
+                        _uni_blocked.add(_dl_ch)
+
+                # Observabilidade global: emite daily_limit_reached se todos os
+                # dispatches enviados hoje (todos canais) atingiram o limite.
+                # Não bloqueia o loop — o bloqueio é via _uni_blocked por canal.
                 today_sent = (
                     db.query(CampaignDispatch)
                     .filter(
@@ -716,12 +771,6 @@ async def run_cadence_tick():
                     )
                     .count()
                 )
-
-                # Task #222 — em turbo, prevalece o cap do perfil (150/dia).
-                if bool(getattr(campaign, "cadence_turbo_active", False)):
-                    effective_daily_limit = int(campaign_profile["daily_limit"])
-                else:
-                    effective_daily_limit = campaign.daily_limit or int(campaign_profile["daily_limit"])
                 if today_sent >= effective_daily_limit:
                     if _should_emit_daily_limit(CAMPAIGN_KIND_UNIFIED, campaign.id, today_date):
                         emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DAILY_LIMIT_REACHED, {
@@ -729,18 +778,7 @@ async def run_cadence_tick():
                             "sent_today": int(today_sent),
                             "profile": campaign_profile.get("label"),
                         })
-                    continue
-
-                # Task #224 — construir conjunto de canais bloqueados ANTES de
-                # selecionar/clammar o dispatch, para que um canal em cooldown/pausa
-                # não impeça dispatches de outros canais na mesma campanha.
-                _uni_blocked: set = set()
-                for _ch_id, _last in _last_send_time_by_channel.items():
-                    if _last and (now - _last).total_seconds() < cooldown:
-                        _uni_blocked.add(_ch_id)
-                for _ch_id, _pu in _pause_until_by_channel.items():
-                    if _pu and now < _pu:
-                        _uni_blocked.add(_ch_id)
+                    # Sem continue — verificação por canal via _uni_blocked já isola.
 
                 # Construir cláusula SQL de exclusão de canais (sem user-input;
                 # apenas inteiros internos → seguro para interpolação).
@@ -947,6 +985,9 @@ async def run_cadence_tick():
                         _turbo_failure_streak_by_campaign.pop(("unified", campaign.id), None)
                         _last_send_time = now
                         _last_send_time_by_channel[dispatch_channel_id] = now
+                        # Task #224 — incrementa contador diário por canal (isolamento de cota).
+                        _cds_key_uni = (CAMPAIGN_KIND_UNIFIED, campaign.id, dispatch_channel_id)
+                        _channel_daily_sent[_cds_key_uni] = _channel_daily_sent.get(_cds_key_uni, 0) + 1
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
 
