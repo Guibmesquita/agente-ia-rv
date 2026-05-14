@@ -1247,6 +1247,12 @@ Equipe de Gestao"></textarea>
 
                         <div id="campaignSummary" style="margin-bottom: 24px;"></div>
 
+                        <!-- Task #224 — cards de canal por despacho -->
+                        <div id="channelSummarySection" style="display:none; margin-bottom: 24px;">
+                            <h4 style="margin-bottom: 12px; font-size: 0.95rem;">Canais de Envio</h4>
+                            <div id="channelSummaryCards" style="display: flex; flex-wrap: wrap; gap: 12px;"></div>
+                        </div>
+
                         <h4 style="margin-bottom: 16px;">Previa da Mensagem</h4>
                         <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
                             Exemplo de como a mensagem ficara para um assessor:
@@ -3007,6 +3013,8 @@ Equipe de Gestao"></textarea>
                         progressDiv.querySelector('h4').parentElement.innerHTML = headerHtml + `<span style="font-size: 24px; font-weight: 700; color: #16a34a;">100%</span>`;
                         
                         addLogEntry(`Disparo finalizado! Enviadas: ${data.sent_count}, Falhas: ${data.failed_count}`, 'info');
+                        // Task #224 — exibe cards de canal após disparo imediato.
+                        if (campaignId) loadChannelSummary(campaignId);
                         
                         btn.innerHTML = `
                             <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -3211,10 +3219,53 @@ Equipe de Gestao"></textarea>
                     '</div></div>';
 
                 toast.success('Campanha agendada com cadencia!');
+                // Task #224 — exibe cards de canal após agendamento.
+                if (campaignId) loadChannelSummary(campaignId);
             } catch (error) {
                 btn.disabled = false;
                 btn.innerHTML = '<svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Disparar Campanha';
                 toast.error('Erro: ' + error.message);
+            }
+        }
+
+        // Task #224 — busca e renderiza cards de canal para uma campanha.
+        async function loadChannelSummary(cId) {
+            try {
+                var r = await fetch(API_BASE + '/' + cId + '/channel-summary', { credentials: 'include' });
+                if (!r.ok) return;
+                var data = await r.json();
+                var channels = (data.channels || []).filter(function(c) { return c.total > 0; });
+                if (!channels.length) return;
+
+                var section = document.getElementById('channelSummarySection');
+                var container = document.getElementById('channelSummaryCards');
+                if (!section || !container) return;
+
+                var html = '';
+                channels.forEach(function(ch) {
+                    var statusColor = ch.channel_is_active ? '#16a34a' : '#dc2626';
+                    var statusLabel = ch.channel_is_active ? 'Ativo' : 'Inativo';
+                    var pendPct = ch.total > 0 ? Math.round((ch.pending / ch.total) * 100) : 0;
+                    var sentPct = ch.total > 0 ? Math.round((ch.sent / ch.total) * 100) : 0;
+                    var failPct = ch.total > 0 ? Math.round((ch.failed / ch.total) * 100) : 0;
+                    html += '<div style="flex: 1; min-width: 200px; max-width: 280px; background: white; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px;">'
+                        + '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">'
+                        + '<span style="font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%;" title="' + (ch.channel_label || '') + '">' + (ch.channel_label || 'Canal legado') + '</span>'
+                        + '<span style="font-size: 0.72rem; color: ' + statusColor + '; background: ' + (ch.channel_is_active ? '#dcfce7' : '#fee2e2') + '; padding: 2px 7px; border-radius: 99px;">' + statusLabel + '</span>'
+                        + '</div>'
+                        + (ch.channel_phone ? '<div style="font-size: 0.78rem; color: #64748b; margin-bottom: 8px;">' + ch.channel_phone + '</div>' : '')
+                        + '<div style="font-size: 0.82rem; display: flex; gap: 10px; flex-wrap: wrap;">'
+                        + '<span title="Total"><strong>' + ch.total + '</strong> total</span>'
+                        + (ch.sent > 0 ? '<span style="color:#16a34a;" title="Enviados"><strong>' + ch.sent + '</strong> enviados</span>' : '')
+                        + (ch.pending > 0 ? '<span style="color:#2563eb;" title="Pendentes"><strong>' + ch.pending + '</strong> pendentes</span>' : '')
+                        + (ch.failed > 0 ? '<span style="color:#dc2626;" title="Falhas"><strong>' + ch.failed + '</strong> falhas</span>' : '')
+                        + '</div>'
+                        + '</div>';
+                });
+                container.innerHTML = html;
+                section.style.display = 'block';
+            } catch (e) {
+                console.warn('[channel-summary] erro ao carregar:', e);
             }
         }
 

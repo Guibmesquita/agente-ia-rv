@@ -15,6 +15,14 @@ _pause_until: Optional[datetime] = None
 _pause_reason: Optional[str] = None
 _running: bool = False
 
+# Task #224 — controles por canal (channel_id → valor).
+# None = canal legado (env vars). Chaves int = canal ZAPIChannel específico.
+# O bloqueio de um canal NÃO paralisa os demais.
+_last_send_time_by_channel: Dict[Optional[int], Optional[datetime]] = {}
+_consecutive_failures_by_channel: Dict[Optional[int], int] = {}
+_pause_until_by_channel: Dict[Optional[int], Optional[datetime]] = {}
+_pause_reason_by_channel: Dict[Optional[int], Optional[str]] = {}
+
 # Task #221 (V2) — rastreia o último estado observável emitido para
 # deduplicar eventos `out_of_business_hours` / `lunch_break` /
 # `global_cooldown` (só emite quando há transição). É só observabilidade;
@@ -340,13 +348,14 @@ async def run_cadence_tick():
             logger.warning(f"[CADENCE-TURBO] verificação Z-API health falhou: {_e}")
 
         if _pause_until and now < _pause_until:
-            # last_tick_at já persistido acima — observabilidade preservada
-            # mesmo em retorno antecipado por pausa anti-bloqueio.
+            # Task #224 — não retorna globalmente. O controle de pausa
+            # anti-bloqueio é agora por canal (_pause_until_by_channel).
+            # Emite o evento apenas para observabilidade do engine state.
             _emit_engine_state_transition(db, "anti_block_pause_active", {
                 "pause_until": _pause_until.isoformat(),
                 "pause_reason": _pause_reason,
             })
-            return
+            # Sem return: outros canais seguem operando normalmente.
 
         # Pausa de almoço (12:00-13:00 BRT): estado APENAS observado.
         # Não estava no comportamento original do motor (`git show` confirma
@@ -387,20 +396,10 @@ async def run_cadence_tick():
             ):
                 continue
 
-            # Cooldown global — usa o cooldown_seconds do perfil DESTA
-            # campanha (a candidata a enviar agora) contra o último envio
-            # GLOBAL. Assim só pode haver um envio por janela de cooldown
-            # considerando o ritmo do perfil escolhido para a campanha em
-            # questão; se a candidata é "acelerada", basta esperar o cooldown
-            # menor; se é "conservadora", espera o cooldown maior.
+            # Task #224 — cooldown avaliado por canal (ver had_candidates /
+            # all_blocked_by_cooldown abaixo, após fetch do next_contact).
             campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
             cooldown = int(campaign_profile["cooldown_seconds"])
-            had_candidates = True
-            if _last_send_time and (now - _last_send_time).total_seconds() < cooldown:
-                continue
-            # Saiu do bloqueio de cooldown ao menos uma vez nesta candidata —
-            # então não foi 100% bloqueio por cooldown.
-            all_blocked_by_cooldown = False
 
             daily_log = (
                 db.query(CampaignDailyLog)
@@ -412,9 +411,7 @@ async def run_cadence_tick():
             )
 
             # Task #222 — em modo turbo, o cap diário é SEMPRE o do perfil
-            # turbo (150/dia), ignorando `campaign.daily_limit` salvo (que
-            # tipicamente é menor — 50/80/120 — e impediria a finalização
-            # rápida que o usuário pediu ao acionar "Finalizar agora").
+            # turbo (150/dia), ignorando `campaign.daily_limit` salvo.
             if bool(getattr(campaign, "cadence_turbo_active", False)):
                 effective_daily_limit = int(campaign_profile["daily_limit"])
             else:
@@ -451,8 +448,7 @@ async def run_cadence_tick():
                 if pending_count == 0:
                     campaign.status = "done"
                     campaign.end_date = now
-                    # Task #222 — captura flag turbo ANTES de limpar para
-                    # marcar via_turbo no evento de conclusão.
+                    # Task #222 — captura flag turbo ANTES de limpar.
                     _was_turbo = bool(getattr(campaign, "cadence_turbo_active", False))
                     campaign.cadence_turbo_active = False
                     campaign.cadence_turbo_origin_profile = None
@@ -466,10 +462,51 @@ async def run_cadence_tick():
                     print(f"[CADENCE] Campanha legada '{campaign.name}' (id={campaign.id}) concluída!")
                 continue
 
-            zapi = ZAPIClient()
+            # Task #224 — roteamento por canal: cooldown e pausa são por canal.
+            channel_id = getattr(next_contact, "channel_id", None)
+            had_candidates = True
+
+            # Cooldown por canal (substitui cooldown global).
+            ch_last_send = _last_send_time_by_channel.get(channel_id)
+            if ch_last_send and (now - ch_last_send).total_seconds() < cooldown:
+                continue
+            # Saiu do bloqueio de cooldown ao menos uma vez — não 100% cooldown.
+            all_blocked_by_cooldown = False
+
+            # Pausa anti-bloqueio por canal.
+            ch_pause = _pause_until_by_channel.get(channel_id)
+            if ch_pause and now < ch_pause:
+                continue
+
+            # Cliente Z-API específico do canal.
+            from services.whatsapp_client import get_zapi_client_for_channel as _gzc_leg
+            try:
+                zapi = _gzc_leg(channel_id, db)
+            except Exception:
+                zapi = ZAPIClient()
             if not zapi.is_configured():
-                print("[CADENCE] Z-API não configurada, pulando envio")
-                return
+                print(f"[CADENCE] Z-API canal {channel_id} não configurada — campanha '{campaign.name}' pulada")
+                continue  # Task #224: não bloqueia outros canais
+
+            # Verifica se o canal explícito está ativo.
+            if channel_id is not None:
+                from database.models import ZAPIChannel as _ZCh_L
+                _ch_row_l = db.query(_ZCh_L).filter(
+                    _ZCh_L.id == channel_id, _ZCh_L.is_active.is_(False)
+                ).first()
+                if _ch_row_l:
+                    next_contact.status = "failed"
+                    next_contact.last_error_message = "Canal desativado"
+                    db.commit()
+                    emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
+                        "phone": next_contact.phone,
+                        "contact_id": next_contact.id,
+                        "channel_id": channel_id,
+                        "is_final": True,
+                        "error": "Canal desativado",
+                    })
+                    sent_this_tick = True
+                    continue
 
             try:
                 result = await zapi.send_text(
@@ -484,6 +521,7 @@ async def run_cadence_tick():
                     next_contact.delivered = True
                     next_contact.last_error_message = None
                     _consecutive_failures = 0
+                    _consecutive_failures_by_channel[channel_id] = 0
                     # Task #222 — reset do streak APENAS desta campanha turbo.
                     _turbo_failure_streak_by_campaign.pop(("legacy", campaign.id), None)
 
@@ -498,23 +536,24 @@ async def run_cadence_tick():
                         daily_log.sent_count += 1
 
                     _last_send_time = now
+                    _last_send_time_by_channel[channel_id] = now
                     db.commit()
                     _persist_state(db, last_send_at=now, consecutive_failures=0)
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_SENT, {
                         "phone": next_contact.phone,
                         "contact_id": next_contact.id,
+                        "channel_id": channel_id,
                         "profile": campaign_profile.get("label"),
                     })
-                    print(f"[CADENCE] Enviado para {next_contact.phone} (campanha legada '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
+                    print(f"[CADENCE] Enviado para {next_contact.phone} (legada '{campaign.name}', canal={channel_id}, perfil={campaign_profile.get('label', '?')})")
                 else:
                     next_contact.retry_count += 1
                     error_msg = result.get("error", "desconhecido")
-                    # Task #221 — registra erro a cada tentativa, não só na última.
                     next_contact.last_error_message = str(error_msg)[:1000]
                     _consecutive_failures += 1
-                    # Task #222 — incrementa streak POR CAMPANHA somente se
-                    # esta campanha está em turbo. Evita que falhas em
-                    # campanhas normais contaminem o freio do turbo.
+                    ch_failures = _consecutive_failures_by_channel.get(channel_id, 0) + 1
+                    _consecutive_failures_by_channel[channel_id] = ch_failures
+                    # Task #222 — incrementa streak POR CAMPANHA somente se turbo.
                     _is_turbo_now = bool(getattr(campaign, "cadence_turbo_active", False))
                     if _is_turbo_now:
                         _key = ("legacy", campaign.id)
@@ -540,18 +579,22 @@ async def run_cadence_tick():
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
                         "phone": next_contact.phone,
                         "contact_id": next_contact.id,
+                        "channel_id": channel_id,
                         "retry_count": int(next_contact.retry_count or 0),
                         "is_final": bool(is_final_fail),
                         "error": str(error_msg)[:500],
                     })
-                    print(f"[CADENCE] Falha ao enviar para {next_contact.phone}: {error_msg} (tentativa {next_contact.retry_count})")
+                    print(f"[CADENCE] Falha para {next_contact.phone}: {error_msg} (tentativa {next_contact.retry_count}, canal={channel_id})")
 
-                    if _consecutive_failures >= 2:
-                        # Task #222 — em campanha turbo, pausa anti-bloqueio
-                        # CURTA de 5 min (vs 20 min do modo normal).
+                    # Pausa anti-bloqueio por canal (Task #224).
+                    if ch_failures >= 2:
                         _pause_minutes = (
                             _TURBO_ANTI_BLOCK_PAUSE_MINUTES if _is_turbo_now else 20
                         )
+                        _pause_until_by_channel[channel_id] = now + timedelta(minutes=_pause_minutes)
+                        _pause_reason_by_channel[channel_id] = "anti_block"
+                        _consecutive_failures_by_channel[channel_id] = 0
+                        # Mantém global para observabilidade (engine state).
                         _pause_until = now + timedelta(minutes=_pause_minutes)
                         _pause_reason = "anti_block"
                         _consecutive_failures = 0
@@ -559,11 +602,12 @@ async def run_cadence_tick():
                                        consecutive_failures=0)
                         emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
                             "duration_minutes": _pause_minutes,
-                            "pause_until": _pause_until.isoformat(),
+                            "pause_until": _pause_until_by_channel[channel_id].isoformat(),
                             "trigger": "2 falhas Z-API consecutivas",
+                            "channel_id": channel_id,
                             "turbo": _is_turbo_now,
                         })
-                        print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por {_pause_minutes} minutos até {_pause_until.strftime('%H:%M')}")
+                        print(f"[CADENCE] ⚠ 2 falhas canal {channel_id} — pausando {_pause_minutes}min")
 
             except Exception as send_err:
                 next_contact.retry_count += 1
@@ -574,6 +618,7 @@ async def run_cadence_tick():
                 emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_FAILED, {
                     "phone": next_contact.phone,
                     "contact_id": next_contact.id,
+                    "channel_id": channel_id,
                     "retry_count": int(next_contact.retry_count or 0),
                     "is_final": bool(next_contact.retry_count >= 3),
                     "error": str(send_err)[:500],
@@ -624,16 +669,9 @@ async def run_cadence_tick():
                 ):
                     continue
 
-                # Cooldown global — mesma política do bloco legacy: o
-                # cooldown_seconds vem do perfil da campanha CANDIDATA, mas
-                # comparado contra o último envio global. Não há cooldowns
-                # paralelos por campanha.
+                # Task #224 — cooldown e pausa avaliados por canal.
                 campaign_profile = get_profile(getattr(campaign, "cadence_profile", None))
                 cooldown = int(campaign_profile["cooldown_seconds"])
-                had_candidates = True
-                if _last_send_time and (now - _last_send_time).total_seconds() < cooldown:
-                    continue
-                all_blocked_by_cooldown = False
 
                 today_sent = (
                     db.query(CampaignDispatch)
@@ -645,9 +683,7 @@ async def run_cadence_tick():
                     .count()
                 )
 
-                # Task #222 — em turbo, prevalece o cap do perfil (150/dia)
-                # sobre `campaign.daily_limit` para honrar o pedido de
-                # "finalizar agora".
+                # Task #222 — em turbo, prevalece o cap do perfil (150/dia).
                 if bool(getattr(campaign, "cadence_turbo_active", False)):
                     effective_daily_limit = int(campaign_profile["daily_limit"])
                 else:
@@ -661,7 +697,38 @@ async def run_cadence_tick():
                         })
                     continue
 
+                # Task #224 — peek no channel_id do próximo dispatch ANTES
+                # de clamá-lo, para verificar cooldown por canal sem bloquear.
                 from sqlalchemy import text as sql_text
+                peek_row = db.execute(
+                    sql_text(
+                        "SELECT id, channel_id FROM campaign_dispatches "
+                        "WHERE campaign_id = :cid AND status = 'pending' "
+                        "AND scheduled_for <= :now "
+                        "ORDER BY scheduled_for ASC LIMIT 1"
+                    ),
+                    {"cid": campaign.id, "now": now},
+                ).fetchone()
+
+                if peek_row:
+                    peek_channel_id = peek_row[1]  # channel_id do próximo dispatch
+                    had_candidates = True
+
+                    # Cooldown por canal.
+                    ch_last_send_u = _last_send_time_by_channel.get(peek_channel_id)
+                    if ch_last_send_u and (now - ch_last_send_u).total_seconds() < cooldown:
+                        continue
+                    all_blocked_by_cooldown = False
+
+                    # Pausa anti-bloqueio por canal.
+                    ch_pause_u = _pause_until_by_channel.get(peek_channel_id)
+                    if ch_pause_u and now < ch_pause_u:
+                        continue
+                else:
+                    had_candidates = True  # campanha existe, sem dispatch pronto ainda
+                    peek_channel_id = None
+
+                # Agora claim atômico (UPDATE ... RETURNING).
                 claim_result = db.execute(
                     sql_text("""
                         UPDATE campaign_dispatches SET status = 'processing'
@@ -743,13 +810,40 @@ async def run_cadence_tick():
                     })
                     continue
 
-                zapi = ZAPIClient()
+                # Task #224 — cliente Z-API por canal do dispatch.
+                dispatch_channel_id = getattr(next_dispatch, "channel_id", None)
+
+                # Verifica se o canal explícito está ativo.
+                if dispatch_channel_id is not None:
+                    from database.models import ZAPIChannel as _ZCh_U
+                    _ch_row_u = db.query(_ZCh_U).filter(
+                        _ZCh_U.id == dispatch_channel_id, _ZCh_U.is_active.is_(False)
+                    ).first()
+                    if _ch_row_u:
+                        next_dispatch.status = "failed"
+                        next_dispatch.error_message = "Canal desativado"
+                        next_dispatch.last_error_message = "Canal desativado"
+                        db.commit()
+                        emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
+                            "dispatch_id": next_dispatch.id,
+                            "channel_id": dispatch_channel_id,
+                            "is_final": True,
+                            "error": "Canal desativado",
+                        })
+                        sent_this_tick = True
+                        continue
+
+                from services.whatsapp_client import get_zapi_client_for_channel as _gzc_u
+                try:
+                    zapi = _gzc_u(dispatch_channel_id, db)
+                except Exception:
+                    zapi = ZAPIClient()
                 if not zapi.is_configured():
                     next_dispatch.status = "pending"
                     next_dispatch.scheduled_for = now + timedelta(minutes=5)
                     db.commit()
-                    print("[CADENCE] Z-API não configurada, dispatch devolvido para pending")
-                    return
+                    print(f"[CADENCE] Z-API canal {dispatch_channel_id} não configurada, dispatch devolvido para pending")
+                    continue  # Task #224: não bloqueia outros canais
 
                 try:
                     attachment_url = campaign.attachment_url
@@ -799,9 +893,11 @@ async def run_cadence_tick():
                         next_dispatch.sent_at = now
                         next_dispatch.last_error_message = None
                         _consecutive_failures = 0
+                        _consecutive_failures_by_channel[dispatch_channel_id] = 0
                         # Task #222 — reset do streak APENAS desta campanha turbo.
                         _turbo_failure_streak_by_campaign.pop(("unified", campaign.id), None)
                         _last_send_time = now
+                        _last_send_time_by_channel[dispatch_channel_id] = now
 
                         _persist_unified_campaign_message(db, phone, message, campaign.name)
 
@@ -810,14 +906,17 @@ async def run_cadence_tick():
                         emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_SENT, {
                             "dispatch_id": next_dispatch.id,
                             "phone": phone,
+                            "channel_id": dispatch_channel_id,
                             "profile": campaign_profile.get("label"),
                         })
-                        print(f"[CADENCE] Enviado para {phone} (campanha '{campaign.name}', perfil={campaign_profile.get('label', '?')})")
+                        print(f"[CADENCE] Enviado para {phone} (unificada '{campaign.name}', canal={dispatch_channel_id}, perfil={campaign_profile.get('label', '?')})")
                     else:
                         next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
                         error_msg = result.get("error", "desconhecido")
                         next_dispatch.last_error_message = str(error_msg)[:1000]
                         _consecutive_failures += 1
+                        ch_failures_u = _consecutive_failures_by_channel.get(dispatch_channel_id, 0) + 1
+                        _consecutive_failures_by_channel[dispatch_channel_id] = ch_failures_u
                         # Task #222 — streak por-campanha (somente turbo).
                         _is_turbo_now_u = bool(getattr(campaign, "cadence_turbo_active", False))
                         if _is_turbo_now_u:
@@ -839,17 +938,22 @@ async def run_cadence_tick():
                         emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
                             "dispatch_id": next_dispatch.id,
                             "phone": phone,
+                            "channel_id": dispatch_channel_id,
                             "retry_count": int(next_dispatch.retry_count or 0),
                             "is_final": bool(is_final_fail),
                             "error": str(error_msg)[:500],
                         })
-                        print(f"[CADENCE] Falha ao enviar para {phone}: {error_msg} (tentativa {next_dispatch.retry_count})")
+                        print(f"[CADENCE] Falha para {phone}: {error_msg} (tentativa {next_dispatch.retry_count}, canal={dispatch_channel_id})")
 
-                        if _consecutive_failures >= 2:
-                            # Task #222 — pausa anti-bloqueio CURTA em turbo.
+                        # Pausa anti-bloqueio por canal (Task #224).
+                        if ch_failures_u >= 2:
                             _pause_minutes_u = (
                                 _TURBO_ANTI_BLOCK_PAUSE_MINUTES if _is_turbo_now_u else 20
                             )
+                            _pause_until_by_channel[dispatch_channel_id] = now + timedelta(minutes=_pause_minutes_u)
+                            _pause_reason_by_channel[dispatch_channel_id] = "anti_block"
+                            _consecutive_failures_by_channel[dispatch_channel_id] = 0
+                            # Mantém global para observabilidade.
                             _pause_until = now + timedelta(minutes=_pause_minutes_u)
                             _pause_reason = "anti_block"
                             _consecutive_failures = 0
@@ -858,10 +962,11 @@ async def run_cadence_tick():
                             emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_ANTI_BLOCK_PAUSE, {
                                 "duration_minutes": _pause_minutes_u,
                                 "turbo": _is_turbo_now_u,
-                                "pause_until": _pause_until.isoformat(),
+                                "pause_until": _pause_until_by_channel[dispatch_channel_id].isoformat(),
                                 "trigger": "2 falhas Z-API consecutivas",
+                                "channel_id": dispatch_channel_id,
                             })
-                            print(f"[CADENCE] ⚠ 2 falhas consecutivas — pausando disparos por {_pause_minutes_u} minutos até {_pause_until.strftime('%H:%M')}")
+                            print(f"[CADENCE] ⚠ 2 falhas canal {dispatch_channel_id} — pausando {_pause_minutes_u}min")
 
                 except Exception as send_err:
                     next_dispatch.retry_count = (next_dispatch.retry_count or 0) + 1
@@ -876,6 +981,7 @@ async def run_cadence_tick():
                     emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
                         "dispatch_id": next_dispatch.id,
                         "phone": phone,
+                        "channel_id": dispatch_channel_id,
                         "retry_count": int(next_dispatch.retry_count or 0),
                         "is_final": bool(next_dispatch.retry_count >= 3),
                         "error": str(send_err)[:500],

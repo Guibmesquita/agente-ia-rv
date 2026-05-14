@@ -236,6 +236,33 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
     db.add(campaign)
     db.flush()
 
+    # Task #224 — resolver channel_id de cada contato pelo telefone via assessor.
+    from database.models import Assessor as _Assessor
+    from database.models import UnidadeChannelMapping as _UCM
+
+    def _resolve_channel_for_phone(phone: str) -> int | None:
+        if not phone:
+            return None
+        # Normaliza e compara pelos últimos 10 dígitos para tolerância de DDI.
+        norm = phone.lstrip("+").replace(" ", "").replace("-", "")
+        suffix = norm[-10:]
+        assessor = (
+            db.query(_Assessor)
+            .filter(_Assessor.telefone_whatsapp.ilike(f"%{suffix}%"))
+            .first()
+        )
+        if assessor and assessor.channel_id:
+            return assessor.channel_id
+        if assessor and assessor.unidade:
+            mapping = (
+                db.query(_UCM)
+                .filter(_UCM.unidade == assessor.unidade)
+                .first()
+            )
+            if mapping:
+                return mapping.channel_id
+        return None
+
     for contact_data in data.contacts:
         contact = CadenceCampaignContact(
             campaign_id=campaign.id,
@@ -243,6 +270,7 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
             name=contact_data.name,
             custom_message=contact_data.message,
             status="pending",
+            channel_id=_resolve_channel_for_phone(contact_data.phone),
         )
         db.add(contact)
 

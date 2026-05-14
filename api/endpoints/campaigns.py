@@ -1705,6 +1705,51 @@ def build_structured_message(
     return final_message
 
 
+def _batch_resolve_channels(emails: list, db) -> dict:
+    """Resolve channel_id Z-API por e-mail de assessor (Task #224).
+    Prioridade: Assessor.channel_id direto → UnidadeChannelMapping → None.
+    Retorna {email: channel_id | None}.
+    """
+    from database.models import UnidadeChannelMapping
+    if not emails:
+        return {}
+
+    assessors = (
+        db.query(Assessor.email, Assessor.channel_id, Assessor.unidade)
+        .filter(Assessor.email.in_(emails))
+        .all()
+    )
+
+    email_map = {a.email: (a.channel_id, a.unidade) for a in assessors}
+
+    missing_unidades = {
+        u for (_ch, u) in email_map.values()
+        if not _ch and u
+    }
+
+    unidade_channel = {}
+    if missing_unidades:
+        for ucm in db.query(UnidadeChannelMapping).filter(
+            UnidadeChannelMapping.unidade.in_(missing_unidades)
+        ).all():
+            unidade_channel[ucm.unidade] = ucm.channel_id
+
+    result = {}
+    for email in emails:
+        if email in email_map:
+            ch, unidade = email_map[email]
+            if ch:
+                result[email] = ch
+            elif unidade and unidade in unidade_channel:
+                result[email] = unidade_channel[unidade]
+            else:
+                result[email] = None
+        else:
+            result[email] = None
+
+    return result
+
+
 @router.post("/{campaign_id}/dispatch")
 async def dispatch_campaign(
     campaign_id: int,
@@ -1961,7 +2006,11 @@ async def dispatch_campaign_stream(
     
     content_line_template = campaign.message_content_template or ""
     is_grouped = bool(campaign.group_by_client)
-    
+
+    # Task #224 — pré-resolver channel_id por e-mail dos assessores desta campanha.
+    _sse_all_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
+    _sse_channel_map = _batch_resolve_channels(_sse_all_emails, db) if _sse_all_emails else {}
+
     async def generate_events():
         from services.whatsapp_client import zapi_client
         from core.config import resolve_attachment_for_send
@@ -2008,6 +2057,8 @@ async def dispatch_campaign_stream(
                 
                 db_session = SessionLocal()
                 try:
+                    # Task #224 — resolve channel_id para este assessor.
+                    _sse_channel_id = _sse_channel_map.get(assessor_data.get("email_assessor", ""))
                     dispatch = CampaignDispatch(
                         campaign_id=campaign_id,
                         assessor_id=assessor_id,
@@ -2015,11 +2066,21 @@ async def dispatch_campaign_stream(
                         assessor_phone=phone,
                         assessor_name=assessor_name,
                         message_content=message,
-                        status="pending"
+                        status="pending",
+                        channel_id=_sse_channel_id,
                     )
                     db_session.add(dispatch)
                     db_session.flush()
-                    
+
+                    # Cliente Z-API por canal; fallback para legacy se não configurado.
+                    from services.whatsapp_client import get_zapi_client_for_channel as _gzc_sse
+                    try:
+                        _active_client = _gzc_sse(_sse_channel_id, db_session)
+                        if not _active_client.is_configured():
+                            _active_client = zapi_client
+                    except Exception:
+                        _active_client = zapi_client
+
                     status = "pending"
                     error_msg = ""
                     attempt = 1
@@ -2049,15 +2110,15 @@ async def dispatch_campaign_stream(
                             try:
                                 if attachment_url and attachment_type:
                                     if attachment_type == "image":
-                                        result = await zapi_client.send_image(phone, full_attachment_url, message)
+                                        result = await _active_client.send_image(phone, full_attachment_url, message)
                                     elif attachment_type == "video":
-                                        result = await zapi_client.send_video(phone, full_attachment_url, message)
+                                        result = await _active_client.send_video(phone, full_attachment_url, message)
                                     elif attachment_type == "audio":
-                                        result = await zapi_client.send_audio(phone, full_attachment_url)
+                                        result = await _active_client.send_audio(phone, full_attachment_url)
                                     else:
-                                        result = await zapi_client.send_document(phone, full_attachment_url, attachment_filename or "", message)
+                                        result = await _active_client.send_document(phone, full_attachment_url, attachment_filename or "", message)
                                 else:
-                                    result = await zapi_client.send_text(phone, message, delay_typing=2)
+                                    result = await _active_client.send_text(phone, message, delay_typing=2)
                                 dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
                                 
                                 if result.get("success"):
@@ -2355,7 +2416,11 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     campaign.status = CampaignStatus.PROCESSING.value
     campaign.total_assessors = total_assessors
     db.commit()
-    
+
+    # Task #224 — pré-resolver channel_id para cada assessor da base.
+    _base_emails = [a.get("email", "") for a in data if a.get("email")]
+    _base_channel_map = _batch_resolve_channels(_base_emails, db) if _base_emails else {}
+
     attachment_url = campaign.attachment_url
     attachment_type = campaign.attachment_type
     attachment_filename = campaign.attachment_filename
@@ -2427,6 +2492,8 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                 
                 db_session = SessionLocal()
                 try:
+                    # Task #224 — channel_id por e-mail do assessor.
+                    _base_channel_id = _base_channel_map.get(assessor.get("email", ""))
                     dispatch = CampaignDispatch(
                         campaign_id=campaign.id,
                         assessor_id=str(assessor.get("id", "")),
@@ -2434,11 +2501,21 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                         assessor_phone=phone,
                         assessor_name=assessor_name,
                         message_content=message,
-                        status="pending"
+                        status="pending",
+                        channel_id=_base_channel_id,
                     )
                     db_session.add(dispatch)
                     db_session.flush()
-                    
+
+                    # Cliente Z-API por canal; fallback para legacy se não configurado.
+                    from services.whatsapp_client import get_zapi_client_for_channel as _gzc_base
+                    try:
+                        _base_active_client = _gzc_base(_base_channel_id, db_session)
+                        if not _base_active_client.is_configured():
+                            _base_active_client = zapi_client
+                    except Exception:
+                        _base_active_client = zapi_client
+
                     status = "pending"
                     error_msg = ""
                     attempt = 1
@@ -2468,15 +2545,15 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                             try:
                                 if attachment_url and attachment_type:
                                     if attachment_type == "image":
-                                        result = await zapi_client.send_image(phone, full_attachment_url, message)
+                                        result = await _base_active_client.send_image(phone, full_attachment_url, message)
                                     elif attachment_type == "video":
-                                        result = await zapi_client.send_video(phone, full_attachment_url, message)
+                                        result = await _base_active_client.send_video(phone, full_attachment_url, message)
                                     elif attachment_type == "audio":
-                                        result = await zapi_client.send_audio(phone, full_attachment_url)
+                                        result = await _base_active_client.send_audio(phone, full_attachment_url)
                                     else:
-                                        result = await zapi_client.send_document(phone, full_attachment_url, attachment_filename or "", message)
+                                        result = await _base_active_client.send_document(phone, full_attachment_url, attachment_filename or "", message)
                                 else:
-                                    result = await zapi_client.send_text(phone, message, delay_typing=2)
+                                    result = await _base_active_client.send_text(phone, message, delay_typing=2)
                                 dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
                                 
                                 if result.get("success"):
@@ -3546,6 +3623,22 @@ async def dispatch_campaign_cadence(
 
         dispatches_data = []
 
+        # Task #224 — resolver channel_id por unidade para assessores da base.
+        _base_unidades = {assessor.get("unidade", "") for assessor in assessor_list if assessor.get("unidade")}
+        _base_channel_map_by_unidade: dict = {}
+        if _base_unidades:
+            from database.models import UnidadeChannelMapping as _UCM_BASE
+            for _ucm_b in db.query(_UCM_BASE).filter(_UCM_BASE.unidade.in_(_base_unidades)).all():
+                _base_channel_map_by_unidade[_ucm_b.unidade] = _ucm_b.channel_id
+
+        def _resolve_ch_from_assessor_dict(a: dict) -> int | None:
+            """Retorna channel_id para um assessor da base (Task #224)."""
+            _direct = a.get("channel_id") or a.get("zapi_channel_id")
+            if _direct:
+                return int(_direct)
+            _unid = a.get("unidade", "")
+            return _base_channel_map_by_unidade.get(_unid)
+
         for assessor in assessor_list:
             assessor_name = assessor.get("nome", "")
             phone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
@@ -3570,6 +3663,7 @@ async def dispatch_campaign_cadence(
                 "assessor_phone": phone,
                 "assessor_name": assessor_name,
                 "message_content": message,
+                "channel_id": _resolve_ch_from_assessor_dict(assessor),
             })
     else:
         grouped = group_recommendations_by_assessor(processed_data, column_mapping, custom_mapping, db)
@@ -3579,6 +3673,10 @@ async def dispatch_campaign_cadence(
         dispatches_data = []
         content_line_template = campaign.message_content_template or ""
         is_grouped = bool(campaign.group_by_client)
+
+        # Task #224 — channel map para assessores do path de upload.
+        _upload_emails = [ad.get("email_assessor", "") for ad in grouped.values() if ad.get("email_assessor")]
+        _upload_channel_map = _batch_resolve_channels(_upload_emails, db) if _upload_emails else {}
 
         for assessor_id, assessor_data in grouped.items():
             if use_blocks:
@@ -3603,6 +3701,7 @@ async def dispatch_campaign_cadence(
                 "assessor_phone": phone,
                 "assessor_name": assessor_data.get("nome_assessor", ""),
                 "message_content": message,
+                "channel_id": _upload_channel_map.get(assessor_data.get("email_assessor", "")),
             })
 
     if not dispatches_data:
@@ -3693,6 +3792,7 @@ async def dispatch_campaign_cadence(
                 status="pending",
                 scheduled_for=sched_time,
                 priority=d.get("priority", 3),
+                channel_id=d.get("channel_id"),
             )
             db.add(dispatch)
             dispatch_idx += 1
@@ -3720,6 +3820,7 @@ async def dispatch_campaign_cadence(
                     status="pending",
                     scheduled_for=sched_time,
                     priority=d.get("priority", 3),
+                    channel_id=d.get("channel_id"),
                 )
                 db.add(dispatch)
             ov_idx += len(batch)
@@ -3763,6 +3864,68 @@ async def dispatch_campaign_cadence(
         "plano": plan,
         "alerta": plan.get("alerta"),
     }
+
+
+@router.get("/{campaign_id}/channel-summary")
+async def get_campaign_channel_summary(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """Task #224 — resume de canais usados em uma campanha.
+    Agrega os dispatches por channel_id e retorna label + phone_number
+    do canal Z-API correspondente.
+    """
+    from database.models import ZAPIChannel
+    from sqlalchemy import func as sql_func
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    from sqlalchemy import case as sa_case
+
+    rows = (
+        db.query(
+            CampaignDispatch.channel_id,
+            sql_func.count(CampaignDispatch.id).label("total"),
+            sql_func.sum(
+                sa_case((CampaignDispatch.status == "sent", 1), else_=0)
+            ).label("sent"),
+            sql_func.sum(
+                sa_case((CampaignDispatch.status == "failed", 1), else_=0)
+            ).label("failed"),
+            sql_func.sum(
+                sa_case((CampaignDispatch.status == "pending", 1), else_=0)
+            ).label("pending"),
+        )
+        .filter(CampaignDispatch.campaign_id == campaign_id)
+        .group_by(CampaignDispatch.channel_id)
+        .all()
+    )
+
+    # Busca labels dos canais em batch.
+    channel_ids = [r.channel_id for r in rows if r.channel_id is not None]
+    channels_by_id = {}
+    if channel_ids:
+        for ch in db.query(ZAPIChannel).filter(ZAPIChannel.id.in_(channel_ids)).all():
+            channels_by_id[ch.id] = ch
+
+    summary = []
+    for r in rows:
+        ch = channels_by_id.get(r.channel_id) if r.channel_id else None
+        summary.append({
+            "channel_id": r.channel_id,
+            "channel_label": ch.label if ch else "Canal legado (env vars)",
+            "channel_phone": ch.phone_number if ch else None,
+            "channel_is_active": ch.is_active if ch else True,
+            "total": int(r.total or 0),
+            "sent": int(r.sent or 0),
+            "failed": int(r.failed or 0),
+            "pending": int(r.pending or 0),
+        })
+
+    return {"campaign_id": campaign_id, "channels": summary}
 
 
 @router.get("/{campaign_id}/cadence-status")
