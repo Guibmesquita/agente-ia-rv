@@ -695,8 +695,8 @@
             const map = {
                 connected: ['connected', '● Conectado'],
                 disconnected: ['disconnected', '● Desconectado'],
-                unreachable: ['unreachable', '● Inacessível'],
-                unknown: ['unknown', '● Desconhecido'],
+                unreachable: ['unreachable', '● Sem resposta'],
+                unknown: ['unknown', '● Sem resposta'],
             };
             const [cls, txt] = map[status] || map.unknown;
             return `<span class="zc-conn-pill ${cls}">${txt}</span>`;
@@ -737,6 +737,11 @@
                         </button>
                         <button class="btn btn-secondary btn-sm" onclick="zcOpenEdit(${ch.id})">
                             ✏️ Editar
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="zcToggleActive(${ch.id}, ${!ch.is_active})"
+                            title="${ch.is_active ? 'Desativar canal' : 'Ativar canal'}"
+                            style="${ch.is_active ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
+                            ${ch.is_active ? '⏸️ Desativar' : '▶️ Ativar'}
                         </button>
                         ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm" style="color:var(--danger-color)" onclick="zcDelete(${ch.id})">🗑️</button>` : ''}
                     </div>
@@ -995,6 +1000,31 @@
             btn.disabled = false;
         }
 
+        async function zcToggleActive(channelId, newActiveState) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+            const label = ch.label || ch.name;
+            const action = newActiveState ? 'ativar' : 'desativar';
+            if (!confirm(`Deseja ${action} o canal "${label}"?`)) return;
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ is_active: newActiveState }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    toast.error(`Erro: ${data.detail || 'Não foi possível alterar status'}`);
+                    return;
+                }
+                toast.success(newActiveState ? `Canal "${label}" ativado.` : `Canal "${label}" desativado.`);
+                await loadZAPIChannels();
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            }
+        }
+
         async function zcDelete(channelId) {
             const ch = _zcChannels.find(c => c.id === channelId);
             if (!ch) return;
@@ -1208,7 +1238,7 @@
                     pill.style.background = 'rgba(255,80,80,0.25)';
                     pill.style.color = '#fecaca';
                 } else {
-                    pill.textContent = '● Inacessível';
+                    pill.textContent = '● Sem resposta';
                     pill.style.background = 'rgba(255,165,0,0.25)';
                     pill.style.color = '#fed7aa';
                 }
