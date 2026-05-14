@@ -335,7 +335,7 @@ def save_message_zapi(
 
 
 
-async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
+async def _send_diagram_for_slug(phone: str, slug: str, db: Session, zapi_client=None):
     import os
     from scripts.xpi_derivatives.derivatives_dataset import get_all_structures
 
@@ -410,8 +410,11 @@ async def _send_diagram_for_slug(phone: str, slug: str, db: Session):
     print(f"[DIAGRAM] Enviando diagrama: {name} ({slug}) para {phone}")
     print(f"[DIAGRAM] URL: {diagram_url}")
 
+    # Task #223 — usa cliente do canal se fornecido; fallback ao global.
+    from services.whatsapp_client import zapi_client as _global_zapi
+    _diagram_client = zapi_client if zapi_client is not None else _global_zapi
     try:
-        result = await zapi_client.send_image(
+        result = await _diagram_client.send_image(
             to=phone,
             image_url=diagram_url,
             caption=caption
@@ -456,7 +459,7 @@ def _extract_material_markers(response: str) -> Tuple[str, List[str]]:
     return clean_response, markers
 
 
-async def _send_material_pdf(phone: str, material_id: str, db: Session) -> dict:
+async def _send_material_pdf(phone: str, material_id: str, db: Session, zapi_client=None) -> dict:
     """
     Tenta enviar um material PDF via WhatsApp.
     Retorna dict com:
@@ -512,9 +515,10 @@ async def _send_material_pdf(phone: str, material_id: str, db: Session) -> dict:
         print(f"[MATERIAL] Enviando PDF: {filename} para {phone}")
         print(f"[MATERIAL] URL: {file_url}")
 
-        from services.whatsapp_client import WhatsAppClient
-        whatsapp = WhatsAppClient()
-        result = await whatsapp.send_document(phone, file_url, filename, caption)
+        # Task #223 — usa cliente do canal se fornecido; fallback ao global.
+        from services.whatsapp_client import zapi_client as _global_zapi
+        _mat_client = zapi_client if zapi_client is not None else _global_zapi
+        result = await _mat_client.send_document(phone, file_url, filename, caption)
 
         if result.get("success"):
             print(f"[MATERIAL] PDF enviado com sucesso: {filename}")
@@ -527,7 +531,7 @@ async def _send_material_pdf(phone: str, material_id: str, db: Session) -> dict:
         return {"success": False, "reason": "exception", "material_name": ""}
 
 
-async def _send_materials_from_markers(phone: str, material_ids: List[str], db: Session) -> dict:
+async def _send_materials_from_markers(phone: str, material_ids: List[str], db: Session, zapi_client=None) -> dict:
     """
     Retorna dict com:
       - sent: list de IDs enviados com sucesso
@@ -536,7 +540,7 @@ async def _send_materials_from_markers(phone: str, material_ids: List[str], db: 
     sent_ids = []
     failed_details = []
     for mid in material_ids:
-        result = await _send_material_pdf(phone, mid, db)
+        result = await _send_material_pdf(phone, mid, db, zapi_client=zapi_client)
         if result.get("success"):
             sent_ids.append(mid)
         else:
@@ -549,10 +553,10 @@ async def _send_materials_from_markers(phone: str, material_ids: List[str], db: 
     return {"sent": sent_ids, "failed": failed_details}
 
 
-async def _send_diagrams_from_markers(phone: str, slugs: List[str], db: Session) -> List[str]:
+async def _send_diagrams_from_markers(phone: str, slugs: List[str], db: Session, zapi_client=None) -> List[str]:
     sent_slugs = []
     for slug in slugs:
-        success = await _send_diagram_for_slug(phone, slug, db)
+        success = await _send_diagram_for_slug(phone, slug, db, zapi_client=zapi_client)
         if success:
             sent_slugs.append(slug)
         else:
@@ -599,11 +603,6 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     
     print(f"[WEBHOOK] Iniciando process_text_message para {phone}: {message[:50]}...")
 
-    # Task #223 — resolução de canal: usa o cliente do canal correto para enviar respostas.
-    # A variável local `zapi_client` sobrescreve o import do módulo apenas neste escopo.
-    from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
-    zapi_client = _rcfc(conversation, db)  # noqa: F841  (sobrescreve global local)
-
     is_campaign_response = False
     try:
         from services.cadence_controller import track_campaign_response
@@ -628,7 +627,13 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         if not conversation:
             print(f"[WEBHOOK] Conversa não encontrada para {phone}")
             return
-        
+
+        # Task #223 — resolução de canal APÓS a conversa ser garantida.
+        # A partir daqui `conversation` é sempre não-None; `zapi_client` local
+        # sobrescreve o import do módulo para todos os envios subsequentes nesta função.
+        from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
+        zapi_client = _rcfc(conversation, db)  # noqa: F841
+
         conv_state = conversation.conversation_state or ConversationState.IDENTIFICATION_PENDING.value
         
         # Bot NÃO responde apenas quando ticket_status = 'open' (atendimento humano ativo)
@@ -1057,7 +1062,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         
         if diagram_slugs_from_ai:
             try:
-                sent = await _send_diagrams_from_markers(phone, diagram_slugs_from_ai, db)
+                sent = await _send_diagrams_from_markers(phone, diagram_slugs_from_ai, db, zapi_client=zapi_client)
                 if sent:
                     print(f"[WEBHOOK] Diagramas enviados: {sent}")
                 failed_slugs = [s for s in diagram_slugs_from_ai if s not in sent]
@@ -1081,7 +1086,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         
         if material_ids_from_ai:
             try:
-                materials_result = await _send_materials_from_markers(phone, material_ids_from_ai, db)
+                materials_result = await _send_materials_from_markers(phone, material_ids_from_ai, db, zapi_client=zapi_client)
                 sent_materials = materials_result.get("sent", [])
                 failed_list = materials_result.get("failed", [])
                 if sent_materials:
