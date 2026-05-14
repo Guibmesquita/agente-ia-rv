@@ -1758,37 +1758,8 @@ async def dispatch_campaign(
 ):
     """
     Dispara a campanha enviando mensagens via WhatsApp.
-    Valida conexão Z-API antes de iniciar o envio.
+    Task #224 — validação Z-API por canal no loop, sem preflight global legado.
     """
-    from services.whatsapp_client import ZAPIClient
-    
-    zapi = ZAPIClient()
-    if not zapi.is_configured():
-        missing = []
-        if not zapi.instance_id:
-            missing.append("ZAPI_INSTANCE_ID")
-        if not zapi.token:
-            missing.append("ZAPI_TOKEN")
-        if not zapi.client_token:
-            missing.append("ZAPI_CLIENT_TOKEN")
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Z-API não configurada corretamente. Faltam: {', '.join(missing)}. Configure em Integrações."
-        )
-    
-    connection_check = await zapi.check_connection()
-    if not connection_check.get("success"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Erro ao conectar com Z-API: {connection_check.get('error', 'Erro desconhecido')}. Verifique as credenciais em Integrações."
-        )
-    
-    if not connection_check.get("connected", False):
-        raise HTTPException(
-            status_code=400,
-            detail="WhatsApp desconectado. Acesse Integrações e escaneie o QR Code para reconectar antes de enviar a campanha."
-        )
-    
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
@@ -1829,7 +1800,9 @@ async def dispatch_campaign(
     grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
 
     # Task #224 — resolve channel_id por assessor em batch (não-SSE dispatch).
+    # Preflight global de Z-API removido: validação é por canal no loop.
     from services.whatsapp_client import get_zapi_client_for_channel as _gzc_disp
+    from services.whatsapp_client import zapi_client as _legacy_zapi_disp
     _disp_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
     _disp_channel_map = _batch_resolve_channels(_disp_emails, db) if _disp_emails else {}
 
@@ -1857,13 +1830,24 @@ async def dispatch_campaign(
         db.add(dispatch)
         db.flush()
 
-        # Seleciona cliente Z-API por canal (Task #224): canal específico ou legado.
-        try:
+        # Seleciona cliente Z-API por canal (Task #224).
+        # Canal explicitamente inativo → falha imediata, sem fallback para legado.
+        _zapi_configured = False
+        if _a_channel_id is not None:
+            from database.models import ZAPIChannel as _ZChD
+            _ch_disp_row = db.query(_ZChD).filter(_ZChD.id == _a_channel_id).first()
+            if not _ch_disp_row or not _ch_disp_row.is_active:
+                dispatch.status = "failed"
+                dispatch.error_message = "Canal desativado"
+                dispatch.error_details = "O canal Z-API associado a este assessor está inativo."
+                failed_count += 1
+                db.flush()
+                continue
             _active_zapi = _gzc_disp(_a_channel_id, db)
-        except Exception:
-            from services.whatsapp_client import ZAPIClient as _ZC
-            _active_zapi = _ZC()
-        _zapi_configured = _active_zapi.is_configured()
+            _zapi_configured = _active_zapi.is_configured()
+        else:
+            _active_zapi = _legacy_zapi_disp
+            _zapi_configured = _legacy_zapi_disp.is_configured()
 
         if phone and _zapi_configured:
             try:
@@ -1923,32 +1907,8 @@ async def dispatch_campaign_stream(
     """
     Dispara a campanha com streaming de progresso via SSE.
     Envia mensagens uma a uma com delay para evitar sobrecarga.
-    Valida conexão Z-API antes de iniciar o envio.
+    Task #224 — valida Z-API por canal no loop, não globalmente.
     """
-    from services.whatsapp_client import ZAPIClient
-    
-    zapi = ZAPIClient()
-    if not zapi.is_configured():
-        missing = []
-        if not zapi.instance_id:
-            missing.append("ZAPI_INSTANCE_ID")
-        if not zapi.token:
-            missing.append("ZAPI_TOKEN")
-        if not zapi.client_token:
-            missing.append("ZAPI_CLIENT_TOKEN")
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Z-API não configurada. Faltam: {', '.join(missing)}. Configure em Integrações."
-        )
-    
-    connection_check = await zapi.check_connection()
-    if not connection_check.get("success") or not connection_check.get("connected", False):
-        error_msg = connection_check.get("error", "WhatsApp desconectado")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Conexão Z-API indisponível: {error_msg}. Verifique em Integrações antes de enviar."
-        )
-    
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
@@ -2024,11 +1984,12 @@ async def dispatch_campaign_stream(
     _sse_channel_map = _batch_resolve_channels(_sse_all_emails, db) if _sse_all_emails else {}
 
     async def generate_events():
-        from services.whatsapp_client import zapi_client
+        from services.whatsapp_client import zapi_client as _sse_legacy_client
+        from services.whatsapp_client import get_zapi_client_for_channel as _gzc_sse
         from core.config import resolve_attachment_for_send
         import os
         
-        zapi_configured = zapi_client.is_configured()
+        # Task #224 — sem zapi_configured global; validação é per-dispatch.
         # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
         # arquivo existe localmente (elimina problema de URL inacessível pelo
         # Z-API, como janeway.replit.dev). Fallback para URL pública se o
@@ -2084,20 +2045,40 @@ async def dispatch_campaign_stream(
                     db_session.add(dispatch)
                     db_session.flush()
 
-                    # Cliente Z-API por canal; fallback para legacy se não configurado.
-                    from services.whatsapp_client import get_zapi_client_for_channel as _gzc_sse
-                    try:
-                        _active_client = _gzc_sse(_sse_channel_id, db_session)
-                        if not _active_client.is_configured():
-                            _active_client = zapi_client
-                    except Exception:
-                        _active_client = zapi_client
+                    # Task #224 — resolve cliente por canal; canal inativo → falha explícita,
+                    # sem fallback silencioso para o cliente legado.
+                    _active_client = None
+                    _act_cfg = False
+                    _chan_inactive_sse = False
+                    if _sse_channel_id is not None:
+                        from database.models import ZAPIChannel as _ZChSSE
+                        _ch_sse_row = db_session.query(_ZChSSE).filter(
+                            _ZChSSE.id == _sse_channel_id
+                        ).first()
+                        if not _ch_sse_row or not _ch_sse_row.is_active:
+                            dispatch.status = "failed"
+                            dispatch.error_message = "Canal desativado"
+                            dispatch.error_details = (
+                                "O canal Z-API associado a este assessor está "
+                                "inativo. Ative o canal em Integrações → Canais."
+                            )
+                            failed_count += 1
+                            status = "failed"
+                            error_msg = "Canal desativado"
+                            _chan_inactive_sse = True
+                        else:
+                            _active_client = _gzc_sse(_sse_channel_id, db_session)
+                            _act_cfg = _active_client.is_configured()
+                    else:
+                        _active_client = _sse_legacy_client
+                        _act_cfg = _sse_legacy_client.is_configured()
 
-                    status = "pending"
-                    error_msg = ""
+                    if not _chan_inactive_sse:
+                        status = "pending"
+                        error_msg = ""
                     attempt = 1
-                    
-                    if phone and zapi_configured and attachment_url_invalid:
+
+                    if not _chan_inactive_sse and phone and _act_cfg and attachment_url_invalid:
                         # Anexo configurado mas URL pública não pôde ser
                         # construída (sem APP_BASE_URL/REPLIT_DOMAINS).
                         # Mandar caminho relativo para o Z-API faz o disparo
@@ -2117,7 +2098,7 @@ async def dispatch_campaign_stream(
                         failed_count += 1
                         status = "failed"
                         error_msg = "Arquivo do anexo não encontrado"
-                    elif phone and zapi_configured:
+                    elif not _chan_inactive_sse and phone and _act_cfg:
                         while attempt <= MAX_RETRY_ATTEMPTS:
                             try:
                                 if attachment_url and attachment_type:
@@ -2201,7 +2182,7 @@ async def dispatch_campaign_stream(
                                     failed_count += 1
                                     status = "failed"
                                     break
-                    else:
+                    elif not _chan_inactive_sse:
                         if not phone:
                             dispatch.status = "failed"
                             dispatch.error_message = "Telefone não informado"
@@ -2209,7 +2190,7 @@ async def dispatch_campaign_stream(
                             failed_count += 1
                             status = "failed"
                             error_msg = "Telefone não informado"
-                        elif not zapi_configured:
+                        elif not _act_cfg:
                             dispatch.status = "simulated"
                             dispatch.error_details = "Disparo simulado - Z-API não configurado"
                             dispatch.sent_at = datetime.utcnow()
@@ -2382,8 +2363,8 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     """
     Dispara campanha baseada em assessores selecionados da base.
     Envia mensagem usando os blocos de header, content e footer definidos na campanha.
+    Task #224 — validação Z-API por canal no loop, sem preflight global legado.
     """
-    from services.whatsapp_client import zapi_client
     import os
     
     header_template = campaign.message_header or ""
@@ -2438,8 +2419,10 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     attachment_filename = campaign.attachment_filename
     
     async def generate_events():
+        from services.whatsapp_client import zapi_client as _base_legacy_client
+        from services.whatsapp_client import get_zapi_client_for_channel as _gzc_base
         from core.config import resolve_attachment_for_send
-        zapi_configured = zapi_client.is_configured()
+        # Task #224 — sem zapi_configured global; validação é per-dispatch.
         # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
         # arquivo existe localmente (elimina problema de URL inacessível pelo
         # Z-API, como janeway.replit.dev). Fallback para URL pública se o
@@ -2519,20 +2502,40 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                     db_session.add(dispatch)
                     db_session.flush()
 
-                    # Cliente Z-API por canal; fallback para legacy se não configurado.
-                    from services.whatsapp_client import get_zapi_client_for_channel as _gzc_base
-                    try:
-                        _base_active_client = _gzc_base(_base_channel_id, db_session)
-                        if not _base_active_client.is_configured():
-                            _base_active_client = zapi_client
-                    except Exception:
-                        _base_active_client = zapi_client
+                    # Task #224 — resolve cliente por canal; canal inativo → falha explícita,
+                    # sem fallback silencioso para o cliente legado.
+                    _base_active_client = None
+                    _base_act_cfg = False
+                    _chan_inactive_base = False
+                    if _base_channel_id is not None:
+                        from database.models import ZAPIChannel as _ZChBase
+                        _ch_base_row = db_session.query(_ZChBase).filter(
+                            _ZChBase.id == _base_channel_id
+                        ).first()
+                        if not _ch_base_row or not _ch_base_row.is_active:
+                            dispatch.status = "failed"
+                            dispatch.error_message = "Canal desativado"
+                            dispatch.error_details = (
+                                "O canal Z-API associado a este assessor está "
+                                "inativo. Ative o canal em Integrações → Canais."
+                            )
+                            failed_count += 1
+                            status = "failed"
+                            error_msg = "Canal desativado"
+                            _chan_inactive_base = True
+                        else:
+                            _base_active_client = _gzc_base(_base_channel_id, db_session)
+                            _base_act_cfg = _base_active_client.is_configured()
+                    else:
+                        _base_active_client = _base_legacy_client
+                        _base_act_cfg = _base_legacy_client.is_configured()
 
-                    status = "pending"
-                    error_msg = ""
+                    if not _chan_inactive_base:
+                        status = "pending"
+                        error_msg = ""
                     attempt = 1
-                    
-                    if phone and zapi_configured and attachment_url_invalid:
+
+                    if not _chan_inactive_base and phone and _base_act_cfg and attachment_url_invalid:
                         # Anexo configurado mas URL pública não pôde ser
                         # construída (sem APP_BASE_URL/REPLIT_DOMAINS).
                         # Mandar caminho relativo para o Z-API faz o disparo
@@ -2552,7 +2555,7 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                         failed_count += 1
                         status = "failed"
                         error_msg = "Arquivo do anexo não encontrado"
-                    elif phone and zapi_configured:
+                    elif not _chan_inactive_base and phone and _base_act_cfg:
                         while attempt <= MAX_RETRY_ATTEMPTS:
                             try:
                                 if attachment_url and attachment_type:
@@ -2610,7 +2613,7 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                                     failed_count += 1
                                     status = "failed"
                                     break
-                    else:
+                    elif not _chan_inactive_base:
                         if not phone:
                             dispatch.status = "failed"
                             dispatch.error_message = "Telefone não informado"
@@ -2618,7 +2621,7 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                             failed_count += 1
                             status = "failed"
                             error_msg = "Telefone não informado"
-                        elif not zapi_configured:
+                        elif not _base_act_cfg:
                             dispatch.status = "simulated"
                             dispatch.error_details = "Disparo simulado - Z-API não configurado"
                             dispatch.sent_at = datetime.utcnow()
