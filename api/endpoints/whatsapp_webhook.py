@@ -10,8 +10,11 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 import json
+import logging
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 from database.database import get_db, SessionLocal
 from database.models import (
@@ -1061,7 +1064,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         
         if diagram_slugs_from_ai:
             try:
-                sent = await _send_diagrams_from_markers(phone, diagram_slugs_from_ai, db, zapi_client=zapi_client)
+                sent = await _send_diagrams_from_markers(phone, diagram_slugs_from_ai, db, zapi_client=channel_client)
                 if sent:
                     print(f"[WEBHOOK] Diagramas enviados: {sent}")
                 failed_slugs = [s for s in diagram_slugs_from_ai if s not in sent]
@@ -1085,7 +1088,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         
         if material_ids_from_ai:
             try:
-                materials_result = await _send_materials_from_markers(phone, material_ids_from_ai, db, zapi_client=zapi_client)
+                materials_result = await _send_materials_from_markers(phone, material_ids_from_ai, db, zapi_client=channel_client)
                 sent_materials = materials_result.get("sent", [])
                 failed_list = materials_result.get("failed", [])
                 if sent_materials:
