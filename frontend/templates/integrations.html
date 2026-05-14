@@ -261,10 +261,31 @@
         }
 
         /* ── Task #232: Canais Z-API ── */
-        .zc-channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
-        .zc-channel-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; background: var(--bg-color); position: relative; transition: box-shadow 0.2s; }
+        .zc-channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+        .zc-channel-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; background: var(--bg-color); position: relative; transition: box-shadow 0.2s; display: flex; flex-direction: column; }
         .zc-channel-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
         .zc-channel-card.inactive { opacity: 0.6; }
+        /* ── Task #234: Painel de assessores por canal ── */
+        .zc-assessores-panel { border-top: 1px solid var(--border-color); margin-top: 14px; padding-top: 14px; display: none; }
+        .zc-assessores-panel.open { display: block; }
+        .zc-assessores-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; margin-bottom: 10px; }
+        .zc-assessor-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--bg-secondary, #f9fafb); border-radius: 8px; font-size: 0.82rem; gap: 8px; }
+        .zc-assessor-info { display: flex; flex-direction: column; min-width: 0; }
+        .zc-assessor-name { font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .zc-assessor-meta { color: var(--text-secondary); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .zc-unlink-btn { flex-shrink: 0; background: none; border: none; cursor: pointer; color: var(--danger-color, #dc2626); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; line-height: 1; }
+        .zc-unlink-btn:hover { background: #fee2e2; }
+        .zc-search-wrap { position: relative; }
+        .zc-search-input { width: 100%; padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.82rem; background: var(--card-bg); color: var(--text-primary); box-sizing: border-box; }
+        .zc-search-input:focus { outline: none; border-color: var(--primary-color); }
+        .zc-search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); z-index: 200; max-height: 200px; overflow-y: auto; display: none; }
+        .zc-search-results.open { display: block; }
+        .zc-search-result-item { padding: 8px 12px; cursor: pointer; font-size: 0.82rem; border-bottom: 1px solid var(--border-color); transition: background 0.1s; }
+        .zc-search-result-item:last-child { border-bottom: none; }
+        .zc-search-result-item:hover { background: var(--primary-light, #eff6ff); }
+        .zc-search-result-name { font-weight: 600; color: var(--text-primary); }
+        .zc-search-result-meta { color: var(--text-secondary); font-size: 0.75rem; }
+        .zc-assessores-empty { font-size: 0.82rem; color: var(--text-secondary); text-align: center; padding: 12px 0; }
         .zc-conn-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
         .zc-conn-pill.connected { background: #d1fae5; color: #065f46; }
         .zc-conn-pill.disconnected { background: #fee2e2; color: #991b1b; }
@@ -708,6 +729,9 @@
                 container.innerHTML = `<div class="alert alert-info">Nenhum canal configurado.</div>`;
                 return;
             }
+            // Restore open panels after rerender (Task #234)
+            const _panelsToRestore = new Set(_zcOpenPanels);
+
             let html = '<div class="zc-channel-grid">';
             for (const ch of channels) {
                 const inactive = !ch.is_active ? ' inactive' : '';
@@ -744,11 +768,47 @@
                             ${ch.is_active ? '⏸️ Desativar' : '▶️ Ativar'}
                         </button>
                         ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm" style="color:var(--danger-color)" onclick="zcDelete(${ch.id})">🗑️</button>` : ''}
+                        <button class="btn btn-secondary btn-sm" onclick="zcToggleAssessoresPanel(${ch.id})" id="zcAssessoresBtn-${ch.id}" title="Gerenciar assessores vinculados">
+                            👤 Assessores
+                        </button>
+                    </div>
+
+                    <!-- Task #234: Painel de assessores expandível -->
+                    <div class="zc-assessores-panel" id="zcAssessoresPanel-${ch.id}">
+                        <div style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">
+                            Assessores vinculados
+                        </div>
+                        <div class="zc-assessores-list" id="zcAssessoresList-${ch.id}">
+                            <div class="zc-assessores-empty">Carregando...</div>
+                        </div>
+                        <div style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; margin-top:4px;">
+                            Adicionar assessor ao canal
+                        </div>
+                        <div class="zc-search-wrap">
+                            <input type="text" class="zc-search-input" id="zcSearchInput-${ch.id}"
+                                placeholder="Buscar por nome, código ou e-mail..."
+                                oninput="zcSearchAssessores(${ch.id})"
+                                autocomplete="off">
+                            <div class="zc-search-results" id="zcSearchResults-${ch.id}"></div>
+                        </div>
                     </div>
                 </div>`;
             }
             html += '</div>';
             container.innerHTML = html;
+
+            // Reabrir painéis que estavam abertos antes do rerender (Task #234)
+            for (const channelId of _panelsToRestore) {
+                const panel = document.getElementById(`zcAssessoresPanel-${channelId}`);
+                const btn = document.getElementById(`zcAssessoresBtn-${channelId}`);
+                if (panel) {
+                    panel.classList.add('open');
+                    if (btn) btn.style.color = 'var(--primary-color)';
+                    zcLoadAssessoresPanel(channelId);
+                } else {
+                    _zcOpenPanels.delete(channelId);
+                }
+            }
         }
 
         // ── Modal "Como configurar" ──
@@ -1043,6 +1103,152 @@
                 toast.error(`Erro: ${err.message}`);
             }
         }
+
+        // ══════════════════════════════════════════════════════════════
+        // Task #234 — Painel de assessores por canal
+        // ══════════════════════════════════════════════════════════════
+
+        const _zcSearchTimers = {};
+        const _zcOpenPanels = new Set();
+
+        function zcToggleAssessoresPanel(channelId) {
+            const panel = document.getElementById(`zcAssessoresPanel-${channelId}`);
+            const btn = document.getElementById(`zcAssessoresBtn-${channelId}`);
+            if (!panel) return;
+
+            const isOpen = panel.classList.contains('open');
+            if (isOpen) {
+                panel.classList.remove('open');
+                _zcOpenPanels.delete(channelId);
+                if (btn) btn.style.color = '';
+            } else {
+                panel.classList.add('open');
+                _zcOpenPanels.add(channelId);
+                if (btn) btn.style.color = 'var(--primary-color)';
+                zcLoadAssessoresPanel(channelId);
+            }
+        }
+
+        async function zcLoadAssessoresPanel(channelId) {
+            const listEl = document.getElementById(`zcAssessoresList-${channelId}`);
+            if (!listEl) return;
+            listEl.innerHTML = '<div class="zc-assessores-empty">Carregando...</div>';
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/assessores`, { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                _zcRenderAssessoresList(channelId, data.assessores || []);
+            } catch (err) {
+                listEl.innerHTML = `<div class="zc-assessores-empty" style="color:var(--danger-color)">Erro ao carregar: ${err.message}</div>`;
+            }
+        }
+
+        function _zcRenderAssessoresList(channelId, assessores) {
+            const listEl = document.getElementById(`zcAssessoresList-${channelId}`);
+            if (!listEl) return;
+            if (!assessores.length) {
+                listEl.innerHTML = '<div class="zc-assessores-empty">Nenhum assessor vinculado diretamente a este canal.</div>';
+                return;
+            }
+            listEl.innerHTML = assessores.map(a => `
+                <div class="zc-assessor-row">
+                    <div class="zc-assessor-info">
+                        <span class="zc-assessor-name">${a.nome}</span>
+                        <span class="zc-assessor-meta">${a.codigo_ai}${a.unidade ? ' · ' + a.unidade : ''}</span>
+                    </div>
+                    <button class="zc-unlink-btn" title="Desvincular assessor do canal"
+                        onclick="zcUnlinkAssessor(${channelId}, ${a.id}, '${a.nome.replace(/'/g, "\\'")}')">✕</button>
+                </div>
+            `).join('');
+        }
+
+        async function zcUnlinkAssessor(channelId, assessorId, assessorNome) {
+            if (!confirm(`Desvincular "${assessorNome}" deste canal?\n\nO assessor passará a usar o canal padrão pela unidade.`)) return;
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/assessores`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ unassign: [assessorId] }),
+                });
+                const data = await res.json();
+                if (!res.ok) { toast.error(`Erro: ${data.detail || 'Falha ao desvincular'}`); return; }
+                toast.success(`"${assessorNome}" desvinculado do canal.`);
+                zcLoadAssessoresPanel(channelId);
+                await loadZAPIChannels();
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            }
+        }
+
+        function zcSearchAssessores(channelId) {
+            clearTimeout(_zcSearchTimers[channelId]);
+            _zcSearchTimers[channelId] = setTimeout(() => _zcDoSearch(channelId), 280);
+        }
+
+        async function _zcDoSearch(channelId) {
+            const inputEl = document.getElementById(`zcSearchInput-${channelId}`);
+            const resultsEl = document.getElementById(`zcSearchResults-${channelId}`);
+            if (!inputEl || !resultsEl) return;
+            const q = inputEl.value.trim();
+            if (!q) { resultsEl.classList.remove('open'); resultsEl.innerHTML = ''; return; }
+
+            try {
+                const params = new URLSearchParams({ q, exclude_channel: channelId, limit: 15 });
+                const res = await fetch(`/api/integrations/zapi/assessores/search?${params}`, { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const assessores = data.assessores || [];
+
+                if (!assessores.length) {
+                    resultsEl.innerHTML = '<div class="zc-search-result-item" style="color:var(--text-secondary)">Nenhum resultado encontrado.</div>';
+                } else {
+                    resultsEl.innerHTML = assessores.map(a => {
+                        const channelLabel = a.channel_id ? `<span style="font-size:0.7rem; color:var(--warning-color, #d97706); font-weight:600;"> · canal ${a.channel_id}</span>` : '';
+                        return `<div class="zc-search-result-item" onclick="zcAssignAssessor(${channelId}, ${a.id}, '${a.nome.replace(/'/g, "\\'")}')">
+                            <div class="zc-search-result-name">${a.nome}${channelLabel}</div>
+                            <div class="zc-search-result-meta">${a.codigo_ai}${a.unidade ? ' · ' + a.unidade : ''}</div>
+                        </div>`;
+                    }).join('');
+                }
+                resultsEl.classList.add('open');
+            } catch (err) {
+                resultsEl.innerHTML = `<div class="zc-search-result-item" style="color:var(--danger-color)">Erro: ${err.message}</div>`;
+                resultsEl.classList.add('open');
+            }
+        }
+
+        async function zcAssignAssessor(channelId, assessorId, assessorNome) {
+            const resultsEl = document.getElementById(`zcSearchResults-${channelId}`);
+            const inputEl = document.getElementById(`zcSearchInput-${channelId}`);
+            if (resultsEl) { resultsEl.classList.remove('open'); resultsEl.innerHTML = ''; }
+            if (inputEl) inputEl.value = '';
+
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/assessores`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ assign: [assessorId] }),
+                });
+                const data = await res.json();
+                if (!res.ok) { toast.error(`Erro: ${data.detail || 'Falha ao vincular'}`); return; }
+                toast.success(`"${assessorNome}" vinculado ao canal.`);
+                zcLoadAssessoresPanel(channelId);
+                await loadZAPIChannels();
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            }
+        }
+
+        // Fecha resultados de busca ao clicar fora do painel
+        document.addEventListener('click', function(e) {
+            document.querySelectorAll('.zc-search-results.open').forEach(el => {
+                if (!el.closest('.zc-search-wrap').contains(e.target)) {
+                    el.classList.remove('open');
+                }
+            });
+        });
 
         async function loadTrustedSources() {
             try {

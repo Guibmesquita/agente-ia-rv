@@ -770,6 +770,166 @@ async def update_zapi_channel(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #234 — Reatribuição de assessores por canal
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AssessoresPatchInput(BaseModel):
+    assign: Optional[List[int]] = None
+    unassign: Optional[List[int]] = None
+
+
+@router.get("/zapi/channels/{channel_id}/assessores")
+async def list_channel_assessores(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    q: Optional[str] = None,
+):
+    """
+    Task #234 — Lista os assessores vinculados ao canal.
+    Suporta busca por nome, código (codigo_ai) ou e-mail via ?q=.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel, Assessor
+    from sqlalchemy import or_
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    query = db.query(Assessor).filter(Assessor.channel_id == channel_id)
+    if q:
+        term = f"%{q}%"
+        query = query.filter(
+            or_(
+                Assessor.nome.ilike(term),
+                Assessor.codigo_ai.ilike(term),
+                Assessor.email.ilike(term),
+            )
+        )
+
+    assessores = query.order_by(Assessor.nome).all()
+    return {
+        "channel_id": channel_id,
+        "assessores": [
+            {
+                "id": a.id,
+                "nome": a.nome,
+                "codigo_ai": a.codigo_ai,
+                "email": a.email,
+                "unidade": a.unidade,
+                "telefone_whatsapp": a.telefone_whatsapp,
+            }
+            for a in assessores
+        ],
+        "total": len(assessores),
+    }
+
+
+@router.get("/zapi/assessores/search")
+async def search_assessores(
+    request: Request,
+    db: Session = Depends(get_db),
+    q: Optional[str] = None,
+    exclude_channel: Optional[int] = None,
+    limit: int = 20,
+):
+    """
+    Task #234 — Busca assessores por nome, código ou e-mail.
+    Usado para encontrar assessores a mover para um canal.
+    Parâmetro exclude_channel omite assessores já vinculados a esse canal.
+    limit é limitado a no máximo 50 para proteger performance.
+    """
+    _auth_zapi_channel(request)
+    limit = max(1, min(limit, 50))
+
+    from database.models import Assessor
+    from sqlalchemy import or_
+
+    query = db.query(Assessor)
+
+    if q:
+        term = f"%{q}%"
+        query = query.filter(
+            or_(
+                Assessor.nome.ilike(term),
+                Assessor.codigo_ai.ilike(term),
+                Assessor.email.ilike(term),
+            )
+        )
+
+    if exclude_channel is not None:
+        query = query.filter(
+            (Assessor.channel_id != exclude_channel) | Assessor.channel_id.is_(None)
+        )
+
+    assessores = query.order_by(Assessor.nome).limit(limit).all()
+    return {
+        "assessores": [
+            {
+                "id": a.id,
+                "nome": a.nome,
+                "codigo_ai": a.codigo_ai,
+                "email": a.email,
+                "unidade": a.unidade,
+                "channel_id": a.channel_id,
+            }
+            for a in assessores
+        ],
+        "total": len(assessores),
+    }
+
+
+@router.patch("/zapi/channels/{channel_id}/assessores")
+async def patch_channel_assessores(
+    channel_id: int,
+    data: AssessoresPatchInput,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #234 — Reatribui assessores ao canal em lote.
+    - assign: lista de IDs a vincular a este canal.
+    - unassign: lista de IDs a desvincular (channel_id → null).
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel, Assessor
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    assigned_count = 0
+    unassigned_count = 0
+
+    if data.assign:
+        rows = db.query(Assessor).filter(Assessor.id.in_(data.assign)).all()
+        for a in rows:
+            a.channel_id = channel_id
+        assigned_count = len(rows)
+
+    if data.unassign:
+        rows = db.query(Assessor).filter(
+            Assessor.id.in_(data.unassign),
+            Assessor.channel_id == channel_id,
+        ).all()
+        for a in rows:
+            a.channel_id = None
+        unassigned_count = len(rows)
+
+    db.commit()
+
+    return {
+        "channel_id": channel_id,
+        "assigned": assigned_count,
+        "unassigned": unassigned_count,
+        "message": f"{assigned_count} assessor(es) vinculado(s), {unassigned_count} desvinculado(s).",
+    }
+
+
 @router.delete("/zapi/channels/{channel_id}")
 async def delete_zapi_channel(
     channel_id: int,
