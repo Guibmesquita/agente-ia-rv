@@ -394,7 +394,10 @@ async def run_cadence_tick():
         had_candidates = False
         all_blocked_by_cooldown = True
 
+        today_date = now.date()
+
         # Task #224 — reset diário dos contadores por canal na virada do dia.
+        # Deve ficar APÓS today_date ser definido para evitar UnboundLocalError.
         global _channel_daily_sent, _channel_daily_reset_date
         if _channel_daily_reset_date != today_date:
             _channel_daily_sent.clear()
@@ -406,8 +409,6 @@ async def run_cadence_tick():
             .filter(CadenceCampaign.status == "firing")
             .all()
         )
-
-        today_date = now.date()
 
         for campaign in active_legacy:
             if sent_this_tick:

@@ -1827,11 +1827,12 @@ async def dispatch_campaign(
     db.commit()
     
     grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
-    
-    from services.whatsapp_client import zapi_client
-    import os
-    
-    zapi_configured = zapi_client.is_configured()
+
+    # Task #224 — resolve channel_id por assessor em batch (não-SSE dispatch).
+    from services.whatsapp_client import get_zapi_client_for_channel as _gzc_disp
+    _disp_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
+    _disp_channel_map = _batch_resolve_channels(_disp_emails, db) if _disp_emails else {}
+
     sent_count = 0
     failed_count = 0
     content_line_template = campaign.message_content_template or ""
@@ -1840,22 +1841,33 @@ async def dispatch_campaign(
     for assessor_id, assessor_data in grouped.items():
         message = build_message(template_content, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
         phone = assessor_data.get("telefone", "")
-        
+        _a_email = assessor_data.get("email_assessor", "")
+        _a_channel_id = _disp_channel_map.get(_a_email)
+
         dispatch = CampaignDispatch(
             campaign_id=campaign_id,
             assessor_id=assessor_id,
-            assessor_email=assessor_data.get("email_assessor", ""),
+            assessor_email=_a_email,
             assessor_phone=phone,
             assessor_name=assessor_data.get("nome_assessor", ""),
             message_content=message,
+            channel_id=_a_channel_id,
             status="pending"
         )
         db.add(dispatch)
         db.flush()
-        
-        if phone and zapi_configured:
+
+        # Seleciona cliente Z-API por canal (Task #224): canal específico ou legado.
+        try:
+            _active_zapi = _gzc_disp(_a_channel_id, db)
+        except Exception:
+            from services.whatsapp_client import ZAPIClient as _ZC
+            _active_zapi = _ZC()
+        _zapi_configured = _active_zapi.is_configured()
+
+        if phone and _zapi_configured:
             try:
-                result = await zapi_client.send_text(phone, message, delay_typing=2)
+                result = await _active_zapi.send_text(phone, message, delay_typing=2)
                 dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
                 
                 if result.get("success"):
@@ -1881,7 +1893,7 @@ async def dispatch_campaign(
                 dispatch.error_message = "Telefone não informado"
                 dispatch.error_details = f"O assessor '{assessor_data.get('nome_assessor', 'Desconhecido')}' não possui número de telefone cadastrado na planilha ou na base de assessores."
                 failed_count += 1
-            elif not zapi_configured:
+            elif not _zapi_configured:
                 dispatch.status = "simulated"
                 dispatch.error_details = "Disparo simulado - Z-API não configurado"
                 dispatch.sent_at = datetime.utcnow()
