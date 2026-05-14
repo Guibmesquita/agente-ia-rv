@@ -329,6 +329,21 @@
         .zc-conn-result.ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; display: block; }
         .zc-conn-result.fail { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; display: block; }
         .zc-conn-result.warn { background: #fefce8; border: 1px solid #fef08a; color: #713f12; display: block; }
+        /* Task #233: Mapeamento de Unidades */
+        .zc-unidades-panel { margin-top: 14px; border-top: 1px solid var(--border-color); padding-top: 12px; display: none; }
+        .zc-unidades-panel.open { display: block; }
+        .zc-unidades-title { font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+        .zc-unidades-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .zc-unidade-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: var(--bg-color, #f8fafc); border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.8rem; }
+        .zc-unidade-name { color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .zc-unidade-remove { flex-shrink: 0; background: none; border: none; cursor: pointer; color: #ef4444; font-size: 0.85rem; padding: 2px 6px; border-radius: 4px; line-height: 1; }
+        .zc-unidade-remove:hover { background: #fee2e2; }
+        .zc-unidades-add { display: flex; gap: 6px; align-items: center; }
+        .zc-unidades-select { flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.8rem; color: var(--text-primary); background: var(--bg-color); min-width: 0; }
+        .zc-unidades-add-btn { flex-shrink: 0; padding: 6px 12px; font-size: 0.8rem; background: var(--primary-color, #4f46e5); color: white; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+        .zc-unidades-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .zc-unidades-empty { font-size: 0.8rem; color: var(--text-secondary); font-style: italic; }
+        .zc-unidades-loading { font-size: 0.8rem; color: var(--text-secondary); }
     </style>
 </head>
 <body>
@@ -767,6 +782,9 @@
                             style="${ch.is_active ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
                             ${ch.is_active ? '⏸️ Desativar' : '▶️ Ativar'}
                         </button>
+                        <button class="btn btn-secondary btn-sm" onclick="zcToggleUnidadesPanel(${ch.id})" id="zcUnidadesBtn-${ch.id}" title="Mapear unidades">
+                            🏢 Unidades
+                        </button>
                         ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm" style="color:var(--danger-color)" onclick="zcDelete(${ch.id})">🗑️</button>` : ''}
                         <button class="btn btn-secondary btn-sm" onclick="zcToggleAssessoresPanel(${ch.id})" id="zcAssessoresBtn-${ch.id}" title="Gerenciar assessores vinculados">
                             👤 Assessores
@@ -790,6 +808,21 @@
                                 oninput="zcSearchAssessores(${ch.id})"
                                 autocomplete="off">
                             <div class="zc-search-results" id="zcSearchResults-${ch.id}"></div>
+                        </div>
+                    </div>
+                    <!-- Task #233: Painel de mapeamento de unidades -->
+                    <div class="zc-unidades-panel" id="zcUnidadesPanel-${ch.id}">
+                        <div class="zc-unidades-title">🏢 Mapeamento de Unidades</div>
+                        <div class="zc-unidades-list" id="zcUnidadesList-${ch.id}">
+                            <span class="zc-unidades-loading">Carregando...</span>
+                        </div>
+                        <div class="zc-unidades-add" id="zcUnidadesAdd-${ch.id}">
+                            <select class="zc-unidades-select" id="zcUnidadesSelect-${ch.id}">
+                                <option value="">Selecione uma unidade...</option>
+                            </select>
+                            <button class="zc-unidades-add-btn" onclick="zcAddUnidade(${ch.id})" id="zcUnidadesAddBtn-${ch.id}">
+                                + Adicionar
+                            </button>
                         </div>
                     </div>
                 </div>`;
@@ -1181,6 +1214,165 @@
             }
         }
 
+        // ── Task #233: Mapeamento de Unidades ──
+
+        let _zcAllUnidades = null;
+
+        async function _loadAllUnidades() {
+            if (_zcAllUnidades !== null) return _zcAllUnidades;
+            try {
+                const res = await fetch('/api/integrations/zapi/unidades', { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                _zcAllUnidades = data.unidades || [];
+            } catch (err) {
+                _zcAllUnidades = [];
+                console.error('Erro ao carregar unidades:', err);
+            }
+            return _zcAllUnidades;
+        }
+
+        async function zcToggleUnidadesPanel(channelId) {
+            const panel = document.getElementById(`zcUnidadesPanel-${channelId}`);
+            const btn = document.getElementById(`zcUnidadesBtn-${channelId}`);
+            if (!panel) return;
+            const isOpen = panel.classList.contains('open');
+            if (isOpen) {
+                panel.classList.remove('open');
+                if (btn) btn.style.background = '';
+            } else {
+                panel.classList.add('open');
+                if (btn) btn.style.background = 'var(--primary-color, #4f46e5)';
+                if (btn) btn.style.color = 'white';
+                await zcRenderUnidadesPanel(channelId);
+            }
+        }
+
+        async function zcRenderUnidadesPanel(channelId) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+
+            const listEl = document.getElementById(`zcUnidadesList-${channelId}`);
+            const selectEl = document.getElementById(`zcUnidadesSelect-${channelId}`);
+            if (!listEl || !selectEl) return;
+
+            listEl.innerHTML = '<span class="zc-unidades-loading">Carregando...</span>';
+
+            const allUnidades = await _loadAllUnidades();
+            const mapped = ch.unidades_assigned || [];
+
+            listEl.innerHTML = '';
+            if (mapped.length === 0) {
+                const empty = document.createElement('span');
+                empty.className = 'zc-unidades-empty';
+                empty.textContent = 'Nenhuma unidade mapeada.';
+                listEl.appendChild(empty);
+            } else {
+                for (const u of mapped) {
+                    const row = document.createElement('div');
+                    row.className = 'zc-unidade-row';
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'zc-unidade-name';
+                    nameSpan.title = u;
+                    nameSpan.textContent = u;
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'zc-unidade-remove';
+                    removeBtn.title = 'Remover mapeamento';
+                    removeBtn.textContent = '✕';
+                    removeBtn.addEventListener('click', () => zcRemoveUnidade(channelId, u));
+
+                    row.appendChild(nameSpan);
+                    row.appendChild(removeBtn);
+                    listEl.appendChild(row);
+                }
+            }
+
+            const allMapped = new Set(_zcChannels.flatMap(c => c.unidades_assigned || []));
+            const available = allUnidades.filter(u => !allMapped.has(u));
+
+            selectEl.length = 0;
+            selectEl.add(new Option('Selecione uma unidade...', ''));
+
+            if (available.length === 0 && allUnidades.length > 0) {
+                const allMappedOpt = new Option('— Todas as unidades já estão mapeadas —', '');
+                allMappedOpt.disabled = true;
+                selectEl.add(allMappedOpt);
+            } else {
+                for (const u of available) {
+                    selectEl.add(new Option(u, u));
+                }
+            }
+        }
+
+        async function zcAddUnidade(channelId) {
+            const selectEl = document.getElementById(`zcUnidadesSelect-${channelId}`);
+            const btn = document.getElementById(`zcUnidadesAddBtn-${channelId}`);
+            if (!selectEl) return;
+            const unidade = selectEl.value.trim();
+            if (!unidade) {
+                toast.warning('Selecione uma unidade antes de adicionar.');
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'Adicionando...';
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/unidades`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ unidade }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    toast.error(`Erro: ${data.detail || 'Não foi possível adicionar a unidade'}`);
+                    return;
+                }
+                toast.success(`Unidade "${unidade}" mapeada com sucesso.`);
+                const ch = _zcChannels.find(c => c.id === channelId);
+                if (ch) {
+                    ch.unidades_assigned = [...(ch.unidades_assigned || []), unidade];
+                    ch.unidades_mapeadas = ch.unidades_assigned;
+                }
+                _zcAllUnidades = null;
+                await zcRenderUnidadesPanel(channelId);
+                _refreshChannelCardMeta(channelId);
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '+ Adicionar';
+            }
+        }
+
+        async function zcRemoveUnidade(channelId, unidade) {
+            if (!confirm(`Remover o mapeamento da unidade "${unidade}" deste canal?`)) return;
+            try {
+                const encoded = encodeURIComponent(unidade);
+                const res = await fetch(`${ZC_API}/${channelId}/unidades/${encoded}`, {
+                    method: 'DELETE',
+                    credentials: 'include',
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    toast.error(`Erro: ${data.detail || 'Não foi possível remover a unidade'}`);
+                    return;
+                }
+                toast.success(data.message || `Unidade "${unidade}" removida.`);
+                const ch = _zcChannels.find(c => c.id === channelId);
+                if (ch) {
+                    ch.unidades_assigned = (ch.unidades_assigned || []).filter(u => u !== unidade);
+                    ch.unidades_mapeadas = ch.unidades_assigned;
+                }
+                _zcAllUnidades = null;
+                await zcRenderUnidadesPanel(channelId);
+                _refreshChannelCardMeta(channelId);
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            }
+        }
+
         function zcSearchAssessores(channelId) {
             clearTimeout(_zcSearchTimers[channelId]);
             _zcSearchTimers[channelId] = setTimeout(() => _zcDoSearch(channelId), 280);
@@ -1249,6 +1441,22 @@
                 }
             });
         });
+
+        function _refreshChannelCardMeta(channelId) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+            const card = document.querySelector(`.zc-channel-card[data-id="${channelId}"]`);
+            if (!card) return;
+            const metaEls = card.querySelectorAll('.zc-channel-meta');
+            if (metaEls.length >= 2) {
+                const assigned = ch.unidades_assigned || [];
+                const txt = assigned.length
+                    ? `Unidades: ${assigned.slice(0, 3).join(', ')}${assigned.length > 3 ? ` +${assigned.length - 3}` : ''}`
+                    : 'Sem unidades mapeadas';
+                metaEls[1].textContent = '🏢 ' + txt;
+            }
+        }
+
 
         async function loadTrustedSources() {
             try {

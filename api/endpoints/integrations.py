@@ -972,3 +972,134 @@ async def delete_zapi_channel(
     db.commit()
 
     return {"message": f"Canal '{label}' removido com sucesso"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #233 — Mapeamento de Unidades por Canal Z-API
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UnidadeMapCreate(BaseModel):
+    unidade: str
+
+
+@router.get("/zapi/unidades")
+async def list_all_unidades(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #233 — Lista todas as unidades únicas registradas nos assessores.
+    Usado para popular o dropdown de adição de mapeamento.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import Assessor
+    from sqlalchemy import distinct
+
+    rows = (
+        db.query(distinct(Assessor.unidade))
+        .filter(Assessor.unidade.isnot(None), Assessor.unidade != "")
+        .order_by(Assessor.unidade)
+        .all()
+    )
+    unidades = [r[0] for r in rows if r[0]]
+    return {"unidades": unidades}
+
+
+@router.post("/zapi/channels/{channel_id}/unidades", status_code=201)
+async def add_unidade_mapping(
+    channel_id: int,
+    data: UnidadeMapCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #233 — Associa uma unidade a um canal Z-API.
+    A unidade deve existir na base de assessores e não pode estar
+    mapeada para outro canal (restrição UNIQUE em `unidade`).
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel, UnidadeChannelMapping, Assessor
+
+    unidade = data.unidade.strip()
+    if not unidade:
+        raise HTTPException(status_code=422, detail="O campo 'unidade' não pode ser vazio.")
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado.")
+
+    # Validate that the unidade exists in at least one Assessor record
+    assessor_exists = (
+        db.query(Assessor.id)
+        .filter(Assessor.unidade == unidade)
+        .first()
+    )
+    if not assessor_exists:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A unidade '{unidade}' não foi encontrada na base de assessores. Verifique o nome exato da unidade."
+        )
+
+    existing = (
+        db.query(UnidadeChannelMapping)
+        .filter(UnidadeChannelMapping.unidade == unidade)
+        .first()
+    )
+    if existing:
+        if existing.channel_id == channel_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A unidade '{unidade}' já está mapeada para este canal."
+            )
+        raise HTTPException(
+            status_code=409,
+            detail=f"A unidade '{unidade}' já está mapeada para outro canal (id={existing.channel_id}). Remova o mapeamento anterior antes de reatribuir."
+        )
+
+    mapping = UnidadeChannelMapping(unidade=unidade, channel_id=channel_id)
+    db.add(mapping)
+    db.commit()
+    db.refresh(mapping)
+
+    return {
+        "id": mapping.id,
+        "unidade": mapping.unidade,
+        "channel_id": mapping.channel_id,
+        "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
+    }
+
+
+@router.delete("/zapi/channels/{channel_id}/unidades/{unidade}")
+async def remove_unidade_mapping(
+    channel_id: int,
+    unidade: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #233 — Remove o mapeamento de uma unidade de um canal Z-API.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import UnidadeChannelMapping
+
+    mapping = (
+        db.query(UnidadeChannelMapping)
+        .filter(
+            UnidadeChannelMapping.unidade == unidade,
+            UnidadeChannelMapping.channel_id == channel_id,
+        )
+        .first()
+    )
+    if not mapping:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Mapeamento da unidade '{unidade}' para o canal {channel_id} não encontrado."
+        )
+
+    db.delete(mapping)
+    db.commit()
+
+    return {"message": f"Unidade '{unidade}' desvinculada do canal com sucesso."}
