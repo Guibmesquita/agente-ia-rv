@@ -474,6 +474,13 @@
                             <label class="form-label">Broker Responsável</label>
                             <input type="text" class="form-input" id="form-broker">
                         </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label class="form-label">Canal Z-API</label>
+                            <select class="form-select" id="form-channel-id">
+                                <option value="">Sem canal específico (herda da unidade)</option>
+                            </select>
+                            <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">Sobrescreve o canal padrão da unidade para este assessor individualmente.</p>
+                        </div>
                     </div>
                     <div id="custom-fields-container" style="display: none; border-top: 1px solid var(--border-color); padding-top: 20px; margin-top: 20px;">
                         <h4 style="margin-bottom: 16px; font-weight: 600;">Campos Customizados</h4>
@@ -601,6 +608,8 @@
     <script nonce="{{ request.state.csp_nonce }}">
         let assessores = [];
         let customFields = [];
+        let zapiChannels = [];
+        let zapiChannelsLoaded = false;
         let filterOptions = { unidades: [], equipes: [], brokers: [] };
         let uploadPreview = null;
         let dbFields = [];
@@ -628,9 +637,21 @@
         });
 
         async function initializePage() {
-            await loadCustomFields();
+            await Promise.all([loadCustomFields(), loadZAPIChannels()]);
             await loadFilterOptions();
             loadAssessores();
+        }
+
+        async function loadZAPIChannels() {
+            try {
+                const res = await fetch('/api/assessores/channels');
+                if (res.ok) {
+                    zapiChannels = await res.json();
+                    zapiChannelsLoaded = true;
+                }
+            } catch (err) {
+                console.error('Erro ao carregar canais:', err);
+            }
         }
 
         async function refreshFilters() {
@@ -878,7 +899,8 @@
                 { key: 'telefone_whatsapp', label: 'WhatsApp' },
                 { key: 'unidade', label: 'Unidade' },
                 { key: 'equipe', label: 'Equipe' },
-                { key: 'broker_responsavel', label: 'Broker' }
+                { key: 'broker_responsavel', label: 'Broker' },
+                { key: 'channel_label', label: 'Canal' }
             ];
 
             const thead = document.getElementById('assessores-head');
@@ -910,6 +932,10 @@
                     const value = a.custom_fields?.[cf.slug] || '-';
                     customFieldsCells += `<td>${value}</td>`;
                 });
+
+                const channelBadge = a.channel_label
+                    ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:500;background:#dbeafe;color:#1e40af;">${a.channel_label}</span>`
+                    : `<span style="color:var(--text-secondary);font-size:0.85rem;">—</span>`;
                 
                 return `
                 <tr>
@@ -920,6 +946,7 @@
                     <td>${a.unidade || '-'}</td>
                     <td>${a.equipe || '-'}</td>
                     <td>${a.broker_responsavel || '-'}</td>
+                    <td>${channelBadge}</td>
                     ${customFieldsCells}
                     <td>
                         <div class="table-actions">
@@ -1116,6 +1143,16 @@
             document.getElementById('form-equipe').value = assessor?.equipe || '';
             document.getElementById('form-broker').value = assessor?.broker_responsavel || '';
 
+            const channelSelect = document.getElementById('form-channel-id');
+            channelSelect.innerHTML = '<option value="">Sem canal específico (herda da unidade)</option>';
+            zapiChannels.forEach(ch => {
+                const opt = document.createElement('option');
+                opt.value = ch.id;
+                opt.textContent = ch.label;
+                if (assessor?.channel_id === ch.id) opt.selected = true;
+                channelSelect.appendChild(opt);
+            });
+
             const cfContainer = document.getElementById('custom-fields-container');
             const cfInputs = document.getElementById('custom-fields-inputs');
             
@@ -1180,6 +1217,9 @@
                 if (input) customFieldsData[cf.slug] = input.value;
             });
 
+            const channelSelectValue = document.getElementById('form-channel-id').value;
+            const newChannelId = channelSelectValue ? parseInt(channelSelectValue) : null;
+
             const data = {
                 codigo_ai: document.getElementById('form-codigo-ai').value || null,
                 nome: document.getElementById('form-nome').value,
@@ -1194,16 +1234,42 @@
             try {
                 const url = id ? `/api/assessores/${id}` : '/api/assessores';
                 const method = id ? 'PUT' : 'POST';
-                await fetch(url, {
+                const res = await fetch(url, {
                     method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Erro ao salvar assessor');
+                }
+                const saved = await res.json();
+                const savedId = saved.id || id;
+
+                const currentChannelId = id ? (assessores.find(a => a.id === parseInt(id))?.channel_id ?? null) : null;
+                const channelChanged = newChannelId !== currentChannelId;
+
+                if (savedId && channelChanged) {
+                    if (!zapiChannelsLoaded && newChannelId === null && currentChannelId !== null) {
+                        toast.warning('Canal não alterado: a lista de canais não foi carregada. Reabra o assessor para alterar o canal.');
+                    } else {
+                        const channelRes = await fetch(`/api/assessores/${savedId}/channel`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ channel_id: newChannelId })
+                        });
+                        if (!channelRes.ok) {
+                            const channelErr = await channelRes.json();
+                            toast.warning(`Assessor salvo, mas erro ao alterar canal: ${channelErr.detail || 'Erro desconhecido'}`);
+                        }
+                    }
+                }
+
                 closeFormModal();
                 await refreshFilters();
                 loadAssessores();
             } catch (err) {
-                toast.error('Erro ao salvar assessor');
+                toast.error(err.message || 'Erro ao salvar assessor');
             }
         });
 

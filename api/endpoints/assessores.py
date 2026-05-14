@@ -126,10 +126,17 @@ def parse_custom_fields(assessor):
         "unidade": assessor.unidade,
         "equipe": assessor.equipe,
         "broker_responsavel": assessor.broker_responsavel,
+        "channel_id": assessor.channel_id,
+        "channel_label": None,
         "created_at": assessor.created_at,
         "updated_at": assessor.updated_at,
         "custom_fields": {}
     }
+    try:
+        if assessor.zapi_channel:
+            result["channel_label"] = assessor.zapi_channel.label or assessor.zapi_channel.name
+    except Exception:
+        pass
     if assessor.custom_fields:
         try:
             result["custom_fields"] = json.loads(assessor.custom_fields)
@@ -243,6 +250,25 @@ async def get_filter_options(db: Session = Depends(get_db), current_user: User =
     }
 
 
+@router.get("/channels")
+async def list_active_channels(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao)
+):
+    """Lista canais Z-API ativos para uso nos dropdowns de vinculação de assessores."""
+    from database.models import ZAPIChannel
+    channels = (
+        db.query(ZAPIChannel)
+        .filter(ZAPIChannel.is_active == True)
+        .order_by(ZAPIChannel.name)
+        .all()
+    )
+    return [
+        {"id": c.id, "name": c.name, "label": c.label or c.name}
+        for c in channels
+    ]
+
+
 @router.get("/{assessor_id}")
 async def get_assessor(assessor_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_gestao)):
     assessor = db.query(Assessor).filter(Assessor.id == assessor_id).first()
@@ -310,6 +336,47 @@ async def update_assessor(assessor_id: int, assessor: AssessorUpdate, db: Sessio
     db.commit()
     db.refresh(db_assessor)
     return parse_custom_fields(db_assessor)
+
+
+class AssessorChannelUpdate(BaseModel):
+    channel_id: Optional[int] = None
+
+
+@router.patch("/{assessor_id}/channel")
+async def update_assessor_channel(
+    assessor_id: int,
+    data: AssessorChannelUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao)
+):
+    """Vincula ou desvincula um canal Z-API de um assessor individualmente.
+    Passa channel_id=null para remover a vinculação específica (herda o canal da unidade).
+    """
+    from database.models import ZAPIChannel
+
+    assessor = db.query(Assessor).filter(Assessor.id == assessor_id).first()
+    if not assessor:
+        raise HTTPException(status_code=404, detail="Assessor não encontrado")
+
+    if data.channel_id is not None:
+        channel = db.query(ZAPIChannel).filter(
+            ZAPIChannel.id == data.channel_id,
+            ZAPIChannel.is_active == True
+        ).first()
+        if not channel:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Canal {data.channel_id} não encontrado ou está inativo"
+            )
+        assessor.channel_id = data.channel_id
+        logger.info(f"[ASSESSOR] Canal atualizado: assessor_id={assessor_id} → channel_id={data.channel_id} ({channel.label or channel.name})")
+    else:
+        assessor.channel_id = None
+        logger.info(f"[ASSESSOR] Canal desvinculado: assessor_id={assessor_id}")
+
+    db.commit()
+    db.refresh(assessor)
+    return parse_custom_fields(assessor)
 
 
 class BulkDeleteByUnitsRequest(BaseModel):
