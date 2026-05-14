@@ -1690,7 +1690,10 @@ async def _process_zapi_payload_internal(
         if message_record:
             message_record.ai_response = response
             db.commit()
-        background_tasks.add_task(zapi_client.send_text, phone, response)
+        # Task #223 — resolve cliente do canal correto para o fallback de vídeo.
+        from services.whatsapp_client import get_zapi_client_for_channel as _get_ch_client
+        _video_client = _get_ch_client(channel_id, db)
+        background_tasks.add_task(_video_client.send_text, phone, response)
 
     elif message_type == MessageType.STICKER.value:
         return {"status": "ignored", "reason": "sticker message"}
@@ -1840,7 +1843,21 @@ async def whatsapp_webhook_legacy_alias(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Alias do webhook legado — sem channel_id, delega ao pipeline com channel_id=None."""
+    """
+    Alias do webhook legado — sem channel_id, delega ao pipeline com channel_id=None.
+    Aplica a mesma validação de token do endpoint /api/webhook/zapi para
+    garantir que nenhuma chamada não autenticada seja aceita.
+    """
+    from core.config import get_settings as _get_settings
+    _settings = _get_settings()
+    incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
+    expected_token = os.getenv("ZAPI_TOKEN", "") or _settings.ZAPI_TOKEN
+    if not expected_token or incoming_token != expected_token:
+        expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
+        if not expected_ct or incoming_token != expected_ct:
+            logger.warning(f"[WEBHOOK-ALIAS] Token inválido — incoming (5): '{incoming_token[:5] if incoming_token else 'VAZIO'}'")
+            raise HTTPException(status_code=401, detail="Token de webhook inválido ou ausente")
+
     try:
         payload = await request.json()
     except Exception:
