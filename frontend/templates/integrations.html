@@ -336,7 +336,10 @@
                             <div class="integration-icon">📡</div>
                             <div>
                                 <h2>Canais Z-API</h2>
-                                <p style="font-size: 0.85rem; opacity: 0.9; margin-top: 4px;">Instâncias WhatsApp — gerencie e configure webhooks</p>
+                                <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                                    <p style="font-size: 0.85rem; opacity: 0.9; margin:0;">Instâncias WhatsApp — gerencie e configure webhooks</p>
+                                    <span id="zcHealthPill" style="font-size:0.72rem; padding:2px 10px; border-radius:999px; background:rgba(255,255,255,0.15); color:white; display:none;"></span>
+                                </div>
                             </div>
                         </div>
                         <button id="btnAddChannel" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); backdrop-filter: blur(4px);">
@@ -662,10 +665,6 @@
             window.location.href = '/login';
         }
 
-        loadIntegrations();
-        loadTrustedSources();
-        loadZAPIChannels();
-
         // ══════════════════════════════════════════════════════════════
         // Task #232 — Canais Z-API
         // ══════════════════════════════════════════════════════════════
@@ -673,6 +672,11 @@
         const ZC_API = '/api/integrations/zapi/channels';
         let _zcChannels = [];
         let _zcEditingId = null;
+
+        loadIntegrations();
+        loadTrustedSources();
+        loadZAPIChannels();
+        initZAPIHealth();
 
         async function loadZAPIChannels() {
             try {
@@ -750,26 +754,30 @@
             const wh = ch.webhook_url_suggested || `${location.origin}/api/whatsapp/webhook/${ch.id}`;
 
             document.getElementById('zcConfigTitle').textContent = `Como configurar — ${ch.label || ch.name}`;
+
+            function _whField(label, url) {
+                const encoded = JSON.stringify(url);
+                return `<div class="zc-wh-field">
+                    <div class="zc-wh-label">${label}</div>
+                    <div class="zc-wh-row">
+                        <div class="zc-wh-url">${url}</div>
+                        <button class="zc-copy-btn" onclick="zcCopy(this, ${encoded})">📋 Copiar</button>
+                    </div>
+                </div>`;
+            }
+
             document.getElementById('zcConfigBody').innerHTML = `
                 <div class="zc-wh-section">
-                    <div class="zc-wh-section-title">1. URL de Webhook para o Z-API</div>
+                    <div class="zc-wh-section-title">1. URLs de Webhook — cole cada uma no painel Z-API</div>
                     <p style="font-size:0.875rem; color:var(--text-secondary); margin-bottom:12px;">
-                        Registre esta URL no painel do Z-API para que as mensagens recebidas sejam entregues ao Stevan.
+                        No painel Z-API, acesse <strong>Webhooks</strong> e cole a mesma URL em cada campo abaixo que deseja ativar.
                     </p>
-                    <div class="zc-wh-field">
-                        <div class="zc-wh-label">Webhook principal (recomendado)</div>
-                        <div class="zc-wh-row">
-                            <div class="zc-wh-url">${wh}</div>
-                            <button class="zc-copy-btn" onclick="zcCopy(this, ${JSON.stringify(wh)})">📋 Copiar</button>
-                        </div>
-                    </div>
-                    <div class="zc-wh-field">
-                        <div class="zc-wh-label">Webhook de status de entrega (opcional)</div>
-                        <div class="zc-wh-row">
-                            <div class="zc-wh-url">${wh}</div>
-                            <button class="zc-copy-btn" onclick="zcCopy(this, ${JSON.stringify(wh)})">📋 Copiar</button>
-                        </div>
-                    </div>
+                    ${_whField('Ao receber (obrigatório)', wh)}
+                    ${_whField('Ao enviar', wh)}
+                    ${_whField('Ao conectar', wh)}
+                    ${_whField('Ao desconectar', wh)}
+                    ${_whField('Presença do chat', wh)}
+                    ${_whField('Receber status', wh)}
                 </div>
                 <hr class="zc-divider">
                 <div class="zc-wh-section">
@@ -777,12 +785,9 @@
                     <table class="zc-toggles-table">
                         <thead><tr><th>Configuração</th><th>Valor</th><th>Motivo</th></tr></thead>
                         <tbody>
-                            <tr><td>Mensagens recebidas</td><td><span class="zc-on-badge">ON</span></td><td>Habilita recebimento via webhook</td></tr>
-                            <tr><td>Desconexão do WhatsApp</td><td><span class="zc-on-badge">ON</span></td><td>Notifica quando a sessão cair</td></tr>
-                            <tr><td>Status de entrega</td><td><span class="zc-on-badge">ON</span></td><td>Confirma leitura das mensagens</td></tr>
-                            <tr><td>Enviar mensagens próprias</td><td><span class="zc-off-badge">OFF</span></td><td>Evita duplicação de eventos</td></tr>
-                            <tr><td>Ignorar grupos</td><td><span class="zc-on-badge">ON</span></td><td>Agente atende apenas chats individuais</td></tr>
-                            <tr><td>Ignorar broadcast</td><td><span class="zc-on-badge">ON</span></td><td>Evita processamento de listas de transmissão</td></tr>
+                            <tr><td>Rejeitar chamadas automático</td><td><span class="zc-on-badge">ON</span></td><td>Evita interrupções de chamadas de voz/vídeo</td></tr>
+                            <tr><td>Ler mensagens automático</td><td><span class="zc-off-badge">OFF</span></td><td>Preserva a naturalidade — o agente controla a leitura</td></tr>
+                            <tr><td>Ler status automaticamente</td><td><span class="zc-off-badge">OFF</span></td><td>Evita confirmações automáticas de status do WhatsApp</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -791,10 +796,10 @@
                     <div class="zc-wh-section-title">3. Passo a passo</div>
                     <ol class="zc-steps">
                         <li class="zc-step"><span class="zc-step-num">1</span><span class="zc-step-text">Acesse <strong>app.z-api.io</strong> e selecione a instância correspondente a este canal.</span></li>
-                        <li class="zc-step"><span class="zc-step-num">2</span><span class="zc-step-text">No menu lateral, acesse <strong>Webhooks</strong> e cole a URL copiada acima no campo "Ao receber".</span></li>
-                        <li class="zc-step"><span class="zc-step-num">3</span><span class="zc-step-text">Ative as opções recomendadas na tabela acima e clique em <strong>Salvar</strong>.</span></li>
+                        <li class="zc-step"><span class="zc-step-num">2</span><span class="zc-step-text">No menu lateral, acesse <strong>Webhooks</strong> e cole a URL acima nos campos "Ao receber", "Ao enviar", "Ao conectar" e "Ao desconectar".</span></li>
+                        <li class="zc-step"><span class="zc-step-num">3</span><span class="zc-step-text">Aplique as configurações da tabela acima e clique em <strong>Salvar</strong>.</span></li>
                         <li class="zc-step"><span class="zc-step-num">4</span><span class="zc-step-text">Escaneie o QR Code da instância com o WhatsApp do número <strong>${ch.phone_number || 'configurado'}</strong>.</span></li>
-                        <li class="zc-step"><span class="zc-step-num">5</span><span class="zc-step-text">Volte a esta página e verifique se o status do canal aparece como <strong>Conectado</strong>.</span></li>
+                        <li class="zc-step"><span class="zc-step-num">5</span><span class="zc-step-text">Volte a esta página e verifique se o status do canal aparece como <strong>● Conectado</strong>.</span></li>
                     </ol>
                 </div>`;
             document.getElementById('zcConfigModal').classList.add('active');
@@ -808,16 +813,6 @@
                 setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
             }).catch(() => toast.error('Não foi possível copiar'));
         }
-
-        document.getElementById('zcConfigModalClose').addEventListener('click', () => {
-            document.getElementById('zcConfigModal').classList.remove('active');
-        });
-        document.getElementById('zcConfigModalCloseBtn').addEventListener('click', () => {
-            document.getElementById('zcConfigModal').classList.remove('active');
-        });
-        document.getElementById('zcConfigModal').addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
-        });
 
         // ── Modal Adicionar/Editar Canal ──
 
@@ -858,15 +853,31 @@
             document.getElementById('zcFormModal').classList.add('active');
         }
 
-        document.getElementById('zcFormModalClose').addEventListener('click', () => {
-            document.getElementById('zcFormModal').classList.remove('active');
+        // Todos os listeners de modal são registrados via DOMContentLoaded
+        // para garantir que os elementos existam (modais estão após este bloco no DOM).
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('zcConfigModalClose').addEventListener('click', () => {
+                document.getElementById('zcConfigModal').classList.remove('active');
+            });
+            document.getElementById('zcConfigModalCloseBtn').addEventListener('click', () => {
+                document.getElementById('zcConfigModal').classList.remove('active');
+            });
+            document.getElementById('zcConfigModal').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+            });
+            document.getElementById('zcFormModalClose').addEventListener('click', () => {
+                document.getElementById('zcFormModal').classList.remove('active');
+            });
+            document.getElementById('zcFormModal').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+            });
+            document.getElementById('zcBtnSaveChannel').addEventListener('click', _zcSaveChannel);
+            document.getElementById('zcBtnTestConn').addEventListener('click', _zcTestConn);
         });
-        document.getElementById('zcFormModal').addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
-        });
+
         document.getElementById('btnAddChannel').addEventListener('click', zcOpenAdd);
 
-        document.getElementById('zcBtnTestConn').addEventListener('click', async () => {
+        async function _zcTestConn() {
             const btn = document.getElementById('zcBtnTestConn');
             const instanceId = document.getElementById('zcFormInstanceId').value.trim();
             const token = document.getElementById('zcFormToken').value.trim();
@@ -886,23 +897,30 @@
             resultDiv.textContent = '';
 
             try {
-                // Teste indireto: cria objeto via POST e usa o status retornado.
-                // Como não há endpoint de teste avulso, usamos o resultado do create.
-                // Aqui fazemos uma chamada GET ao endpoint de saúde e exibimos inline.
-                const res = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
-                // O health não testa credenciais ad-hoc, apenas informa cache.
-                // Informamos ao usuário que o teste real ocorre ao salvar.
-                resultDiv.className = 'zc-conn-result warn';
-                resultDiv.textContent = 'A verificação completa das credenciais ocorre ao salvar. O status de conectividade será exibido após o cadastro.';
+                const res = await fetch(`${ZC_API}/test-credentials`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ instance_id: instanceId, token, client_token: clientToken || undefined }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    resultDiv.className = 'zc-conn-result fail';
+                    resultDiv.textContent = `Erro: ${data.detail || 'Falha ao testar credenciais'}`;
+                } else {
+                    const statusCls = { connected: 'ok', disconnected: 'warn', unreachable: 'fail' }[data.connectivity_status] || 'warn';
+                    resultDiv.className = `zc-conn-result ${statusCls}`;
+                    resultDiv.textContent = data.message;
+                }
             } catch (err) {
                 resultDiv.className = 'zc-conn-result fail';
                 resultDiv.textContent = `Erro: ${err.message}`;
             }
             btn.textContent = orig;
             btn.disabled = false;
-        });
+        }
 
-        document.getElementById('zcBtnSaveChannel').addEventListener('click', async () => {
+        async function _zcSaveChannel() {
             const btn = document.getElementById('zcBtnSaveChannel');
             const name = document.getElementById('zcFormName').value.trim();
             const label = document.getElementById('zcFormLabel').value.trim();
@@ -975,7 +993,7 @@
 
             btn.textContent = orig;
             btn.disabled = false;
-        });
+        }
 
         async function zcDelete(channelId) {
             const ch = _zcChannels.find(c => c.id === channelId);
@@ -1169,6 +1187,45 @@
                 deleteSource(parseInt(target.dataset.id));
             }
         });
+
+        // ── Task #232: Health indicator para a seção Canais Z-API ──
+        let _zcHealthTimer = null;
+
+        async function loadZAPIHealth() {
+            const pill = document.getElementById('zcHealthPill');
+            if (!pill) return;
+            try {
+                const res = await fetch('/api/integrations/zapi/health', { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const status = (data.status || '').toLowerCase();
+                if (status === 'connected') {
+                    pill.textContent = '● Conectado';
+                    pill.style.background = 'rgba(255,255,255,0.2)';
+                    pill.style.color = '#d1fae5';
+                } else if (status === 'disconnected') {
+                    pill.textContent = '● Desconectado';
+                    pill.style.background = 'rgba(255,80,80,0.25)';
+                    pill.style.color = '#fecaca';
+                } else {
+                    pill.textContent = '● Inacessível';
+                    pill.style.background = 'rgba(255,165,0,0.25)';
+                    pill.style.color = '#fed7aa';
+                }
+                pill.style.display = '';
+            } catch (err) {
+                pill.textContent = '● Sem resposta';
+                pill.style.background = 'rgba(255,165,0,0.25)';
+                pill.style.color = '#fed7aa';
+                pill.style.display = '';
+            }
+        }
+
+        function initZAPIHealth() {
+            loadZAPIHealth();
+            _zcHealthTimer = setInterval(loadZAPIHealth, 30000);
+        }
+
     </script>
 
     <!-- Task #232: Modal "Como configurar" -->

@@ -614,6 +614,43 @@ async def list_zapi_channels(
 # Task #232 — CRUD de canais Z-API
 # ─────────────────────────────────────────────────────────────────────────────
 
+class ZAPICredentialsTest(BaseModel):
+    instance_id: str
+    token: str
+    client_token: Optional[str] = None
+
+
+@router.post("/zapi/channels/test-credentials")
+async def test_zapi_channel_credentials(
+    data: ZAPICredentialsTest,
+    request: Request,
+):
+    """
+    Task #232 — Testa credenciais Z-API sem persistir canal.
+    Útil para validação no modal de criação antes de salvar.
+    """
+    _auth_zapi_channel(request)
+
+    from services.whatsapp_client import ZAPIClient
+
+    client = ZAPIClient(
+        instance_id=data.instance_id,
+        token=data.token,
+        client_token=data.client_token,
+    )
+    connectivity = await client.check_connectivity(timeout=8.0)
+
+    messages = {
+        "connected": "Instância conectada e autenticada com sucesso.",
+        "disconnected": "Instância respondeu, mas não está autenticada. Escaneie o QR Code no painel Z-API.",
+        "unreachable": "Instância inacessível. Verifique as credenciais e se a instância está ativa no Z-API.",
+    }
+    return {
+        "connectivity_status": connectivity,
+        "message": messages.get(connectivity, "Status desconhecido."),
+    }
+
+
 @router.post("/zapi/channels", status_code=201)
 async def create_zapi_channel(
     data: ZAPIChannelCreate,
