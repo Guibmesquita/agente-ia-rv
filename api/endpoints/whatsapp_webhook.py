@@ -619,8 +619,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         print(f"[WEBHOOK] Mensagem normalizada: {normalized_message[:50]}...")
         
         import asyncio as _asyncio
-        _asyncio.create_task(zapi_client.send_composing(phone))
-        
+
         if not conversation:
             conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
         
@@ -629,10 +628,10 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             return
 
         # Task #223 — resolução de canal APÓS a conversa ser garantida.
-        # A partir daqui `conversation` é sempre não-None; `zapi_client` local
-        # sobrescreve o import do módulo para todos os envios subsequentes nesta função.
+        # Usa `channel_client` (não shadow de zapi_client) para evitar UnboundLocalError.
         from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
-        zapi_client = _rcfc(conversation, db)  # noqa: F841
+        channel_client = _rcfc(conversation, db)
+        _asyncio.create_task(channel_client.send_composing(phone))
 
         conv_state = conversation.conversation_state or ConversationState.IDENTIFICATION_PENDING.value
         
@@ -678,7 +677,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     message_record.ai_intent = "unidentified_contact_greeting"
                     db.commit()
                 
-                result = await zapi_client.send_text(phone, response, delay_typing=1)
+                result = await channel_client.send_text(phone, response, delay_typing=1)
                 if result.get("success"):
                     response_sent_successfully = True
                     save_message_zapi(
@@ -735,7 +734,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 message_record.ai_intent = "transfer_to_human"
                 db.commit()
             
-            result = await zapi_client.send_text(phone, response, delay_typing=1)
+            result = await channel_client.send_text(phone, response, delay_typing=1)
             if result.get("success"):
                 response_sent_successfully = True
                 save_message_zapi(
@@ -773,7 +772,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     message_record.ai_intent = "bot_resolution_confirmed"
                     db.commit()
                 
-                result = await zapi_client.send_text(phone, response, delay_typing=1)
+                result = await channel_client.send_text(phone, response, delay_typing=1)
                 if result.get("success"):
                     response_sent_successfully = True
                     save_message_zapi(
@@ -803,7 +802,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     message_record.ai_intent = "bot_resolution_negative_confirmed"
                     db.commit()
                 
-                result = await zapi_client.send_text(phone, response, delay_typing=1)
+                result = await channel_client.send_text(phone, response, delay_typing=1)
                 if result.get("success"):
                     response_sent_successfully = True
                     save_message_zapi(
@@ -1027,7 +1026,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
         
         if response:
             print(f"[WEBHOOK] Enviando resposta via Z-API para {phone}...")
-            send_result = await zapi_client.send_text(phone, response)
+            send_result = await channel_client.send_text(phone, response)
             print(f"[WEBHOOK] Resultado envio Z-API: {send_result}")
         else:
             print(f"[WEBHOOK] Resposta vazia - não enviando mensagem ao WhatsApp")
@@ -1068,7 +1067,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                 failed_slugs = [s for s in diagram_slugs_from_ai if s not in sent]
                 if failed_slugs:
                     print(f"[WEBHOOK] Diagramas falharam: {failed_slugs}")
-                    await zapi_client.send_text(
+                    await channel_client.send_text(
                         phone,
                         "Não consegui enviar o diagrama agora. Quer que eu descreva o payoff por texto?",
                         delay_typing=1
@@ -1076,7 +1075,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
             except Exception as diag_err:
                 print(f"[WEBHOOK] Erro ao enviar diagramas: {diag_err}")
                 try:
-                    await zapi_client.send_text(
+                    await channel_client.send_text(
                         phone,
                         "Não consegui enviar o diagrama agora. Quer que eu descreva o payoff por texto?",
                         delay_typing=1
@@ -1115,35 +1114,35 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                             )
                             if fallback_response and len(fallback_response.strip()) > 10:
                                 print(f"[MATERIAL_FALLBACK] Enviando resposta fallback: {fallback_response[:100]}...")
-                                await zapi_client.send_text(phone, fallback_response, delay_typing=2)
+                                await channel_client.send_text(phone, fallback_response, delay_typing=2)
                                 append_to_history(phone, "assistant", fallback_response)
                             else:
                                 no_file_failures = [f for f in failed_list if f["reason"] == "no_file"]
                                 other_failures = [f for f in failed_list if f["reason"] != "no_file"]
                                 if no_file_failures:
                                     names = ", ".join(f.get("material_name", "documento") for f in no_file_failures)
-                                    await zapi_client.send_text(phone, f"O arquivo PDF de {names} não está disponível no momento. Posso te ajudar de outra forma — é só pedir!", delay_typing=1)
+                                    await channel_client.send_text(phone, f"O arquivo PDF de {names} não está disponível no momento. Posso te ajudar de outra forma — é só pedir!", delay_typing=1)
                                 elif other_failures:
-                                    await zapi_client.send_text(phone, "Não consegui enviar o documento agora. Tenta pedir novamente em instantes.", delay_typing=1)
+                                    await channel_client.send_text(phone, "Não consegui enviar o documento agora. Tenta pedir novamente em instantes.", delay_typing=1)
                         except Exception as fallback_err:
                             print(f"[MATERIAL_FALLBACK] Erro no fallback: {fallback_err}")
-                            await zapi_client.send_text(phone, "Não consegui enviar o documento agora. Tenta pedir novamente em instantes.", delay_typing=1)
+                            await channel_client.send_text(phone, "Não consegui enviar o documento agora. Tenta pedir novamente em instantes.", delay_typing=1)
                     else:
                         no_file_failures = [f for f in failed_list if f["reason"] == "no_file"]
                         other_failures = [f for f in failed_list if f["reason"] != "no_file"]
                         if no_file_failures:
                             names = ", ".join(f.get("material_name", "documento") for f in no_file_failures)
-                            await zapi_client.send_text(
+                            await channel_client.send_text(
                                 phone,
                                 f"O arquivo PDF de {names} não está disponível no momento. O material precisa ser re-carregado no sistema pelo administrador.",
                                 delay_typing=1
                             )
                         if other_failures:
-                            await zapi_client.send_text(phone, "Não consegui enviar o documento agora. Tenta pedir novamente em instantes.", delay_typing=1)
+                            await channel_client.send_text(phone, "Não consegui enviar o documento agora. Tenta pedir novamente em instantes.", delay_typing=1)
             except Exception as mat_err:
                 print(f"[WEBHOOK] Erro ao enviar materiais: {mat_err}")
                 try:
-                    await zapi_client.send_text(phone, "Tive um problema ao enviar o documento. Tenta novamente?", delay_typing=1)
+                    await channel_client.send_text(phone, "Tive um problema ao enviar o documento. Tenta novamente?", delay_typing=1)
                 except:
                     pass
         
@@ -1173,7 +1172,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                             caption_parts.append(f"Página {best_visual['source_page']}")
                         caption = " | ".join(caption_parts) if caption_parts else "Referência visual"
 
-                        visual_send = await zapi_client.send_image(
+                        visual_send = await channel_client.send_image(
                             phone,
                             visual_result["base64"],
                             caption
@@ -1206,7 +1205,7 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
                     )
                     if fallback_response and len(fallback_response.strip()) > 10:
                         print(f"[WEBHOOK] Fallback V2 enviando: {fallback_response[:100]}...")
-                        send_result = await zapi_client.send_text(phone, fallback_response, delay_typing=2)
+                        send_result = await channel_client.send_text(phone, fallback_response, delay_typing=2)
                         if send_result.get("success"):
                             response_sent_successfully = True
                             append_to_history(phone, "assistant", fallback_response)
@@ -1249,7 +1248,7 @@ async def process_audio_message(phone: str, media_url: str, db: Session, message
     """
     # Task #223 — resolução de canal para respostas do handler de áudio.
     from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
-    zapi_client = _rcfc(conversation, db)  # noqa: F841
+    channel_client = _rcfc(conversation, db)
 
     try:
         print(f"[WEBHOOK] Processando áudio de {phone}: {media_url[:50]}...")
@@ -1268,7 +1267,7 @@ async def process_audio_message(phone: str, media_url: str, db: Session, message
                 message_record.ai_intent = "audio_transcription_failed"
                 db.commit()
             
-            await zapi_client.send_text(phone, response, delay_typing=1)
+            await channel_client.send_text(phone, response, delay_typing=1)
             return
         
         if message_record:
@@ -1294,7 +1293,7 @@ async def process_image_message(phone: str, media_url: str, caption: str, db: Se
     """
     # Task #223 — resolução de canal para respostas do handler de imagem.
     from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
-    zapi_client = _rcfc(conversation, db)  # noqa: F841
+    channel_client = _rcfc(conversation, db)
 
     try:
         print(f"[WEBHOOK] Processando imagem de {phone}: {media_url[:50]}...")
@@ -1316,7 +1315,7 @@ async def process_image_message(phone: str, media_url: str, caption: str, db: Se
                     message_record.ai_intent = "image_analysis_failed"
                     db.commit()
                 
-                await zapi_client.send_text(phone, response, delay_typing=1)
+                await channel_client.send_text(phone, response, delay_typing=1)
             return
         
         full_context = analysis
@@ -1349,7 +1348,7 @@ async def process_document_message(phone: str, media_url: str, filename: str, db
     """
     # Task #223 — resolução de canal para respostas do handler de documento.
     from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
-    zapi_client = _rcfc(conversation, db)  # noqa: F841
+    channel_client = _rcfc(conversation, db)
 
     try:
         print(f"[WEBHOOK] Processando documento de {phone}: {filename or media_url[:50]}...")
@@ -1368,7 +1367,7 @@ async def process_document_message(phone: str, media_url: str, filename: str, db
                 message_record.ai_intent = "document_processing_failed"
                 db.commit()
             
-            await zapi_client.send_text(phone, response, delay_typing=1)
+            await channel_client.send_text(phone, response, delay_typing=1)
             return
         
         if message_record:
@@ -1393,7 +1392,7 @@ async def process_document_message(phone: str, media_url: str, filename: str, db
             f"Recebi o documento '{filename or 'arquivo'}' 📄\n\n"
             "Obrigado pelo envio! Se tiver alguma dúvida sobre ele, me fale."
         )
-        await zapi_client.send_text(phone, response, delay_typing=1)
+        await channel_client.send_text(phone, response, delay_typing=1)
 
 
 async def _process_zapi_payload_internal(
