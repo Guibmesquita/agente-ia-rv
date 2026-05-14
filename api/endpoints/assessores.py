@@ -156,6 +156,7 @@ async def list_assessores(
     nome: Optional[str] = Query(None),
     email: Optional[str] = Query(None),
     telefone: Optional[str] = Query(None),
+    channel_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -172,6 +173,11 @@ async def list_assessores(
                 Assessor.telefone_whatsapp.ilike(f"%{search}%")
             )
         )
+    if channel_id is not None:
+        if channel_id == 0:
+            query = query.filter(Assessor.channel_id.is_(None))
+        else:
+            query = query.filter(Assessor.channel_id == channel_id)
     if unidade:
         query = query.filter(Assessor.unidade == unidade)
     if equipe:

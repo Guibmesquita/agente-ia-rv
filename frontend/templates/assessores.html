@@ -739,6 +739,7 @@
             const expNome = document.getElementById('filter-exp-nome')?.value || '';
             const expEmail = document.getElementById('filter-exp-email')?.value || '';
             const expTelefone = document.getElementById('filter-exp-telefone')?.value || '';
+            const expChannel = document.getElementById('filter-channel-id')?.value || '';
 
             const params = new URLSearchParams();
             if (search) params.append('search', search);
@@ -749,6 +750,7 @@
             if (expNome) params.append('nome', expNome);
             if (expEmail) params.append('email', expEmail);
             if (expTelefone) params.append('telefone', expTelefone);
+            if (expChannel !== '') params.append('channel_id', expChannel);
 
             customFields.forEach(cf => {
                 const filterEl = document.getElementById(`filter-cf-${cf.slug}`);
@@ -816,6 +818,10 @@
             
             let filtersHtml = '';
             
+            const channelOptions = zapiChannels.map(c =>
+                `<option value="${c.id}">${c.label}</option>`
+            ).join('');
+
             filtersHtml += `
                 <div class="filter-group">
                     <label class="filter-label">Código AI</label>
@@ -832,6 +838,14 @@
                 <div class="filter-group">
                     <label class="filter-label">WhatsApp</label>
                     <input type="text" class="form-input" id="filter-exp-telefone" placeholder="Filtrar..." data-filter="text">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Canal Z-API</label>
+                    <select class="form-select" id="filter-channel-id" data-filter="select">
+                        <option value="">Todos os Canais</option>
+                        <option value="0">Sem canal vinculado</option>
+                        ${channelOptions}
+                    </select>
                 </div>
             `;
             
@@ -887,6 +901,7 @@
             if (document.getElementById('filter-exp-nome')?.value) count++;
             if (document.getElementById('filter-exp-email')?.value) count++;
             if (document.getElementById('filter-exp-telefone')?.value) count++;
+            if (document.getElementById('filter-channel-id')?.value) count++;
             
             customFields.forEach(cf => {
                 const el = document.getElementById(`filter-cf-${cf.slug}`);
@@ -921,10 +936,12 @@
             const expNome = document.getElementById('filter-exp-nome');
             const expEmail = document.getElementById('filter-exp-email');
             const expTelefone = document.getElementById('filter-exp-telefone');
+            const expChannel = document.getElementById('filter-channel-id');
             if (expCodigo) expCodigo.value = '';
             if (expNome) expNome.value = '';
             if (expEmail) expEmail.value = '';
             if (expTelefone) expTelefone.value = '';
+            if (expChannel) expChannel.value = '';
             
             customFields.forEach(cf => {
                 const el = document.getElementById(`filter-cf-${cf.slug}`);
