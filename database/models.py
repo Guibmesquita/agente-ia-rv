@@ -246,6 +246,9 @@ class Assessor(Base):
     macro_area = Column(String(255), nullable=True, index=True)
     broker_responsavel = Column(String(255), nullable=True, index=True)
     custom_fields = Column(Text, default="{}")
+    # Task #223 — canal preferencial do assessor (override do mapeamento por unidade).
+    # Quando preenchido, campanhas e o agente usam este canal independentemente da unidade.
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -384,6 +387,9 @@ class CampaignDispatch(Base):
     # tentativa, não só na última que marca como FAILED). Permite ver erros
     # intermediários como "session not found" antes do retry final.
     last_error_message = Column(Text, nullable=True)
+    # Task #223 — canal Z-API resolvido no momento do despacho. Permite auditoria
+    # e re-envio via o mesmo canal original.
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id"), nullable=True, index=True)
 
     campaign = relationship("Campaign", back_populates="dispatches")
 
@@ -651,6 +657,9 @@ class Conversation(Base):
     # V3 Conversation memory fields
     last_session_summary = Column(Text, nullable=True)
     last_session_ended_at = Column(DateTime(timezone=True), nullable=True)
+    # Task #223 — canal WhatsApp pelo qual a conversa chegou/é atendida.
+    # Preenchido no momento da criação ou do primeiro webhook multi-canal.
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id"), nullable=True, index=True)
     
     active_ticket_id = Column(Integer, ForeignKey("conversation_tickets.id"), nullable=True)
     
@@ -706,6 +715,8 @@ class WhatsAppMessage(Base):
     is_from_campaign = Column(Boolean, default=False)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
+    # Task #223 — canal WhatsApp pelo qual a mensagem foi recebida/enviada.
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     ticket = relationship("Ticket", foreign_keys=[ticket_id])
@@ -1528,6 +1539,8 @@ class CadenceCampaignContact(Base):
     retry_count = Column(Integer, default=0)
     # Task #221 — vide CampaignDispatch.last_error_message.
     last_error_message = Column(Text, nullable=True)
+    # Task #223 — canal Z-API resolvido no momento do despacho.
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id"), nullable=True, index=True)
 
     campaign = relationship("CadenceCampaign", back_populates="contacts")
 
@@ -1625,6 +1638,52 @@ class RecommendationEntry(Base):
     notes = Column(Text, nullable=True)
 
     product = relationship("Product", back_populates="recommendation_entries")
+
+
+class ZAPIChannel(Base):
+    """
+    Task #223 — Canal WhatsApp multi-instância.
+    Cada canal corresponde a uma instância Z-API (número de WhatsApp).
+    O canal legado (bootstrapped no startup) usa as variáveis de ambiente existentes
+    (ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN) e é marcado com is_legacy=True.
+    Canais adicionais armazenam credenciais próprias e são roteados por unidade.
+    """
+    __tablename__ = "zapi_channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    instance_id = Column(String(255), nullable=False)
+    token = Column(String(255), nullable=False)
+    # nullable para canais que não usam client_token (futuro).
+    client_token = Column(String(255), nullable=True)
+    is_legacy = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    # URL do webhook registrada no Z-API para este canal (informativo).
+    webhook_url = Column(String(500), nullable=True)
+    # Campo legado do modelo antigo — mantido para compatibilidade enquanto
+    # não há coluna real no banco; o campo de negócio é webhook_url acima.
+    webhook_url_suffix = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    unidade_mappings = relationship("UnidadeChannelMapping", back_populates="channel", cascade="all, delete-orphan")
+
+
+class UnidadeChannelMapping(Base):
+    """
+    Task #223 — Mapeamento unidade → canal WhatsApp.
+    Permite que assessores de diferentes unidades sejam atendidos por números distintos.
+    O campo `unidade` corresponde ao campo `unidade` do modelo Assessor.
+    """
+    __tablename__ = "unidade_channel_mapping"
+
+    id = Column(Integer, primary_key=True, index=True)
+    unidade = Column(String(255), nullable=False, unique=True, index=True)
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    channel = relationship("ZAPIChannel", back_populates="unidade_mappings")
 
 
 class RevokedToken(Base):

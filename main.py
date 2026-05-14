@@ -29,6 +29,7 @@ def _register_routers():
     app.include_router(users.router)
     app.include_router(tickets.router)
     app.include_router(whatsapp_webhook.router)
+    app.include_router(whatsapp_webhook.multichannel_router)
     app.include_router(integrations.router)
     app.include_router(agent_config.router)
     app.include_router(assessores.router)
@@ -623,6 +624,50 @@ def _apply_incremental_migrations():
         "ALTER TABLE cadence_campaign_events DROP CONSTRAINT IF EXISTS uq_cadence_event_dedupe",
         "ALTER TABLE cadence_campaign_events ADD CONSTRAINT uq_cadence_event_dedupe "
         "UNIQUE (campaign_kind, campaign_id, event_type, dedupe_key)",
+        # Task #223 — Fundação multi-canal WhatsApp
+        # 1) Tabela de canais Z-API
+        """CREATE TABLE IF NOT EXISTS zapi_channels (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            instance_id VARCHAR(255) NOT NULL,
+            token VARCHAR(255) NOT NULL,
+            client_token VARCHAR(255),
+            webhook_url VARCHAR(500),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_legacy BOOLEAN NOT NULL DEFAULT FALSE,
+            description TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_zapi_channels_is_active ON zapi_channels(is_active)",
+        "CREATE INDEX IF NOT EXISTS ix_zapi_channels_is_legacy ON zapi_channels(is_legacy)",
+        # 2) Mapeamento unidade → canal
+        """CREATE TABLE IF NOT EXISTS unidade_channel_mapping (
+            id SERIAL PRIMARY KEY,
+            unidade VARCHAR(100) NOT NULL UNIQUE,
+            channel_id INTEGER NOT NULL REFERENCES zapi_channels(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_unidade_channel_mapping_unidade ON unidade_channel_mapping(unidade)",
+        "CREATE INDEX IF NOT EXISTS ix_unidade_channel_mapping_channel ON unidade_channel_mapping(channel_id)",
+        # 3) FK channel_id em tabelas de despacho / conversas / mensagens
+        "ALTER TABLE assessores ADD COLUMN IF NOT EXISTS channel_id INTEGER REFERENCES zapi_channels(id)",
+        "ALTER TABLE campaign_dispatches ADD COLUMN IF NOT EXISTS channel_id INTEGER REFERENCES zapi_channels(id)",
+        "ALTER TABLE cadence_campaign_contacts ADD COLUMN IF NOT EXISTS channel_id INTEGER REFERENCES zapi_channels(id)",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS channel_id INTEGER REFERENCES zapi_channels(id)",
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS channel_id INTEGER REFERENCES zapi_channels(id)",
+        "CREATE INDEX IF NOT EXISTS ix_assessores_channel_id ON assessores(channel_id)",
+        "CREATE INDEX IF NOT EXISTS ix_campaign_dispatches_channel_id ON campaign_dispatches(channel_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cadence_contacts_channel_id ON cadence_campaign_contacts(channel_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_channel_id ON conversations(channel_id)",
+        "CREATE INDEX IF NOT EXISTS ix_whatsapp_messages_channel_id ON whatsapp_messages(channel_id)",
+        # Task #223 — Colunas adicionadas ao modelo ZAPIChannel após create_all inicial.
+        # A tabela já existe (criada pelo create_all), então usamos ADD COLUMN IF NOT EXISTS.
+        "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS description TEXT",
+        "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(500)",
+        "ALTER TABLE zapi_channels ALTER COLUMN name TYPE VARCHAR(100)",
+        "ALTER TABLE zapi_channels ALTER COLUMN client_token DROP NOT NULL",
     ]
     db = SessionLocal()
     ok = 0
@@ -644,6 +689,55 @@ def _apply_incremental_migrations():
             f"[INIT] Migrações incrementais aplicadas: {ok} OK, {failed} falharam "
             f"de {len(migrations)} instruções"
         )
+    finally:
+        db.close()
+
+
+def _bootstrap_legacy_channel():
+    """
+    Task #223 — Garante que o canal Z-API legado (env vars) existe em `zapi_channels`.
+    Executado no startup, após as migrations, sempre que a tabela estiver vazia.
+    Idempotente: não recria se já existir um canal is_legacy=True.
+    """
+    from database.database import SessionLocal
+    from sqlalchemy import text as sql_text
+
+    instance_id = os.getenv("ZAPI_INSTANCE_ID", "")
+    token = os.getenv("ZAPI_TOKEN", "")
+    client_token = os.getenv("ZAPI_CLIENT_TOKEN", "")
+
+    if not instance_id or not token:
+        print("[INIT] Bootstrap canal legado ignorado: ZAPI_INSTANCE_ID ou ZAPI_TOKEN não configurados")
+        return
+
+    db = SessionLocal()
+    try:
+        existing = db.execute(
+            sql_text("SELECT id FROM zapi_channels WHERE is_legacy = TRUE LIMIT 1")
+        ).fetchone()
+        if existing:
+            print(f"[INIT] Canal legado Z-API já existe (id={existing[0]}) — bootstrap ignorado")
+            return
+
+        db.execute(
+            sql_text("""
+                INSERT INTO zapi_channels (name, instance_id, token, client_token, is_active, is_legacy, description)
+                VALUES (:name, :instance_id, :token, :client_token, TRUE, TRUE,
+                        'Canal principal configurado via variáveis de ambiente')
+                ON CONFLICT DO NOTHING
+            """),
+            {
+                "name": "Canal Principal (Legado)",
+                "instance_id": instance_id,
+                "token": token,
+                "client_token": client_token or None,
+            }
+        )
+        db.commit()
+        print("[INIT] Canal legado Z-API criado em zapi_channels com is_legacy=TRUE")
+    except Exception as exc:
+        db.rollback()
+        print(f"[INIT] Aviso: erro no bootstrap do canal legado: {exc}")
     finally:
         db.close()
 
@@ -895,6 +989,7 @@ def _sync_init_database():
     # Seguro para rodar múltiplas vezes: ADD COLUMN IF NOT EXISTS é idempotente no PostgreSQL.
     if not is_sqlite:
         _apply_incremental_migrations()
+        _bootstrap_legacy_channel()
         _cleanup_orphan_pre_analysis_materials()
         _backfill_cadence_events()
         _cleanup_old_cadence_events()

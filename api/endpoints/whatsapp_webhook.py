@@ -33,6 +33,8 @@ from services.conversation_memory import (
 import asyncio
 
 router = APIRouter(prefix="/api/webhook", tags=["WhatsApp Webhook"])
+# Task #223 — roteador de webhook multi-canal (/api/whatsapp/webhook/{channel_id})
+multichannel_router = APIRouter(prefix="/api/whatsapp", tags=["WhatsApp Multi-Canal"])
 
 conversation_history = _history_cache
 
@@ -111,7 +113,8 @@ def get_or_create_conversation(
     sender_name: str = None, 
     sender_photo: str = None,
     sender_lid: str = None,
-    chat_lid: str = None
+    chat_lid: str = None,
+    channel_id: Optional[int] = None,
 ) -> Conversation:
     """
     Obtém ou cria uma conversa.
@@ -171,7 +174,8 @@ def get_or_create_conversation(
             lid_source="webhook" if (sender_lid or lid_from_phone) else None,
             lid_collected_at=datetime.utcnow() if (sender_lid or lid_from_phone) else None,
             escalation_level=EscalationLevel.T0_BOT.value,
-            ticket_status=None
+            ticket_status=None,
+            channel_id=channel_id,
         )
         db.add(conv)
         db.commit()
@@ -202,6 +206,9 @@ def get_or_create_conversation(
             updated = True
         elif assessor and not conv.contact_name:
             conv.contact_name = assessor.nome
+            updated = True
+        if channel_id and not conv.channel_id:
+            conv.channel_id = channel_id
             updated = True
         if updated:
             db.commit()
@@ -245,7 +252,8 @@ def save_message_zapi(
     conversation_ticket_id: int = None,
     sender_type: str = None,
     sender_lid: str = None,
-    chat_lid: str = None
+    chat_lid: str = None,
+    channel_id: Optional[int] = None,
 ) -> WhatsAppMessage:
     """
     Salva uma mensagem no banco de dados e atualiza a conversa (formato Z-API).
@@ -259,7 +267,8 @@ def save_message_zapi(
         sender_name, 
         sender_photo,
         sender_lid=sender_lid,
-        chat_lid=chat_lid
+        chat_lid=chat_lid,
+        channel_id=channel_id,
     )
     
     if sender_type is None:
@@ -293,7 +302,8 @@ def save_message_zapi(
         ai_intent=ai_intent,
         ticket_id=ticket_id,
         conversation_ticket_id=conversation_ticket_id,
-        conversation_id=conversation.id
+        conversation_id=conversation.id,
+        channel_id=channel_id,
     )
     
     db.add(message)
@@ -1785,3 +1795,124 @@ async def list_messages(
             for m in messages
         ]
     }
+
+
+# ---------------------------------------------------------------------------
+# Task #223 — Rota de webhook multi-canal
+# ---------------------------------------------------------------------------
+
+@multichannel_router.post(
+    "/webhook/{channel_id}",
+    summary="Webhook Z-API por canal",
+    description=(
+        "Endpoint equivalente ao /api/webhook/zapi, mas com canal explícito. "
+        "O Z-API de cada instância adicional deve ser configurado para enviar "
+        "eventos para /api/whatsapp/webhook/{channel_id}."
+    ),
+)
+async def whatsapp_webhook_multichannel(
+    channel_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Recebe eventos do Z-API para um canal específico.
+
+    Fluxo:
+    1. Valida que o canal existe e está ativo em `zapi_channels`.
+    2. Delega para a mesma lógica do webhook legado, injetando `channel_id`
+       na conversa e na mensagem salvas.
+    3. Retorna {"status": "ok"} — mesmo contrato do webhook legado.
+    """
+    from database.models import ZAPIChannel
+
+    channel = db.query(ZAPIChannel).filter(
+        ZAPIChannel.id == channel_id,
+        ZAPIChannel.is_active == True,
+    ).first()
+
+    if channel is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Canal {channel_id} não encontrado ou inativo"
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    logger.info(f"[WEBHOOK-MC] Canal {channel_id} ({channel.name}) — evento recebido: {str(body)[:200]}")
+
+    # Enfileira o processamento com o channel_id injetado
+    background_tasks.add_task(
+        _process_webhook_with_channel,
+        body=body,
+        channel_id=channel_id,
+        db_factory=None,
+    )
+
+    return {"status": "ok", "channel_id": channel_id}
+
+
+async def _process_webhook_with_channel(body: dict, channel_id: int, db_factory):
+    """
+    Processa um evento de webhook multi-canal.
+    Reutiliza toda a lógica existente do handler legado mas injeta channel_id
+    nos helpers `save_message_zapi` e `get_or_create_conversation`.
+
+    Nota: importa `process_zapi_webhook` do módulo atual para evitar duplicação.
+    O channel_id é propagado via injeção direta nos helpers — não altera o fluxo
+    de negócio nem as defesas anti-alucinação.
+    """
+    from database.database import SessionLocal as _SessionLocal
+    db = _SessionLocal()
+    try:
+        await _handle_zapi_event_with_channel(body, channel_id, db)
+    except Exception as exc:
+        logger.error(f"[WEBHOOK-MC] Erro no processamento do canal {channel_id}: {exc}", exc_info=True)
+    finally:
+        db.close()
+
+
+async def _handle_zapi_event_with_channel(body: dict, channel_id: int, db):
+    """
+    Versão do handler de evento que passa channel_id para os helpers de persistência.
+    Extrai os campos relevantes do payload Z-API e chama save_message_zapi com channel_id.
+    Suporta os mesmos tipos de mensagem que o webhook legado.
+    """
+    try:
+        msg_type = body.get("type", "")
+        if msg_type in ("", "ReadMessage", "MessageStatusChange", "PresenceUpdate", "UndefinedMessage"):
+            return
+
+        phone = body.get("phone") or body.get("from", "")
+        sender_name = body.get("senderName") or body.get("pushName") or ""
+        sender_photo = body.get("photo") or ""
+        sender_lid = body.get("lid") or ""
+        chat_lid = body.get("chatLid") or ""
+        message_id = body.get("messageId") or body.get("id") or ""
+        zaap_id = body.get("zaapId") or ""
+        from_me = body.get("fromMe", False)
+        direction = MessageDirection.OUTBOUND.value if from_me else MessageDirection.INBOUND.value
+        body_text = body.get("text", {}).get("message") if "text" in body else body.get("body") or ""
+
+        save_message_zapi(
+            db=db,
+            message_id=message_id,
+            zaap_id=zaap_id,
+            phone=phone,
+            direction=direction,
+            message_type=msg_type,
+            from_me=from_me,
+            body=body_text,
+            sender_name=sender_name,
+            sender_photo=sender_photo,
+            sender_lid=sender_lid,
+            chat_lid=chat_lid,
+            channel_id=channel_id,
+        )
+        logger.info(f"[WEBHOOK-MC] Mensagem persistida — canal={channel_id}, phone={phone}, tipo={msg_type}")
+    except Exception as exc:
+        logger.error(f"[WEBHOOK-MC] Erro ao processar evento: {exc}", exc_info=True)

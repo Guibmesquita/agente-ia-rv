@@ -18,17 +18,49 @@ settings = get_settings()
 
 
 class ZAPIClient:
-    """Cliente para interação com a Z-API."""
+    """
+    Cliente para interação com a Z-API.
+
+    Task #223 — Suporte a múltiplos canais:
+    - Modo legado (padrão): sem argumentos no __init__, lê credenciais das
+      variáveis de ambiente (ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN)
+      a cada chamada — preserva comportamento original.
+    - Modo explícito: passa instance_id, token e client_token diretamente;
+      usado pela factory `get_zapi_client_for_channel()` para canais adicionais.
+    """
     
-    def __init__(self):
-        self.instance_id = os.getenv("ZAPI_INSTANCE_ID", "") or settings.ZAPI_INSTANCE_ID
-        self.token = os.getenv("ZAPI_TOKEN", "") or settings.ZAPI_TOKEN
-        self.client_token = os.getenv("ZAPI_CLIENT_TOKEN", "") or settings.ZAPI_CLIENT_TOKEN
-        
-        print(f"[Z-API] Inicializado - Instance: {self.instance_id[:8] if self.instance_id else '?'}..., Token configurado: {bool(self.token)}, Client-Token configurado: {bool(self.client_token)}")
+    def __init__(
+        self,
+        instance_id: Optional[str] = None,
+        token: Optional[str] = None,
+        client_token: Optional[str] = None,
+    ):
+        # Credenciais explícitas (modo multi-canal). None = usa env vars.
+        self._explicit_instance_id = instance_id
+        self._explicit_token = token
+        self._explicit_client_token = client_token
+
+        # Mantém os atributos de instância para compatibilidade com código legado
+        # que acessa zapi_client.instance_id diretamente.
+        self.instance_id = instance_id or os.getenv("ZAPI_INSTANCE_ID", "") or settings.ZAPI_INSTANCE_ID
+        self.token = token or os.getenv("ZAPI_TOKEN", "") or settings.ZAPI_TOKEN
+        self.client_token = client_token or os.getenv("ZAPI_CLIENT_TOKEN", "") or settings.ZAPI_CLIENT_TOKEN
+
+        _mode = "explícito" if instance_id else "env vars"
+        print(f"[Z-API] Inicializado ({_mode}) - Instance: {self.instance_id[:8] if self.instance_id else '?'}..., Token: {bool(self.token)}, Client-Token: {bool(self.client_token)}")
 
     def _get_credentials(self) -> dict:
-        """Lê credenciais no momento da chamada para refletir atualizações via save-secrets."""
+        """
+        Lê credenciais para a chamada atual.
+        - Se o cliente foi criado com credenciais explícitas (multi-canal), usa-as.
+        - Caso contrário, relê env vars para refletir atualizações via save-secrets.
+        """
+        if self._explicit_instance_id:
+            return {
+                "instance_id": self._explicit_instance_id,
+                "token": self._explicit_token,
+                "client_token": self._explicit_client_token,
+            }
         return {
             "instance_id": os.getenv("ZAPI_INSTANCE_ID", "") or settings.ZAPI_INSTANCE_ID,
             "token": os.getenv("ZAPI_TOKEN", "") or settings.ZAPI_TOKEN,
@@ -815,3 +847,84 @@ class WhatsAppClient(ZAPIClient):
 
 
 whatsapp_client = zapi_client
+
+
+def get_zapi_client_for_channel(channel_id: Optional[int], db) -> "ZAPIClient":
+    """
+    Task #223 — Factory que retorna um ZAPIClient configurado para o canal dado.
+
+    Fluxo de resolução:
+    1. Se channel_id for None → retorna o cliente legado (env vars).
+    2. Busca `zapi_channels` pelo id.
+    3. Se is_legacy=True ou canal não encontrado → retorna o cliente legado.
+    4. Caso contrário, instancia ZAPIClient com as credenciais explícitas do canal.
+
+    Nunca lança exceção — em caso de erro, cai no cliente legado com log de aviso.
+    O caller deve chamar `get_zapi_client_for_channel` a cada despacho (não cachear
+    a instância entre ticks) para garantir que atualizações de credenciais sejam
+    refletidas sem reinício.
+    """
+    if channel_id is None:
+        return zapi_client
+
+    try:
+        from database.models import ZAPIChannel
+        channel = db.query(ZAPIChannel).filter(
+            ZAPIChannel.id == channel_id,
+            ZAPIChannel.is_active == True,
+        ).first()
+
+        if channel is None:
+            logger.warning(f"[Z-API] Canal {channel_id} não encontrado ou inativo — usando cliente legado")
+            return zapi_client
+
+        if channel.is_legacy:
+            return zapi_client
+
+        return ZAPIClient(
+            instance_id=channel.instance_id,
+            token=channel.token,
+            client_token=channel.client_token,
+        )
+    except Exception as exc:
+        logger.error(f"[Z-API] Erro ao resolver canal {channel_id}: {exc} — usando cliente legado")
+        return zapi_client
+
+
+def get_zapi_client_for_assessor(assessor_phone: Optional[str], assessor_unidade: Optional[str], db) -> "ZAPIClient":
+    """
+    Task #223 — Resolve o canal correto para um assessor dado seu telefone/unidade.
+
+    Precedência:
+    1. channel_id explícito no registro Assessor (override manual).
+    2. Mapeamento unidade → canal (UnidadeChannelMapping).
+    3. Canal legado (fallback).
+
+    Retorna um ZAPIClient pronto para uso.
+    """
+    try:
+        from database.models import Assessor, UnidadeChannelMapping, ZAPIChannel
+
+        # 1) Override direto no assessor
+        if assessor_phone:
+            clean = ''.join(filter(str.isdigit, assessor_phone))
+            assessor = db.query(Assessor).filter(
+                Assessor.telefone_whatsapp.in_([clean, assessor_phone])
+            ).first()
+            if assessor and assessor.channel_id:
+                return get_zapi_client_for_channel(assessor.channel_id, db)
+            if assessor and assessor.unidade:
+                assessor_unidade = assessor.unidade
+
+        # 2) Mapeamento por unidade
+        if assessor_unidade:
+            mapping = db.query(UnidadeChannelMapping).filter(
+                UnidadeChannelMapping.unidade == assessor_unidade
+            ).first()
+            if mapping:
+                return get_zapi_client_for_channel(mapping.channel_id, db)
+
+        return zapi_client
+    except Exception as exc:
+        logger.error(f"[Z-API] Erro ao resolver canal por assessor/unidade: {exc} — usando legado")
+        return zapi_client
