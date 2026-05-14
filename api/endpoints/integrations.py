@@ -779,6 +779,85 @@ class AssessoresPatchInput(BaseModel):
     unassign: Optional[List[int]] = None
 
 
+class AssignarUnidadeInput(BaseModel):
+    unidade: str
+
+
+@router.get("/zapi/assessores/unidades")
+async def list_assessor_unidades(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #238 — Retorna a lista de unidades distintas cadastradas nos assessores.
+    Usada para popular o dropdown de reatribuição em lote por unidade.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import Assessor
+    from sqlalchemy import distinct
+
+    rows = (
+        db.query(distinct(Assessor.unidade))
+        .filter(Assessor.unidade.isnot(None), Assessor.unidade != "")
+        .order_by(Assessor.unidade)
+        .all()
+    )
+    unidades = [r[0] for r in rows]
+    return {"unidades": unidades}
+
+
+@router.post("/zapi/channels/{channel_id}/assignar-unidade")
+async def assignar_unidade(
+    channel_id: int,
+    data: AssignarUnidadeInput,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #238 — Move todos os assessores de uma unidade para este canal.
+    Assessores que já estão no canal não são recontados.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel, Assessor
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    unidade = data.unidade.strip()
+    if not unidade:
+        raise HTTPException(status_code=422, detail="O campo 'unidade' não pode ser vazio.")
+
+    assessores = (
+        db.query(Assessor)
+        .filter(
+            Assessor.unidade == unidade,
+            (Assessor.channel_id != channel_id) | Assessor.channel_id.is_(None),
+        )
+        .all()
+    )
+
+    moved_count = 0
+    for a in assessores:
+        a.channel_id = channel_id
+        moved_count += 1
+
+    db.commit()
+
+    return {
+        "channel_id": channel_id,
+        "unidade": unidade,
+        "moved": moved_count,
+        "message": (
+            f"{moved_count} assessor(es) da unidade '{unidade}' movido(s) para este canal."
+            if moved_count
+            else f"Nenhum assessor novo da unidade '{unidade}' para mover."
+        ),
+    }
+
+
 @router.get("/zapi/channels/{channel_id}/assessores")
 async def list_channel_assessores(
     channel_id: int,

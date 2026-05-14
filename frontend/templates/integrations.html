@@ -286,6 +286,13 @@
         .zc-search-result-name { font-weight: 600; color: var(--text-primary); }
         .zc-search-result-meta { color: var(--text-secondary); font-size: 0.75rem; }
         .zc-assessores-empty { font-size: 0.82rem; color: var(--text-secondary); text-align: center; padding: 12px 0; }
+        /* Task #238: Reatribuição em lote por unidade */
+        .zc-batch-unidade-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+        .zc-unidade-select { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.82rem; background: var(--card-bg); color: var(--text-primary); appearance: none; cursor: pointer; }
+        .zc-unidade-select:focus { outline: none; border-color: var(--primary-color); }
+        .zc-mover-btn { flex-shrink: 0; padding: 7px 12px; font-size: 0.82rem; background: var(--primary-color, #2563eb); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: background 0.15s; }
+        .zc-mover-btn:disabled { background: var(--border-color); color: var(--text-secondary); cursor: not-allowed; }
+        .zc-mover-btn:not(:disabled):hover { background: var(--primary-dark, #1d4ed8); }
         .zc-conn-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
         .zc-conn-pill.connected { background: #d1fae5; color: #065f46; }
         .zc-conn-pill.disconnected { background: #fee2e2; color: #991b1b; }
@@ -791,13 +798,27 @@
                         </button>
                     </div>
 
-                    <!-- Task #234: Painel de assessores expandível -->
+                    <!-- Task #234 / #238: Painel de assessores expandível -->
                     <div class="zc-assessores-panel" id="zcAssessoresPanel-${ch.id}">
                         <div style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">
                             Assessores vinculados
                         </div>
                         <div class="zc-assessores-list" id="zcAssessoresList-${ch.id}">
                             <div class="zc-assessores-empty">Carregando...</div>
+                        </div>
+                        <!-- Task #238: Mover em lote por unidade -->
+                        <div style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; margin-top:4px;">
+                            Mover unidade inteira para cá
+                        </div>
+                        <div class="zc-batch-unidade-row">
+                            <select class="zc-unidade-select" id="zcUnidadeSelect-${ch.id}"
+                                onchange="zcOnUnidadeSelectChange(${ch.id})">
+                                <option value="">Selecionar unidade...</option>
+                            </select>
+                            <button class="zc-mover-btn" id="zcMoverBtn-${ch.id}" disabled
+                                onclick="zcAssignarUnidade(${ch.id})">
+                                Mover todos
+                            </button>
                         </div>
                         <div style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; margin-top:4px;">
                             Adicionar assessor ao canal
@@ -1167,7 +1188,10 @@
             if (!listEl) return;
             listEl.innerHTML = '<div class="zc-assessores-empty">Carregando...</div>';
             try {
-                const res = await fetch(`${ZC_API}/${channelId}/assessores`, { credentials: 'include' });
+                const [res] = await Promise.all([
+                    fetch(`${ZC_API}/${channelId}/assessores`, { credentials: 'include' }),
+                    zcLoadUnidades(channelId),
+                ]);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 _zcRenderAssessoresList(channelId, data.assessores || []);
@@ -1430,6 +1454,67 @@
                 await loadZAPIChannels();
             } catch (err) {
                 toast.error(`Erro: ${err.message}`);
+            }
+        }
+
+        // ── Task #238: Reatribuição em lote por unidade ──
+
+        async function zcLoadUnidades(channelId) {
+            const selectEl = document.getElementById(`zcUnidadeSelect-${channelId}`);
+            if (!selectEl) return;
+            try {
+                const res = await fetch('/api/integrations/zapi/assessores/unidades', { credentials: 'include' });
+                if (!res.ok) {
+                    console.warn(`[zcLoadUnidades] HTTP ${res.status} ao carregar unidades para canal ${channelId}`);
+                    return;
+                }
+                const data = await res.json();
+                const unidades = data.unidades || [];
+                const current = selectEl.value;
+                selectEl.innerHTML = '<option value="">Selecionar unidade...</option>' +
+                    unidades.map(u => `<option value="${u}"${u === current ? ' selected' : ''}>${u}</option>`).join('');
+                const btn = document.getElementById(`zcMoverBtn-${channelId}`);
+                if (btn) btn.disabled = !selectEl.value;
+            } catch (err) {
+                console.warn(`[zcLoadUnidades] Erro ao carregar unidades para canal ${channelId}:`, err.message);
+            }
+        }
+
+        function zcOnUnidadeSelectChange(channelId) {
+            const selectEl = document.getElementById(`zcUnidadeSelect-${channelId}`);
+            const btn = document.getElementById(`zcMoverBtn-${channelId}`);
+            if (btn) btn.disabled = !selectEl || !selectEl.value;
+        }
+
+        async function zcAssignarUnidade(channelId) {
+            const selectEl = document.getElementById(`zcUnidadeSelect-${channelId}`);
+            if (!selectEl || !selectEl.value) return;
+            const unidade = selectEl.value;
+
+            if (!confirm(`Mover todos os assessores da unidade "${unidade}" para este canal?\n\nAssessores já vinculados a este canal não serão afetados.`)) return;
+
+            const btn = document.getElementById(`zcMoverBtn-${channelId}`);
+            if (btn) { btn.disabled = true; btn.textContent = 'Movendo...'; }
+
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/assignar-unidade`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ unidade }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    toast.error(`Erro: ${data.detail || 'Falha ao mover unidade'}`);
+                } else {
+                    toast.success(data.message || `Assessores da unidade "${unidade}" movidos.`);
+                    zcLoadAssessoresPanel(channelId);
+                    await loadZAPIChannels();
+                }
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            } finally {
+                if (btn) { btn.textContent = 'Mover todos'; zcOnUnidadeSelectChange(channelId); }
             }
         }
 
