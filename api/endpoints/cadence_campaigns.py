@@ -236,32 +236,44 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
     db.add(campaign)
     db.flush()
 
-    # Task #224 — resolver channel_id de cada contato pelo telefone via assessor.
+    # Task #224 — resolver channel_id em batch por sufixo de telefone (Fix 4).
     from database.models import Assessor as _Assessor
     from database.models import UnidadeChannelMapping as _UCM
+    from sqlalchemy import or_ as _or_cad
 
-    def _resolve_channel_for_phone(phone: str) -> int | None:
-        if not phone:
-            return None
-        # Normaliza e compara pelos últimos 10 dígitos para tolerância de DDI.
-        norm = phone.lstrip("+").replace(" ", "").replace("-", "")
-        suffix = norm[-10:]
-        assessor = (
-            db.query(_Assessor)
-            .filter(_Assessor.telefone_whatsapp.ilike(f"%{suffix}%"))
-            .first()
+    def _cad_norm_suffix(p: str) -> str:
+        return p.lstrip("+").replace(" ", "").replace("-", "")[-10:]
+
+    _cad_phones = [c.phone for c in data.contacts if c.phone]
+    _cad_phone_to_channel: dict = {}
+    if _cad_phones:
+        _cad_suffixes = list({_cad_norm_suffix(ph) for ph in _cad_phones})
+        _cad_filters = [
+            _Assessor.telefone_whatsapp.ilike(f"%{s}%")
+            for s in _cad_suffixes
+        ]
+        _cad_assessors = (
+            db.query(_Assessor).filter(_or_cad(*_cad_filters)).all()
+            if _cad_filters else []
         )
-        if assessor and assessor.channel_id:
-            return assessor.channel_id
-        if assessor and assessor.unidade:
-            mapping = (
-                db.query(_UCM)
-                .filter(_UCM.unidade == assessor.unidade)
-                .first()
+        _cad_unidades = {
+            a.unidade for a in _cad_assessors
+            if not a.channel_id and a.unidade
+        }
+        _cad_unidade_ch: dict = {}
+        if _cad_unidades:
+            for _m in db.query(_UCM).filter(
+                _UCM.unidade.in_(list(_cad_unidades))
+            ).all():
+                _cad_unidade_ch[_m.unidade] = _m.channel_id
+        _cad_suffix_ch: dict = {}
+        for _a in _cad_assessors:
+            _suf = _cad_norm_suffix(_a.telefone_whatsapp or "")
+            _cad_suffix_ch[_suf] = (
+                _a.channel_id or _cad_unidade_ch.get(_a.unidade)
             )
-            if mapping:
-                return mapping.channel_id
-        return None
+        for ph in _cad_phones:
+            _cad_phone_to_channel[ph] = _cad_suffix_ch.get(_cad_norm_suffix(ph))
 
     for contact_data in data.contacts:
         contact = CadenceCampaignContact(
@@ -270,7 +282,7 @@ async def create_campaign(data: CampaignCreateInput, db: Session = Depends(get_d
             name=contact_data.name,
             custom_message=contact_data.message,
             status="pending",
-            channel_id=_resolve_channel_for_phone(contact_data.phone),
+            channel_id=_cad_phone_to_channel.get(contact_data.phone),
         )
         db.add(contact)
 

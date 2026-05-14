@@ -3866,6 +3866,83 @@ async def dispatch_campaign_cadence(
     }
 
 
+@router.get("/{campaign_id}/channel-preview")
+async def get_campaign_channel_preview(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """Task #224 Fix 5 — prévia de canais para Step 3 (pré-disparo).
+    Lê processed_data e resolve channel_id por email de assessor via
+    _batch_resolve_channels, retornando a mesma estrutura de /channel-summary
+    para que a UI exiba os cards antes do primeiro envio.
+    """
+    from database.models import ZAPIChannel
+    from sqlalchemy import func as sql_func
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    try:
+        proc = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
+    except Exception:
+        proc = []
+
+    # Extrai emails: suporta campos 'email_assessor' (upload/grouped) e 'email' (base).
+    emails: list[str] = []
+    for row in proc:
+        e = (
+            row.get("email_assessor")
+            or row.get("email")
+            or row.get("Email")
+            or row.get("assessor_email")
+            or ""
+        )
+        if e:
+            emails.append(str(e).strip().lower())
+
+    emails = [e for e in emails if e]
+
+    channel_map = _batch_resolve_channels(list(set(emails)), db) if emails else {}
+
+    # Agrupa: channel_id → contagem de linhas (cada linha = um assessor/contato).
+    channel_counts: dict = {}
+    for email in emails:
+        ch_id = channel_map.get(email)
+        channel_counts[ch_id] = channel_counts.get(ch_id, 0) + 1
+
+    # Se não há dados de processed_data ainda, retorna lista vazia.
+    if not channel_counts:
+        return {"campaign_id": campaign_id, "channels": [], "source": "preview"}
+
+    # Enriquece com labels dos canais em batch.
+    channel_ids = [cid for cid in channel_counts if cid is not None]
+    channels_by_id: dict = {}
+    if channel_ids:
+        for ch in db.query(ZAPIChannel).filter(ZAPIChannel.id.in_(channel_ids)).all():
+            channels_by_id[ch.id] = ch
+
+    summary = []
+    for ch_id, count in channel_counts.items():
+        ch = channels_by_id.get(ch_id) if ch_id else None
+        summary.append({
+            "channel_id": ch_id,
+            "channel_label": ch.label if ch else "Canal legado (env vars)",
+            "channel_phone": ch.phone_number if ch else None,
+            "channel_is_active": ch.is_active if ch else True,
+            "total": count,
+            "sent": 0,
+            "failed": 0,
+            "pending": count,
+        })
+
+    # Ordena pelo total decrescente para exibição consistente.
+    summary.sort(key=lambda x: x["total"], reverse=True)
+
+    return {"campaign_id": campaign_id, "channels": summary, "source": "preview"}
+
+
 @router.get("/{campaign_id}/channel-summary")
 async def get_campaign_channel_summary(
     campaign_id: int,

@@ -41,6 +41,19 @@ _TURBO_FAILURE_BRAKE_THRESHOLD = 3
 _TURBO_ANTI_BLOCK_PAUSE_MINUTES = 5
 
 
+def _get_channel_label(db, channel_id) -> str:
+    """Task #224 — retorna o label legível do canal Z-API para enriquecer payloads de eventos.
+    Retorna 'Canal legado' para channel_id=None ou se o canal não for encontrado."""
+    if channel_id is None:
+        return "Canal legado"
+    try:
+        from database.models import ZAPIChannel as _ZCh_Label
+        ch = db.query(_ZCh_Label).filter(_ZCh_Label.id == channel_id).first()
+        return ch.label if (ch and ch.label) else f"Canal #{channel_id}"
+    except Exception:
+        return f"Canal #{channel_id}"
+
+
 def _abort_turbo_campaigns(
     db,
     reason: str,
@@ -425,16 +438,44 @@ async def run_cadence_tick():
                     })
                 continue
 
-            next_contact = (
+            # Task #224 — construir conjunto de canais bloqueados (cooldown + pausa)
+            # ANTES da query, para que um canal bloqueado não impeça contatos de
+            # outros canais dentro da mesma campanha.
+            _leg_blocked: set = set()
+            for _ch_id, _last in _last_send_time_by_channel.items():
+                if _last and (now - _last).total_seconds() < cooldown:
+                    _leg_blocked.add(_ch_id)
+            for _ch_id, _pu in _pause_until_by_channel.items():
+                if _pu and now < _pu:
+                    _leg_blocked.add(_ch_id)
+
+            _cq = (
                 db.query(CadenceCampaignContact)
                 .filter(
                     CadenceCampaignContact.campaign_id == campaign.id,
                     CadenceCampaignContact.status == "pending",
                     CadenceCampaignContact.scheduled_for <= now,
                 )
-                .order_by(CadenceCampaignContact.scheduled_for.asc())
-                .first()
             )
+            if _leg_blocked:
+                from sqlalchemy import or_ as _or_leg
+                _none_blk_l = None in _leg_blocked
+                _int_blk_l = {c for c in _leg_blocked if c is not None}
+                if _none_blk_l and _int_blk_l:
+                    _cq = _cq.filter(
+                        CadenceCampaignContact.channel_id.isnot(None),
+                        ~CadenceCampaignContact.channel_id.in_(_int_blk_l),
+                    )
+                elif _none_blk_l:
+                    _cq = _cq.filter(CadenceCampaignContact.channel_id.isnot(None))
+                else:
+                    _cq = _cq.filter(
+                        _or_leg(
+                            CadenceCampaignContact.channel_id.is_(None),
+                            ~CadenceCampaignContact.channel_id.in_(_int_blk_l),
+                        )
+                    )
+            next_contact = _cq.order_by(CadenceCampaignContact.scheduled_for.asc()).first()
 
             if not next_contact:
                 pending_count = (
@@ -462,21 +503,10 @@ async def run_cadence_tick():
                     print(f"[CADENCE] Campanha legada '{campaign.name}' (id={campaign.id}) concluída!")
                 continue
 
-            # Task #224 — roteamento por canal: cooldown e pausa são por canal.
+            # Task #224 — o channel_id já foi filtrado pela query acima.
             channel_id = getattr(next_contact, "channel_id", None)
             had_candidates = True
-
-            # Cooldown por canal (substitui cooldown global).
-            ch_last_send = _last_send_time_by_channel.get(channel_id)
-            if ch_last_send and (now - ch_last_send).total_seconds() < cooldown:
-                continue
-            # Saiu do bloqueio de cooldown ao menos uma vez — não 100% cooldown.
-            all_blocked_by_cooldown = False
-
-            # Pausa anti-bloqueio por canal.
-            ch_pause = _pause_until_by_channel.get(channel_id)
-            if ch_pause and now < ch_pause:
-                continue
+            all_blocked_by_cooldown = False  # chegou aqui, ao menos um canal disponível
 
             # Cliente Z-API específico do canal.
             from services.whatsapp_client import get_zapi_client_for_channel as _gzc_leg
@@ -502,6 +532,7 @@ async def run_cadence_tick():
                         "phone": next_contact.phone,
                         "contact_id": next_contact.id,
                         "channel_id": channel_id,
+                        "channel_label": _get_channel_label(db, channel_id),
                         "is_final": True,
                         "error": "Canal desativado",
                     })
@@ -543,6 +574,7 @@ async def run_cadence_tick():
                         "phone": next_contact.phone,
                         "contact_id": next_contact.id,
                         "channel_id": channel_id,
+                        "channel_label": _get_channel_label(db, channel_id),
                         "profile": campaign_profile.get("label"),
                     })
                     print(f"[CADENCE] Enviado para {next_contact.phone} (legada '{campaign.name}', canal={channel_id}, perfil={campaign_profile.get('label', '?')})")
@@ -580,6 +612,7 @@ async def run_cadence_tick():
                         "phone": next_contact.phone,
                         "contact_id": next_contact.id,
                         "channel_id": channel_id,
+                        "channel_label": _get_channel_label(db, channel_id),
                         "retry_count": int(next_contact.retry_count or 0),
                         "is_final": bool(is_final_fail),
                         "error": str(error_msg)[:500],
@@ -619,6 +652,7 @@ async def run_cadence_tick():
                     "phone": next_contact.phone,
                     "contact_id": next_contact.id,
                     "channel_id": channel_id,
+                    "channel_label": _get_channel_label(db, channel_id),
                     "retry_count": int(next_contact.retry_count or 0),
                     "is_final": bool(next_contact.retry_count >= 3),
                     "error": str(send_err)[:500],
@@ -697,9 +731,38 @@ async def run_cadence_tick():
                         })
                     continue
 
-                # Task #224 — peek no channel_id do próximo dispatch ANTES
-                # de clamá-lo, para verificar cooldown por canal sem bloquear.
+                # Task #224 — construir conjunto de canais bloqueados ANTES de
+                # selecionar/clammar o dispatch, para que um canal em cooldown/pausa
+                # não impeça dispatches de outros canais na mesma campanha.
+                _uni_blocked: set = set()
+                for _ch_id, _last in _last_send_time_by_channel.items():
+                    if _last and (now - _last).total_seconds() < cooldown:
+                        _uni_blocked.add(_ch_id)
+                for _ch_id, _pu in _pause_until_by_channel.items():
+                    if _pu and now < _pu:
+                        _uni_blocked.add(_ch_id)
+
+                # Construir cláusula SQL de exclusão de canais (sem user-input;
+                # apenas inteiros internos → seguro para interpolação).
+                _none_blk_u = None in _uni_blocked
+                _int_blk_u = {c for c in _uni_blocked if c is not None}
+                if _none_blk_u and _int_blk_u:
+                    _ch_cond_u = (
+                        " AND channel_id IS NOT NULL"
+                        " AND channel_id NOT IN ({})".format(",".join(str(c) for c in _int_blk_u))
+                    )
+                elif _none_blk_u:
+                    _ch_cond_u = " AND channel_id IS NOT NULL"
+                elif _int_blk_u:
+                    _ch_cond_u = " AND (channel_id IS NULL OR channel_id NOT IN ({}))".format(
+                        ",".join(str(c) for c in _int_blk_u)
+                    )
+                else:
+                    _ch_cond_u = ""
+
                 from sqlalchemy import text as sql_text
+
+                # Verifica se há candidatos para had_candidates.
                 peek_row = db.execute(
                     sql_text(
                         "SELECT id, channel_id FROM campaign_dispatches "
@@ -709,39 +772,22 @@ async def run_cadence_tick():
                     ),
                     {"cid": campaign.id, "now": now},
                 ).fetchone()
-
                 if peek_row:
-                    peek_channel_id = peek_row[1]  # channel_id do próximo dispatch
                     had_candidates = True
+                    all_blocked_by_cooldown = False  # ao menos um canal disponível
 
-                    # Cooldown por canal.
-                    ch_last_send_u = _last_send_time_by_channel.get(peek_channel_id)
-                    if ch_last_send_u and (now - ch_last_send_u).total_seconds() < cooldown:
-                        continue
-                    all_blocked_by_cooldown = False
-
-                    # Pausa anti-bloqueio por canal.
-                    ch_pause_u = _pause_until_by_channel.get(peek_channel_id)
-                    if ch_pause_u and now < ch_pause_u:
-                        continue
-                else:
-                    had_candidates = True  # campanha existe, sem dispatch pronto ainda
-                    peek_channel_id = None
-
-                # Agora claim atômico (UPDATE ... RETURNING).
+                # Claim atômico do próximo dispatch elegível (excluindo canais bloqueados).
                 claim_result = db.execute(
-                    sql_text("""
-                        UPDATE campaign_dispatches SET status = 'processing'
-                        WHERE id = (
-                            SELECT id FROM campaign_dispatches
-                            WHERE campaign_id = :cid AND status = 'pending' AND scheduled_for <= :now
-                            ORDER BY scheduled_for ASC
-                            LIMIT 1
-                            FOR UPDATE SKIP LOCKED
-                        )
-                        RETURNING id
-                    """),
-                    {"cid": campaign.id, "now": now}
+                    sql_text(
+                        "UPDATE campaign_dispatches SET status = 'processing' "
+                        "WHERE id = ("
+                        "  SELECT id FROM campaign_dispatches "
+                        "  WHERE campaign_id = :cid AND status = 'pending' AND scheduled_for <= :now"
+                        + _ch_cond_u +
+                        "  ORDER BY scheduled_for ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
+                        ") RETURNING id"
+                    ),
+                    {"cid": campaign.id, "now": now},
                 )
                 claimed_row = claim_result.fetchone()
                 db.commit()
@@ -827,6 +873,7 @@ async def run_cadence_tick():
                         emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
                             "dispatch_id": next_dispatch.id,
                             "channel_id": dispatch_channel_id,
+                            "channel_label": _get_channel_label(db, dispatch_channel_id),
                             "is_final": True,
                             "error": "Canal desativado",
                         })
@@ -863,6 +910,8 @@ async def run_cadence_tick():
                             db.commit()
                             emit_event(db, CAMPAIGN_KIND_UNIFIED, campaign.id, EVENT_DISPATCH_FAILED, {
                                 "dispatch_id": next_dispatch.id,
+                                "channel_id": dispatch_channel_id,
+                                "channel_label": _get_channel_label(db, dispatch_channel_id),
                                 "is_final": True,
                                 "error": "Arquivo do anexo não encontrado",
                             })
@@ -907,6 +956,7 @@ async def run_cadence_tick():
                             "dispatch_id": next_dispatch.id,
                             "phone": phone,
                             "channel_id": dispatch_channel_id,
+                            "channel_label": _get_channel_label(db, dispatch_channel_id),
                             "profile": campaign_profile.get("label"),
                         })
                         print(f"[CADENCE] Enviado para {phone} (unificada '{campaign.name}', canal={dispatch_channel_id}, perfil={campaign_profile.get('label', '?')})")
@@ -939,6 +989,7 @@ async def run_cadence_tick():
                             "dispatch_id": next_dispatch.id,
                             "phone": phone,
                             "channel_id": dispatch_channel_id,
+                            "channel_label": _get_channel_label(db, dispatch_channel_id),
                             "retry_count": int(next_dispatch.retry_count or 0),
                             "is_final": bool(is_final_fail),
                             "error": str(error_msg)[:500],
@@ -982,6 +1033,7 @@ async def run_cadence_tick():
                         "dispatch_id": next_dispatch.id,
                         "phone": phone,
                         "channel_id": dispatch_channel_id,
+                        "channel_label": _get_channel_label(db, dispatch_channel_id),
                         "retry_count": int(next_dispatch.retry_count or 0),
                         "is_final": bool(next_dispatch.retry_count >= 3),
                         "error": str(send_err)[:500],

@@ -1949,6 +1949,7 @@ Equipe de Gestao"></textarea>
                 loadPreview();
                 if (campaignId) {
                     checkAttachmentAccess(campaignId);
+                    loadChannelPreview(campaignId);
                 }
             }
         }
@@ -3229,6 +3230,38 @@ Equipe de Gestao"></textarea>
         }
 
         // Task #224 — busca e renderiza cards de canal para uma campanha.
+        async function loadChannelPreview(cId) {
+            // Task #224 Fix 6 — exibe preview de canais no Step 3 antes do disparo.
+            try {
+                var r = await fetch(API_BASE + '/' + cId + '/channel-preview', { credentials: 'include' });
+                if (!r.ok) return;
+                var data = await r.json();
+                var channels = data.channels || [];
+                var section = document.getElementById('channelSummarySection');
+                var container = document.getElementById('channelSummaryCards');
+                if (!section || !container) return;
+                if (!channels.length) { section.style.display = 'none'; return; }
+                section.style.display = 'block';
+                container.innerHTML = channels.map(function(ch) {
+                    var statusColor = ch.channel_is_active === false ? '#dc2626' : '#64748b';
+                    var statusIcon = ch.channel_is_active === false ? '⚠ Canal inativo' : '';
+                    return '<div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;min-width:160px;background:#f9fafb;">'
+                        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
+                        + '<span style="font-size:1.1rem;">📡</span>'
+                        + '<span style="font-weight:600;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;" title="' + (ch.channel_label || '') + '">' + (ch.channel_label || 'Canal legado') + '</span>'
+                        + (statusIcon ? '<span style="font-size:0.75rem;color:' + statusColor + ';">' + statusIcon + '</span>' : '')
+                        + '</div>'
+                        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.8rem;">'
+                        + '<span style="color:#64748b;">Contatos</span><span style="font-weight:600;text-align:right;">' + ch.total + '</span>'
+                        + (ch.channel_phone ? '<span style="color:#64748b;grid-column:1/-1;font-size:0.75rem;margin-top:4px;">' + ch.channel_phone + '</span>' : '')
+                        + '</div>'
+                        + '</div>';
+                }).join('');
+            } catch (e) {
+                console.warn('[channel-preview] erro:', e);
+            }
+        }
+
         async function loadChannelSummary(cId) {
             try {
                 var r = await fetch(API_BASE + '/' + cId + '/channel-summary', { credentials: 'include' });
@@ -3767,9 +3800,12 @@ Equipe de Gestao"></textarea>
                     } else if (ev.event_type === 'dispatch_failed') {
                         details = 'Tentativa ' + (p.retry_count || 1) + (p.is_final ? ' (FINAL)' : '') +
                                   (p.phone ? ' · ' + escapeHtmlSafe(p.phone) : '') +
+                                  (p.channel_label ? ' · <span style="font-size:0.78rem;color:#64748b;">📡 ' + escapeHtmlSafe(p.channel_label) + '</span>' : '') +
                                   (p.error ? '<br><span style="color:#991b1b;font-size:0.8rem;">' + escapeHtmlSafe(p.error) + '</span>' : '');
                     } else if (ev.event_type === 'dispatch_sent') {
-                        details = (p.phone ? escapeHtmlSafe(p.phone) : '') + (p.profile ? ' · perfil ' + escapeHtmlSafe(p.profile) : '');
+                        details = (p.phone ? escapeHtmlSafe(p.phone) : '') +
+                                  (p.channel_label ? ' · <span style="font-size:0.78rem;color:#64748b;">📡 ' + escapeHtmlSafe(p.channel_label) + '</span>' : '') +
+                                  (p.profile ? ' · perfil ' + escapeHtmlSafe(p.profile) : '');
                     } else if (ev.event_type === 'anti_block_pause') {
                         details = 'Pausa de ' + (p.duration_minutes || '?') + ' min' + (p.trigger ? ' — ' + escapeHtmlSafe(p.trigger) : '');
                     } else if (ev.event_type === 'daily_limit_reached') {
