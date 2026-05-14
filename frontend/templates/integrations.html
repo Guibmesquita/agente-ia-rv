@@ -801,7 +801,7 @@
                     <div class="zc-wh-section-title">3. Passo a passo</div>
                     <ol class="zc-steps">
                         <li class="zc-step"><span class="zc-step-num">1</span><span class="zc-step-text">Acesse <strong>app.z-api.io</strong> e selecione a instância correspondente a este canal.</span></li>
-                        <li class="zc-step"><span class="zc-step-num">2</span><span class="zc-step-text">No menu lateral, acesse <strong>Webhooks</strong> e cole a URL acima nos campos "Ao receber", "Ao enviar", "Ao conectar" e "Ao desconectar".</span></li>
+                        <li class="zc-step"><span class="zc-step-num">2</span><span class="zc-step-text">No menu lateral, acesse <strong>Webhooks</strong> e cole a mesma URL em todos os campos que precisar ativar: <em>Ao receber, Ao enviar, Ao conectar, Ao desconectar, Presença do chat</em> e <em>Receber status</em>.</span></li>
                         <li class="zc-step"><span class="zc-step-num">3</span><span class="zc-step-text">Aplique as configurações da tabela acima e clique em <strong>Salvar</strong>.</span></li>
                         <li class="zc-step"><span class="zc-step-num">4</span><span class="zc-step-text">Escaneie o QR Code da instância com o WhatsApp do número <strong>${ch.phone_number || 'configurado'}</strong>.</span></li>
                         <li class="zc-step"><span class="zc-step-num">5</span><span class="zc-step-text">Volte a esta página e verifique se o status do canal aparece como <strong>● Conectado</strong>.</span></li>
@@ -951,14 +951,15 @@
             try {
                 let res;
                 if (isEdit) {
+                    // Sempre envia campos opcionais para permitir limpá-los (string vazia = limpar)
                     const body = {};
                     if (name) body.name = name;
-                    if (label) body.label = label;
+                    if (label !== undefined) body.label = label;
                     if (instanceId) body.instance_id = instanceId;
                     if (token) body.token = token;
                     if (clientToken) body.client_token = clientToken;
-                    if (phone) body.phone_number = phone;
-                    if (description !== undefined) body.description = description;
+                    body.phone_number = phone;
+                    body.description = description;
                     res = await fetch(`${ZC_API}/${_zcEditingId}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
