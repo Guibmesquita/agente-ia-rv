@@ -479,9 +479,20 @@ async def list_zapi_channels(
 ):
     """
     Task #223 — Lista todos os canais Z-API configurados.
-    Retorna credenciais sensíveis mascaradas (nunca expõe tokens completos).
-    Apenas administradores e gestores podem acessar.
+
+    Retorna para cada canal:
+    - Credenciais mascaradas (nunca expõe tokens completos).
+    - `connectivity_status`: sonda Z-API em tempo real ("connected" / "disconnected" / "unreachable").
+    - `assessor_count`: quantidade de assessores vinculados ao canal.
+    - `unidades_assigned`: lista de unidades mapeadas para o canal.
+
+    Acesso restrito a admin e gestão RV.
     """
+    import asyncio
+    from database.models import ZAPIChannel, UnidadeChannelMapping, Assessor
+    from services.whatsapp_client import ZAPIClient
+    from sqlalchemy import func
+
     token_data = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not token_data:
         token_data = request.cookies.get("access_token", "")
@@ -489,18 +500,45 @@ async def list_zapi_channels(
     if not user_data or user_data.get("role") not in ("admin", "gestao_rv"):
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    from database.models import ZAPIChannel, UnidadeChannelMapping
-
     channels = db.query(ZAPIChannel).order_by(ZAPIChannel.id).all()
     mappings = db.query(UnidadeChannelMapping).all()
+
     mapping_by_channel: Dict[int, List[str]] = {}
     for m in mappings:
         mapping_by_channel.setdefault(m.channel_id, []).append(m.unidade)
+
+    # Contagem de assessores por canal (uma query agregada)
+    assessor_counts_rows = (
+        db.query(Assessor.channel_id, func.count(Assessor.id))
+        .filter(Assessor.channel_id.isnot(None))
+        .group_by(Assessor.channel_id)
+        .all()
+    )
+    assessor_count_by_channel: Dict[int, int] = {row[0]: row[1] for row in assessor_counts_rows}
 
     def _mask(value: Optional[str]) -> Optional[str]:
         if not value or len(value) < 8:
             return None
         return value[:4] + "****" + value[-4:]
+
+    # Sonda conectividade de cada canal ativo em paralelo (timeout 5s por canal)
+    active_channels = [ch for ch in channels if ch.is_active]
+
+    async def _probe(ch: ZAPIChannel) -> str:
+        client = ZAPIClient(
+            instance_id=ch.instance_id,
+            token=ch.token,
+            client_token=ch.client_token,
+        )
+        return await client.check_connectivity(timeout=5.0)
+
+    if active_channels:
+        statuses = await asyncio.gather(*[_probe(ch) for ch in active_channels], return_exceptions=True)
+        connectivity: Dict[int, str] = {}
+        for ch, result in zip(active_channels, statuses):
+            connectivity[ch.id] = result if isinstance(result, str) else "unreachable"
+    else:
+        connectivity = {}
 
     return {
         "channels": [
@@ -516,7 +554,10 @@ async def list_zapi_channels(
                 "is_active": ch.is_active,
                 "webhook_url": ch.webhook_url,
                 "description": ch.description,
-                "unidades_mapeadas": mapping_by_channel.get(ch.id, []),
+                "connectivity_status": connectivity.get(ch.id, "unknown"),
+                "assessor_count": assessor_count_by_channel.get(ch.id, 0),
+                "unidades_assigned": mapping_by_channel.get(ch.id, []),
+                "unidades_mapeadas": mapping_by_channel.get(ch.id, []),  # alias para compatibilidade
                 "created_at": ch.created_at.isoformat() if ch.created_at else None,
                 "updated_at": ch.updated_at.isoformat() if ch.updated_at else None,
             }

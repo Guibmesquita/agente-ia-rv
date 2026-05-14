@@ -83,6 +83,29 @@ class ZAPIClient:
         """Verifica se a Z-API está configurada corretamente."""
         creds = self._get_credentials()
         return bool(creds["instance_id"] and creds["token"] and creds["client_token"])
+
+    async def check_connectivity(self, timeout: float = 5.0) -> str:
+        """
+        Task #223 — Sonda a Z-API para verificar conectividade do canal.
+
+        Retorna:
+            "connected"    — instância respondeu e está autenticada.
+            "disconnected" — instância respondeu mas não está autenticada.
+            "unreachable"  — falha de rede, timeout ou credenciais ausentes.
+        """
+        if not self.is_configured():
+            return "unreachable"
+        try:
+            url = f"{self._get_base_url()}/status"
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url, headers=self._get_headers())
+            if resp.status_code == 200:
+                data = resp.json()
+                connected = data.get("connected", data.get("status") == "connected")
+                return "connected" if connected else "disconnected"
+            return "unreachable"
+        except Exception:
+            return "unreachable"
     
     def _normalize_phone(self, phone: str) -> str:
         """

@@ -598,7 +598,12 @@ async def process_text_message(phone: str, message: str, db: Session, message_re
     from database.models import ConversationState
     
     print(f"[WEBHOOK] Iniciando process_text_message para {phone}: {message[:50]}...")
-    
+
+    # Task #223 — resolução de canal: usa o cliente do canal correto para enviar respostas.
+    # A variável local `zapi_client` sobrescreve o import do módulo apenas neste escopo.
+    from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
+    zapi_client = _rcfc(conversation, db)  # noqa: F841  (sobrescreve global local)
+
     is_campaign_response = False
     try:
         from services.cadence_controller import track_campaign_response
@@ -1237,6 +1242,10 @@ async def process_audio_message(phone: str, media_url: str, db: Session, message
     Processa mensagem de áudio.
     Transcreve o áudio via Whisper e passa pelo pipeline completo da IA.
     """
+    # Task #223 — resolução de canal para respostas do handler de áudio.
+    from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
+    zapi_client = _rcfc(conversation, db)  # noqa: F841
+
     try:
         print(f"[WEBHOOK] Processando áudio de {phone}: {media_url[:50]}...")
         
@@ -1278,6 +1287,10 @@ async def process_image_message(phone: str, media_url: str, caption: str, db: Se
     Processa mensagem de imagem.
     Analisa a imagem via GPT-4 Vision e passa pelo pipeline completo da IA.
     """
+    # Task #223 — resolução de canal para respostas do handler de imagem.
+    from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
+    zapi_client = _rcfc(conversation, db)  # noqa: F841
+
     try:
         print(f"[WEBHOOK] Processando imagem de {phone}: {media_url[:50]}...")
         
@@ -1329,6 +1342,10 @@ async def process_document_message(phone: str, media_url: str, filename: str, db
     Processa mensagem de documento.
     Extrai informações do documento e passa pelo pipeline da IA.
     """
+    # Task #223 — resolução de canal para respostas do handler de documento.
+    from services.conversation_flow import resolve_channel_client_for_conversation as _rcfc
+    zapi_client = _rcfc(conversation, db)  # noqa: F841
+
     try:
         print(f"[WEBHOOK] Processando documento de {phone}: {filename or media_url[:50]}...")
         
@@ -1803,10 +1820,35 @@ async def list_messages(
 
 
 # ---------------------------------------------------------------------------
-# Task #223 — Rota de webhook multi-canal
-# Cada instância Z-API adicional deve apontar para /api/whatsapp/webhook/{channel_id}.
-# A mesma lógica de negócio do webhook legado é executada, com channel_id injetado.
+# Task #223 — Rotas de webhook multi-canal
+# /api/whatsapp/webhook          → canal legado (channel_id resolvido por env vars)
+# /api/whatsapp/webhook/{id}     → canal explícito (credenciais em zapi_channels)
 # ---------------------------------------------------------------------------
+
+@multichannel_router.post(
+    "/webhook",
+    summary="Webhook Z-API canal legado (alias)",
+    description=(
+        "Alias para o endpoint legado /api/webhook/zapi. "
+        "Usa as credenciais da instância padrão (env vars). "
+        "Permite configurar o Z-API legado também no prefixo /api/whatsapp/."
+    ),
+    include_in_schema=False,
+)
+async def whatsapp_webhook_legacy_alias(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Alias do webhook legado — sem channel_id, delega ao pipeline com channel_id=None."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return await _process_zapi_payload_internal(
+        payload, request, background_tasks, db, channel_id=None
+    )
+
 
 @multichannel_router.post(
     "/webhook/{channel_id}",
