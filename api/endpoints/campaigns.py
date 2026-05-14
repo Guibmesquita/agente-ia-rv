@@ -362,6 +362,187 @@ async def delete_template(
     return {"message": "Template removido com sucesso"}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #226 — Campanha de teste multi-canal
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSendRequest(BaseModel):
+    phones: List[str]
+    channel_id: int
+    template_id: int
+    preview_name: str = "Assessor Teste"
+
+
+def _normalize_phone_for_test(raw: str) -> tuple:
+    """Normaliza número e retorna (normalized_str, is_valid_bool)."""
+    clean = re.sub(r"\D", "", raw.strip())
+    if len(clean) in (10, 11):
+        clean = "55" + clean
+    valid = len(clean) in (12, 13) and clean.isdigit()
+    return clean, valid
+
+
+def _render_preview_content(content: str, preview_name: str) -> str:
+    """Substitui variáveis conhecidas por valores de preview; desconhecidas ficam [VAR]."""
+    known = {
+        "nome_assessor": preview_name,
+        "nome": preview_name,
+        "codigo_ai": "TST001",
+        "lista_clientes": "[Lista de clientes — disparo de teste]",
+        "unidade": "Unidade Teste",
+        "equipe": "Equipe Teste",
+        "broker": "Broker Teste",
+        "data": datetime.now().strftime("%d/%m/%Y"),
+    }
+    for key, val in known.items():
+        content = re.sub(r"\{\{\s*" + re.escape(key) + r"\s*\}\}", val, content, flags=re.IGNORECASE)
+    content = re.sub(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}", r"[\1]", content)
+    return content
+
+
+@router.get("/template-preview")
+async def preview_template_render(
+    template_id: int,
+    preview_name: str = "Assessor Teste",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """
+    Task #226 — Renderiza o conteúdo de um template substituindo variáveis por
+    valores de preview fictícios. Variáveis desconhecidas ficam como [VARIAVEL].
+    """
+    template = db.query(MessageTemplate).filter(
+        MessageTemplate.id == template_id,
+        MessageTemplate.is_active == 1,
+    ).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template não encontrado")
+
+    rendered = _render_preview_content(str(template.content), preview_name)
+    variables = json.loads(template.variables_used) if template.variables_used else []
+
+    return {
+        "template_id": template.id,
+        "template_name": template.name,
+        "rendered_content": rendered,
+        "attachment_url": template.attachment_url,
+        "attachment_type": template.attachment_type,
+        "attachment_filename": template.attachment_filename,
+        "variables_used": variables,
+    }
+
+
+@router.post("/test-send")
+async def test_send_stream(
+    data: TestSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """
+    Task #226 — Disparo de teste multi-canal via SSE (POST + fetch ReadableStream).
+    Envia mensagens de texto para números livres usando o canal Z-API selecionado.
+    Nenhum registro é criado em campaigns ou campaign_dispatches.
+    Delay aleatório 3-8s entre envios (anti-bloqueio).
+    Logar cada envio com tag [TEST-SEND].
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    # Validações iniciais (todas antes de iniciar o stream)
+    if len(data.phones) > 20:
+        raise HTTPException(status_code=400, detail="Limite de 20 números por disparo de teste")
+
+    from database.models import ZAPIChannel as _ZCh
+    channel = db.query(_ZCh).filter(_ZCh.id == data.channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Canal não encontrado")
+    if not channel.is_active:
+        raise HTTPException(status_code=400, detail=f"Canal '{channel.label}' está inativo")
+
+    template = db.query(MessageTemplate).filter(
+        MessageTemplate.id == data.template_id,
+        MessageTemplate.is_active == 1,
+    ).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template não encontrado")
+
+    # Normalizar e filtrar números válidos
+    normalized = []
+    for raw in data.phones:
+        norm, valid = _normalize_phone_for_test(raw)
+        if valid and norm not in normalized:
+            normalized.append(norm)
+
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Nenhum número válido encontrado")
+
+    # Renderizar mensagem uma vez (sem acesso ao DB no gerador)
+    rendered_content = _render_preview_content(str(template.content), data.preview_name)
+
+    # Criar cliente diretamente das credenciais do canal (sem DB no gerador)
+    from services.whatsapp_client import ZAPIClient as _ZC
+    client = _ZC(
+        instance_id=channel.instance_id,
+        token=channel.token,
+        client_token=channel.client_token,
+    )
+    if not client.is_configured():
+        raise HTTPException(status_code=400, detail="Canal Z-API não está configurado (credenciais incompletas)")
+
+    channel_label = channel.label or channel.name or f"Canal #{data.channel_id}"
+    total = len(normalized)
+
+    async def _stream():
+        sent_count = 0
+        failed_count = 0
+        for idx, phone in enumerate(normalized):
+            try:
+                result = await client.send_text(phone, rendered_content)
+                success = result.get("success", False)
+                error = None if success else result.get("error", "Erro desconhecido")
+                if success:
+                    sent_count += 1
+                    _log.info(f"[TEST-SEND] Canal={channel_label} Phone={phone} OK ({idx+1}/{total})")
+                else:
+                    failed_count += 1
+                    _log.warning(f"[TEST-SEND] Canal={channel_label} Phone={phone} FAIL={error} ({idx+1}/{total})")
+            except Exception as exc:
+                success = False
+                error = str(exc)
+                failed_count += 1
+                _log.error(f"[TEST-SEND] Canal={channel_label} Phone={phone} EXC={error} ({idx+1}/{total})")
+
+            progress_evt = json.dumps({
+                "type": "progress",
+                "phone": phone,
+                "status": "sent" if success else "failed",
+                "error": error,
+                "index": idx + 1,
+                "total": total,
+            })
+            yield f"data: {progress_evt}\n\n"
+
+            # Delay anti-bloqueio entre envios (exceto após o último)
+            if idx < total - 1:
+                await asyncio.sleep(random.uniform(3.0, 8.0))
+
+        done_evt = json.dumps({
+            "type": "done",
+            "sent": sent_count,
+            "failed": failed_count,
+            "total": total,
+        })
+        yield f"data: {done_evt}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 import os
 import uuid
 from pathlib import Path

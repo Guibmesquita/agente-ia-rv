@@ -833,6 +833,111 @@
                 max-width: 100%;
             }
         }
+
+        /* ── Task #226: Modal Disparo de Teste ── */
+        .ts-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            display: none; align-items: center; justify-content: center; z-index: 9999;
+        }
+        .ts-modal-overlay.active { display: flex; }
+        .ts-modal {
+            background: var(--card-bg); border-radius: 16px; width: 100%;
+            max-width: 680px; max-height: 90vh; display: flex; flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden;
+        }
+        .ts-modal-header {
+            padding: 20px 24px; border-bottom: 1px solid var(--border-color);
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+        .ts-modal-header h3 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+        .ts-modal-close {
+            background: none; border: none; cursor: pointer; color: var(--text-secondary);
+            padding: 4px; border-radius: 6px; transition: color 0.2s;
+        }
+        .ts-modal-close:hover { color: var(--text-primary); }
+        .ts-modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+        .ts-modal-footer {
+            padding: 16px 24px; border-top: 1px solid var(--border-color);
+            display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0;
+        }
+        .ts-step-indicator {
+            display: flex; gap: 0; margin-bottom: 24px; border-radius: 10px;
+            overflow: hidden; border: 1px solid var(--border-color);
+        }
+        .ts-step-item {
+            flex: 1; padding: 10px 12px; text-align: center; font-size: 0.82rem;
+            font-weight: 500; color: var(--text-secondary); background: var(--bg-color);
+            border-right: 1px solid var(--border-color); transition: all 0.2s;
+        }
+        .ts-step-item:last-child { border-right: none; }
+        .ts-step-item.active { background: var(--primary-color); color: #fff; font-weight: 600; }
+        .ts-step-item.done { background: #d1fae5; color: #065f46; }
+        .ts-phone-textarea {
+            width: 100%; min-height: 130px; padding: 12px; border: 1px solid var(--border-color);
+            border-radius: 8px; font-family: monospace; font-size: 0.9rem; line-height: 1.6;
+            resize: vertical; box-sizing: border-box;
+        }
+        .ts-phone-textarea:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(119,43,33,0.1); }
+        .ts-phone-counter { font-size: 0.82rem; color: var(--text-secondary); margin-top: 6px; }
+        .ts-phone-counter .ts-valid { color: #059669; font-weight: 600; }
+        .ts-phone-counter .ts-invalid { color: #dc2626; font-weight: 600; }
+        .ts-phone-warning { display: none; margin-top: 8px; padding: 8px 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; font-size: 0.82rem; color: #92400e; }
+        .ts-channel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ts-channel-card {
+            border: 2px solid var(--border-color); border-radius: 12px; padding: 16px;
+            cursor: pointer; transition: all 0.2s; background: var(--bg-color);
+        }
+        .ts-channel-card:hover { border-color: var(--primary-color); background: rgba(119,43,33,0.04); }
+        .ts-channel-card.selected { border-color: var(--primary-color); background: rgba(119,43,33,0.08); box-shadow: 0 0 0 3px rgba(119,43,33,0.12); }
+        .ts-channel-card.inactive { opacity: 0.6; cursor: default; }
+        .ts-channel-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); margin-bottom: 4px; }
+        .ts-channel-phone { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 6px; }
+        .ts-channel-pill {
+            display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+            border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+        }
+        .ts-channel-pill.connected { background: #d1fae5; color: #065f46; }
+        .ts-channel-pill.disconnected { background: #fee2e2; color: #991b1b; }
+        .ts-channel-pill.unreachable { background: #fef3c7; color: #92400e; }
+        .ts-channel-warn { margin-top: 8px; font-size: 0.78rem; color: #d97706; }
+        .ts-template-preview {
+            margin-top: 16px; padding: 16px; background: #f8fafc; border: 1px solid var(--border-color);
+            border-radius: 10px; font-size: 0.875rem; line-height: 1.7; white-space: pre-wrap;
+            font-family: inherit; min-height: 80px; max-height: 220px; overflow-y: auto; color: var(--text-primary);
+        }
+        .ts-attachment-hint {
+            margin-top: 10px; padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe;
+            border-radius: 8px; font-size: 0.82rem; color: #1e40af; display: flex; align-items: center; gap: 6px;
+        }
+        .ts-confirm-box {
+            padding: 14px 18px; background: #fefce8; border: 1px solid #fcd34d;
+            border-radius: 10px; font-size: 0.875rem; color: #713f12; margin-bottom: 16px;
+        }
+        .ts-result-header {
+            padding: 12px 0 16px; text-align: center; font-size: 0.9rem; color: var(--text-secondary);
+        }
+        .ts-result-header strong { display: block; font-size: 1.05rem; color: var(--text-primary); margin-bottom: 4px; }
+        .ts-result-list { display: flex; flex-direction: column; gap: 8px; }
+        .ts-result-item {
+            display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+            border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color);
+            font-size: 0.875rem;
+        }
+        .ts-result-item .ts-ri-phone { font-family: monospace; color: var(--text-secondary); flex: 1; }
+        .ts-result-item .ts-ri-status { font-weight: 600; white-space: nowrap; }
+        .ts-result-item .ts-ri-status.sent { color: #059669; }
+        .ts-result-item .ts-ri-status.failed { color: #dc2626; }
+        .ts-result-item .ts-ri-status.pending { color: #9ca3af; }
+        .ts-result-item .ts-ri-error { font-size: 0.8rem; color: #dc2626; margin-top: 2px; }
+        .ts-spinner-inline {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid #d1d5db; border-top-color: var(--primary-color);
+            border-radius: 50%; animation: ts-spin 0.7s linear infinite;
+        }
+        @keyframes ts-spin { to { transform: rotate(360deg); } }
+        .ts-progress-bar-wrap { margin: 12px 0; background: #e5e7eb; border-radius: 99px; height: 6px; }
+        .ts-progress-bar { height: 100%; border-radius: 99px; background: var(--primary-color); transition: width 0.4s; }
+        @media (max-width: 600px) { .ts-channel-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -841,14 +946,22 @@
 
         <main class="main-content" id="mainContent">
             <div class="page-container">
-                <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                     <div>
                         <h1 class="page-title">Campanhas Ativas</h1>
                         <p class="page-subtitle">Dispare mensagens em massa para assessores com recomendacoes de investimento</p>
                     </div>
-                    <div id="zapiStatusBadge" class="zapi-status-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer;" title="Clique para atualizar">
-                        <span class="status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #9ca3af;"></span>
-                        <span class="status-text">Verificando conexao...</span>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        {% if user_role in ['admin', 'gestao_rv'] %}
+                        <button id="btnTestChannel" class="btn btn-secondary" style="display:flex;align-items:center;gap:6px;">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            Testar Canal
+                        </button>
+                        {% endif %}
+                        <div id="zapiStatusBadge" class="zapi-status-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer;" title="Clique para atualizar">
+                            <span class="status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #9ca3af;"></span>
+                            <span class="status-text">Verificando conexao...</span>
+                        </div>
                     </div>
                 </div>
 
@@ -5060,6 +5173,511 @@ Equipe de Gestao"></textarea>
                 switchPageTab(urlTab);
             }
         })();
+
+        // ──────────────────────────────────────────────────────────────────────
+        // Task #226 — Modal Disparo de Teste Multi-Canal
+        // ──────────────────────────────────────────────────────────────────────
+        (function() {
+            const MAX_PHONES = 20;
+            let tsState = {
+                step: 1,          // 1 | 2 | 3 | 'results'
+                phones: [],       // normalized valid phones
+                channelId: null,
+                channelLabel: '',
+                templateId: null,
+                templateName: '',
+                abortController: null,
+                channels: [],
+                templates: [],
+            };
+
+            // ── Normalização de número ──
+            function normalizePhone(raw) {
+                const clean = raw.replace(/\D/g, '');
+                const normalized = (clean.length === 10 || clean.length === 11) ? '55' + clean : clean;
+                const valid = (normalized.length === 12 || normalized.length === 13) && /^\d+$/.test(normalized);
+                return { normalized, valid };
+            }
+
+            function parsePhones(text) {
+                const lines = text.split(/[\n,;]+/).map(l => l.trim()).filter(Boolean);
+                const valid = [], invalid = [];
+                const seen = new Set();
+                lines.forEach(raw => {
+                    const { normalized, valid: isValid } = normalizePhone(raw);
+                    if (isValid && !seen.has(normalized)) { seen.add(normalized); valid.push(normalized); }
+                    else if (!isValid && raw) { invalid.push(raw); }
+                });
+                return { valid, invalid, total: lines.length };
+            }
+
+            // ── Helpers de DOM ──
+            function el(id) { return document.getElementById(id); }
+
+            function tsShowStep(step) {
+                ['tsPane1','tsPane2','tsPane3','tsPaneResults'].forEach(id => {
+                    const e = el(id);
+                    if (e) e.style.display = 'none';
+                });
+                const map = { 1: 'tsPane1', 2: 'tsPane2', 3: 'tsPane3', results: 'tsPaneResults' };
+                if (map[step]) { const e = el(map[step]); if (e) e.style.display = ''; }
+                // Step indicator
+                [1,2,3].forEach(i => {
+                    const item = el('tsStepItem' + i);
+                    if (!item) return;
+                    item.className = 'ts-step-item' + (i === step ? ' active' : (i < step ? ' done' : ''));
+                });
+                // Footer buttons
+                el('tsBtnBack').style.display = (step === 2 || step === 3) ? '' : 'none';
+                el('tsBtnNext').style.display = (step === 1 || step === 2) ? '' : 'none';
+                el('tsBtnDisparar').style.display = (step === 3) ? '' : 'none';
+                el('tsBtnAbort').style.display = (step === 'results') ? '' : 'none';
+                el('tsBtnNew').style.display = 'none';
+                if (step === 'results') {
+                    el('tsBtnBack').style.display = 'none';
+                    el('tsBtnNext').style.display = 'none';
+                }
+                tsState.step = step;
+                tsUpdateNextBtn();
+            }
+
+            function tsUpdateNextBtn() {
+                const s = tsState.step;
+                const nextBtn = el('tsBtnNext');
+                const disparBtn = el('tsBtnDisparar');
+                if (s === 1) {
+                    const { valid } = parsePhones(el('tsPhonesArea').value);
+                    nextBtn.disabled = valid.length === 0 || valid.length > MAX_PHONES;
+                } else if (s === 2) {
+                    nextBtn.disabled = !tsState.channelId;
+                } else if (s === 3) {
+                    if (disparBtn) disparBtn.disabled = !tsState.templateId;
+                }
+            }
+
+            // ── Validação de números em tempo real ──
+            function tsUpdatePhoneCounter() {
+                const text = el('tsPhonesArea').value;
+                const { valid, invalid } = parsePhones(text);
+                const counter = el('tsPhoneCounter');
+                const warning = el('tsPhoneWarning');
+                let msg = '';
+                if (valid.length > 0) msg += `<span class="ts-valid">${valid.length} número${valid.length !== 1 ? 's' : ''} válido${valid.length !== 1 ? 's' : ''}</span>`;
+                if (invalid.length > 0) {
+                    if (msg) msg += ' | ';
+                    msg += `<span class="ts-invalid">${invalid.length} inválido${invalid.length !== 1 ? 's' : ''}</span>`;
+                }
+                if (!msg) msg = 'Digite os números acima';
+                counter.innerHTML = msg;
+                if (valid.length > MAX_PHONES) {
+                    warning.style.display = 'block';
+                    warning.textContent = `⚠ Limite de ${MAX_PHONES} números por disparo de teste (você tem ${valid.length}).`;
+                } else {
+                    warning.style.display = 'none';
+                }
+                tsState.phones = valid;
+                tsUpdateNextBtn();
+            }
+
+            // ── Carregamento de canais ──
+            async function tsLoadChannels() {
+                el('tsChannelGrid').innerHTML = '<div style="color:var(--text-secondary);font-size:0.875rem;">Carregando canais...</div>';
+                try {
+                    const res = await fetch('/api/integrations/zapi/channels', { credentials: 'include' });
+                    if (!res.ok) throw new Error('Erro ao carregar canais');
+                    const data = await res.json();
+                    tsState.channels = data.channels || [];
+                    tsRenderChannels();
+                } catch (e) {
+                    el('tsChannelGrid').innerHTML = `<div style="color:#dc2626;font-size:0.875rem;">Erro: ${e.message}</div>`;
+                }
+            }
+
+            function tsRenderChannels() {
+                const channels = tsState.channels.filter(ch => ch.is_active !== false);
+                const inactive = tsState.channels.filter(ch => ch.is_active === false);
+                const all = [...channels, ...inactive];
+                if (all.length === 0) {
+                    el('tsChannelGrid').innerHTML = '<div style="color:var(--text-secondary);font-size:0.875rem;">Nenhum canal configurado.</div>';
+                    return;
+                }
+                el('tsChannelGrid').innerHTML = all.map(ch => {
+                    const conn = ch.connectivity_status || 'unreachable';
+                    const isActive = ch.is_active !== false;
+                    const connLabel = { connected: 'Conectado', disconnected: 'Desconectado', unreachable: 'Sem resposta' }[conn] || conn;
+                    const isSelected = tsState.channelId === ch.id;
+                    return `<div class="ts-channel-card${isSelected ? ' selected' : ''}${!isActive ? ' inactive' : ''}"
+                        data-channel-id="${ch.id}" data-channel-label="${ch.label || ch.name}"
+                        style="${!isActive ? 'pointer-events:none;' : ''}"
+                        onclick="tsSelectChannel(${ch.id}, '${(ch.label || ch.name).replace(/'/g,"\\'")}', ${isActive})">
+                        <div class="ts-channel-name">${ch.label || ch.name}</div>
+                        <div class="ts-channel-phone">${ch.phone_number || 'Número não configurado'}</div>
+                        <span class="ts-channel-pill ${conn}">${connLabel}</span>
+                        ${!isActive ? '<div class="ts-channel-warn">Canal inativo</div>' : ''}
+                        ${isActive && conn !== 'connected' ? '<div class="ts-channel-warn">⚠ Sem conexão confirmada</div>' : ''}
+                    </div>`;
+                }).join('');
+            }
+
+            window.tsSelectChannel = function(id, label, isActive) {
+                if (!isActive) return;
+                tsState.channelId = id;
+                tsState.channelLabel = label;
+                tsRenderChannels();
+                tsUpdateNextBtn();
+            };
+
+            // ── Carregamento de templates ──
+            async function tsLoadTemplates() {
+                el('tsTemplateSelect').innerHTML = '<option value="">Carregando...</option>';
+                try {
+                    const res = await fetch('/api/campaigns/templates', { credentials: 'include' });
+                    if (!res.ok) throw new Error('Erro ao carregar templates');
+                    const templates = await res.json();
+                    tsState.templates = templates;
+                    el('tsTemplateSelect').innerHTML = '<option value="">Selecione um template...</option>'
+                        + templates.map(t => `<option value="${t.id}">${t.name}${t.description ? ' — ' + t.description.substring(0,40) : ''}</option>`).join('');
+                } catch (e) {
+                    el('tsTemplateSelect').innerHTML = `<option value="">Erro: ${e.message}</option>`;
+                }
+            }
+
+            async function tsLoadTemplatePreview() {
+                const templateId = el('tsTemplateSelect').value;
+                const previewName = el('tsPreviewName').value || 'Assessor Teste';
+                const previewBox = el('tsTemplatePreview');
+                const attachHint = el('tsAttachHint');
+                const confirmBox = el('tsConfirmBox');
+                if (!templateId) {
+                    previewBox.textContent = 'Selecione um template para ver o preview.';
+                    if (attachHint) attachHint.style.display = 'none';
+                    if (confirmBox) confirmBox.style.display = 'none';
+                    tsState.templateId = null;
+                    tsState.templateName = '';
+                    tsUpdateNextBtn();
+                    return;
+                }
+                previewBox.textContent = 'Carregando preview...';
+                try {
+                    const params = new URLSearchParams({ template_id: templateId, preview_name: previewName });
+                    const res = await fetch(`/api/campaigns/template-preview?${params}`, { credentials: 'include' });
+                    if (!res.ok) throw new Error('Erro ao carregar preview');
+                    const data = await res.json();
+                    previewBox.textContent = data.rendered_content;
+                    tsState.templateId = parseInt(templateId);
+                    tsState.templateName = data.template_name;
+                    if (attachHint) {
+                        if (data.attachment_url) {
+                            const icon = { image: '🖼', video: '🎬', audio: '🎵', document: '📄' }[data.attachment_type] || '📎';
+                            attachHint.style.display = 'flex';
+                            attachHint.innerHTML = `${icon} <span>Anexo: <strong>${data.attachment_filename || 'arquivo'}</strong> (${data.attachment_type || 'documento'})</span>`;
+                        } else {
+                            attachHint.style.display = 'none';
+                        }
+                    }
+                    // Confirmação
+                    const validCount = tsState.phones.length;
+                    const chLabel = tsState.channelLabel;
+                    const phone = tsState.channels.find(c => c.id === tsState.channelId)?.phone_number || '';
+                    if (confirmBox) {
+                        confirmBox.style.display = 'block';
+                        confirmBox.innerHTML = `Enviar <strong>"${data.template_name}"</strong> via <strong>${chLabel}${phone ? ' — ' + phone : ''}</strong> para <strong>${validCount} número${validCount !== 1 ? 's' : ''}</strong>?`;
+                    }
+                } catch (e) {
+                    previewBox.textContent = 'Erro ao carregar preview: ' + e.message;
+                    tsState.templateId = null;
+                }
+                tsUpdateNextBtn();
+            }
+
+            // ── Disparo via SSE (fetch + ReadableStream) ──
+            async function tsDispatch() {
+                const phones = tsState.phones;
+                if (!phones.length || !tsState.channelId || !tsState.templateId) return;
+
+                // Inicializa a tela de resultados
+                el('tsResultHeader').innerHTML = `<strong>Enviando via ${tsState.channelLabel}…</strong>0 de ${phones.length} enviados`;
+                const list = el('tsResultList');
+                list.innerHTML = phones.map((ph, i) => `
+                    <div class="ts-result-item" id="tsRI_${i}">
+                        <span class="ts-ri-phone">${ph}</span>
+                        <span class="ts-ri-status pending"><span class="ts-spinner-inline"></span> Aguardando</span>
+                    </div>`).join('');
+                el('tsProgressBarWrap').style.display = '';
+                el('tsProgressBar').style.width = '0%';
+                tsShowStep('results');
+
+                tsState.abortController = new AbortController();
+                let sentCount = 0, failedCount = 0;
+
+                try {
+                    const res = await fetch('/api/campaigns/test-send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({
+                            phones: phones,
+                            channel_id: tsState.channelId,
+                            template_id: tsState.templateId,
+                            preview_name: el('tsPreviewName').value || 'Assessor Teste',
+                        }),
+                        signal: tsState.abortController.signal,
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({ detail: 'Erro desconhecido' }));
+                        throw new Error(err.detail || 'Erro no servidor');
+                    }
+
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+                        for (const line of lines) {
+                            if (!line.startsWith('data: ')) continue;
+                            let evt;
+                            try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+                            if (evt.type === 'progress') {
+                                const idx = evt.index - 1;
+                                const riEl = el('tsRI_' + idx);
+                                if (riEl) {
+                                    const statusEl = riEl.querySelector('.ts-ri-status');
+                                    if (evt.status === 'sent') {
+                                        statusEl.className = 'ts-ri-status sent';
+                                        statusEl.textContent = '✓ Enviado';
+                                        sentCount++;
+                                    } else {
+                                        statusEl.className = 'ts-ri-status failed';
+                                        statusEl.innerHTML = '✗ Falha';
+                                        if (evt.error) {
+                                            let errEl = riEl.querySelector('.ts-ri-error');
+                                            if (!errEl) {
+                                                errEl = document.createElement('div');
+                                                errEl.className = 'ts-ri-error';
+                                                riEl.appendChild(errEl);
+                                            }
+                                            errEl.textContent = evt.error;
+                                        }
+                                        failedCount++;
+                                    }
+                                    // Marca o próximo como "em envio"
+                                    const nextEl = el('tsRI_' + (idx + 1));
+                                    if (nextEl) {
+                                        const ns = nextEl.querySelector('.ts-ri-status');
+                                        if (ns && ns.classList.contains('pending')) {
+                                            ns.innerHTML = '<span class="ts-spinner-inline"></span> Enviando…';
+                                        }
+                                    }
+                                }
+                                const done = sentCount + failedCount;
+                                el('tsProgressBar').style.width = `${Math.round((done / phones.length) * 100)}%`;
+                                el('tsResultHeader').innerHTML = `<strong>Enviando via ${tsState.channelLabel}…</strong>${done} de ${phones.length} processados`;
+                            } else if (evt.type === 'done') {
+                                sentCount = evt.sent;
+                                failedCount = evt.failed;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    if (e.name !== 'AbortError') {
+                        toast.error('Erro no disparo de teste: ' + e.message);
+                    }
+                }
+
+                // Finalizado
+                el('tsProgressBar').style.width = '100%';
+                const icon = failedCount === 0 ? '✓' : (sentCount === 0 ? '✗' : '⚠');
+                const color = failedCount === 0 ? '#059669' : (sentCount === 0 ? '#dc2626' : '#d97706');
+                el('tsResultHeader').innerHTML = `<strong style="color:${color}">${icon} Concluído — ${sentCount} enviado${sentCount !== 1 ? 's' : ''}, ${failedCount} falha${failedCount !== 1 ? 's' : ''}</strong>`;
+                el('tsBtnAbort').style.display = 'none';
+                el('tsBtnNew').style.display = '';
+                tsState.abortController = null;
+            }
+
+            // ── Navegação ──
+            function tsGoNext() {
+                if (tsState.step === 1) {
+                    const { valid } = parsePhones(el('tsPhonesArea').value);
+                    if (!valid.length) { toast.warning('Informe ao menos um número válido.'); return; }
+                    if (valid.length > MAX_PHONES) { toast.warning(`Limite de ${MAX_PHONES} números por disparo.`); return; }
+                    tsState.phones = valid;
+                    tsLoadChannels();
+                    tsShowStep(2);
+                } else if (tsState.step === 2) {
+                    if (!tsState.channelId) { toast.warning('Selecione um canal.'); return; }
+                    tsLoadTemplates();
+                    tsShowStep(3);
+                    setTimeout(tsLoadTemplatePreview, 300);
+                }
+            }
+
+            function tsGoBack() {
+                if (tsState.step === 2) tsShowStep(1);
+                else if (tsState.step === 3) tsShowStep(2);
+            }
+
+            function tsOpenModal() {
+                tsState = {
+                    step: 1, phones: [], channelId: null, channelLabel: '',
+                    templateId: null, templateName: '', abortController: null,
+                    channels: tsState.channels, templates: tsState.templates,
+                };
+                if (el('tsPhonesArea')) el('tsPhonesArea').value = '';
+                if (el('tsPhoneCounter')) el('tsPhoneCounter').innerHTML = 'Digite os números acima';
+                if (el('tsPhoneWarning')) el('tsPhoneWarning').style.display = 'none';
+                if (el('tsConfirmBox')) el('tsConfirmBox').style.display = 'none';
+                tsShowStep(1);
+                el('tsModalOverlay').classList.add('active');
+            }
+
+            function tsCloseModal() {
+                if (tsState.abortController) {
+                    tsState.abortController.abort();
+                    tsState.abortController = null;
+                }
+                el('tsModalOverlay').classList.remove('active');
+            }
+
+            // ── Event listeners ──
+            document.addEventListener('DOMContentLoaded', function() {
+                const openBtn = el('btnTestChannel');
+                if (openBtn) openBtn.addEventListener('click', tsOpenModal);
+
+                const closeBtn = el('tsModalCloseBtn');
+                if (closeBtn) closeBtn.addEventListener('click', tsCloseModal);
+
+                const overlay = el('tsModalOverlay');
+                if (overlay) {
+                    overlay.addEventListener('click', function(e) {
+                        if (e.target === overlay && tsState.step !== 'results') tsCloseModal();
+                    });
+                }
+
+                const nextBtn = el('tsBtnNext');
+                if (nextBtn) nextBtn.addEventListener('click', tsGoNext);
+
+                const backBtn = el('tsBtnBack');
+                if (backBtn) backBtn.addEventListener('click', tsGoBack);
+
+                const disparBtn = el('tsBtnDisparar');
+                if (disparBtn) disparBtn.addEventListener('click', tsDispatch);
+
+                const abortBtn = el('tsBtnAbort');
+                if (abortBtn) abortBtn.addEventListener('click', function() {
+                    if (tsState.abortController) tsState.abortController.abort();
+                    el('tsBtnAbort').style.display = 'none';
+                    el('tsBtnNew').style.display = '';
+                    el('tsResultHeader').innerHTML = '<strong style="color:#d97706">⚠ Disparo interrompido pelo usuário</strong>';
+                });
+
+                const newBtn = el('tsBtnNew');
+                if (newBtn) newBtn.addEventListener('click', tsOpenModal);
+
+                const phonesArea = el('tsPhonesArea');
+                if (phonesArea) phonesArea.addEventListener('input', tsUpdatePhoneCounter);
+
+                const templateSelect = el('tsTemplateSelect');
+                if (templateSelect) templateSelect.addEventListener('change', tsLoadTemplatePreview);
+
+                const previewName = el('tsPreviewName');
+                if (previewName) {
+                    let _debounceTimer;
+                    previewName.addEventListener('input', function() {
+                        clearTimeout(_debounceTimer);
+                        _debounceTimer = setTimeout(tsLoadTemplatePreview, 400);
+                    });
+                }
+            });
+        })();
     </script>
+
+    <!-- Task #226 — Modal de Disparo de Teste -->
+    <div class="ts-modal-overlay" id="tsModalOverlay">
+        <div class="ts-modal">
+            <div class="ts-modal-header">
+                <h3>Disparo de Teste</h3>
+                <button class="ts-modal-close" id="tsModalCloseBtn" title="Fechar">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="ts-modal-body">
+                <!-- Indicador de passos -->
+                <div class="ts-step-indicator">
+                    <div class="ts-step-item active" id="tsStepItem1">1. Números</div>
+                    <div class="ts-step-item" id="tsStepItem2">2. Canal de saída</div>
+                    <div class="ts-step-item" id="tsStepItem3">3. Template</div>
+                </div>
+
+                <!-- Passo 1: Números -->
+                <div id="tsPane1">
+                    <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:12px;">
+                        Informe os números WhatsApp para receber o disparo de teste. Os registros não serão criados no sistema.
+                    </p>
+                    <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Números WhatsApp</label>
+                    <textarea id="tsPhonesArea" class="ts-phone-textarea"
+                        placeholder="Um número por linha. Ex:&#10;11987654321&#10;+55 11 98765-4321&#10;5511912345678"></textarea>
+                    <div class="ts-phone-counter" id="tsPhoneCounter">Digite os números acima</div>
+                    <div class="ts-phone-warning" id="tsPhoneWarning"></div>
+                    <div style="margin-top:14px;padding:10px 14px;background:var(--bg-color);border-radius:8px;font-size:0.8rem;color:var(--text-secondary);">
+                        <strong>Formatos aceitos:</strong> DDD + número (10-11 dígitos), com ou sem +55, espaços e traços são removidos automaticamente. Máximo de 20 números por disparo.
+                    </div>
+                </div>
+
+                <!-- Passo 2: Canal -->
+                <div id="tsPane2" style="display:none;">
+                    <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;">
+                        Selecione o canal Z-API que será usado para enviar as mensagens de teste.
+                    </p>
+                    <div class="ts-channel-grid" id="tsChannelGrid">
+                        <div style="color:var(--text-secondary);font-size:0.875rem;">Carregando canais...</div>
+                    </div>
+                </div>
+
+                <!-- Passo 3: Template -->
+                <div id="tsPane3" style="display:none;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:end;">
+                        <div>
+                            <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Template</label>
+                            <select id="tsTemplateSelect" class="form-select" style="width:100%;">
+                                <option value="">Selecione um template...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Nome para preview</label>
+                            <input type="text" id="tsPreviewName" class="form-input" value="Assessor Teste" placeholder="Nome de exemplo nas variáveis" style="width:100%;">
+                        </div>
+                    </div>
+                    <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Preview da mensagem</label>
+                    <div class="ts-template-preview" id="tsTemplatePreview">Selecione um template para ver o preview.</div>
+                    <div class="ts-attachment-hint" id="tsAttachHint" style="display:none;"></div>
+                    <div class="ts-confirm-box" id="tsConfirmBox" style="display:none;margin-top:16px;"></div>
+                </div>
+
+                <!-- Painel de Resultados -->
+                <div id="tsPaneResults" style="display:none;">
+                    <div class="ts-result-header" id="tsResultHeader">
+                        <strong>Iniciando disparo…</strong>
+                    </div>
+                    <div class="ts-progress-bar-wrap" id="tsProgressBarWrap">
+                        <div class="ts-progress-bar" id="tsProgressBar" style="width:0%;"></div>
+                    </div>
+                    <div class="ts-result-list" id="tsResultList"></div>
+                </div>
+            </div>
+            <div class="ts-modal-footer">
+                <button class="btn btn-secondary" id="tsBtnBack" style="display:none;">Anterior</button>
+                <button class="btn btn-secondary" id="tsBtnNext" disabled>Próximo</button>
+                <button class="btn btn-primary" id="tsBtnDisparar" style="display:none;" disabled>Disparar</button>
+                <button class="btn btn-danger" id="tsBtnAbort" style="display:none;">Abortar</button>
+                <button class="btn btn-secondary" id="tsBtnNew" style="display:none;">Novo Teste</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
