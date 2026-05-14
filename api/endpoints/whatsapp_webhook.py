@@ -1374,6 +1374,320 @@ async def process_document_message(phone: str, media_url: str, filename: str, db
         await zapi_client.send_text(phone, response, delay_typing=1)
 
 
+async def _process_zapi_payload_internal(
+    payload: Dict[str, Any],
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    channel_id: Optional[int] = None,
+) -> dict:
+    """
+    Pipeline interno compartilhado pelos webhooks legado (/api/webhook/zapi) e
+    multi-canal (/api/whatsapp/webhook/{channel_id}).
+    Contém toda a lógica de negócio *após* a validação do token de autenticação.
+    O parâmetro channel_id é opcional: None → canal legado (env vars).
+    """
+    event_type = payload.get("type", "")
+
+    if event_type == "DeliveryCallback":
+        phone = payload.get("phone", "")
+        message_id = payload.get("messageId", "")
+        print(f"[WEBHOOK] DeliveryCallback recebido - phone: {phone}, messageId: {message_id}")
+        if message_id:
+            existing = db.query(WhatsAppMessage).filter(
+                WhatsAppMessage.message_id == message_id
+            ).first()
+            if existing:
+                existing.message_status = "SENT"
+                db.commit()
+                return {"status": "updated", "reason": "message status updated to SENT"}
+        return {"status": "ignored", "reason": "DeliveryCallback - no action needed"}
+
+    if event_type != "ReceivedCallback":
+        return {"status": "ignored", "reason": f"event type: {event_type}"}
+
+    from_me = payload.get("fromMe", False)
+    phone = payload.get("phone", "")
+    if phone and "@" in phone and "@lid" not in phone:
+        phone = ''.join(filter(str.isdigit, phone))
+    message_id = payload.get("messageId", "")
+    is_group = payload.get("isGroup", False)
+    sender_name = payload.get("senderName") or payload.get("chatName")
+    sender_photo = payload.get("senderPhoto") or payload.get("photo")
+    status = payload.get("status", "RECEIVED")
+    sender_lid = payload.get("senderLid")
+    chat_lid = payload.get("chatLid")
+
+    if is_group:
+        return {"status": "ignored", "reason": "group message"}
+
+    if from_me:
+        try:
+            existing_message = db.query(WhatsAppMessage).filter(
+                WhatsAppMessage.message_id == message_id
+            ).first()
+            if existing_message:
+                print(f"[WEBHOOK] Mensagem já existe (id={message_id}), atualizando status")
+                if status:
+                    existing_message.message_status = status
+                    db.commit()
+                return {"status": "updated", "reason": "message already exists"}
+
+            outbound_body = None
+            outbound_media_url = None
+            outbound_media_mimetype = None
+            outbound_media_filename = None
+
+            if payload.get("text"):
+                text_data = payload["text"]
+                outbound_body = text_data.get("message", "") if isinstance(text_data, dict) else str(text_data)
+            elif payload.get("image"):
+                outbound_body = payload["image"].get("caption", "[Imagem]")
+                outbound_media_url = payload["image"].get("imageUrl")
+                outbound_media_mimetype = payload["image"].get("mimeType")
+            elif payload.get("audio"):
+                outbound_body = "[Áudio]"
+                outbound_media_url = payload["audio"].get("audioUrl")
+                outbound_media_mimetype = payload["audio"].get("mimeType")
+            elif payload.get("video"):
+                outbound_body = payload["video"].get("caption", "[Vídeo]")
+                outbound_media_url = payload["video"].get("videoUrl")
+                outbound_media_mimetype = payload["video"].get("mimeType")
+            elif payload.get("document"):
+                outbound_body = payload["document"].get("fileName", "[Documento]")
+                outbound_media_url = payload["document"].get("documentUrl")
+                outbound_media_mimetype = payload["document"].get("mimeType")
+                outbound_media_filename = payload["document"].get("fileName")
+            elif payload.get("sticker"):
+                outbound_body = "[Sticker]"
+                outbound_media_url = payload["sticker"].get("stickerUrl")
+
+            save_message_zapi(
+                db,
+                message_id=message_id,
+                zaap_id=None,
+                phone=phone,
+                direction=MessageDirection.OUTBOUND.value,
+                message_type=get_message_type_zapi(payload),
+                from_me=True,
+                message_status=status,
+                body=outbound_body,
+                media_url=outbound_media_url,
+                media_mimetype=outbound_media_mimetype,
+                media_filename=outbound_media_filename,
+                sender_type=SenderType.HUMAN.value,
+                sender_lid=sender_lid,
+                chat_lid=chat_lid,
+                channel_id=channel_id,
+            )
+        except Exception as e:
+            print(f"[WEBHOOK] Erro ao salvar mensagem enviada: {e}")
+            import traceback
+            traceback.print_exc()
+        return {"status": "saved", "reason": "message from self"}
+
+    if not is_phone_allowed(phone, db):
+        print(f"[WEBHOOK] Número não autorizado: {phone}")
+        return {"status": "ignored", "reason": "phone not allowed"}
+
+    # IDEMPOTÊNCIA: verificar antes de qualquer processamento
+    if message_id:
+        existing_inbound = db.query(WhatsAppMessage).filter(
+            WhatsAppMessage.message_id == message_id,
+            WhatsAppMessage.direction == MessageDirection.INBOUND.value
+        ).first()
+        if existing_inbound:
+            print(f"[WEBHOOK] Mensagem inbound já processada (id={message_id}), ignorando duplicata")
+            return {"status": "ignored", "reason": "duplicate message - already processed"}
+
+    conversation = None
+    phone_is_lid_precheck = _is_lid_not_phone(phone) if phone else False
+    if sender_lid:
+        conversation = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
+    if not conversation and phone and not phone_is_lid_precheck:
+        conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
+    if not conversation and phone:
+        clean_val = phone.replace("@lid", "")
+        conversation = db.query(Conversation).filter(
+            Conversation.chat_lid == clean_val + "@lid"
+        ).first()
+        if not conversation:
+            conversation = db.query(Conversation).filter(
+                Conversation.chat_lid == phone
+            ).first()
+    if not conversation and phone_is_lid_precheck:
+        normalized_lid = phone.replace("@lid", "")
+        conversation = db.query(Conversation).filter(Conversation.lid == normalized_lid).first()
+        if not conversation:
+            conversation = db.query(Conversation).filter(Conversation.lid == phone).first()
+
+    is_human_active = conversation and conversation.ticket_status == TicketStatusV2.OPEN.value
+
+    message_type = get_message_type_zapi(payload)
+
+    body = None
+    media_url = None
+    media_mimetype = None
+    media_filename = None
+    thumbnail_url = None
+
+    if payload.get("text"):
+        body = payload["text"].get("message", "")
+    elif payload.get("image"):
+        media_url = payload["image"].get("imageUrl")
+        media_mimetype = payload["image"].get("mimeType")
+        thumbnail_url = payload["image"].get("thumbnailUrl")
+        body = payload["image"].get("caption", "")
+    elif payload.get("audio"):
+        media_url = payload["audio"].get("audioUrl")
+        media_mimetype = payload["audio"].get("mimeType")
+    elif payload.get("video"):
+        media_url = payload["video"].get("videoUrl")
+        media_mimetype = payload["video"].get("mimeType")
+        body = payload["video"].get("caption", "")
+    elif payload.get("document"):
+        media_url = payload["document"].get("documentUrl")
+        media_mimetype = payload["document"].get("mimeType")
+        media_filename = payload["document"].get("fileName")
+        thumbnail_url = payload["document"].get("thumbnailUrl")
+    elif payload.get("sticker"):
+        media_url = payload["sticker"].get("stickerUrl")
+        media_mimetype = payload["sticker"].get("mimeType")
+
+    try:
+        message_record = save_message_zapi(
+            db,
+            message_id=message_id,
+            zaap_id=None,
+            phone=phone,
+            direction=MessageDirection.INBOUND.value,
+            message_type=message_type,
+            from_me=False,
+            message_status=status,
+            body=body,
+            media_url=media_url,
+            media_mimetype=media_mimetype,
+            media_filename=media_filename,
+            thumbnail_url=thumbnail_url,
+            sender_name=sender_name,
+            sender_photo=sender_photo,
+            sender_lid=sender_lid,
+            chat_lid=chat_lid,
+            channel_id=channel_id,
+        )
+    except Exception as e:
+        print(f"[WEBHOOK] Erro ao salvar mensagem: {e}")
+        message_record = None
+
+    if is_human_active:
+        print(f"[WEBHOOK] Ticket OPEN (atendimento humano ativo), não respondendo automaticamente: {phone}")
+        return {
+            "status": "received",
+            "message_type": message_type,
+            "message_id": message_record.id if message_record else None,
+            "auto_response": False,
+            "reason": "ticket_open_human_active"
+        }
+
+    if conversation and conversation.ticket_status == TicketStatusV2.SOLVED.value:
+        incoming_text = body or ""
+        from services.conversation_flow import is_positive_confirmation, is_negative_confirmation
+        if incoming_text and (
+            is_positive_confirmation(incoming_text)
+            or is_negative_confirmation(incoming_text)
+            or _is_farewell_or_emoji(incoming_text)
+        ):
+            print(f"[WEBHOOK] Ticket SOLVED + encerramento/despedida — ignorando (sem loop): {phone}")
+            return {
+                "status": "received",
+                "message_type": message_type,
+                "message_id": message_record.id if message_record else None,
+                "auto_response": False,
+                "reason": "solved_farewell_ignored"
+            }
+        if not incoming_text and message_type in (MessageType.IMAGE.value, MessageType.DOCUMENT.value):
+            print(f"[WEBHOOK] Ticket SOLVED + {message_type} sem legenda — ignorando (sem loop): {phone}")
+            return {
+                "status": "received",
+                "message_type": message_type,
+                "message_id": message_record.id if message_record else None,
+                "auto_response": False,
+                "reason": "solved_media_no_caption_ignored"
+            }
+        conversation.ticket_status = None
+        db.commit()
+        print(f"[WEBHOOK] Ticket reaberto (era solved, nova mensagem recebida): {phone}")
+        try:
+            sse_manager = get_sse_manager()
+            asyncio.create_task(sse_manager.notify_conversation_update(conversation.id))
+        except Exception:
+            pass
+
+    if message_type == MessageType.TEXT.value:
+        if body:
+            schedule_task(enqueue_message(
+                phone=phone,
+                body=body,
+                message_record_id=message_record.id if message_record else None,
+                conversation_id=conversation.id if conversation else None,
+                db_factory=SessionLocal,
+                process_fn=process_text_message
+            ))
+        else:
+            return {"status": "ignored", "reason": "empty text message"}
+
+    elif message_type == MessageType.AUDIO.value:
+        background_tasks.add_task(
+            process_audio_message,
+            phone,
+            media_url,
+            db,
+            message_record,
+            conversation
+        )
+
+    elif message_type == MessageType.IMAGE.value:
+        background_tasks.add_task(
+            process_image_message,
+            phone,
+            media_url,
+            body,
+            db,
+            message_record,
+            conversation
+        )
+
+    elif message_type == MessageType.DOCUMENT.value:
+        background_tasks.add_task(
+            process_document_message,
+            phone,
+            media_url,
+            media_filename or "documento",
+            db,
+            message_record,
+            conversation
+        )
+
+    elif message_type == MessageType.VIDEO.value:
+        response = "Recebi seu vídeo! 🎥 Por favor, descreva sua dúvida em texto."
+        if message_record:
+            message_record.ai_response = response
+            db.commit()
+        background_tasks.add_task(zapi_client.send_text, phone, response)
+
+    elif message_type == MessageType.STICKER.value:
+        return {"status": "ignored", "reason": "sticker message"}
+
+    else:
+        return {"status": "ignored", "reason": f"unsupported message type: {message_type}"}
+
+    return {
+        "status": "processing",
+        "message_type": message_type,
+        "message_id": message_record.id if message_record else None
+    }
+
+
 @router.post("/zapi")
 async def zapi_webhook(
     request: Request,
@@ -1398,318 +1712,7 @@ async def zapi_webhook(
             print(f"[WEBHOOK] Token mismatch - incoming (first 5): '{incoming_token[:5] if incoming_token else 'EMPTY'}'")
             raise HTTPException(status_code=401, detail="Invalid or missing webhook token")
 
-    event_type = payload.get("type", "")
-    
-    if event_type == "DeliveryCallback":
-        phone = payload.get("phone", "")
-        message_id = payload.get("messageId", "")
-        zaap_id = payload.get("zaapId", "")
-        
-        print(f"[WEBHOOK] DeliveryCallback recebido - phone: {phone}, messageId: {message_id}")
-        
-        if message_id:
-            existing = db.query(WhatsAppMessage).filter(
-                WhatsAppMessage.message_id == message_id
-            ).first()
-            
-            if existing:
-                existing.message_status = "SENT"
-                db.commit()
-                return {"status": "updated", "reason": "message status updated to SENT"}
-        
-        return {"status": "ignored", "reason": "DeliveryCallback - no action needed"}
-    
-    if event_type != "ReceivedCallback":
-        return {"status": "ignored", "reason": f"event type: {event_type}"}
-    
-    from_me = payload.get("fromMe", False)
-    phone = payload.get("phone", "")
-    # Normaliza sufixos do WhatsApp (@c.us, @s.whatsapp.net) sem afetar LIDs (@lid)
-    if phone and "@" in phone and "@lid" not in phone:
-        phone = ''.join(filter(str.isdigit, phone))
-    message_id = payload.get("messageId", "")
-    is_group = payload.get("isGroup", False)
-    sender_name = payload.get("senderName") or payload.get("chatName")
-    sender_photo = payload.get("senderPhoto") or payload.get("photo")
-    status = payload.get("status", "RECEIVED")
-    
-    sender_lid = payload.get("senderLid")
-    chat_lid = payload.get("chatLid")
-    
-    if is_group:
-        return {"status": "ignored", "reason": "group message"}
-    
-    if from_me:
-        try:
-            existing_message = db.query(WhatsAppMessage).filter(
-                WhatsAppMessage.message_id == message_id
-            ).first()
-            
-            if existing_message:
-                print(f"[WEBHOOK] Mensagem já existe (id={message_id}), atualizando status")
-                if status:
-                    existing_message.message_status = status
-                    db.commit()
-                return {"status": "updated", "reason": "message already exists"}
-            
-            outbound_body = None
-            outbound_media_url = None
-            outbound_media_mimetype = None
-            outbound_media_filename = None
-            
-            if payload.get("text"):
-                text_data = payload["text"]
-                outbound_body = text_data.get("message", "") if isinstance(text_data, dict) else str(text_data)
-            elif payload.get("image"):
-                outbound_body = payload["image"].get("caption", "[Imagem]")
-                outbound_media_url = payload["image"].get("imageUrl")
-                outbound_media_mimetype = payload["image"].get("mimeType")
-            elif payload.get("audio"):
-                outbound_body = "[Áudio]"
-                outbound_media_url = payload["audio"].get("audioUrl")
-                outbound_media_mimetype = payload["audio"].get("mimeType")
-            elif payload.get("video"):
-                outbound_body = payload["video"].get("caption", "[Vídeo]")
-                outbound_media_url = payload["video"].get("videoUrl")
-                outbound_media_mimetype = payload["video"].get("mimeType")
-            elif payload.get("document"):
-                outbound_body = payload["document"].get("fileName", "[Documento]")
-                outbound_media_url = payload["document"].get("documentUrl")
-                outbound_media_mimetype = payload["document"].get("mimeType")
-                outbound_media_filename = payload["document"].get("fileName")
-            elif payload.get("sticker"):
-                outbound_body = "[Sticker]"
-                outbound_media_url = payload["sticker"].get("stickerUrl")
-            
-            save_message_zapi(
-                db,
-                message_id=message_id,
-                zaap_id=None,
-                phone=phone,
-                direction=MessageDirection.OUTBOUND.value,
-                message_type=get_message_type_zapi(payload),
-                from_me=True,
-                message_status=status,
-                body=outbound_body,
-                media_url=outbound_media_url,
-                media_mimetype=outbound_media_mimetype,
-                media_filename=outbound_media_filename,
-                sender_type=SenderType.HUMAN.value,
-                sender_lid=sender_lid,
-                chat_lid=chat_lid
-            )
-        except Exception as e:
-            print(f"[WEBHOOK] Erro ao salvar mensagem enviada: {e}")
-            import traceback
-            traceback.print_exc()
-        return {"status": "saved", "reason": "message from self"}
-    
-    if not is_phone_allowed(phone, db):
-        print(f"[WEBHOOK] Número não autorizado: {phone}")
-        return {"status": "ignored", "reason": "phone not allowed"}
-    
-    # IDEMPOTÊNCIA: Verificar se a mensagem já foi processada ANTES de qualquer processamento
-    if message_id:
-        existing_inbound = db.query(WhatsAppMessage).filter(
-            WhatsAppMessage.message_id == message_id,
-            WhatsAppMessage.direction == MessageDirection.INBOUND.value
-        ).first()
-        
-        if existing_inbound:
-            print(f"[WEBHOOK] Mensagem inbound já processada (id={message_id}), ignorando duplicata")
-            return {"status": "ignored", "reason": "duplicate message - already processed"}
-    
-    conversation = None
-    phone_is_lid_precheck = _is_lid_not_phone(phone) if phone else False
-    if sender_lid:
-        conversation = db.query(Conversation).filter(Conversation.lid == sender_lid).first()
-    if not conversation and phone and not phone_is_lid_precheck:
-        conversation = db.query(Conversation).filter(Conversation.phone == phone).first()
-    if not conversation and phone:
-        clean_val = phone.replace("@lid", "")
-        conversation = db.query(Conversation).filter(
-            Conversation.chat_lid == clean_val + "@lid"
-        ).first()
-        if not conversation:
-            conversation = db.query(Conversation).filter(
-                Conversation.chat_lid == phone
-            ).first()
-    if not conversation and phone_is_lid_precheck:
-        normalized_lid = phone.replace("@lid", "")
-        conversation = db.query(Conversation).filter(Conversation.lid == normalized_lid).first()
-        if not conversation:
-            conversation = db.query(Conversation).filter(Conversation.lid == phone).first()
-    
-    is_human_active = conversation and conversation.ticket_status == TicketStatusV2.OPEN.value
-    
-    message_type = get_message_type_zapi(payload)
-    
-    body = None
-    media_url = None
-    media_mimetype = None
-    media_filename = None
-    thumbnail_url = None
-    
-    if payload.get("text"):
-        body = payload["text"].get("message", "")
-    elif payload.get("image"):
-        media_url = payload["image"].get("imageUrl")
-        media_mimetype = payload["image"].get("mimeType")
-        thumbnail_url = payload["image"].get("thumbnailUrl")
-        body = payload["image"].get("caption", "")
-    elif payload.get("audio"):
-        media_url = payload["audio"].get("audioUrl")
-        media_mimetype = payload["audio"].get("mimeType")
-    elif payload.get("video"):
-        media_url = payload["video"].get("videoUrl")
-        media_mimetype = payload["video"].get("mimeType")
-        body = payload["video"].get("caption", "")
-    elif payload.get("document"):
-        media_url = payload["document"].get("documentUrl")
-        media_mimetype = payload["document"].get("mimeType")
-        media_filename = payload["document"].get("fileName")
-        thumbnail_url = payload["document"].get("thumbnailUrl")
-    elif payload.get("sticker"):
-        media_url = payload["sticker"].get("stickerUrl")
-        media_mimetype = payload["sticker"].get("mimeType")
-    
-    try:
-        message_record = save_message_zapi(
-            db,
-            message_id=message_id,
-            zaap_id=None,
-            phone=phone,
-            direction=MessageDirection.INBOUND.value,
-            message_type=message_type,
-            from_me=False,
-            message_status=status,
-            body=body,
-            media_url=media_url,
-            media_mimetype=media_mimetype,
-            media_filename=media_filename,
-            thumbnail_url=thumbnail_url,
-            sender_name=sender_name,
-            sender_photo=sender_photo,
-            sender_lid=sender_lid,
-            chat_lid=chat_lid
-        )
-    except Exception as e:
-        print(f"[WEBHOOK] Erro ao salvar mensagem: {e}")
-        message_record = None
-    
-    if is_human_active:
-        print(f"[WEBHOOK] Ticket OPEN (atendimento humano ativo), não respondendo automaticamente: {phone}")
-        return {
-            "status": "received",
-            "message_type": message_type,
-            "message_id": message_record.id if message_record else None,
-            "auto_response": False,
-            "reason": "ticket_open_human_active"
-        }
-    
-    if conversation and conversation.ticket_status == TicketStatusV2.SOLVED.value:
-        incoming_text = body or ""
-        from services.conversation_flow import is_positive_confirmation, is_negative_confirmation
-        # Texto de encerramento (positivo, negativo ou despedida) → não reabrir
-        if incoming_text and (
-            is_positive_confirmation(incoming_text)
-            or is_negative_confirmation(incoming_text)
-            or _is_farewell_or_emoji(incoming_text)
-        ):
-            print(f"[WEBHOOK] Ticket SOLVED + encerramento/despedida — ignorando (sem loop): {phone}")
-            return {
-                "status": "received",
-                "message_type": message_type,
-                "message_id": message_record.id if message_record else None,
-                "auto_response": False,
-                "reason": "solved_farewell_ignored"
-            }
-        # Mídia (imagem/documento) sem legenda quando ticket está SOLVED:
-        # provavelmente uma mídia encaminhada ou reação — não reabrir a conversa.
-        # Áudio é processado normalmente (pode conter uma nova pergunta transcrita).
-        if not incoming_text and message_type in (MessageType.IMAGE.value, MessageType.DOCUMENT.value):
-            print(f"[WEBHOOK] Ticket SOLVED + {message_type} sem legenda — ignorando (sem loop): {phone}")
-            return {
-                "status": "received",
-                "message_type": message_type,
-                "message_id": message_record.id if message_record else None,
-                "auto_response": False,
-                "reason": "solved_media_no_caption_ignored"
-            }
-        conversation.ticket_status = None
-        db.commit()
-        print(f"[WEBHOOK] Ticket reaberto (era solved, nova mensagem recebida): {phone}")
-        try:
-            sse_manager = get_sse_manager()
-            asyncio.create_task(sse_manager.notify_conversation_update(conversation.id))
-        except Exception:
-            pass
-    
-    if message_type == MessageType.TEXT.value:
-        if body:
-            schedule_task(enqueue_message(
-                phone=phone,
-                body=body,
-                message_record_id=message_record.id if message_record else None,
-                conversation_id=conversation.id if conversation else None,
-                db_factory=SessionLocal,
-                process_fn=process_text_message
-            ))
-        else:
-            return {"status": "ignored", "reason": "empty text message"}
-            
-    elif message_type == MessageType.AUDIO.value:
-        background_tasks.add_task(
-            process_audio_message, 
-            phone, 
-            media_url, 
-            db, 
-            message_record,
-            conversation
-        )
-        
-    elif message_type == MessageType.IMAGE.value:
-        background_tasks.add_task(
-            process_image_message, 
-            phone, 
-            media_url,
-            body,
-            db, 
-            message_record,
-            conversation
-        )
-        
-    elif message_type == MessageType.DOCUMENT.value:
-        background_tasks.add_task(
-            process_document_message, 
-            phone, 
-            media_url,
-            media_filename or "documento",
-            db, 
-            message_record,
-            conversation
-        )
-        
-    elif message_type == MessageType.VIDEO.value:
-        response = "Recebi seu vídeo! 🎥 Por favor, descreva sua dúvida em texto."
-        if message_record:
-            message_record.ai_response = response
-            db.commit()
-        background_tasks.add_task(zapi_client.send_text, phone, response)
-        
-    elif message_type == MessageType.STICKER.value:
-        return {"status": "ignored", "reason": "sticker message"}
-        
-    else:
-        return {"status": "ignored", "reason": f"unsupported message type: {message_type}"}
-    
-    return {
-        "status": "processing",
-        "message_type": message_type,
-        "message_id": message_record.id if message_record else None
-    }
-
-
+    return await _process_zapi_payload_internal(payload, request, background_tasks, db, channel_id=None)
 @router.post("/whatsapp")
 async def whatsapp_webhook_legacy(
     payload: Dict[str, Any],
@@ -1797,17 +1800,22 @@ async def list_messages(
     }
 
 
+
+
 # ---------------------------------------------------------------------------
 # Task #223 — Rota de webhook multi-canal
+# Cada instância Z-API adicional deve apontar para /api/whatsapp/webhook/{channel_id}.
+# A mesma lógica de negócio do webhook legado é executada, com channel_id injetado.
 # ---------------------------------------------------------------------------
 
 @multichannel_router.post(
     "/webhook/{channel_id}",
     summary="Webhook Z-API por canal",
     description=(
-        "Endpoint equivalente ao /api/webhook/zapi, mas com canal explícito. "
-        "O Z-API de cada instância adicional deve ser configurado para enviar "
-        "eventos para /api/whatsapp/webhook/{channel_id}."
+        "Equivalente ao /api/webhook/zapi, mas com canal explícito. "
+        "O Z-API de cada instância adicional deve enviar eventos para "
+        "/api/whatsapp/webhook/{channel_id}. "
+        "Valida o token do canal contra as credenciais armazenadas em zapi_channels."
     ),
 )
 async def whatsapp_webhook_multichannel(
@@ -1821,11 +1829,12 @@ async def whatsapp_webhook_multichannel(
 
     Fluxo:
     1. Valida que o canal existe e está ativo em `zapi_channels`.
-    2. Delega para a mesma lógica do webhook legado, injetando `channel_id`
-       na conversa e na mensagem salvas.
-    3. Retorna {"status": "ok"} — mesmo contrato do webhook legado.
+    2. Valida o token de autenticação contra as credenciais do canal.
+    3. Lê o payload JSON e delega ao mesmo pipeline interno usado pelo webhook legado,
+       injetando `channel_id` para rastreabilidade de mensagens e conversas.
     """
     from database.models import ZAPIChannel
+    from core.config import get_settings as _get_settings
 
     channel = db.query(ZAPIChannel).filter(
         ZAPIChannel.id == channel_id,
@@ -1838,81 +1847,30 @@ async def whatsapp_webhook_multichannel(
             detail=f"Canal {channel_id} não encontrado ou inativo"
         )
 
+    # Validação de token — mesma abordagem do webhook legado.
+    incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
+    if channel.is_legacy:
+        # Canal legado: valida contra env vars (compatibilidade com o webhook original)
+        _settings = _get_settings()
+        expected_token = os.getenv("ZAPI_TOKEN", "") or _settings.ZAPI_TOKEN
+        expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
+        valid = incoming_token and incoming_token in (expected_token, expected_ct)
+    else:
+        # Canal explícito: valida contra credenciais armazenadas
+        valid_tokens = {t for t in (channel.token, channel.client_token) if t}
+        valid = bool(incoming_token) and incoming_token in valid_tokens
+
+    if not valid:
+        logger.warning(f"[WEBHOOK-MC] Token inválido para canal {channel_id} — incoming (5): {incoming_token[:5] if incoming_token else 'VAZIO'}")
+        raise HTTPException(status_code=401, detail="Token inválido ou ausente para este canal")
+
     try:
-        body = await request.json()
+        payload = await request.json()
     except Exception:
-        body = {}
+        payload = {}
 
-    logger.info(f"[WEBHOOK-MC] Canal {channel_id} ({channel.name}) — evento recebido: {str(body)[:200]}")
+    logger.info(f"[WEBHOOK-MC] Canal {channel_id} ({channel.name}) — evento: {payload.get('type', '?')}")
 
-    # Enfileira o processamento com o channel_id injetado
-    background_tasks.add_task(
-        _process_webhook_with_channel,
-        body=body,
-        channel_id=channel_id,
-        db_factory=None,
+    return await _process_zapi_payload_internal(
+        payload, request, background_tasks, db, channel_id=channel_id
     )
-
-    return {"status": "ok", "channel_id": channel_id}
-
-
-async def _process_webhook_with_channel(body: dict, channel_id: int, db_factory):
-    """
-    Processa um evento de webhook multi-canal.
-    Reutiliza toda a lógica existente do handler legado mas injeta channel_id
-    nos helpers `save_message_zapi` e `get_or_create_conversation`.
-
-    Nota: importa `process_zapi_webhook` do módulo atual para evitar duplicação.
-    O channel_id é propagado via injeção direta nos helpers — não altera o fluxo
-    de negócio nem as defesas anti-alucinação.
-    """
-    from database.database import SessionLocal as _SessionLocal
-    db = _SessionLocal()
-    try:
-        await _handle_zapi_event_with_channel(body, channel_id, db)
-    except Exception as exc:
-        logger.error(f"[WEBHOOK-MC] Erro no processamento do canal {channel_id}: {exc}", exc_info=True)
-    finally:
-        db.close()
-
-
-async def _handle_zapi_event_with_channel(body: dict, channel_id: int, db):
-    """
-    Versão do handler de evento que passa channel_id para os helpers de persistência.
-    Extrai os campos relevantes do payload Z-API e chama save_message_zapi com channel_id.
-    Suporta os mesmos tipos de mensagem que o webhook legado.
-    """
-    try:
-        msg_type = body.get("type", "")
-        if msg_type in ("", "ReadMessage", "MessageStatusChange", "PresenceUpdate", "UndefinedMessage"):
-            return
-
-        phone = body.get("phone") or body.get("from", "")
-        sender_name = body.get("senderName") or body.get("pushName") or ""
-        sender_photo = body.get("photo") or ""
-        sender_lid = body.get("lid") or ""
-        chat_lid = body.get("chatLid") or ""
-        message_id = body.get("messageId") or body.get("id") or ""
-        zaap_id = body.get("zaapId") or ""
-        from_me = body.get("fromMe", False)
-        direction = MessageDirection.OUTBOUND.value if from_me else MessageDirection.INBOUND.value
-        body_text = body.get("text", {}).get("message") if "text" in body else body.get("body") or ""
-
-        save_message_zapi(
-            db=db,
-            message_id=message_id,
-            zaap_id=zaap_id,
-            phone=phone,
-            direction=direction,
-            message_type=msg_type,
-            from_me=from_me,
-            body=body_text,
-            sender_name=sender_name,
-            sender_photo=sender_photo,
-            sender_lid=sender_lid,
-            chat_lid=chat_lid,
-            channel_id=channel_id,
-        )
-        logger.info(f"[WEBHOOK-MC] Mensagem persistida — canal={channel_id}, phone={phone}, tipo={msg_type}")
-    except Exception as exc:
-        logger.error(f"[WEBHOOK-MC] Erro ao processar evento: {exc}", exc_info=True)

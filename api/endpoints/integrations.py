@@ -470,3 +470,57 @@ async def zapi_health_check(request: Request):
 
     cached = get_zapi_status_cache()
     return cached
+
+
+@router.get("/zapi/channels")
+async def list_zapi_channels(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #223 — Lista todos os canais Z-API configurados.
+    Retorna credenciais sensíveis mascaradas (nunca expõe tokens completos).
+    Apenas administradores e gestores podem acessar.
+    """
+    token_data = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token_data:
+        token_data = request.cookies.get("access_token", "")
+    user_data = decode_token(token_data)
+    if not user_data or user_data.get("role") not in ("admin", "gestao_rv"):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    from database.models import ZAPIChannel, UnidadeChannelMapping
+
+    channels = db.query(ZAPIChannel).order_by(ZAPIChannel.id).all()
+    mappings = db.query(UnidadeChannelMapping).all()
+    mapping_by_channel: Dict[int, List[str]] = {}
+    for m in mappings:
+        mapping_by_channel.setdefault(m.channel_id, []).append(m.unidade)
+
+    def _mask(value: Optional[str]) -> Optional[str]:
+        if not value or len(value) < 8:
+            return None
+        return value[:4] + "****" + value[-4:]
+
+    return {
+        "channels": [
+            {
+                "id": ch.id,
+                "name": ch.name,
+                "label": ch.label,
+                "phone_number": ch.phone_number,
+                "instance_id": _mask(ch.instance_id),
+                "token_masked": _mask(ch.token),
+                "client_token_configured": bool(ch.client_token),
+                "is_legacy": ch.is_legacy,
+                "is_active": ch.is_active,
+                "webhook_url": ch.webhook_url,
+                "description": ch.description,
+                "unidades_mapeadas": mapping_by_channel.get(ch.id, []),
+                "created_at": ch.created_at.isoformat() if ch.created_at else None,
+                "updated_at": ch.updated_at.isoformat() if ch.updated_at else None,
+            }
+            for ch in channels
+        ],
+        "total": len(channels),
+    }

@@ -252,6 +252,9 @@ class Assessor(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # Relação com canal WhatsApp preferencial (Task #223).
+    zapi_channel = relationship("ZAPIChannel", foreign_keys=[channel_id], back_populates="assessores")
+
 
 class CustomFieldDefinition(Base):
     """
@@ -1651,23 +1654,29 @@ class ZAPIChannel(Base):
     __tablename__ = "zapi_channels"
 
     id = Column(Integer, primary_key=True, index=True)
+    # name: identificador humano do canal (ex: "Canal Principal SVN SP").
     name = Column(String(100), nullable=False)
+    # label: rótulo curto exibido na UI (ex: "SVN SP").
+    label = Column(String(100), nullable=True)
     instance_id = Column(String(255), nullable=False)
     token = Column(String(255), nullable=False)
-    # nullable para canais que não usam client_token (futuro).
+    # nullable para canais que não usam client_token.
     client_token = Column(String(255), nullable=True)
+    # phone_number: número de WhatsApp vinculado à instância (ex: "+5511999999999").
+    phone_number = Column(String(50), nullable=True)
     is_legacy = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     # URL do webhook registrada no Z-API para este canal (informativo).
     webhook_url = Column(String(500), nullable=True)
-    # Campo legado do modelo antigo — mantido para compatibilidade enquanto
-    # não há coluna real no banco; o campo de negócio é webhook_url acima.
+    # Campo legado mantido para compatibilidade até migração completa.
     webhook_url_suffix = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     unidade_mappings = relationship("UnidadeChannelMapping", back_populates="channel", cascade="all, delete-orphan")
+    # Assessores com canal preferencial explícito apontado para este canal.
+    assessores = relationship("Assessor", back_populates="zapi_channel", foreign_keys="Assessor.channel_id")
 
 
 class UnidadeChannelMapping(Base):

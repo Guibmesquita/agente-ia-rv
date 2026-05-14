@@ -705,3 +705,50 @@ async def check_pending_confirmations(db: Session, zapi_client, timeout_minutes:
             print(f"[FLOW] Confirmação enviada para {conv.phone}")
         except Exception as e:
             print(f"[FLOW] Erro ao processar confirmação para {conv.phone}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Task #223 — Resolução de canal WhatsApp para o pipeline de resposta
+# ---------------------------------------------------------------------------
+
+def resolve_channel_client_for_conversation(conversation: Optional[Conversation], db: Session):
+    """
+    Task #223 — Ponto de integração central para resolução do canal WhatsApp.
+
+    Dado uma Conversation (que pode ter `channel_id` preenchido), retorna o
+    `ZAPIClient` correto para enviar a resposta do agente. Usado pelo pipeline
+    de resposta (process_text_message, process_audio_message, etc.) quando
+    Tasks #224+ forem implementadas para suporte completo a multi-canal.
+
+    Cadeia de resolução:
+    1. Se `conversation.channel_id` estiver preenchido → usa esse canal.
+    2. Senão, resolve via assessor → unidade → canal legado (env vars).
+    3. Fallback: sempre retorna o cliente legado sem lançar exceção.
+
+    Uso futuro (Tasks #224+):
+        client = resolve_channel_client_for_conversation(conversation, db)
+        await client.send_text(phone, response)
+    """
+    from services.whatsapp_client import get_zapi_client_for_channel, get_zapi_client_for_assessor, zapi_client
+
+    if conversation is None:
+        return zapi_client
+
+    try:
+        if conversation.channel_id:
+            return get_zapi_client_for_channel(conversation.channel_id, db)
+
+        # Tenta resolver via assessor vinculado
+        assessor_phone = None
+        assessor_unidade = None
+        if hasattr(conversation, "assessor_id") and conversation.assessor_id:
+            from database.models import Assessor
+            assessor = db.query(Assessor).filter(Assessor.id == conversation.assessor_id).first()
+            if assessor:
+                assessor_phone = assessor.telefone_whatsapp
+                assessor_unidade = assessor.unidade
+
+        return get_zapi_client_for_assessor(assessor_phone, assessor_unidade, db)
+    except Exception as exc:
+        print(f"[FLOW] Aviso: erro ao resolver canal para conversa {getattr(conversation, 'id', '?')}: {exc} — usando legado")
+        return zapi_client

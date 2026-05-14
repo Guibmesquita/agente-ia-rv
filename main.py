@@ -666,6 +666,8 @@ def _apply_incremental_migrations():
         # A tabela já existe (criada pelo create_all), então usamos ADD COLUMN IF NOT EXISTS.
         "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS description TEXT",
         "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(500)",
+        "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS label VARCHAR(100)",
+        "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS phone_number VARCHAR(50)",
         "ALTER TABLE zapi_channels ALTER COLUMN name TYPE VARCHAR(100)",
         "ALTER TABLE zapi_channels ALTER COLUMN client_token DROP NOT NULL",
     ]
@@ -712,11 +714,9 @@ def _bootstrap_legacy_channel():
 
     db = SessionLocal()
     try:
-        existing = db.execute(
-            sql_text("SELECT id FROM zapi_channels WHERE is_legacy = TRUE LIMIT 1")
-        ).fetchone()
-        if existing:
-            print(f"[INIT] Canal legado Z-API já existe (id={existing[0]}) — bootstrap ignorado")
+        count = db.execute(sql_text("SELECT COUNT(*) FROM zapi_channels")).scalar()
+        if count > 0:
+            print(f"[INIT] zapi_channels já contém {count} canal(is) — bootstrap ignorado")
             return
 
         db.execute(
