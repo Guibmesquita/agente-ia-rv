@@ -379,6 +379,62 @@ async def update_assessor_channel(
     return parse_custom_fields(assessor)
 
 
+class BulkChannelAssignRequest(BaseModel):
+    assessor_ids: List[int]
+    channel_id: Optional[int] = None
+
+
+@router.post("/bulk-channel")
+async def bulk_assign_channel(
+    data: BulkChannelAssignRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao)
+):
+    """Vincula ou desvincula um canal Z-API de múltiplos assessores de uma vez."""
+    from database.models import ZAPIChannel
+
+    unique_ids = list(dict.fromkeys(data.assessor_ids))
+    if not unique_ids:
+        raise HTTPException(status_code=400, detail="Lista de assessores não pode ser vazia")
+
+    channel = None
+    if data.channel_id is not None:
+        channel = db.query(ZAPIChannel).filter(
+            ZAPIChannel.id == data.channel_id,
+            ZAPIChannel.is_active == True
+        ).first()
+        if not channel:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Canal {data.channel_id} não encontrado ou está inativo"
+            )
+
+    updated = 0
+    not_found = []
+    for assessor_id in unique_ids:
+        assessor = db.query(Assessor).filter(Assessor.id == assessor_id).first()
+        if not assessor:
+            not_found.append(assessor_id)
+            continue
+        assessor.channel_id = data.channel_id
+        updated += 1
+
+    db.commit()
+
+    channel_label = (channel.label or channel.name) if channel else None
+    logger.info(
+        f"[ASSESSOR] Bulk channel assign: {updated} assessores → channel_id={data.channel_id} "
+        f"({channel_label or 'desvinculado'}); não encontrados: {not_found}"
+    )
+
+    return {
+        "updated": updated,
+        "not_found": not_found,
+        "channel_id": data.channel_id,
+        "channel_label": channel_label
+    }
+
+
 class BulkDeleteByUnitsRequest(BaseModel):
     unidades: List[str]
 

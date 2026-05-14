@@ -334,6 +334,41 @@
             color: var(--primary-color);
         }
 
+        .bulk-action-bar {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            margin-bottom: 12px;
+        }
+
+        .bulk-action-bar.visible {
+            display: flex;
+        }
+
+        .bulk-action-bar .bulk-count {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #1e40af;
+            flex: 1;
+        }
+
+        .cb-cell {
+            width: 40px;
+            padding: 8px 12px !important;
+            vertical-align: middle;
+        }
+
+        .row-checkbox, .select-all-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--primary-color);
+        }
+
         @media (max-width: 1024px) {
             .filters-bar {
                 grid-template-columns: 1fr 1fr;
@@ -409,6 +444,16 @@
                 </div>
 
                 <div class="card">
+                    <div class="bulk-action-bar" id="bulk-action-bar">
+                        <span class="bulk-count" id="bulk-count-label">0 selecionados</span>
+                        <button class="btn btn-primary btn-sm" id="btn-bulk-channel">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                            Alterar Canal
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="btn-bulk-cancel">
+                            Cancelar Seleção
+                        </button>
+                    </div>
                     <div id="loading" class="loading"><div class="spinner"></div></div>
                     <div id="empty" class="empty-state" style="display: none;">
                         <p>Nenhum assessor encontrado.</p>
@@ -418,6 +463,7 @@
                         <table class="table" id="assessores-table" style="display: none;">
                             <thead id="assessores-head">
                                 <tr>
+                                    <th class="cb-cell"><input type="checkbox" class="select-all-checkbox" id="select-all-checkbox" title="Selecionar todos"></th>
                                     <th>Código</th>
                                     <th>Nome</th>
                                     <th>E-mail</th>
@@ -605,6 +651,29 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="bulk-channel-modal">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Alterar Canal em Massa</h3>
+                <button class="modal-close" id="btn-close-bulk-channel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="bulk-channel-description" style="margin-bottom: 16px; color: var(--text-secondary);"></p>
+                <div class="form-group">
+                    <label class="form-label">Canal Z-API de destino</label>
+                    <select class="form-select" id="bulk-channel-select">
+                        <option value="">Sem canal específico (herda da unidade)</option>
+                    </select>
+                    <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">Selecione "Sem canal específico" para remover o canal individual e herdar o da unidade.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cancel-bulk-channel">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btn-confirm-bulk-channel">Confirmar Alteração</button>
+            </div>
+        </div>
+    </div>
+
     <script nonce="{{ request.state.csp_nonce }}">
         let assessores = [];
         let customFields = [];
@@ -615,6 +684,7 @@
         let dbFields = [];
         let sortColumn = null;
         let sortDirection = null;
+        let selectedIds = new Set();
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -875,6 +945,46 @@
             }
         }
 
+        function updateSelectionUI() {
+            const bar = document.getElementById('bulk-action-bar');
+            const label = document.getElementById('bulk-count-label');
+            const selectAll = document.getElementById('select-all-checkbox');
+
+            const count = selectedIds.size;
+            if (count > 0) {
+                bar.classList.add('visible');
+                label.textContent = `${count} assessor${count > 1 ? 'es' : ''} selecionado${count > 1 ? 's' : ''}`;
+            } else {
+                bar.classList.remove('visible');
+            }
+
+            const visibleIds = getSortedAssessores().map(a => a.id);
+            const allVisible = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+            const someVisible = visibleIds.some(id => selectedIds.has(id));
+            if (selectAll) {
+                selectAll.checked = allVisible;
+                selectAll.indeterminate = !allVisible && someVisible;
+            }
+
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                cb.checked = selectedIds.has(parseInt(cb.dataset.id));
+            });
+        }
+
+        function toggleRowSelection(id, checked) {
+            if (checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+            updateSelectionUI();
+        }
+
+        function clearSelection() {
+            selectedIds.clear();
+            updateSelectionUI();
+        }
+
         function renderTable() {
             const loading = document.getElementById('loading');
             const empty = document.getElementById('empty');
@@ -886,6 +996,7 @@
             if (assessores.length === 0) {
                 empty.style.display = 'block';
                 table.style.display = 'none';
+                clearSelection();
                 return;
             }
 
@@ -904,7 +1015,9 @@
             ];
 
             const thead = document.getElementById('assessores-head');
-            let headerHtml = '<tr>';
+            const allVisible = assessores.length > 0 && assessores.every(a => selectedIds.has(a.id));
+            const someVisible = assessores.some(a => selectedIds.has(a.id));
+            let headerHtml = `<tr><th class="cb-cell"><input type="checkbox" class="select-all-checkbox" id="select-all-checkbox" title="Selecionar todos" ${allVisible ? 'checked' : ''} ${(!allVisible && someVisible) ? 'data-indeterminate="true"' : ''}></th>`;
             
             fixedColumns.forEach(col => {
                 const isSorted = sortColumn === col.key;
@@ -924,6 +1037,9 @@
             headerHtml += `<th style="text-align: right;">Ações</th></tr>`;
             thead.innerHTML = headerHtml;
 
+            const selectAllCb = document.getElementById('select-all-checkbox');
+            if (selectAllCb && !allVisible && someVisible) selectAllCb.indeterminate = true;
+
             const sortedAssessores = getSortedAssessores();
 
             tbody.innerHTML = sortedAssessores.map(a => {
@@ -937,8 +1053,10 @@
                     ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:500;background:#dbeafe;color:#1e40af;">${a.channel_label}</span>`
                     : `<span style="color:var(--text-secondary);font-size:0.85rem;">—</span>`;
                 
+                const isChecked = selectedIds.has(a.id);
                 return `
-                <tr>
+                <tr class="${isChecked ? 'bg-blue-50' : ''}">
+                    <td class="cb-cell"><input type="checkbox" class="row-checkbox" data-action="toggle-select" data-id="${a.id}" ${isChecked ? 'checked' : ''}></td>
                     <td><code style="background: #f1f5f9; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">${a.codigo_ai || '-'}</code></td>
                     <td style="font-weight: 500;">${a.nome || '-'}</td>
                     <td>${a.email || '-'}</td>
@@ -960,6 +1078,76 @@
                     </td>
                 </tr>`;
             }).join('');
+        }
+
+        function openBulkChannelModal() {
+            if (selectedIds.size === 0) return;
+            const count = selectedIds.size;
+            document.getElementById('bulk-channel-description').textContent =
+                `Selecione o canal Z-API para atribuir aos ${count} assessor${count > 1 ? 'es' : ''} selecionado${count > 1 ? 's' : ''}.`;
+
+            const select = document.getElementById('bulk-channel-select');
+            select.innerHTML = '<option value="">Sem canal específico (herda da unidade)</option>';
+            zapiChannels.forEach(ch => {
+                const opt = document.createElement('option');
+                opt.value = ch.id;
+                opt.textContent = ch.label;
+                select.appendChild(opt);
+            });
+
+            document.getElementById('bulk-channel-modal').classList.add('active');
+        }
+
+        function closeBulkChannelModal() {
+            document.getElementById('bulk-channel-modal').classList.remove('active');
+        }
+
+        async function confirmBulkChannel() {
+            const selectEl = document.getElementById('bulk-channel-select');
+            const channelId = selectEl.value ? parseInt(selectEl.value) : null;
+            const channelLabel = channelId
+                ? (zapiChannels.find(c => c.id === channelId)?.label || `Canal ${channelId}`)
+                : 'Sem canal específico';
+
+            const ids = Array.from(selectedIds);
+            const count = ids.length;
+
+            const confirmBtn = document.getElementById('btn-confirm-bulk-channel');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Aguarde...';
+
+            try {
+                const res = await fetch('/api/assessores/bulk-channel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assessor_ids: ids, channel_id: channelId })
+                });
+
+                const result = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(result.detail || 'Erro ao alterar canal');
+                }
+
+                const updated = result.updated || 0;
+                const notFound = result.not_found?.length || 0;
+
+                closeBulkChannelModal();
+                clearSelection();
+
+                if (notFound > 0) {
+                    toast.warning(`${updated} assessore${updated !== 1 ? 's' : ''} atualizados para "${channelLabel}". ${notFound} não encontrados.`);
+                } else {
+                    toast.success(`${updated} assessore${updated !== 1 ? 's' : ''} atualizados para "${channelLabel}" com sucesso.`);
+                }
+
+                loadAssessores();
+            } catch (err) {
+                toast.error(err.message || 'Erro ao alterar canal');
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Confirmar Alteração';
+            }
         }
 
         function getSortArrow(key) {
@@ -1574,12 +1762,39 @@
             if (th) toggleSort(th.dataset.sortKey);
         });
 
+        document.getElementById('assessores-head').addEventListener('change', (e) => {
+            const cb = e.target.closest('.select-all-checkbox');
+            if (!cb) return;
+            const visibleIds = getSortedAssessores().map(a => a.id);
+            if (cb.checked) {
+                visibleIds.forEach(id => selectedIds.add(id));
+            } else {
+                visibleIds.forEach(id => selectedIds.delete(id));
+            }
+            updateSelectionUI();
+        });
+
         document.getElementById('assessores-body').addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action]');
             if (!btn) return;
             const id = parseInt(btn.dataset.id);
             if (btn.dataset.action === 'edit') editAssessor(id);
             if (btn.dataset.action === 'delete') deleteAssessor(id);
+        });
+
+        document.getElementById('assessores-body').addEventListener('change', (e) => {
+            const cb = e.target.closest('.row-checkbox');
+            if (cb) toggleRowSelection(parseInt(cb.dataset.id), cb.checked);
+        });
+
+        document.getElementById('btn-bulk-channel').addEventListener('click', openBulkChannelModal);
+        document.getElementById('btn-bulk-cancel').addEventListener('click', clearSelection);
+        document.getElementById('btn-close-bulk-channel').addEventListener('click', closeBulkChannelModal);
+        document.getElementById('btn-cancel-bulk-channel').addEventListener('click', closeBulkChannelModal);
+        document.getElementById('btn-confirm-bulk-channel').addEventListener('click', confirmBulkChannel);
+
+        document.getElementById('bulk-channel-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('bulk-channel-modal')) closeBulkChannelModal();
         });
 
         document.getElementById('fields-list').addEventListener('click', (e) => {
