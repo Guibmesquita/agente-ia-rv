@@ -415,9 +415,15 @@
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                             <input type="text" class="form-input" id="search-input" placeholder="Buscar por nome ou telefone...">
                         </div>
-                        <select class="form-select" id="filter-unidade">
-                            <option value="">Todas as Unidades</option>
-                        </select>
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            <select class="form-select" id="filter-unidade" style="flex:1;min-width:0;">
+                                <option value="">Todas as Unidades</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" id="btn-unit-bulk-channel" title="Atribuir canal a todos os assessores desta unidade" style="display:none;white-space:nowrap;flex-shrink:0;padding:0 10px;">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                                Atribuir canal à unidade
+                            </button>
+                        </div>
                         <select class="form-select" id="filter-equipe">
                             <option value="">Todas as Equipes</option>
                         </select>
@@ -647,6 +653,41 @@
                         <button type="submit" class="btn btn-success">Criar Campo</button>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="unit-bulk-channel-modal">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Atribuir Canal por Unidade</h3>
+                <button class="modal-close" id="btn-close-unit-bulk-channel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="unit-bulk-channel-loading" style="text-align:center;padding:16px 0;display:none;">
+                    <div class="spinner" style="margin:0 auto;"></div>
+                    <p style="margin-top:8px;color:var(--text-secondary);">Carregando assessores...</p>
+                </div>
+                <div id="unit-bulk-channel-content">
+                    <div style="background:var(--bg-secondary,#f8fafc);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+                        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:2px;">Unidade selecionada</div>
+                        <div style="font-weight:600;font-size:1rem;" id="unit-bulk-name"></div>
+                        <div style="margin-top:6px;font-size:0.85rem;color:var(--text-secondary);">
+                            <span id="unit-bulk-count" style="font-weight:600;color:var(--primary-color,#2563eb);"></span> assessor(es) serão atualizados
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Canal Z-API de destino</label>
+                        <select class="form-select" id="unit-bulk-channel-select">
+                            <option value="">Sem canal específico (herda da unidade)</option>
+                        </select>
+                        <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">Selecione "Sem canal específico" para remover o canal individual e herdar o da unidade.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cancel-unit-bulk-channel">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btn-confirm-unit-bulk-channel">Confirmar Alteração</button>
             </div>
         </div>
     </div>
@@ -949,6 +990,7 @@
             });
             
             updateActiveFiltersCount();
+            updateUnitBulkButton();
             loadAssessores();
         }
 
@@ -1156,6 +1198,120 @@
                     toast.warning(`${updated} assessore${updated !== 1 ? 's' : ''} atualizados para "${channelLabel}". ${notFound} não encontrados.`);
                 } else {
                     toast.success(`${updated} assessore${updated !== 1 ? 's' : ''} atualizados para "${channelLabel}" com sucesso.`);
+                }
+
+                loadAssessores();
+            } catch (err) {
+                toast.error(err.message || 'Erro ao alterar canal');
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Confirmar Alteração';
+            }
+        }
+
+        let unitBulkAssessorIds = [];
+
+        function updateUnitBulkButton() {
+            const val = document.getElementById('filter-unidade').value;
+            const btn = document.getElementById('btn-unit-bulk-channel');
+            btn.style.display = val ? 'inline-flex' : 'none';
+        }
+
+        async function openUnitBulkChannelModal() {
+            const unidade = document.getElementById('filter-unidade').value;
+            if (!unidade) return;
+
+            const modal = document.getElementById('unit-bulk-channel-modal');
+            const loading = document.getElementById('unit-bulk-channel-loading');
+            const content = document.getElementById('unit-bulk-channel-content');
+            const confirmBtn = document.getElementById('btn-confirm-unit-bulk-channel');
+
+            document.getElementById('unit-bulk-name').textContent = unidade;
+            document.getElementById('unit-bulk-count').textContent = '…';
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            confirmBtn.disabled = true;
+            unitBulkAssessorIds = [];
+
+            modal.classList.add('active');
+
+            try {
+                const PAGE = 500;
+                let skip = 0;
+                let allIds = [];
+                while (true) {
+                    const res = await fetch(`/api/assessores?unidade=${encodeURIComponent(unidade)}&limit=${PAGE}&skip=${skip}`);
+                    if (!res.ok) throw new Error('Erro ao buscar assessores');
+                    const page = await res.json();
+                    page.forEach(a => allIds.push(a.id));
+                    if (page.length < PAGE) break;
+                    skip += PAGE;
+                }
+                unitBulkAssessorIds = allIds;
+
+                document.getElementById('unit-bulk-count').textContent = unitBulkAssessorIds.length;
+
+                const select = document.getElementById('unit-bulk-channel-select');
+                select.innerHTML = '<option value="">Sem canal específico (herda da unidade)</option>';
+                zapiChannels.forEach(ch => {
+                    const opt = document.createElement('option');
+                    opt.value = ch.id;
+                    opt.textContent = ch.label;
+                    select.appendChild(opt);
+                });
+
+                loading.style.display = 'none';
+                content.style.display = 'block';
+                confirmBtn.disabled = unitBulkAssessorIds.length === 0;
+            } catch (err) {
+                loading.style.display = 'none';
+                content.style.display = 'block';
+                toast.error(err.message || 'Erro ao carregar assessores da unidade');
+                modal.classList.remove('active');
+            }
+        }
+
+        function closeUnitBulkChannelModal() {
+            document.getElementById('unit-bulk-channel-modal').classList.remove('active');
+            unitBulkAssessorIds = [];
+        }
+
+        async function confirmUnitBulkChannel() {
+            if (unitBulkAssessorIds.length === 0) return;
+
+            const selectEl = document.getElementById('unit-bulk-channel-select');
+            const channelId = selectEl.value ? parseInt(selectEl.value) : null;
+            const channelLabel = channelId
+                ? (zapiChannels.find(c => c.id === channelId)?.label || `Canal ${channelId}`)
+                : 'Sem canal específico';
+            const unidade = document.getElementById('unit-bulk-name').textContent;
+
+            const confirmBtn = document.getElementById('btn-confirm-unit-bulk-channel');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Aguarde...';
+
+            try {
+                const res = await fetch('/api/assessores/bulk-channel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assessor_ids: unitBulkAssessorIds, channel_id: channelId })
+                });
+
+                const result = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(result.detail || 'Erro ao alterar canal');
+                }
+
+                const updated = result.updated || 0;
+                const notFound = result.not_found?.length || 0;
+
+                closeUnitBulkChannelModal();
+
+                if (notFound > 0) {
+                    toast.warning(`${updated} assessore${updated !== 1 ? 's' : ''} da unidade "${unidade}" atualizados para "${channelLabel}". ${notFound} não encontrados.`);
+                } else {
+                    toast.success(`${updated} assessore${updated !== 1 ? 's' : ''} da unidade "${unidade}" atualizados para "${channelLabel}" com sucesso.`);
                 }
 
                 loadAssessores();
@@ -1753,7 +1909,7 @@
         let searchTimeout;
         document.getElementById('search-input').addEventListener('input', debounceFilter);
 
-        document.getElementById('filter-unidade').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); });
+        document.getElementById('filter-unidade').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); updateUnitBulkButton(); });
         document.getElementById('filter-equipe').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); });
         document.getElementById('filter-broker').addEventListener('change', () => { loadAssessores(); updateActiveFiltersCount(); });
 
@@ -1812,6 +1968,15 @@
 
         document.getElementById('bulk-channel-modal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('bulk-channel-modal')) closeBulkChannelModal();
+        });
+
+        document.getElementById('btn-unit-bulk-channel').addEventListener('click', openUnitBulkChannelModal);
+        document.getElementById('btn-close-unit-bulk-channel').addEventListener('click', closeUnitBulkChannelModal);
+        document.getElementById('btn-cancel-unit-bulk-channel').addEventListener('click', closeUnitBulkChannelModal);
+        document.getElementById('btn-confirm-unit-bulk-channel').addEventListener('click', confirmUnitBulkChannel);
+
+        document.getElementById('unit-bulk-channel-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('unit-bulk-channel-modal')) closeUnitBulkChannelModal();
         });
 
         document.getElementById('fields-list').addEventListener('click', (e) => {
