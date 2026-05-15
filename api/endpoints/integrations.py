@@ -511,10 +511,15 @@ def _build_webhook_url_suggested(request: Request, channel_id: int) -> str:
        (http://0.0.0.0:5000/) se o FastAPI não estiver atrás de
        ProxyHeadersMiddleware, mas ainda serve para ambientes com proxy correto.
     """
-    from core.config import get_public_base_url
-    public = get_public_base_url()
-    base = public or str(request.base_url).rstrip("/")
-    source = "get_public_base_url()" if public else "request.base_url"
+    from core.config import get_public_base_url, get_settings as _get_cfg
+    _cfg = _get_cfg()
+    if _cfg.WEBHOOK_BASE_URL:
+        base = _cfg.WEBHOOK_BASE_URL.rstrip("/")
+        source = "WEBHOOK_BASE_URL"
+    else:
+        public = get_public_base_url()
+        base = public or str(request.base_url).rstrip("/")
+        source = "get_public_base_url()" if public else "request.base_url"
     print(f"[WEBHOOK-URL] canal={channel_id} base={base!r} (fonte: {source})")
     return f"{base}/api/whatsapp/webhook/{channel_id}"
 

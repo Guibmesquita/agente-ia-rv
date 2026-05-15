@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
     APP_BASE_URL: str = os.getenv("APP_BASE_URL", "")
+    # Task #270 — Override dedicado para a URL base dos webhooks Z-API.
+    # Útil quando a URL pública de webhook difere da base geral da aplicação
+    # (ex.: Railway com domínio customizado ou proxy específico para webhooks).
+    # Prioridade em _build_webhook_url_suggested:
+    #   WEBHOOK_BASE_URL > APP_BASE_URL / REPLIT_DOMAINS > request.base_url
+    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "")
     
     CHROMA_PERSIST_DIRECTORY: str = "./chroma_db"
     
