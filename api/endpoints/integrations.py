@@ -791,9 +791,12 @@ async def update_zapi_channel(
                 channel.instance_id = data.instance_id
             if data.token is not None:
                 channel.token = data.token
-            if data.client_token is not None:
-                # Task #255: string vazia → NULL (semântica: usa ZAPI_CLIENT_TOKEN global)
-                channel.client_token = data.client_token.strip() or None
+            # Task #255: distingue "campo não enviado" (no-op) de "campo enviado
+            # como null/empty" (limpa → NULL, usa fallback global). Usa
+            # model_fields_set para detectar presença explícita do campo.
+            if "client_token" in data.model_fields_set:
+                raw = data.client_token
+                channel.client_token = (raw.strip() or None) if isinstance(raw, str) else None
             if data.phone_number is not None:
                 channel.phone_number = data.phone_number
             if data.description is not None:

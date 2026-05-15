@@ -162,6 +162,76 @@ def test_post_channel_failure_returns_informative_detail_without_secrets(client,
     assert "***" in detail
 
 
+def test_patch_channel_clears_client_token_with_explicit_null(client):
+    """PATCH com client_token=null (JSON null explícito) também normaliza para NULL."""
+    create_payload = {
+        "name": "TestChannel_NullClear_T255",
+        "label": "T255-NullClear",
+        "instance_id": "TEST_INST_T255_NULLCLEAR",
+        "token": "TEST_TOK_T255_NULLCLEAR",
+        "client_token": "OWN_T255_TO_NULLCLEAR",
+    }
+    resp = client.post("/api/integrations/zapi/channels", json=create_payload)
+    assert resp.status_code == 201
+    channel_id = resp.json()["id"]
+
+    try:
+        # Envia client_token: null explícito (não omitido)
+        resp = client.patch(
+            f"/api/integrations/zapi/channels/{channel_id}",
+            json={"client_token": None},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["client_token_source"] == "global"
+
+        from database.database import SessionLocal
+        from database.models import ZAPIChannel
+        db = SessionLocal()
+        try:
+            ch = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+            assert ch.client_token is None
+        finally:
+            db.close()
+    finally:
+        _cleanup_channel(channel_id)
+
+
+def test_patch_channel_omitting_client_token_preserves_existing(client):
+    """PATCH SEM o campo client_token preserva o valor existente (no-op)."""
+    create_payload = {
+        "name": "TestChannel_Preserve_T255",
+        "label": "T255-Preserve",
+        "instance_id": "TEST_INST_T255_PRES",
+        "token": "TEST_TOK_T255_PRES",
+        "client_token": "OWN_T255_PRESERVED",
+    }
+    resp = client.post("/api/integrations/zapi/channels", json=create_payload)
+    assert resp.status_code == 201
+    channel_id = resp.json()["id"]
+
+    try:
+        # PATCH apenas no label, sem mencionar client_token
+        resp = client.patch(
+            f"/api/integrations/zapi/channels/{channel_id}",
+            json={"label": "T255-Preserve-Updated"},
+        )
+        assert resp.status_code == 200, resp.text
+        # Token preservado → source ainda é 'own'
+        assert resp.json()["client_token_source"] == "own"
+
+        from database.database import SessionLocal
+        from database.models import ZAPIChannel
+        db = SessionLocal()
+        try:
+            ch = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+            assert ch.client_token == "OWN_T255_PRESERVED"
+            assert ch.label == "T255-Preserve-Updated"
+        finally:
+            db.close()
+    finally:
+        _cleanup_channel(channel_id)
+
+
 def test_patch_channel_clears_client_token_with_empty_string(client):
     """PATCH com client_token='' normaliza para NULL."""
     # Cria canal com client_token próprio
