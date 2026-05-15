@@ -472,8 +472,6 @@
         async function loadIntegrations() {
             try {
                 const fetchOptions = { credentials: 'include' };
-                // Os dois fetches críticos determinam se a seção carrega.
-                // O fetch de canais Z-API é auxiliar (best-effort): falha não bloqueia.
                 const [integrationsRes, envMappingRes] = await Promise.all([
                     fetch(`${API_BASE}/`, fetchOptions),
                     fetch(`${API_BASE}/env-mapping`, fetchOptions),
@@ -486,24 +484,10 @@
                 const integrations = await integrationsRes.json();
                 const envMapping = await envMappingRes.json();
 
-                // Busca canal legado de forma independente; falha é silenciosa.
-                let legacyZapiChannel = null;
-                try {
-                    const zapiChannelsRes = await fetch(ZC_API, fetchOptions);
-                    if (zapiChannelsRes.ok) {
-                        const zapiData = await zapiChannelsRes.json();
-                        const allChannels = zapiData.channels || [];
-                        legacyZapiChannel = allChannels.find(c => c.is_legacy) || null;
-                        // Garante que _zcChannels está populado para que zcToggleActive
-                        // consiga localizar o canal (evita race condition na inicialização)
-                        if (allChannels.length && !_zcChannels.length) {
-                            _zcChannels = allChannels;
-                        }
-                    }
-                } catch (zapiErr) {
-                    console.warn('Não foi possível carregar canais Z-API para o card informativo:', zapiErr);
-                }
-
+                // Lê _zcChannels (já populado por loadZAPIChannels se terminou primeiro).
+                // Se ainda vazio, legacyZapiChannel = null e o badge será preenchido
+                // por _zcRefreshLegacyBadge() quando loadZAPIChannels terminar.
+                const legacyZapiChannel = _zcChannels.find(c => c.is_legacy) || null;
                 renderIntegrations(integrations, envMapping, legacyZapiChannel);
             } catch (error) {
                 console.error('Erro:', error);
@@ -584,7 +568,10 @@
                                         <span style="font-size: 0.875rem; color: var(--text-secondary);">
                                             Credenciais: ${allConfigured ? 'todas configuradas' : 'configuração pendente'}
                                         </span>
-                                        ${activeStatusHtml ? `<span style="margin: 0 4px; color: var(--text-secondary);">|</span>${activeStatusHtml}` : ''}
+                                        <!-- Badge e toggle do canal legado — preenchido por _zcRefreshLegacyBadge() -->
+                                        <span id="zcLegacyStatusContainer" style="display: contents;">
+                                            ${activeStatusHtml ? `<span style="margin: 0 4px; color: var(--text-secondary);">|</span>${activeStatusHtml}` : ''}
+                                        </span>
                                         <a href="#zapiChannelsSection" style="margin-left: 4px; font-size: 0.875rem; color: var(--primary-color); text-decoration: none;">
                                             → Ver canais ↓
                                         </a>
@@ -829,10 +816,35 @@
                 const data = await res.json();
                 _zcChannels = data.channels || [];
                 renderZAPIChannels(_zcChannels);
+                // Atualiza o badge/toggle do canal legado no card informativo
+                // (necessário quando loadZAPIChannels termina depois de loadIntegrations)
+                _zcRefreshLegacyBadge();
             } catch (err) {
                 document.getElementById('zapiChannelsList').innerHTML =
                     `<div class="alert alert-danger">Erro ao carregar canais: ${err.message}</div>`;
             }
+        }
+
+        function _zcRefreshLegacyBadge() {
+            const container = document.getElementById('zcLegacyStatusContainer');
+            if (!container) return;
+            const legacyCh = _zcChannels.find(c => c.is_legacy);
+            if (!legacyCh) return;
+            const isActive = legacyCh.is_active;
+            const chId = legacyCh.id;
+            container.innerHTML = `
+                <span style="margin: 0 4px; color: var(--text-secondary);">|</span>
+                <span style="font-size: 0.875rem; color: var(--text-secondary);">Canal legado:</span>
+                <span class="status-badge ${isActive ? 'connected' : 'disconnected'}" style="font-size: 0.8rem;">
+                    ${isActive ? 'Ativo' : 'Inativo'}
+                </span>
+                <button class="btn btn-secondary btn-sm"
+                    onclick="zcToggleActive(${chId}, ${!isActive})"
+                    title="${isActive ? 'Desativar canal legado' : 'Ativar canal legado'}"
+                    style="font-size: 0.8rem; padding: 2px 10px; ${isActive ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
+                    ${isActive ? '⏸️ Desativar' : '▶️ Ativar'}
+                </button>
+            `;
         }
 
         function _connLabel(status) {
@@ -970,7 +982,10 @@
 
         function zcOpenConfig(channelId) {
             const ch = _zcChannels.find(c => c.id === channelId);
-            if (!ch) return;
+            if (!ch) {
+                toast.error('Canal não encontrado. Aguarde o carregamento completo ou recarregue a página.');
+                return;
+            }
             const wh = ch.webhook_url_suggested || `${location.origin}/api/whatsapp/webhook/${ch.id}`;
 
             document.getElementById('zcConfigTitle').textContent = `Como configurar — ${ch.label || ch.name}`;
@@ -1055,7 +1070,10 @@
 
         function zcOpenEdit(channelId) {
             const ch = _zcChannels.find(c => c.id === channelId);
-            if (!ch) return;
+            if (!ch) {
+                toast.error('Canal não encontrado. Aguarde o carregamento completo ou recarregue a página.');
+                return;
+            }
             _zcEditingId = channelId;
             document.getElementById('zcFormTitle').textContent = `Editar Canal — ${ch.label || ch.name}`;
             document.getElementById('zcFormName').value = ch.name || '';
@@ -1218,7 +1236,10 @@
 
         async function zcToggleActive(channelId, newActiveState) {
             const ch = _zcChannels.find(c => c.id === channelId);
-            if (!ch) return;
+            if (!ch) {
+                toast.error('Canal não encontrado. Recarregue a página e tente novamente.');
+                return;
+            }
             const label = ch.label || ch.name;
             const action = newActiveState ? 'ativar' : 'desativar';
             if (!confirm(`Deseja ${action} o canal "${label}"?`)) return;
@@ -1235,8 +1256,9 @@
                     return;
                 }
                 toast.success(newActiveState ? `Canal "${label}" ativado.` : `Canal "${label}" desativado.`);
-                // Recarrega o grid de canais e o card informativo da integração
-                await Promise.all([loadZAPIChannels(), loadIntegrations()]);
+                // loadZAPIChannels já chama _zcRefreshLegacyBadge() internamente —
+                // não é necessário chamar loadIntegrations() separado
+                await loadZAPIChannels();
             } catch (err) {
                 toast.error(`Erro: ${err.message}`);
             }
