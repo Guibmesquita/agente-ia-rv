@@ -647,6 +647,9 @@ async def list_zapi_channels(
         Task #272 — lógica defensiva de detecção de campo: percorre múltiplos campos
         possíveis pois o Z-API pode retornar a URL em campos diferentes dependendo da
         versão da instância. Loga qual campo foi encontrado para auditoria.
+        Task #276 — quando GET /webhooks retorna endpoint_not_found (NOT_FOUND no Z-API),
+        usa webhook_auto_registered do banco como fallback: True → "registered_no_verify",
+        False → False. Isso evita badge vermelho quando o endpoint não é suportado.
         """
         try:
             client = ZAPIClient(
@@ -657,6 +660,12 @@ async def list_zapi_channels(
             result = await client.get_webhook_settings(timeout=4.0)
             if not result.get("success"):
                 return "unknown"
+            # Task #276 — endpoint GET /webhooks não existe para esta instância Z-API.
+            # Usa flag do banco como fallback em vez de mostrar badge vermelho.
+            if result.get("endpoint_not_found"):
+                fallback = "registered_no_verify" if ch.webhook_auto_registered else False
+                print(f"[WEBHOOK-PROBE] ch={ch.id} endpoint_not_found → fallback={fallback!r}")
+                return fallback
             settings = result.get("settings") or {}
             # Task #272 — usa o helper compartilhado _extract_url_from_webhook_settings
             # para consistência com sync-verify e webhook-debug (inclui nested fields).
@@ -1424,21 +1433,26 @@ async def sync_zapi_channel_webhook(
         print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual falhou: {result}")
 
     # Task #272 — verifica imediatamente pós-registro o que Z-API retorna em GET /webhooks.
-    # Usa o helper _extract_url_from_webhook_settings para consistência com _probe_webhook
-    # e webhook-debug (inclui suporte a campos aninhados).
+    # Task #276 — propaga endpoint_not_found quando GET /webhooks não é suportado pela instância.
     verify_raw: Optional[dict] = None
     verify_field: Optional[str] = None
     verify_url: Optional[str] = None
+    verify_endpoint_not_found: bool = False
     try:
         vresp = await client.get_webhook_settings(timeout=8.0)
         if vresp.get("success"):
-            vsettings = vresp.get("settings") or {}
-            verify_raw = vsettings
-            verify_field, verify_url = _extract_url_from_webhook_settings(vsettings)
-            print(
-                f"[Z-API Webhook] Canal {channel_id} — verify GET /webhooks: "
-                f"campo={verify_field!r} url={verify_url!r}"
-            )
+            if vresp.get("endpoint_not_found"):
+                # Task #276 — Z-API não suporta GET /webhooks — não é erro, apenas indisponível.
+                verify_endpoint_not_found = True
+                print(f"[Z-API Webhook] Canal {channel_id} — verify GET /webhooks: endpoint_not_found")
+            else:
+                vsettings = vresp.get("settings") or {}
+                verify_raw = vsettings
+                verify_field, verify_url = _extract_url_from_webhook_settings(vsettings)
+                print(
+                    f"[Z-API Webhook] Canal {channel_id} — verify GET /webhooks: "
+                    f"campo={verify_field!r} url={verify_url!r}"
+                )
     except Exception as _vexc:
         print(f"[Z-API Webhook] Canal {channel_id} — verify exceção: {_vexc}")
 
@@ -1447,10 +1461,12 @@ async def sync_zapi_channel_webhook(
         "webhook_url": webhook_url,
         "channel_id": channel_id,
         "raw_response": result.get("raw_response"),
+        "body_error": result.get("body_error"),
         "verify_raw": verify_raw,
         "verify_field": verify_field,
         "verify_url": verify_url,
         "url_match": (verify_url.rstrip("/") == webhook_url.rstrip("/")) if verify_url else None,
+        "endpoint_not_found": verify_endpoint_not_found,
         "error": result.get("error"),
     }
 
@@ -1497,13 +1513,16 @@ async def debug_zapi_channel_webhook(
         "is_legacy": channel.is_legacy,
         "is_active": channel.is_active,
         "webhook_url_suggested": webhook_url,
+        "webhook_auto_registered": channel.webhook_auto_registered or False,
         "instance_id": channel.instance_id,
         "client_token_source": _ct_source,
         "zapi_raw_response": None,
+        "endpoint_not_found": False,
         "detected_field": None,
         "detected_url": None,
         "url_match": None,
         "all_candidate_fields": {},
+        "instance_status": None,
         "self_test": None,
         "error": None,
     }
@@ -1519,7 +1538,8 @@ async def debug_zapi_channel_webhook(
     import httpx as _httpx_diag
     import os as _os_diag
 
-    # ── 1. GET /webhooks do Z-API ──────────────────────────────────────────────
+    # ── 0. GET /status — valida se a instância existe e está conectada ─────────
+    # Task #276 — separado do GET /webhooks para que falhas neste não bloqueiem.
     try:
         from services.whatsapp_client import ZAPIClient as _ZC
         client = _ZC(
@@ -1527,10 +1547,25 @@ async def debug_zapi_channel_webhook(
             token=channel.token,
             client_token=channel.client_token,
         )
+        _st_result = await client.check_connectivity(timeout=6.0)
+        diag["instance_status"] = _st_result
+    except Exception as _st_exc:
+        diag["instance_status"] = f"erro: {type(_st_exc).__name__}: {_st_exc}"
+
+    # ── 1. GET /webhooks do Z-API ──────────────────────────────────────────────
+    try:
         ws_result = await client.get_webhook_settings(timeout=10.0)
 
         if not ws_result.get("success"):
             diag["error"] = ws_result.get("error", "Falha ao obter configurações de webhook")
+        elif ws_result.get("endpoint_not_found"):
+            # Task #276 — endpoint não suportado por esta instância. Não é erro fatal.
+            diag["endpoint_not_found"] = True
+            diag["error"] = (
+                "GET /webhooks não suportado por esta instância Z-API. "
+                "O registro é feito via PUT mas não pode ser verificado via API. "
+                f"Banco de dados indica webhook_auto_registered={channel.webhook_auto_registered}."
+            )
         else:
             settings = ws_result.get("settings") or {}
             diag["zapi_raw_response"] = settings

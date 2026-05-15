@@ -864,9 +864,14 @@
 
         function _webhookStatusBadge(ch) {
             // Task #264 — usa webhook_registered (verificado em tempo real): true/false/"unknown"
+            // Task #276 — novo valor "registered_no_verify": GET /webhooks não existe no Z-API
+            //             mas o banco registra webhook_auto_registered=true. Badge âmbar.
             const status = ch.webhook_registered;
             if (status === true) {
                 return '<span style="color:#16a34a; font-weight:500;">✅ Registrado</span>';
+            }
+            if (status === 'registered_no_verify') {
+                return '<span style="color:#d97706; font-weight:500;" title="Webhook registrado, mas o Z-API não suporta confirmação via GET /webhooks para esta instância.">⚠️ Registrado*</span>';
             }
             if (status === false) {
                 return '<span style="color:#dc2626; font-weight:500;">❌ Não registrado</span>';
@@ -1442,18 +1447,25 @@
                 }
 
                 if (data.success) {
-                    // Task #272 — exibe informações de verificação pós-registro
+                    // Task #276 — exibe raw_response do PUT sempre (truncado) para visibilidade real
                     let msg = `Webhook registrado!\n📍 URL: ${data.webhook_url}`;
+                    if (data.raw_response !== undefined && data.raw_response !== null) {
+                        const putRaw = JSON.stringify(data.raw_response);
+                        msg += `\nZ-API resposta PUT: ${putRaw.slice(0, 120)}${putRaw.length > 120 ? '…' : ''}`;
+                    }
                     if (data.verify_url) {
                         const matchIcon = data.url_match ? '✅' : '⚠️';
                         msg += `\n${matchIcon} Z-API confirmou (campo: ${data.verify_field || '?'}): ${data.verify_url}`;
                         if (!data.url_match) {
                             msg += `\n⚠️ URL no Z-API difere da sugerida — use 🔍 Diagnóstico para detalhes.`;
                         }
+                    } else if (data.endpoint_not_found) {
+                        // Task #276 — GET /webhooks não suportado por esta instância Z-API
+                        msg += `\nℹ️ GET /webhooks não suportado por esta instância — não é possível confirmar via API.`;
                     } else if (data.verify_raw !== null && data.verify_raw !== undefined) {
                         // Z-API respondeu mas sem campo de URL detectável — mostra raw compacto
                         const rawSnip = JSON.stringify(data.verify_raw);
-                        msg += `\n⚠️ Z-API não confirmou URL. GET /webhooks raw: ${rawSnip.slice(0, 150)}${rawSnip.length > 150 ? '…' : ''}`;
+                        msg += `\n⚠️ Z-API não confirmou URL. GET /webhooks raw: ${rawSnip.slice(0, 120)}${rawSnip.length > 120 ? '…' : ''}`;
                         msg += `\nUse 🔍 Diagnóstico para ver a resposta completa.`;
                     }
                     if (data.url_match === false) {
@@ -1462,8 +1474,13 @@
                         toast.success(msg);
                     }
                 } else {
-                    const errMsg = data.error ? ` Erro: ${data.error}` : '';
-                    toast.error(`Falha ao registrar webhook na Z-API. Verifique se a instância está conectada.${errMsg}`);
+                    // Task #276 — mostra raw_response mesmo em falha para diagnóstico
+                    let errDetail = data.error || data.body_error || '';
+                    if (data.raw_response) {
+                        const putRaw = JSON.stringify(data.raw_response);
+                        errDetail += errDetail ? ` | PUT raw: ${putRaw.slice(0, 100)}` : `PUT raw: ${putRaw.slice(0, 100)}`;
+                    }
+                    toast.error(`Falha ao registrar webhook na Z-API. Verifique se a instância está conectada.${errDetail ? ` Detalhe: ${errDetail}` : ''}`);
                 }
 
                 await loadZAPIChannels();
@@ -1577,17 +1594,40 @@
             titleBar.appendChild(closeBtn);
             box.appendChild(titleBar);
 
+            // Task #276 — instância Z-API: status de conectividade
+            const instStatus = d.instance_status;
+            const instStatusStr = typeof instStatus === 'string'
+                ? instStatus
+                : (instStatus ? JSON.stringify(instStatus) : '—');
+            const instStatusIcon = instStatus === 'connected' ? '✅'
+                : instStatus === 'disconnected' ? '⚡'
+                : instStatus && typeof instStatus === 'string' && instStatus.startsWith('erro') ? '❌'
+                : '❓';
+
+            // Task #276 — endpoint_not_found: GET /webhooks não suportado
+            const endpointNotFoundHtml = d.endpoint_not_found
+                ? `<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem;color:#92400e;">
+                    <strong>⚠️ GET /webhooks não suportado</strong><br>
+                    Esta instância Z-API não possui o endpoint de leitura de webhook.<br>
+                    O registro foi feito via PUT, mas não pode ser verificado pela API.<br>
+                    <strong>Banco de dados:</strong> webhook_auto_registered = <code>${d.webhook_auto_registered ? 'true ✅' : 'false ❌'}</code>
+                  </div>`
+                : '';
+
             // Corpo do modal: HTML controlado com valores escapados
             const bodyDiv = document.createElement('div');
             bodyDiv.style.cssText = 'font-size:0.9rem;line-height:1.6;';
             bodyDiv.innerHTML = `
+                ${endpointNotFoundHtml}
                 <table style="width:100%;margin-bottom:12px;border-collapse:collapse;">
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Canal</td><td><strong>${_zcEsc(d.channel_name)}</strong> (id=${_zcEsc(String(d.channel_id))})</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Instância Z-API</td><td>${instStatusIcon} <span style="font-family:monospace;font-size:0.82rem;">${_zcEsc(instStatusStr)}</span></td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL sugerida</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;color:#1e40af;">${_zcEsc(d.webhook_url_suggested)}</td></tr>
-                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL no Z-API</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;">${_zcEsc(d.detected_url || '(não detectada)')}</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL no Z-API</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;">${_zcEsc(d.detected_url || (d.endpoint_not_found ? '(GET /webhooks não suportado)' : '(não detectada)'))}</td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Campo detectado</td><td style="font-family:monospace;">${_zcEsc(d.detected_field || '(nenhum)')}</td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Compatibilidade</td><td>${matchBadge}</td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Client-Token</td><td>${_zcEsc(d.client_token_source || '—')}</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Reg. no banco</td><td>${d.webhook_auto_registered ? '<span style="color:#16a34a;">✅ Sim</span>' : '<span style="color:#dc2626;">❌ Não</span>'}</td></tr>
                 </table>
                 ${candidateRows ? `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Campos recebidos do Z-API</p><table style="width:100%;border-collapse:collapse;margin-bottom:12px;">${candidateRows}</table>` : ''}
                 ${selfTestHtml}

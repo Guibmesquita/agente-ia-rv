@@ -644,6 +644,8 @@ class ZAPIClient:
         """
         Atualiza a URL do webhook para receber mensagens.
         Task #268 — loga o raw response completo para diagnóstico do status de registro.
+        Task #276 — valida também o corpo da resposta: alguns backends JAX-RS retornam
+        HTTP 200 com {"error":"NOT_FOUND",...} quando a instância é inválida.
         """
         url = f"{self._get_base_url()}/update-webhook-received"
         payload = {"value": webhook_url}
@@ -652,9 +654,12 @@ class ZAPIClient:
             try:
                 response = await client.put(url, json=payload, headers=self._get_headers(), timeout=10.0)
                 data = response.json() if response.content else {}
-                success = response.status_code == 200
-                print(f"[Z-API] update_webhook → HTTP {response.status_code}, raw: {data}")
-                return {"success": success, "raw_response": data}
+                # HTTP 200 é necessário mas não suficiente: verifica se o body não contém
+                # campo "error" — alguns backends retornam 200 com erro no body.
+                body_error = data.get("error") if isinstance(data, dict) else None
+                success = response.status_code == 200 and not body_error
+                print(f"[Z-API] update_webhook → HTTP {response.status_code}, body_error={body_error!r}, raw: {data}")
+                return {"success": success, "raw_response": data, "body_error": body_error}
             except httpx.HTTPError as e:
                 print(f"[Z-API] update_webhook → HTTPError: {e}")
                 return {"success": False, "error": str(e)}
@@ -861,6 +866,9 @@ class ZAPIClient:
         Busca configurações atuais dos webhooks da instância.
         Task #264 — aceita timeout configurável (padrão 30s, use 4s para sondagens de listagem).
         Task #268 — loga o raw response para diagnóstico da comparação de URL.
+        Task #276 — trata NOT_FOUND graciosamente: quando o Z-API retorna 404 ou body
+        com {"error":"NOT_FOUND",...}, retorna endpoint_not_found=True em vez de
+        success=False — diferencia "endpoint não suportado" de "erro real de auth/rede".
         """
         url = f"{self._get_base_url()}/webhooks"
         
@@ -873,7 +881,12 @@ class ZAPIClient:
                     print(f"[Z-API] get_webhook_settings → HTTP 200, raw: {data}")
                     return {"success": True, "settings": data}
                 else:
-                    print(f"[Z-API] get_webhook_settings → HTTP {response.status_code}, raw: {data}")
+                    body_err = data.get("error", "") if isinstance(data, dict) else ""
+                    is_not_found = response.status_code == 404 or body_err == "NOT_FOUND"
+                    print(f"[Z-API] get_webhook_settings → HTTP {response.status_code}, raw: {data}, not_found={is_not_found}")
+                    if is_not_found:
+                        # Endpoint não suportado por esta instância — não é um erro fatal.
+                        return {"success": True, "settings": {}, "endpoint_not_found": True}
                     return {"success": False, "error": data.get("error", f"HTTP {response.status_code}")}
             except httpx.HTTPError as e:
                 print(f"[Z-API] get_webhook_settings → HTTPError: {e}")
