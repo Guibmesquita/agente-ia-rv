@@ -1959,12 +1959,6 @@ async def whatsapp_webhook_multichannel(
             detail=f"Canal {channel_id} não encontrado ou inativo"
         )
 
-    # Task #272 — ignora silenciosamente eventos de diagnóstico self-test para
-    # não poluir o pipeline de processamento com payloads sintéticos.
-    if _early_type == "__webhook_diagnostic_test__":
-        logger.info(f"[WEBHOOK-MC] Canal {channel_id} — diagnostic self-test recebido, ignorando processamento")
-        return {"status": "ok", "test": True, "channel": channel.name}
-
     # Validação de token — mesma abordagem do webhook legado.
     incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
     if channel.is_legacy:
@@ -1992,6 +1986,13 @@ async def whatsapp_webhook_multichannel(
             f"valid_set_size={len(valid_tokens) if not channel.is_legacy else 'legacy'}"
         )
         raise HTTPException(status_code=401, detail="Token inválido ou ausente para este canal")
+
+    # Task #272 — guard de self-test de diagnóstico, colocado APÓS a validação de token.
+    # Isso garante que o self-test confirma tanto acessibilidade quanto token correto.
+    # Resposta mínima: sem metadados do canal para evitar vazamento via rota pública.
+    if _early_type == "__webhook_diagnostic_test__":
+        logger.info(f"[WEBHOOK-MC] Canal {channel_id} — diagnostic self-test OK (token válido)")
+        return {"status": "ok", "test": True}
 
     try:
         payload = await request.json()
