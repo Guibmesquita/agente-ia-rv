@@ -461,15 +461,21 @@ async def test_send_stream(
 
     if not data.channel_ids:
         raise HTTPException(status_code=400, detail="Selecione ao menos um canal")
-    if len(data.channel_ids) > 20:
-        raise HTTPException(status_code=400, detail="Limite de 20 canais por disparo de teste")
+
+    # Deduplica mantendo a ordem de seleção (evita envios duplicados via mesmo canal)
+    seen_ids: set = set()
+    unique_channel_ids = []
+    for cid in data.channel_ids:
+        if cid not in seen_ids:
+            seen_ids.add(cid)
+            unique_channel_ids.append(cid)
 
     from database.models import ZAPIChannel as _ZCh
     from services.whatsapp_client import ZAPIClient as _ZC
 
     # Valida cada canal e pré-instancia clientes (antes do stream para falhar rápido)
     channels_ready = []
-    for cid in data.channel_ids:
+    for cid in unique_channel_ids:
         ch = db.query(_ZCh).filter(_ZCh.id == cid).first()
         if not ch:
             raise HTTPException(status_code=404, detail=f"Canal #{cid} não encontrado")
