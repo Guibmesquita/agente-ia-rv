@@ -967,6 +967,10 @@
                     <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
                     ${ch.is_legacy ? '' : `<div class="zc-channel-meta" style="margin-top:2px;">🔐 Client-Token: ${ch.client_token_source === 'own' ? '<span style="color:#1e40af; font-weight:500;">próprio</span>' : '<span style="color:var(--text-secondary);">global (conta)</span>'}</div>`}
                     ${!ch.is_legacy ? `<div class="zc-channel-meta" style="margin-top:2px;" id="zcWebhookStatus-${ch.id}">🔗 Webhook: ${_webhookStatusBadge(ch)}</div>` : ''}
+                    <!-- Task #282 — reception stats (carregados assincronamente após render) -->
+                    <div class="zc-channel-meta" style="margin-top:2px;" id="zcReceptionStats-${ch.id}">
+                        📩 <span style="color:var(--text-secondary);font-size:0.82rem;">Carregando recepção…</span>
+                    </div>
                     <div class="zc-card-actions">
                         <button class="btn btn-secondary btn-sm"
                             data-zc-action="config" data-zc-id="${ch.id}">
@@ -1083,6 +1087,49 @@
                     _zcOpenPanels.delete(channelId);
                 }
             }
+
+            // Task #282 — carrega reception stats assincronamente para cada canal ativo
+            for (const ch of channels) {
+                if (ch.is_active) _zcLoadReceptionStats(ch.id);
+                else {
+                    const el = document.getElementById(`zcReceptionStats-${ch.id}`);
+                    if (el) el.innerHTML = '📩 <span style="color:var(--text-secondary);font-size:0.82rem;">Canal inativo</span>';
+                }
+            }
+        }
+
+        // Task #282 — carrega e exibe estatísticas de recepção inbound de um canal no card.
+        async function _zcLoadReceptionStats(channelId) {
+            const el = document.getElementById(`zcReceptionStats-${channelId}`);
+            if (!el) return;
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/reception-stats`, { credentials: 'include' });
+                if (!res.ok) {
+                    el.innerHTML = '📩 <span style="color:var(--text-secondary);font-size:0.82rem;">—</span>';
+                    return;
+                }
+                const d = await res.json();
+                const count = d.messages_received_24h ?? 0;
+                const last = d.last_received_at ? _zcRelativeTime(new Date(d.last_received_at)) : null;
+                const countColor = count > 0 ? '#16a34a' : 'var(--text-secondary)';
+                const lastTxt = last ? ` · última <strong>${last}</strong>` : '';
+                el.innerHTML = `📩 <span style="color:${countColor};font-size:0.82rem;font-weight:${count>0?'600':'400'};">${count} msgs / 24h</span>${lastTxt}`;
+            } catch (_e) {
+                el.innerHTML = '📩 <span style="color:var(--text-secondary);font-size:0.82rem;">—</span>';
+            }
+        }
+
+        // Task #282 — formata um Date como tempo relativo em pt-BR (ex: "há 5 min", "há 2h")
+        function _zcRelativeTime(date) {
+            const diffMs = Date.now() - date.getTime();
+            const diffSec = Math.floor(diffMs / 1000);
+            if (diffSec < 60) return 'agora';
+            const diffMin = Math.floor(diffSec / 60);
+            if (diffMin < 60) return `há ${diffMin} min`;
+            const diffH = Math.floor(diffMin / 60);
+            if (diffH < 24) return `há ${diffH}h`;
+            const diffD = Math.floor(diffH / 24);
+            return `há ${diffD} dia${diffD > 1 ? 's' : ''}`;
         }
 
         // ── Modal "Como configurar" ──
@@ -1501,21 +1548,23 @@
             }
         }
 
-        // Task #272 — Diagnóstico de webhook por canal
+        // Task #272/#282 — Diagnóstico de webhook por canal (inclui reception stats)
         async function zcWebhookDiag(channelId) {
             const btn = document.getElementById(`zcWebhookDiagBtn-${channelId}`);
             const origText = btn ? btn.innerHTML : '';
             if (btn) { btn.innerHTML = '⏳...'; btn.disabled = true; }
             try {
-                const res = await fetch(`${ZC_API}/${channelId}/webhook-debug`, {
-                    credentials: 'include',
-                });
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) {
+                const [diagRes, statsRes] = await Promise.all([
+                    fetch(`${ZC_API}/${channelId}/webhook-debug`, { credentials: 'include' }),
+                    fetch(`${ZC_API}/${channelId}/reception-stats`, { credentials: 'include' }),
+                ]);
+                const data = await diagRes.json().catch(() => ({}));
+                if (!diagRes.ok) {
                     toast.error(`Diagnóstico: ${data.detail || 'Erro desconhecido'}`);
                     return;
                 }
-                _zcShowWebhookDiagModal(data);
+                const stats = statsRes.ok ? await statsRes.json().catch(() => null) : null;
+                _zcShowWebhookDiagModal(data, stats);
             } catch (err) {
                 toast.error(`Diagnóstico: ${err.message}`);
             } finally {
@@ -1534,7 +1583,7 @@
                 .replace(/'/g, '&#39;');
         }
 
-        function _zcShowWebhookDiagModal(d) {
+        function _zcShowWebhookDiagModal(d, stats) {
             const matchBadge = d.url_match === true
                 ? '<span style="color:#16a34a;font-weight:600;">✅ Bate</span>'
                 : d.url_match === false
@@ -1651,6 +1700,25 @@
                 </table>
                 ${candidateRows ? `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Campos recebidos do Z-API</p><table style="width:100%;border-collapse:collapse;margin-bottom:12px;">${candidateRows}</table>` : ''}
                 ${selfTestHtml}
+                ${stats ? (() => {
+                    const cnt = stats.messages_received_24h ?? 0;
+                    const lastStr = stats.last_received_at ? _zcRelativeTime(new Date(stats.last_received_at)) : null;
+                    const cntColor = cnt > 0 ? '#16a34a' : '#6b7280';
+                    const evRows = (stats.recent_events || []).map(ev =>
+                        `<tr>
+                            <td style="font-size:0.8rem;padding:3px 8px 3px 0;color:#6b7280;white-space:nowrap;">${_zcEsc(ev.created_at ? new Date(ev.created_at).toLocaleTimeString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—')}</td>
+                            <td style="font-family:monospace;font-size:0.78rem;color:#374151;padding:3px 8px 3px 0;">${_zcEsc(ev.message_type || '?')}</td>
+                            <td style="font-size:0.78rem;color:#6b7280;word-break:break-all;">${_zcEsc((ev.body_preview || ev.phone || '(sem preview)').substring(0,50))}</td>
+                        </tr>`
+                    ).join('');
+                    return `
+                    <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Recepção de mensagens</p>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Recebidas / 24h</td><td style="color:${cntColor};font-weight:600;">${cnt}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Última recebida</td><td style="font-size:0.85rem;">${lastStr || '—'}</td></tr>
+                    </table>
+                    ${evRows ? `<p style="font-size:0.78rem;font-weight:600;color:#9ca3af;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Últimos webhooks inbound</p><table style="width:100%;border-collapse:collapse;margin-bottom:8px;">${evRows}</table>` : ''}`;
+                })() : ''}
                 <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Raw response GET /webhooks</p>
                 ${rawStr}`;
             box.appendChild(bodyDiv);

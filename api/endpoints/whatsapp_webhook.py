@@ -230,7 +230,13 @@ def get_or_create_conversation(
         # Task #261 — atualiza channel_id com canal de entrega (assessor-assigned),
         # não o canal inbound, para que resolve_channel_client_for_conversation
         # encontre o canal correto via conversation.channel_id como fallback.
-        if delivery_channel_id and not conv.channel_id:
+        # Task #282 Bug C — também atualiza quando não há assessor identificado e o
+        # canal armazenado difere do canal inbound: contatos sem assessor ficavam presos
+        # ao canal legado mesmo ao enviarem por um canal novo (AG2–AG5).
+        if delivery_channel_id and (
+            not conv.channel_id
+            or (not conv.assessor_id and conv.channel_id != delivery_channel_id)
+        ):
             conv.channel_id = delivery_channel_id
             updated = True
         if updated:
@@ -1625,6 +1631,20 @@ async def _process_zapi_payload_internal(
         print(f"[WEBHOOK] Erro ao salvar mensagem: {e}")
         message_record = None
 
+    # Task #282 Bug A — `save_message_zapi` chama `get_or_create_conversation` internamente
+    # e seta `message.conversation_id`. A variável local `conversation` pode ainda ser None
+    # para novos contatos (inclusive LID-only) porque foi buscada ANTES do save. Sincroniza
+    # com o registro criado para que `enqueue_message` receba sempre um `conversation_id` válido.
+    if message_record and message_record.conversation_id and not conversation:
+        try:
+            conversation = db.query(Conversation).filter(
+                Conversation.id == message_record.conversation_id
+            ).first()
+            if conversation:
+                print(f"[WEBHOOK] Bug A fix: conversa recuperada via message_record.conversation_id={message_record.conversation_id}")
+        except Exception as _e:
+            print(f"[WEBHOOK] Bug A fix: erro ao recuperar conversa: {_e}")
+
     if is_human_active:
         print(f"[WEBHOOK] Ticket OPEN (atendimento humano ativo), não respondendo automaticamente: {phone}")
         return {
@@ -1959,14 +1979,21 @@ async def whatsapp_webhook_multichannel(
             detail=f"Canal {channel_id} não encontrado ou inativo"
         )
 
-    # Validação de token — mesma abordagem do webhook legado.
-    incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
+    # Validação de token — Task #282 Bug B: cada header é verificado independentemente.
+    # O Z-API envia `z-api-token` (Security Token) e `client-token` (Client Token) como
+    # headers separados. A lógica anterior usava `or` e capturava apenas o primeiro
+    # não-vazio, falhando silenciosamente quando só o segundo header estava no conjunto
+    # de tokens válidos. Agora cada header é checado de forma independente.
+    # _zt_hint e _ct_hint já foram capturados no início da função para o log de entrada.
     if channel.is_legacy:
         # Canal legado: valida contra env vars (compatibilidade com o webhook original)
         _settings = _get_settings()
         expected_token = os.getenv("ZAPI_TOKEN", "") or _settings.ZAPI_TOKEN
         expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
-        valid = incoming_token and incoming_token in (expected_token, expected_ct)
+        valid = (
+            (bool(_zt_hint) and _zt_hint in (expected_token, expected_ct))
+            or (bool(_ct_hint) and _ct_hint in (expected_token, expected_ct))
+        )
     else:
         # Canal explícito: valida contra credenciais armazenadas.
         # Task #268 — quando o canal usa o client_token global da conta (campo NULL no banco),
@@ -1977,11 +2004,13 @@ async def whatsapp_webhook_multichannel(
         valid_tokens = {t for t in (channel.token, channel.client_token) if t}
         if not channel.client_token and _global_ct:
             valid_tokens.add(_global_ct)
-        valid = bool(incoming_token) and incoming_token in valid_tokens
+        valid = (
+            (bool(_zt_hint) and _zt_hint in valid_tokens)
+            or (bool(_ct_hint) and _ct_hint in valid_tokens)
+        )
 
     if not valid:
-        # Task #279 — inclui os primeiros 8 chars do token recebido e as primeiras 4 chars
-        # de cada token esperado (masked) para diagnóstico nos logs do Railway sem expor credenciais.
+        # Task #279/#282 — mostra qual header falhou para diagnóstico sem expor credenciais.
         def _mask_recv(t: str) -> str:
             return (t[:8] + "…") if t else "(vazio)"
 
@@ -1996,7 +2025,8 @@ async def whatsapp_webhook_multichannel(
 
         logger.warning(
             f"[WEBHOOK-MC] Token inválido para canal {channel_id} "
-            f"— received={_mask_recv(incoming_token)} "
+            f"— z-api-token={_mask_recv(_zt_hint)} "
+            f"client-token={_mask_recv(_ct_hint)} "
             f"expected={_expected_hint}"
         )
         raise HTTPException(status_code=401, detail="Token inválido ou ausente para este canal")

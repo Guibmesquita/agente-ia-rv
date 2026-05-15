@@ -1768,6 +1768,84 @@ async def add_unidade_mapping(
     }
 
 
+@router.get("/zapi/channels/{channel_id}/reception-stats")
+async def get_channel_reception_stats(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #282 — Estatísticas de recepção de mensagens inbound por canal Z-API.
+
+    Retorna:
+    - `messages_received_24h`: contagem de mensagens inbound nas últimas 24 horas.
+    - `last_received_at`: ISO timestamp da última mensagem inbound recebida (ou null).
+    - `recent_events`: lista dos 5 últimos eventos inbound (type, phone, preview, timestamp).
+
+    Usado nos cards de canal e no modal de diagnóstico para verificar se o webhook
+    está entregando mensagens corretamente.
+    """
+    from database.models import ZAPIChannel, WhatsAppMessage
+    from sqlalchemy import func as _func
+    from datetime import datetime as _dt, timedelta
+
+    _auth_zapi_channel(request)
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    since_24h = _dt.utcnow() - timedelta(hours=24)
+
+    count_24h = (
+        db.query(_func.count(WhatsAppMessage.id))
+        .filter(
+            WhatsAppMessage.channel_id == channel_id,
+            WhatsAppMessage.direction == "inbound",
+            WhatsAppMessage.created_at >= since_24h,
+        )
+        .scalar()
+    ) or 0
+
+    last_msg = (
+        db.query(WhatsAppMessage)
+        .filter(
+            WhatsAppMessage.channel_id == channel_id,
+            WhatsAppMessage.direction == "inbound",
+        )
+        .order_by(WhatsAppMessage.created_at.desc())
+        .first()
+    )
+
+    recent_msgs = (
+        db.query(WhatsAppMessage)
+        .filter(
+            WhatsAppMessage.channel_id == channel_id,
+            WhatsAppMessage.direction == "inbound",
+        )
+        .order_by(WhatsAppMessage.created_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    return {
+        "channel_id": channel_id,
+        "messages_received_24h": count_24h,
+        "last_received_at": (
+            last_msg.created_at.isoformat() if last_msg and last_msg.created_at else None
+        ),
+        "recent_events": [
+            {
+                "message_type": m.message_type,
+                "phone": m.phone,
+                "body_preview": (m.body or "")[:60] if m.body else None,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in recent_msgs
+        ],
+    }
+
+
 @router.delete("/zapi/channels/{channel_id}/unidades/{unidade}")
 async def remove_unidade_mapping(
     channel_id: int,
