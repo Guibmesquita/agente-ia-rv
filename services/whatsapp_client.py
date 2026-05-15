@@ -641,17 +641,22 @@ class ZAPIClient:
                 return {"success": False, "error": str(e)}
     
     async def update_webhook(self, webhook_url: str) -> dict:
-        """Atualiza a URL do webhook para receber mensagens."""
+        """
+        Atualiza a URL do webhook para receber mensagens.
+        Task #268 — loga o raw response completo para diagnóstico do status de registro.
+        """
         url = f"{self._get_base_url()}/update-webhook-received"
-        
         payload = {"value": webhook_url}
         
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.put(url, json=payload, headers=self._get_headers(), timeout=10.0)
                 data = response.json() if response.content else {}
-                return {"success": response.status_code == 200, "raw_response": data}
+                success = response.status_code == 200
+                print(f"[Z-API] update_webhook → HTTP {response.status_code}, raw: {data}")
+                return {"success": success, "raw_response": data}
             except httpx.HTTPError as e:
+                print(f"[Z-API] update_webhook → HTTPError: {e}")
                 return {"success": False, "error": str(e)}
     
     async def check_phone_exists(self, phone: str) -> dict:
@@ -855,6 +860,7 @@ class ZAPIClient:
         """
         Busca configurações atuais dos webhooks da instância.
         Task #264 — aceita timeout configurável (padrão 30s, use 4s para sondagens de listagem).
+        Task #268 — loga o raw response para diagnóstico da comparação de URL.
         """
         url = f"{self._get_base_url()}/webhooks"
         
@@ -864,10 +870,13 @@ class ZAPIClient:
                 data = response.json() if response.content else {}
                 
                 if response.status_code == 200:
+                    print(f"[Z-API] get_webhook_settings → HTTP 200, raw: {data}")
                     return {"success": True, "settings": data}
                 else:
+                    print(f"[Z-API] get_webhook_settings → HTTP {response.status_code}, raw: {data}")
                     return {"success": False, "error": data.get("error", f"HTTP {response.status_code}")}
             except httpx.HTTPError as e:
+                print(f"[Z-API] get_webhook_settings → HTTPError: {e}")
                 return {"success": False, "error": str(e)}
 
 

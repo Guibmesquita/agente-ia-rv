@@ -1944,8 +1944,15 @@ async def whatsapp_webhook_multichannel(
         expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
         valid = incoming_token and incoming_token in (expected_token, expected_ct)
     else:
-        # Canal explícito: valida contra credenciais armazenadas
+        # Canal explícito: valida contra credenciais armazenadas.
+        # Task #268 — quando o canal usa o client_token global da conta (campo NULL no banco),
+        # o Z-API envia o ZAPI_CLIENT_TOKEN global como header Client-Token. É necessário
+        # aceitar esse token para que eventos de canais com client_token_source="global" passem.
+        _settings = _get_settings()
+        _global_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
         valid_tokens = {t for t in (channel.token, channel.client_token) if t}
+        if not channel.client_token and _global_ct:
+            valid_tokens.add(_global_ct)
         valid = bool(incoming_token) and incoming_token in valid_tokens
 
     if not valid:
