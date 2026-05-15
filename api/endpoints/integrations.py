@@ -636,6 +636,7 @@ async def list_zapi_channels(
             settings = result.get("settings") or {}
             # Task #272 — percorre campos conhecidos do Z-API em ordem de prioridade.
             # Versões diferentes da API podem usar nomes de campo distintos.
+            # Suporte a campos aninhados (ex: {"webhook": {"url": "https://..."}}).
             _candidate_keys = (
                 "webhookReceived", "webhookDelivery", "webhookUrl",
                 "value", "webhook", "url",
@@ -648,6 +649,14 @@ async def list_zapi_channels(
                     remote_url = _v
                     found_key = _k
                     break
+                if _v and isinstance(_v, dict):
+                    for _nk, _nv in _v.items():
+                        if _nv and isinstance(_nv, str) and _nv.startswith("http"):
+                            remote_url = _nv
+                            found_key = f"{_k}.{_nk}"
+                            break
+                    if found_key:
+                        break
             if found_key:
                 print(f"[WEBHOOK-PROBE] ch={ch.id} campo={found_key!r} url={remote_url!r} expected={suggested_url!r}")
             else:
@@ -1482,6 +1491,10 @@ async def debug_zapi_channel_webhook(
 
     webhook_url = _build_webhook_url_suggested(request, channel.id)
 
+    # Task #272 — `client_token_source` é computado (ZAPIChannel não tem esse campo):
+    # "own" quando o canal tem client_token próprio no banco, "global" quando NULL.
+    _ct_source = "own" if channel.client_token else "global"
+
     diag: dict = {
         "channel_id": channel_id,
         "channel_name": channel.name,
@@ -1489,12 +1502,13 @@ async def debug_zapi_channel_webhook(
         "is_active": channel.is_active,
         "webhook_url_suggested": webhook_url,
         "instance_id": channel.instance_id,
-        "client_token_source": channel.client_token_source,
+        "client_token_source": _ct_source,
         "zapi_raw_response": None,
         "detected_field": None,
         "detected_url": None,
         "url_match": None,
         "all_candidate_fields": {},
+        "self_test": None,
         "error": None,
     }
 
@@ -1506,6 +1520,10 @@ async def debug_zapi_channel_webhook(
         diag["error"] = "Canal inativo"
         return diag
 
+    import httpx as _httpx_diag
+    import os as _os_diag
+
+    # ── 1. GET /webhooks do Z-API ──────────────────────────────────────────────
     try:
         from services.whatsapp_client import ZAPIClient as _ZC
         client = _ZC(
@@ -1517,36 +1535,99 @@ async def debug_zapi_channel_webhook(
 
         if not ws_result.get("success"):
             diag["error"] = ws_result.get("error", "Falha ao obter configurações de webhook")
-            return diag
+        else:
+            settings = ws_result.get("settings") or {}
+            diag["zapi_raw_response"] = settings
 
-        settings = ws_result.get("settings") or {}
-        diag["zapi_raw_response"] = settings
+            _candidates = (
+                "webhookReceived", "webhookDelivery", "webhookUrl",
+                "value", "webhook", "url",
+            )
+            for _k in _candidates:
+                _v = settings.get(_k)
+                diag["all_candidate_fields"][_k] = _v
 
-        # Registrar todos os candidatos que têm valor HTTP
-        _candidates = (
-            "webhookReceived", "webhookDelivery", "webhookUrl",
-            "value", "webhook", "url",
-        )
-        for _k in _candidates:
-            _v = settings.get(_k)
-            diag["all_candidate_fields"][_k] = _v
-
-        # Detectar o primeiro campo com URL válida
-        for _k in _candidates:
-            _v = settings.get(_k)
-            if _v and isinstance(_v, str) and _v.startswith("http"):
-                diag["detected_field"] = _k
-                diag["detected_url"] = _v
-                diag["url_match"] = (_v.rstrip("/") == webhook_url.rstrip("/"))
-                break
+            # Detecção com suporte a campos aninhados (ex: {"webhook": {"url": "https://..."}})
+            for _k in _candidates:
+                _v = settings.get(_k)
+                if _v and isinstance(_v, str) and _v.startswith("http"):
+                    diag["detected_field"] = _k
+                    diag["detected_url"] = _v
+                    diag["url_match"] = (_v.rstrip("/") == webhook_url.rstrip("/"))
+                    break
+                if _v and isinstance(_v, dict):
+                    # Um nível de profundidade: procura URL dentro do objeto aninhado
+                    for _nk, _nv in _v.items():
+                        if _nv and isinstance(_nv, str) and _nv.startswith("http"):
+                            diag["detected_field"] = f"{_k}.{_nk}"
+                            diag["detected_url"] = _nv
+                            diag["url_match"] = (_nv.rstrip("/") == webhook_url.rstrip("/"))
+                            break
+                    if diag["detected_url"]:
+                        break
 
     except Exception as exc:
         diag["error"] = f"{type(exc).__name__}: {exc}"
 
+    # ── 2. Self-test: POST sintético ao próprio endpoint multichannel ──────────
+    # Verifica acessibilidade da URL e se a validação de token passaria.
+    # Usa type __webhook_diagnostic_test__ — o handler ignora sem processar.
+    self_test: dict = {
+        "attempted": False,
+        "url_tested": webhook_url,
+        "token_hint": None,
+        "status_code": None,
+        "result": None,
+        "error": None,
+    }
+    try:
+        from core.config import get_settings as _get_cfg_st
+        _st_cfg = _get_cfg_st()
+        # Token que o Z-API enviaria: client_token próprio ou ZAPI_CLIENT_TOKEN global
+        _test_token = (
+            channel.client_token
+            or _os_diag.getenv("ZAPI_CLIENT_TOKEN", "")
+            or _st_cfg.ZAPI_CLIENT_TOKEN
+            or channel.token
+        )
+        self_test["attempted"] = True
+        self_test["token_hint"] = (_test_token[:4] + "****") if len(_test_token) > 4 else "***"
+
+        async with _httpx_diag.AsyncClient(timeout=8.0, verify=True) as _hc:
+            _st_resp = await _hc.post(
+                webhook_url,
+                json={"type": "__webhook_diagnostic_test__", "instanceId": channel.instance_id},
+                headers={
+                    "client-token": _test_token,
+                    "Content-Type": "application/json",
+                },
+            )
+        self_test["status_code"] = _st_resp.status_code
+        if _st_resp.status_code == 200:
+            self_test["result"] = "reachable_and_token_valid"
+        elif _st_resp.status_code == 401:
+            self_test["result"] = "token_rejected"
+        elif _st_resp.status_code == 404:
+            self_test["result"] = "url_not_found"
+        else:
+            self_test["result"] = f"unexpected_http_{_st_resp.status_code}"
+
+    except _httpx_diag.ConnectError as _ce:
+        self_test["error"] = f"ConnectError: servidor inacessível — {_ce}"
+        self_test["result"] = "unreachable"
+    except _httpx_diag.TimeoutException:
+        self_test["error"] = "Timeout ao tentar alcançar a URL de webhook"
+        self_test["result"] = "timeout"
+    except Exception as _ste:
+        self_test["error"] = f"{type(_ste).__name__}: {_ste}"
+        self_test["result"] = "error"
+
+    diag["self_test"] = self_test
+
     print(
         f"[WEBHOOK-DEBUG] Canal {channel_id} — url_suggested={webhook_url!r} "
         f"detected_field={diag['detected_field']!r} detected_url={diag['detected_url']!r} "
-        f"match={diag['url_match']}"
+        f"match={diag['url_match']} self_test={self_test['result']}"
     )
     return diag
 

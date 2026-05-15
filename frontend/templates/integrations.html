@@ -1493,56 +1493,123 @@
             }
         }
 
+        // Task #272 — escaping seguro de HTML para prevenir XSS com dados vindos do Z-API
+        function _zcEsc(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function _zcShowWebhookDiagModal(d) {
             const matchBadge = d.url_match === true
                 ? '<span style="color:#16a34a;font-weight:600;">✅ Bate</span>'
                 : d.url_match === false
                     ? '<span style="color:#dc2626;font-weight:600;">❌ Não bate</span>'
                     : '<span style="color:#6b7280;">— sem URL detectada</span>';
+
+            // Raw response: JSON.stringify é seguro desde que o resultado seja escapado
             const rawStr = d.zapi_raw_response
-                ? `<pre style="font-size:0.78rem;background:#f1f5f9;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-all;">${JSON.stringify(d.zapi_raw_response, null, 2)}</pre>`
-                : `<p style="color:#6b7280;font-size:0.85rem;">${d.error || 'Sem dados'}</p>`;
+                ? `<pre style="font-size:0.78rem;background:#f1f5f9;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-all;">${_zcEsc(JSON.stringify(d.zapi_raw_response, null, 2))}</pre>`
+                : `<p style="color:#6b7280;font-size:0.85rem;">${_zcEsc(d.error || 'Sem dados')}</p>`;
+
             const candidateRows = d.all_candidate_fields
                 ? Object.entries(d.all_candidate_fields).map(([k, v]) =>
-                    `<tr><td style="font-family:monospace;font-size:0.82rem;padding:3px 8px 3px 0;color:#374151;">${k}</td><td style="font-size:0.82rem;color:${v ? '#1e40af' : '#9ca3af'};word-break:break-all;">${v || '(vazio)'}</td></tr>`
+                    `<tr><td style="font-family:monospace;font-size:0.82rem;padding:3px 8px 3px 0;color:#374151;">${_zcEsc(k)}</td><td style="font-size:0.82rem;color:${v ? '#1e40af' : '#9ca3af'};word-break:break-all;">${_zcEsc(v || '(vazio)')}</td></tr>`
                   ).join('')
                 : '';
-            const html = `
-                <div style="font-size:0.9rem;line-height:1.6;">
-                    <table style="width:100%;margin-bottom:12px;border-collapse:collapse;">
-                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Canal</td><td><strong>${d.channel_name}</strong> (id=${d.channel_id})</td></tr>
-                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL sugerida</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;color:#1e40af;">${d.webhook_url_suggested}</td></tr>
-                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL no Z-API</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;">${d.detected_url || '(não detectada)'}</td></tr>
-                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Campo detectado</td><td style="font-family:monospace;">${d.detected_field || '(nenhum)'}</td></tr>
-                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Compatibilidade</td><td>${matchBadge}</td></tr>
-                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Client-Token</td><td>${d.client_token_source || '—'}</td></tr>
-                    </table>
-                    ${candidateRows ? `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Todos os campos recebidos do Z-API</p><table>${candidateRows}</table><br>` : ''}
-                    <p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Raw response GET /webhooks</p>
-                    ${rawStr}
-                </div>`;
-            // Reutiliza modal genérico do ZC (se existir) ou abre um simples
+
+            // Self-test
+            let selfTestHtml = '';
+            const st = d.self_test;
+            if (st && st.attempted) {
+                const stIcon = st.result === 'reachable_and_token_valid' ? '✅'
+                    : st.result === 'token_rejected' ? '🔑'
+                    : st.result === 'url_not_found' ? '🔎'
+                    : st.result === 'unreachable' || st.result === 'timeout' ? '🔌'
+                    : '⚠️';
+                const stColor = st.result === 'reachable_and_token_valid' ? '#16a34a' : '#dc2626';
+                const stLabel = {
+                    reachable_and_token_valid: 'URL acessível e token válido',
+                    token_rejected: 'URL acessível mas token rejeitado (401)',
+                    url_not_found: 'URL não encontrada no servidor (404)',
+                    unreachable: 'Servidor inacessível',
+                    timeout: 'Timeout — servidor não respondeu',
+                }[st.result] || _zcEsc(st.result);
+                selfTestHtml = `
+                    <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Self-test de acessibilidade</p>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Resultado</td><td style="color:${stColor};font-weight:600;">${stIcon} ${stLabel}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">HTTP</td><td style="font-size:0.85rem;">${st.status_code != null ? st.status_code : '—'}</td></tr>
+                        ${st.error ? `<tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Detalhe</td><td style="font-size:0.82rem;color:#b91c1c;word-break:break-all;">${_zcEsc(st.error)}</td></tr>` : ''}
+                    </table>`;
+            } else if (st && !st.attempted) {
+                selfTestHtml = `<p style="color:#6b7280;font-size:0.85rem;">Self-test não executado.</p>`;
+            }
+
+            // Constrói estrutura do modal via DOM para evitar qualquer XSS residual
             const existing = document.getElementById('zcWebhookDiagModal');
             if (existing) existing.remove();
-            const modal = document.createElement('div');
-            modal.id = 'zcWebhookDiagModal';
-            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-            modal.innerHTML = `
-                <div style="background:#fff;border-radius:10px;padding:24px;max-width:600px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                        <h3 style="margin:0;font-size:1rem;font-weight:600;">🔍 Diagnóstico de webhook — ${d.channel_name}</h3>
-                        <button onclick="document.getElementById('zcWebhookDiagModal').remove()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:#6b7280;">✕</button>
-                    </div>
-                    ${html}
-                    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
-                        <button class="btn btn-primary btn-sm" onclick="document.getElementById('zcWebhookDiagModal').remove();zcSyncWebhook(${d.channel_id})">
-                            🔗 Sincronizar webhook
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('zcWebhookDiagModal').remove()">Fechar</button>
-                    </div>
-                </div>`;
-            document.body.appendChild(modal);
-            modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+            const overlay = document.createElement('div');
+            overlay.id = 'zcWebhookDiagModal';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#fff;border-radius:10px;padding:24px;max-width:640px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);';
+
+            // Título (texto puro via textContent)
+            const titleBar = document.createElement('div');
+            titleBar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+            const titleEl = document.createElement('h3');
+            titleEl.style.cssText = 'margin:0;font-size:1rem;font-weight:600;';
+            titleEl.textContent = `🔍 Diagnóstico de webhook — ${d.channel_name}`;
+            const closeBtn = document.createElement('button');
+            closeBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:1.2rem;color:#6b7280;';
+            closeBtn.textContent = '✕';
+            closeBtn.onclick = () => overlay.remove();
+            titleBar.appendChild(titleEl);
+            titleBar.appendChild(closeBtn);
+            box.appendChild(titleBar);
+
+            // Corpo do modal: HTML controlado com valores escapados
+            const bodyDiv = document.createElement('div');
+            bodyDiv.style.cssText = 'font-size:0.9rem;line-height:1.6;';
+            bodyDiv.innerHTML = `
+                <table style="width:100%;margin-bottom:12px;border-collapse:collapse;">
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Canal</td><td><strong>${_zcEsc(d.channel_name)}</strong> (id=${_zcEsc(String(d.channel_id))})</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL sugerida</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;color:#1e40af;">${_zcEsc(d.webhook_url_suggested)}</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL no Z-API</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;">${_zcEsc(d.detected_url || '(não detectada)')}</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Campo detectado</td><td style="font-family:monospace;">${_zcEsc(d.detected_field || '(nenhum)')}</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Compatibilidade</td><td>${matchBadge}</td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Client-Token</td><td>${_zcEsc(d.client_token_source || '—')}</td></tr>
+                </table>
+                ${candidateRows ? `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Campos recebidos do Z-API</p><table style="width:100%;border-collapse:collapse;margin-bottom:12px;">${candidateRows}</table>` : ''}
+                ${selfTestHtml}
+                <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Raw response GET /webhooks</p>
+                ${rawStr}`;
+            box.appendChild(bodyDiv);
+
+            // Botões de ação
+            const footer = document.createElement('div');
+            footer.style.cssText = 'margin-top:16px;display:flex;gap:8px;justify-content:flex-end;';
+            const syncBtn = document.createElement('button');
+            syncBtn.className = 'btn btn-primary btn-sm';
+            syncBtn.textContent = '🔗 Sincronizar webhook';
+            syncBtn.onclick = () => { overlay.remove(); zcSyncWebhook(d.channel_id); };
+            const closeBtn2 = document.createElement('button');
+            closeBtn2.className = 'btn btn-secondary btn-sm';
+            closeBtn2.textContent = 'Fechar';
+            closeBtn2.onclick = () => overlay.remove();
+            footer.appendChild(syncBtn);
+            footer.appendChild(closeBtn2);
+            box.appendChild(footer);
+
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
         }
 
         // ══════════════════════════════════════════════════════════════

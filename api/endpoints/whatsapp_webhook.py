@@ -1924,18 +1924,28 @@ async def whatsapp_webhook_multichannel(
     from database.models import ZAPIChannel
     from core.config import get_settings as _get_settings
 
+    import json as _json_mod
+
     # Task #272 — Log de ENTRADA antes de qualquer validação.
-    # Essencial para diagnosticar se Z-API está chegando ao servidor ou não.
+    # Lê o body antecipadamente (FastAPI faz cache — request.json() abaixo reutiliza
+    # o mesmo buffer) para extrair o `type` do evento antes da validação de token.
+    # Essencial para diagnosticar se Z-API está chegando ao servidor, token inválido, etc.
     _ct_hint = (request.headers.get("client-token", "") or "")
     _zt_hint = (request.headers.get("z-api-token", "") or "")
     _client_ip = (
         request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         or (request.client.host if request.client else "?")
     )
+    _raw_body = await request.body()
+    try:
+        _early_type = _json_mod.loads(_raw_body).get("type", "?") if _raw_body else "?"
+    except Exception:
+        _early_type = "?"
     logger.info(
         f"[WEBHOOK-MC] Entrada canal={channel_id} ip={_client_ip} "
         f"client-token={(_ct_hint[:6] + '…') if _ct_hint else '(vazio)'} "
-        f"z-api-token={(_zt_hint[:6] + '…') if _zt_hint else '(vazio)'}"
+        f"z-api-token={(_zt_hint[:6] + '…') if _zt_hint else '(vazio)'} "
+        f"type={_early_type!r}"
     )
 
     channel = db.query(ZAPIChannel).filter(
@@ -1948,6 +1958,12 @@ async def whatsapp_webhook_multichannel(
             status_code=404,
             detail=f"Canal {channel_id} não encontrado ou inativo"
         )
+
+    # Task #272 — ignora silenciosamente eventos de diagnóstico self-test para
+    # não poluir o pipeline de processamento com payloads sintéticos.
+    if _early_type == "__webhook_diagnostic_test__":
+        logger.info(f"[WEBHOOK-MC] Canal {channel_id} — diagnostic self-test recebido, ignorando processamento")
+        return {"status": "ok", "test": True, "channel": channel.name}
 
     # Validação de token — mesma abordagem do webhook legado.
     incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
@@ -1970,7 +1986,11 @@ async def whatsapp_webhook_multichannel(
         valid = bool(incoming_token) and incoming_token in valid_tokens
 
     if not valid:
-        logger.warning(f"[WEBHOOK-MC] Token inválido para canal {channel_id} — incoming (5): {incoming_token[:5] if incoming_token else 'VAZIO'}")
+        logger.warning(
+            f"[WEBHOOK-MC] Token inválido para canal {channel_id} "
+            f"— incoming={(_ct_hint[:6] + '…') if _ct_hint else '(vazio)'} "
+            f"valid_set_size={len(valid_tokens) if not channel.is_legacy else 'legacy'}"
+        )
         raise HTTPException(status_code=401, detail="Token inválido ou ausente para este canal")
 
     try:
