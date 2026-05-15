@@ -1324,6 +1324,12 @@ app = FastAPI(
 from core.security_middleware import setup_security
 setup_security(app)
 
+# Task #270 — Faz o FastAPI confiar nos headers X-Forwarded-Proto / X-Forwarded-Host
+# injetados pelo proxy reverso (Replit, Railway, Nginx, etc.), garantindo que
+# `request.base_url` retorne a URL pública HTTPS correta em vez de http://0.0.0.0:5000/.
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 @app.middleware("http")
 async def cache_control_middleware(request: Request, call_next):
     response = await call_next(request)
