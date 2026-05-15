@@ -1924,6 +1924,20 @@ async def whatsapp_webhook_multichannel(
     from database.models import ZAPIChannel
     from core.config import get_settings as _get_settings
 
+    # Task #272 — Log de ENTRADA antes de qualquer validação.
+    # Essencial para diagnosticar se Z-API está chegando ao servidor ou não.
+    _ct_hint = (request.headers.get("client-token", "") or "")
+    _zt_hint = (request.headers.get("z-api-token", "") or "")
+    _client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "?")
+    )
+    logger.info(
+        f"[WEBHOOK-MC] Entrada canal={channel_id} ip={_client_ip} "
+        f"client-token={(_ct_hint[:6] + '…') if _ct_hint else '(vazio)'} "
+        f"z-api-token={(_zt_hint[:6] + '…') if _zt_hint else '(vazio)'}"
+    )
+
     channel = db.query(ZAPIChannel).filter(
         ZAPIChannel.id == channel_id,
         ZAPIChannel.is_active == True,

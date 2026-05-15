@@ -619,6 +619,10 @@ async def list_zapi_channels(
         a listagem.
         Retorna: True (registrado e URL bate), False (registrado mas URL diferente ou vazio),
                  "unknown" (não foi possível obter a configuração remota).
+
+        Task #272 — lógica defensiva de detecção de campo: percorre múltiplos campos
+        possíveis pois o Z-API pode retornar a URL em campos diferentes dependendo da
+        versão da instância. Loga qual campo foi encontrado para auditoria.
         """
         try:
             client = ZAPIClient(
@@ -630,10 +634,27 @@ async def list_zapi_channels(
             if not result.get("success"):
                 return "unknown"
             settings = result.get("settings") or {}
-            # Z-API retorna {"webhookReceived": "https://..."} no campo settings.
-            remote_url = settings.get("webhookReceived") or settings.get("value") or ""
+            # Task #272 — percorre campos conhecidos do Z-API em ordem de prioridade.
+            # Versões diferentes da API podem usar nomes de campo distintos.
+            _candidate_keys = (
+                "webhookReceived", "webhookDelivery", "webhookUrl",
+                "value", "webhook", "url",
+            )
+            remote_url = ""
+            found_key = None
+            for _k in _candidate_keys:
+                _v = settings.get(_k)
+                if _v and isinstance(_v, str) and _v.startswith("http"):
+                    remote_url = _v
+                    found_key = _k
+                    break
+            if found_key:
+                print(f"[WEBHOOK-PROBE] ch={ch.id} campo={found_key!r} url={remote_url!r} expected={suggested_url!r}")
+            else:
+                print(f"[WEBHOOK-PROBE] ch={ch.id} nenhum campo URL HTTP encontrado — keys={list(settings.keys())} raw={settings}")
             return remote_url.rstrip("/") == suggested_url.rstrip("/")
-        except Exception:
+        except Exception as _probe_exc:
+            print(f"[WEBHOOK-PROBE] ch={ch.id} exceção: {_probe_exc}")
             return "unknown"
 
     if active_channels:
@@ -1389,13 +1410,145 @@ async def sync_zapi_channel_webhook(
     else:
         print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual falhou: {result}")
 
+    # Task #272 — verifica imediatamente pós-registro o que Z-API retorna em GET /webhooks.
+    # Isso detecta se a URL foi realmente persistida e qual campo Z-API usa para armazená-la.
+    verify_raw: Optional[dict] = None
+    verify_field: Optional[str] = None
+    verify_url: Optional[str] = None
+    try:
+        vresp = await client.get_webhook_settings(timeout=8.0)
+        if vresp.get("success"):
+            vsettings = vresp.get("settings") or {}
+            verify_raw = vsettings
+            _candidate_keys = (
+                "webhookReceived", "webhookDelivery", "webhookUrl",
+                "value", "webhook", "url",
+            )
+            for _k in _candidate_keys:
+                _v = vsettings.get(_k)
+                if _v and isinstance(_v, str) and _v.startswith("http"):
+                    verify_field = _k
+                    verify_url = _v
+                    break
+            print(
+                f"[Z-API Webhook] Canal {channel_id} — verify GET /webhooks: "
+                f"campo={verify_field!r} url={verify_url!r}"
+            )
+    except Exception as _vexc:
+        print(f"[Z-API Webhook] Canal {channel_id} — verify exceção: {_vexc}")
+
     return {
         "success": result.get("success", False),
         "webhook_url": webhook_url,
         "channel_id": channel_id,
         "raw_response": result.get("raw_response"),
+        "verify_raw": verify_raw,
+        "verify_field": verify_field,
+        "verify_url": verify_url,
+        "url_match": (verify_url.rstrip("/") == webhook_url.rstrip("/")) if verify_url else None,
         "error": result.get("error"),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #272 — Diagnóstico de webhook por canal
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/zapi/channels/{channel_id}/webhook-debug")
+async def debug_zapi_channel_webhook(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #272 — Endpoint de diagnóstico completo do webhook para um canal Z-API.
+
+    Retorna:
+    - URL que seria registrada (conforme a lógica de _build_webhook_url_suggested)
+    - Raw JSON completo do GET /webhooks do Z-API para a instância do canal
+    - Campo detectado para comparação de URL (com múltiplos candidatos)
+    - URL atual registrada no Z-API
+    - Se a URL atual bate com a URL sugerida
+
+    Acesso restrito a admin/gestao_rv.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    webhook_url = _build_webhook_url_suggested(request, channel.id)
+
+    diag: dict = {
+        "channel_id": channel_id,
+        "channel_name": channel.name,
+        "is_legacy": channel.is_legacy,
+        "is_active": channel.is_active,
+        "webhook_url_suggested": webhook_url,
+        "instance_id": channel.instance_id,
+        "client_token_source": channel.client_token_source,
+        "zapi_raw_response": None,
+        "detected_field": None,
+        "detected_url": None,
+        "url_match": None,
+        "all_candidate_fields": {},
+        "error": None,
+    }
+
+    if channel.is_legacy:
+        diag["error"] = "Canal legado — webhook gerenciado via variáveis de ambiente, não via API"
+        return diag
+
+    if not channel.is_active:
+        diag["error"] = "Canal inativo"
+        return diag
+
+    try:
+        from services.whatsapp_client import ZAPIClient as _ZC
+        client = _ZC(
+            instance_id=channel.instance_id,
+            token=channel.token,
+            client_token=channel.client_token,
+        )
+        ws_result = await client.get_webhook_settings(timeout=10.0)
+
+        if not ws_result.get("success"):
+            diag["error"] = ws_result.get("error", "Falha ao obter configurações de webhook")
+            return diag
+
+        settings = ws_result.get("settings") or {}
+        diag["zapi_raw_response"] = settings
+
+        # Registrar todos os candidatos que têm valor HTTP
+        _candidates = (
+            "webhookReceived", "webhookDelivery", "webhookUrl",
+            "value", "webhook", "url",
+        )
+        for _k in _candidates:
+            _v = settings.get(_k)
+            diag["all_candidate_fields"][_k] = _v
+
+        # Detectar o primeiro campo com URL válida
+        for _k in _candidates:
+            _v = settings.get(_k)
+            if _v and isinstance(_v, str) and _v.startswith("http"):
+                diag["detected_field"] = _k
+                diag["detected_url"] = _v
+                diag["url_match"] = (_v.rstrip("/") == webhook_url.rstrip("/"))
+                break
+
+    except Exception as exc:
+        diag["error"] = f"{type(exc).__name__}: {exc}"
+
+    print(
+        f"[WEBHOOK-DEBUG] Canal {channel_id} — url_suggested={webhook_url!r} "
+        f"detected_field={diag['detected_field']!r} detected_url={diag['detected_url']!r} "
+        f"match={diag['url_match']}"
+    )
+    return diag
 
 
 # ─────────────────────────────────────────────────────────────────────────────

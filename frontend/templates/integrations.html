@@ -900,6 +900,7 @@
             else if (action === 'assessores')  { zcToggleAssessoresPanel(id); }
             else if (action === 'delete')      { zcDelete(id); }
             else if (action === 'sync-webhook') { zcSyncWebhook(id); }
+            else if (action === 'webhook-diag')  { zcWebhookDiag(id); }
             else if (action === 'assignar-unidade') { zcAssignarUnidade(id); }
             else if (action === 'add-unidade')      { zcAddUnidade(id); }
             else if (action === 'unlink-assessor') {
@@ -976,6 +977,12 @@
                             id="zcSyncWebhookBtn-${ch.id}"
                             title="Registrar URL de webhook na instância Z-API para que mensagens cheguem ao agente">
                             🔗 Sincronizar webhook
+                        </button>
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="webhook-diag" data-zc-id="${ch.id}"
+                            id="zcWebhookDiagBtn-${ch.id}"
+                            title="Diagnóstico completo: ver URL sugerida, raw response do Z-API e status de comparação">
+                            🔍 Diagnóstico
                         </button>` : ''}
                         <button class="btn btn-secondary btn-sm"
                             data-zc-action="unidades" data-zc-id="${ch.id}"
@@ -1435,7 +1442,22 @@
                 }
 
                 if (data.success) {
-                    toast.success(`Webhook registrado com sucesso!\n${data.webhook_url}`);
+                    // Task #272 — exibe informações de verificação pós-registro
+                    let msg = `Webhook registrado!\n📍 URL: ${data.webhook_url}`;
+                    if (data.verify_url) {
+                        const matchIcon = data.url_match ? '✅' : '⚠️';
+                        msg += `\n${matchIcon} Z-API confirmou: ${data.verify_url}`;
+                        if (!data.url_match) {
+                            msg += `\n⚠️ URL registrada no Z-API não bate com a URL sugerida.`;
+                        }
+                    } else if (data.verify_raw !== null && data.verify_raw !== undefined) {
+                        msg += `\n⚠️ Z-API não retornou URL de confirmação. Raw: ${JSON.stringify(data.verify_raw).slice(0, 120)}`;
+                    }
+                    if (data.url_match === false) {
+                        toast.warning(msg);
+                    } else {
+                        toast.success(msg);
+                    }
                 } else {
                     const errMsg = data.error ? ` Erro: ${data.error}` : '';
                     toast.error(`Falha ao registrar webhook na Z-API. Verifique se a instância está conectada.${errMsg}`);
@@ -1447,6 +1469,80 @@
             } finally {
                 if (btn) { btn.innerHTML = origText; btn.disabled = false; }
             }
+        }
+
+        // Task #272 — Diagnóstico de webhook por canal
+        async function zcWebhookDiag(channelId) {
+            const btn = document.getElementById(`zcWebhookDiagBtn-${channelId}`);
+            const origText = btn ? btn.innerHTML : '';
+            if (btn) { btn.innerHTML = '⏳...'; btn.disabled = true; }
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/webhook-debug`, {
+                    credentials: 'include',
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    toast.error(`Diagnóstico: ${data.detail || 'Erro desconhecido'}`);
+                    return;
+                }
+                _zcShowWebhookDiagModal(data);
+            } catch (err) {
+                toast.error(`Diagnóstico: ${err.message}`);
+            } finally {
+                if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+            }
+        }
+
+        function _zcShowWebhookDiagModal(d) {
+            const matchBadge = d.url_match === true
+                ? '<span style="color:#16a34a;font-weight:600;">✅ Bate</span>'
+                : d.url_match === false
+                    ? '<span style="color:#dc2626;font-weight:600;">❌ Não bate</span>'
+                    : '<span style="color:#6b7280;">— sem URL detectada</span>';
+            const rawStr = d.zapi_raw_response
+                ? `<pre style="font-size:0.78rem;background:#f1f5f9;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-all;">${JSON.stringify(d.zapi_raw_response, null, 2)}</pre>`
+                : `<p style="color:#6b7280;font-size:0.85rem;">${d.error || 'Sem dados'}</p>`;
+            const candidateRows = d.all_candidate_fields
+                ? Object.entries(d.all_candidate_fields).map(([k, v]) =>
+                    `<tr><td style="font-family:monospace;font-size:0.82rem;padding:3px 8px 3px 0;color:#374151;">${k}</td><td style="font-size:0.82rem;color:${v ? '#1e40af' : '#9ca3af'};word-break:break-all;">${v || '(vazio)'}</td></tr>`
+                  ).join('')
+                : '';
+            const html = `
+                <div style="font-size:0.9rem;line-height:1.6;">
+                    <table style="width:100%;margin-bottom:12px;border-collapse:collapse;">
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Canal</td><td><strong>${d.channel_name}</strong> (id=${d.channel_id})</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL sugerida</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;color:#1e40af;">${d.webhook_url_suggested}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL no Z-API</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;">${d.detected_url || '(não detectada)'}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Campo detectado</td><td style="font-family:monospace;">${d.detected_field || '(nenhum)'}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Compatibilidade</td><td>${matchBadge}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Client-Token</td><td>${d.client_token_source || '—'}</td></tr>
+                    </table>
+                    ${candidateRows ? `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Todos os campos recebidos do Z-API</p><table>${candidateRows}</table><br>` : ''}
+                    <p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Raw response GET /webhooks</p>
+                    ${rawStr}
+                </div>`;
+            // Reutiliza modal genérico do ZC (se existir) ou abre um simples
+            const existing = document.getElementById('zcWebhookDiagModal');
+            if (existing) existing.remove();
+            const modal = document.createElement('div');
+            modal.id = 'zcWebhookDiagModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+            modal.innerHTML = `
+                <div style="background:#fff;border-radius:10px;padding:24px;max-width:600px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                        <h3 style="margin:0;font-size:1rem;font-weight:600;">🔍 Diagnóstico de webhook — ${d.channel_name}</h3>
+                        <button onclick="document.getElementById('zcWebhookDiagModal').remove()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:#6b7280;">✕</button>
+                    </div>
+                    ${html}
+                    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+                        <button class="btn btn-primary btn-sm" onclick="document.getElementById('zcWebhookDiagModal').remove();zcSyncWebhook(${d.channel_id})">
+                            🔗 Sincronizar webhook
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('zcWebhookDiagModal').remove()">Fechar</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
         }
 
         // ══════════════════════════════════════════════════════════════
