@@ -368,7 +368,8 @@ async def delete_template(
 
 class TestSendRequest(BaseModel):
     phones: List[str]
-    channel_id: int
+    # Task #256: múltiplos canais — cada canal envia o template para todos os números.
+    channel_ids: List[int]
     template_id: int
     preview_name: str = "Assessor Teste"
 
@@ -440,10 +441,16 @@ async def test_send_stream(
 ):
     """
     Task #226 — Disparo de teste multi-canal via SSE (POST + fetch ReadableStream).
-    Envia mensagens de texto para números livres usando o canal Z-API selecionado.
+    Envia mensagens de texto para números livres usando os canais Z-API selecionados.
     Nenhum registro é criado em campaigns ou campaign_dispatches.
-    Delay aleatório 3-8s entre envios (anti-bloqueio).
+    Delay aleatório 3-8s entre envios por canal (anti-bloqueio).
     Logar cada envio com tag [TEST-SEND].
+
+    Task #256 — Suporte a múltiplos canais: channel_ids aceita uma lista de IDs.
+    O template é enviado de cada canal para todos os números de destino (canal × número).
+    Ordem de envio: canal 1 → todos os números → canal 2 → todos os números → …
+    Eventos SSE incluem channel_id, channel_label e channel_index para o frontend
+    distinguir por canal.
     """
     import logging as _logging
     _log = _logging.getLogger(__name__)
@@ -452,12 +459,30 @@ async def test_send_stream(
     if len(data.phones) > 20:
         raise HTTPException(status_code=400, detail="Limite de 20 números por disparo de teste")
 
+    if not data.channel_ids:
+        raise HTTPException(status_code=400, detail="Selecione ao menos um canal")
+    if len(data.channel_ids) > 20:
+        raise HTTPException(status_code=400, detail="Limite de 20 canais por disparo de teste")
+
     from database.models import ZAPIChannel as _ZCh
-    channel = db.query(_ZCh).filter(_ZCh.id == data.channel_id).first()
-    if not channel:
-        raise HTTPException(status_code=404, detail="Canal não encontrado")
-    if not channel.is_active:
-        raise HTTPException(status_code=400, detail=f"Canal '{channel.label}' está inativo")
+    from services.whatsapp_client import ZAPIClient as _ZC
+
+    # Valida cada canal e pré-instancia clientes (antes do stream para falhar rápido)
+    channels_ready = []
+    for cid in data.channel_ids:
+        ch = db.query(_ZCh).filter(_ZCh.id == cid).first()
+        if not ch:
+            raise HTTPException(status_code=404, detail=f"Canal #{cid} não encontrado")
+        if not ch.is_active:
+            raise HTTPException(status_code=400, detail=f"Canal '{ch.label or ch.name}' está inativo")
+        client = _ZC(instance_id=ch.instance_id, token=ch.token, client_token=ch.client_token)
+        if not client.is_configured():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Canal '{ch.label or ch.name}' não está configurado (credenciais incompletas)",
+            )
+        label = ch.label or ch.name or f"Canal #{cid}"
+        channels_ready.append((ch.id, label, client))
 
     template = db.query(MessageTemplate).filter(
         MessageTemplate.id == data.template_id,
@@ -479,58 +504,73 @@ async def test_send_stream(
     # Renderizar mensagem uma vez (sem acesso ao DB no gerador)
     rendered_content = _render_preview_content(str(template.content), data.preview_name)
 
-    # Criar cliente diretamente das credenciais do canal (sem DB no gerador)
-    from services.whatsapp_client import ZAPIClient as _ZC
-    client = _ZC(
-        instance_id=channel.instance_id,
-        token=channel.token,
-        client_token=channel.client_token,
-    )
-    if not client.is_configured():
-        raise HTTPException(status_code=400, detail="Canal Z-API não está configurado (credenciais incompletas)")
-
-    channel_label = channel.label or channel.name or f"Canal #{data.channel_id}"
-    total = len(normalized)
+    total = len(normalized) * len(channels_ready)
 
     async def _stream():
-        sent_count = 0
-        failed_count = 0
-        for idx, phone in enumerate(normalized):
-            try:
-                result = await client.send_text(phone, rendered_content)
-                success = result.get("success", False)
-                error = None if success else result.get("error", "Erro desconhecido")
-                if success:
-                    sent_count += 1
-                    _log.info(f"[TEST-SEND] status=sent canal={channel_label} phone={phone} ({idx+1}/{total})")
-                else:
-                    failed_count += 1
-                    _log.info(f"[TEST-SEND] status=failed canal={channel_label} phone={phone} error={error!r} ({idx+1}/{total})")
-            except Exception as exc:
-                success = False
-                error = str(exc)
-                failed_count += 1
-                _log.info(f"[TEST-SEND] status=exception canal={channel_label} phone={phone} exc={error!r} ({idx+1}/{total})")
+        sent_total = 0
+        failed_total = 0
+        global_idx = 0
+        # Resultado por canal para o evento final
+        by_channel = []
 
-            progress_evt = json.dumps({
-                "type": "progress",
-                "phone": phone,
-                "status": "sent" if success else "failed",
-                "error": error,
-                "index": idx + 1,
-                "total": total,
+        for ch_idx, (ch_id, ch_label, client) in enumerate(channels_ready):
+            sent_ch = 0
+            failed_ch = 0
+            for ph_idx, phone in enumerate(normalized):
+                global_idx += 1
+                try:
+                    result = await client.send_text(phone, rendered_content)
+                    success = result.get("success", False)
+                    error = None if success else result.get("error", "Erro desconhecido")
+                    if success:
+                        sent_ch += 1
+                        sent_total += 1
+                        _log.info(f"[TEST-SEND] status=sent canal={ch_label} phone={phone} ({global_idx}/{total})")
+                    else:
+                        failed_ch += 1
+                        failed_total += 1
+                        _log.info(f"[TEST-SEND] status=failed canal={ch_label} phone={phone} error={error!r} ({global_idx}/{total})")
+                except Exception as exc:
+                    success = False
+                    error = str(exc)
+                    failed_ch += 1
+                    failed_total += 1
+                    _log.info(f"[TEST-SEND] status=exception canal={ch_label} phone={phone} exc={error!r} ({global_idx}/{total})")
+
+                progress_evt = json.dumps({
+                    "type": "progress",
+                    "channel_id": ch_id,
+                    "channel_label": ch_label,
+                    "channel_index": ch_idx,
+                    "phone_index": ph_idx,
+                    "phone": phone,
+                    "status": "sent" if success else "failed",
+                    "error": error,
+                    "index": global_idx,
+                    "total": total,
+                })
+                yield f"data: {progress_evt}\n\n"
+
+                # Delay anti-bloqueio entre envios do mesmo canal (exceto após o último)
+                if ph_idx < len(normalized) - 1:
+                    await asyncio.sleep(random.uniform(3.0, 8.0))
+
+            by_channel.append({
+                "channel_id": ch_id,
+                "channel_label": ch_label,
+                "sent": sent_ch,
+                "failed": failed_ch,
             })
-            yield f"data: {progress_evt}\n\n"
-
-            # Delay anti-bloqueio entre envios (exceto após o último)
-            if idx < total - 1:
-                await asyncio.sleep(random.uniform(3.0, 8.0))
+            # Pausa entre canais (menor — são instâncias separadas)
+            if ch_idx < len(channels_ready) - 1:
+                await asyncio.sleep(random.uniform(1.0, 3.0))
 
         done_evt = json.dumps({
             "type": "done",
-            "sent": sent_count,
-            "failed": failed_count,
+            "sent": sent_total,
+            "failed": failed_total,
             "total": total,
+            "by_channel": by_channel,
         })
         yield f"data: {done_evt}\n\n"
 

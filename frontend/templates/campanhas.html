@@ -886,10 +886,39 @@
         .ts-channel-card {
             border: 2px solid var(--border-color); border-radius: 12px; padding: 16px;
             cursor: pointer; transition: all 0.2s; background: var(--bg-color);
+            position: relative;
         }
         .ts-channel-card:hover { border-color: var(--primary-color); background: rgba(119,43,33,0.04); }
         .ts-channel-card.selected { border-color: var(--primary-color); background: rgba(119,43,33,0.08); box-shadow: 0 0 0 3px rgba(119,43,33,0.12); }
         .ts-channel-card.inactive { opacity: 0.6; cursor: default; }
+        /* Task #256: checkmark badge no canto superior direito quando selecionado */
+        .ts-channel-check {
+            position: absolute; top: 10px; right: 10px;
+            width: 20px; height: 20px; border-radius: 50%;
+            border: 2px solid var(--border-color); background: white;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; transition: all 0.15s;
+        }
+        .ts-channel-card.selected .ts-channel-check {
+            background: var(--primary-color); border-color: var(--primary-color); color: white;
+        }
+        /* Contador de canais selecionados abaixo do grid */
+        .ts-channel-count-bar {
+            margin-top: 12px; padding: 8px 12px; border-radius: 8px;
+            background: #fefce8; border: 1px solid #fcd34d;
+            font-size: 0.82rem; color: #713f12; font-weight: 500;
+        }
+        /* Cabeçalho de grupo por canal na lista de resultados */
+        .ts-result-group {
+            margin-top: 14px;
+        }
+        .ts-result-group-header {
+            padding: 6px 14px; background: var(--primary-color); color: white;
+            border-radius: 8px 8px 0 0; font-size: 0.8rem; font-weight: 600;
+        }
+        .ts-result-group .ts-result-item:first-of-type { border-radius: 0; }
+        .ts-result-group .ts-result-item:last-of-type { border-radius: 0 0 8px 8px; }
+        .ts-result-group .ts-result-item { border-top: none; }
         .ts-channel-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); margin-bottom: 4px; }
         .ts-channel-phone { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 6px; }
         .ts-channel-pill {
@@ -5180,10 +5209,11 @@ Equipe de Gestao"></textarea>
         (function() {
             const MAX_PHONES = 20;
             let tsState = {
-                step: 1,          // 1 | 2 | 3 | 'results'
-                phones: [],       // normalized valid phones
-                channelId: null,
-                channelLabel: '',
+                step: 1,           // 1 | 2 | 3 | 'results'
+                phones: [],        // normalized valid phones
+                // Task #256: múltiplos canais
+                channelIds: [],    // array de IDs selecionados
+                channelLabels: {}, // map id → label
                 templateId: null,
                 templateName: '',
                 abortController: null,
@@ -5249,7 +5279,8 @@ Equipe de Gestao"></textarea>
                     const { valid } = parsePhones(el('tsPhonesArea').value);
                     nextBtn.disabled = valid.length === 0 || valid.length > MAX_PHONES;
                 } else if (s === 2) {
-                    nextBtn.disabled = !tsState.channelId;
+                    // Task #256: ao menos um canal deve ser selecionado
+                    nextBtn.disabled = tsState.channelIds.length === 0;
                 } else if (s === 3) {
                     if (disparBtn) disparBtn.disabled = !tsState.templateId;
                 }
@@ -5313,31 +5344,56 @@ Equipe de Gestao"></textarea>
                     el('tsChannelGrid').innerHTML = '<div style="color:var(--text-secondary);font-size:0.875rem;">Nenhum canal configurado.</div>';
                     return;
                 }
-                el('tsChannelGrid').innerHTML = all.map(ch => {
+                // Task #256: multi-select — cada card tem checkmark; todos podem ser selecionados
+                let html = all.map(ch => {
                     const conn = ch.connectivity_status || 'unreachable';
                     const isActive = ch.is_active !== false;
                     const connLabel = { connected: 'Conectado', disconnected: 'Desconectado', unreachable: 'Sem resposta' }[conn] || conn;
-                    const isSelected = tsState.channelId === ch.id;
+                    const isSelected = tsState.channelIds.includes(ch.id);
                     return `<div class="ts-channel-card${isSelected ? ' selected' : ''}${!isActive ? ' inactive' : ''}"
-                        data-channel-id="${ch.id}" data-channel-label="${ch.label || ch.name}"
+                        data-channel-id="${ch.id}"
                         style="${!isActive ? 'pointer-events:none;' : ''}"
-                        onclick="tsSelectChannel(${ch.id}, '${(ch.label || ch.name).replace(/'/g,"\\'")}', ${isActive})">
-                        <div class="ts-channel-name">${ch.label || ch.name}</div>
+                        data-ts-toggle="${ch.id}|${(ch.label || ch.name).replace(/\|/g,'').replace(/"/g,'&quot;')}|${isActive}">
+                        <span class="ts-channel-check">${isSelected ? '✓' : ''}</span>
+                        <div class="ts-channel-name" style="padding-right:24px;">${ch.label || ch.name}</div>
                         <div class="ts-channel-phone">${ch.phone_number || 'Número não configurado'}</div>
                         <span class="ts-channel-pill ${conn}">${connLabel}</span>
                         ${!isActive ? '<div class="ts-channel-warn">Canal inativo</div>' : ''}
                         ${isActive && conn !== 'connected' ? '<div class="ts-channel-warn">⚠ Sem conexão confirmada</div>' : ''}
                     </div>`;
                 }).join('');
+
+                // Barra de contagem abaixo do grid
+                const selCount = tsState.channelIds.length;
+                html += `<div class="ts-channel-count-bar" id="tsChannelCountBar" style="${selCount === 0 ? 'display:none' : ''}">
+                    ✓ ${selCount} canal${selCount !== 1 ? 'is' : ''} selecionado${selCount !== 1 ? 's' : ''} — cada canal enviará para <strong>${tsState.phones.length}</strong> número${tsState.phones.length !== 1 ? 's' : ''} (total: <strong>${selCount * tsState.phones.length}</strong> envios)
+                </div>`;
+
+                el('tsChannelGrid').innerHTML = html;
+
+                // Delegação de eventos nos cards (CSP-safe: sem onclick inline)
+                el('tsChannelGrid').querySelectorAll('[data-ts-toggle]').forEach(card => {
+                    card.addEventListener('click', function() {
+                        const [idStr, label, activeStr] = this.getAttribute('data-ts-toggle').split('|');
+                        if (activeStr !== 'true') return;
+                        tsToggleChannel(parseInt(idStr), label);
+                    });
+                });
             }
 
-            window.tsSelectChannel = function(id, label, isActive) {
-                if (!isActive) return;
-                tsState.channelId = id;
-                tsState.channelLabel = label;
+            // Task #256: toggle de canal na lista de selecionados
+            function tsToggleChannel(id, label) {
+                const idx = tsState.channelIds.indexOf(id);
+                if (idx === -1) {
+                    tsState.channelIds.push(id);
+                    tsState.channelLabels[id] = label;
+                } else {
+                    tsState.channelIds.splice(idx, 1);
+                    delete tsState.channelLabels[id];
+                }
                 tsRenderChannels();
                 tsUpdateNextBtn();
-            };
+            }
 
             // ── Carregamento de templates ──
             async function tsLoadTemplates() {
@@ -5387,13 +5443,19 @@ Equipe de Gestao"></textarea>
                             attachHint.style.display = 'none';
                         }
                     }
-                    // Confirmação
+                    // Task #256: confirmação com múltiplos canais
                     const validCount = tsState.phones.length;
-                    const chLabel = tsState.channelLabel;
-                    const phone = tsState.channels.find(c => c.id === tsState.channelId)?.phone_number || '';
+                    const selChannels = tsState.channelIds.map(cid => {
+                        const ch = tsState.channels.find(c => c.id === cid);
+                        const lbl = tsState.channelLabels[cid] || (ch ? (ch.label || ch.name) : `#${cid}`);
+                        const ph = ch?.phone_number ? ` — ${ch.phone_number}` : '';
+                        return `<span style="display:inline-block;background:rgba(119,43,33,0.1);border-radius:4px;padding:1px 6px;margin:1px;font-size:0.82rem;">${lbl}${ph}</span>`;
+                    }).join(' ');
+                    const totalSends = validCount * tsState.channelIds.length;
                     if (confirmBox) {
                         confirmBox.style.display = 'block';
-                        confirmBox.innerHTML = `Enviar <strong>"${data.template_name}"</strong> via <strong>${chLabel}${phone ? ' — ' + phone : ''}</strong> para <strong>${validCount} número${validCount !== 1 ? 's' : ''}</strong>?`;
+                        confirmBox.innerHTML = `Enviar <strong>"${data.template_name}"</strong> para <strong>${validCount} número${validCount !== 1 ? 's' : ''}</strong> via ${selChannels}<br>
+                            <span style="font-size:0.8rem;margin-top:4px;display:inline-block;">Total: <strong>${totalSends} envio${totalSends !== 1 ? 's' : ''}</strong> (${tsState.channelIds.length} canal${tsState.channelIds.length !== 1 ? 'is' : ''} × ${validCount} número${validCount !== 1 ? 's' : ''})</span>`;
                     }
                 } catch (e) {
                     previewBox.textContent = 'Erro ao carregar preview: ' + e.message;
@@ -5405,19 +5467,37 @@ Equipe de Gestao"></textarea>
             // ── Disparo via SSE (fetch + ReadableStream) ──
             async function tsDispatch() {
                 const phones = tsState.phones;
-                if (!phones.length || !tsState.channelId || !tsState.templateId) return;
+                // Task #256: valida múltiplos canais
+                if (!phones.length || !tsState.channelIds.length || !tsState.templateId) return;
 
-                // Inicializa a tela de resultados
-                el('tsResultHeader').innerHTML = `<strong>Enviando via ${tsState.channelLabel}…</strong>0 de ${phones.length} enviados`;
+                const totalSends = phones.length * tsState.channelIds.length;
+
+                // Task #256: constrói a lista de resultados agrupada por canal
                 const list = el('tsResultList');
-                list.innerHTML = phones.map((ph, i) => `
-                    <div class="ts-result-item" id="tsRI_${i}">
-                        <span class="ts-ri-phone">${ph}</span>
-                        <span class="ts-ri-status pending"><span class="ts-spinner-inline"></span> Aguardando</span>
-                    </div>`).join('');
+                list.innerHTML = tsState.channelIds.map((cid, chIdx) => {
+                    const lbl = tsState.channelLabels[cid] || `Canal #${cid}`;
+                    const rows = phones.map((ph, phIdx) => `
+                        <div class="ts-result-item" id="tsRI_${chIdx}_${phIdx}">
+                            <span class="ts-ri-phone">${ph}</span>
+                            <span class="ts-ri-status pending"><span class="ts-spinner-inline"></span> Aguardando</span>
+                        </div>`).join('');
+                    return `<div class="ts-result-group">
+                        <div class="ts-result-group-header" id="tsRGH_${chIdx}">📡 ${lbl}</div>
+                        ${rows}
+                    </div>`;
+                }).join('');
+
+                el('tsResultHeader').innerHTML = `<strong>Disparando ${tsState.channelIds.length} canal${tsState.channelIds.length !== 1 ? 'is' : ''}…</strong>0 de ${totalSends} envios`;
                 el('tsProgressBarWrap').style.display = '';
                 el('tsProgressBar').style.width = '0%';
                 tsShowStep('results');
+
+                // Marca o primeiro item do primeiro canal como "Enviando…"
+                const firstRI = el('tsRI_0_0');
+                if (firstRI) {
+                    const ns = firstRI.querySelector('.ts-ri-status');
+                    if (ns) ns.innerHTML = '<span class="ts-spinner-inline"></span> Enviando…';
+                }
 
                 tsState.abortController = new AbortController();
                 let sentCount = 0, failedCount = 0;
@@ -5429,7 +5509,7 @@ Equipe de Gestao"></textarea>
                         credentials: 'include',
                         body: JSON.stringify({
                             phones: phones,
-                            channel_id: tsState.channelId,
+                            channel_ids: tsState.channelIds,
                             template_id: tsState.templateId,
                             preview_name: el('tsPreviewName').value || 'Assessor Teste',
                         }),
@@ -5455,9 +5535,11 @@ Equipe de Gestao"></textarea>
                             if (!line.startsWith('data: ')) continue;
                             let evt;
                             try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
                             if (evt.type === 'progress') {
-                                const idx = evt.index - 1;
-                                const riEl = el('tsRI_' + idx);
+                                const chIdx = evt.channel_index;
+                                const phIdx = evt.phone_index;
+                                const riEl = el(`tsRI_${chIdx}_${phIdx}`);
                                 if (riEl) {
                                     const statusEl = riEl.querySelector('.ts-ri-status');
                                     if (evt.status === 'sent') {
@@ -5478,27 +5560,47 @@ Equipe de Gestao"></textarea>
                                         }
                                         failedCount++;
                                     }
-                                    // Marca o próximo como "em envio"
-                                    const nextEl = el('tsRI_' + (idx + 1));
-                                    if (nextEl) {
-                                        const ns = nextEl.querySelector('.ts-ri-status');
+
+                                    // Marca o próximo item como "Enviando…"
+                                    const nextPh = el(`tsRI_${chIdx}_${phIdx + 1}`);
+                                    if (nextPh) {
+                                        const ns = nextPh.querySelector('.ts-ri-status');
                                         if (ns && ns.classList.contains('pending')) {
                                             ns.innerHTML = '<span class="ts-spinner-inline"></span> Enviando…';
                                         }
+                                    } else {
+                                        // Passou para o próximo canal
+                                        const nextFirst = el(`tsRI_${chIdx + 1}_0`);
+                                        if (nextFirst) {
+                                            const ns = nextFirst.querySelector('.ts-ri-status');
+                                            if (ns && ns.classList.contains('pending')) {
+                                                ns.innerHTML = '<span class="ts-spinner-inline"></span> Enviando…';
+                                            }
+                                        }
                                     }
                                 }
-                                const done = sentCount + failedCount;
-                                el('tsProgressBar').style.width = `${Math.round((done / phones.length) * 100)}%`;
-                                el('tsResultHeader').innerHTML = `<strong>Enviando via ${tsState.channelLabel}…</strong>${done} de ${phones.length} processados`;
+                                const processed = sentCount + failedCount;
+                                el('tsProgressBar').style.width = `${Math.round((processed / totalSends) * 100)}%`;
+                                el('tsResultHeader').innerHTML = `<strong>Disparando…</strong>${processed} de ${totalSends} envios`;
+
                             } else if (evt.type === 'done') {
                                 sentCount = evt.sent;
                                 failedCount = evt.failed;
+                                // Atualiza cabeçalhos de grupo com resultado por canal
+                                if (evt.by_channel) {
+                                    evt.by_channel.forEach((bc, i) => {
+                                        const gh = el(`tsRGH_${i}`);
+                                        if (gh) {
+                                            const icon = bc.failed === 0 ? '✓' : (bc.sent === 0 ? '✗' : '⚠');
+                                            gh.innerHTML = `📡 ${bc.channel_label} — ${icon} ${bc.sent} enviado${bc.sent !== 1 ? 's' : ''}, ${bc.failed} falha${bc.failed !== 1 ? 's' : ''}`;
+                                        }
+                                    });
+                                }
                             }
                         }
                     }
                 } catch (e) {
                     if (e.name === 'AbortError') {
-                        // Usuário abortou — preservar mensagem "interrompido" já definida pelo botão Abortar
                         el('tsBtnAbort').style.display = 'none';
                         el('tsBtnNew').style.display = '';
                         tsState.abortController = null;
@@ -5511,7 +5613,7 @@ Equipe de Gestao"></textarea>
                 el('tsProgressBar').style.width = '100%';
                 const icon = failedCount === 0 ? '✓' : (sentCount === 0 ? '✗' : '⚠');
                 const color = failedCount === 0 ? '#059669' : (sentCount === 0 ? '#dc2626' : '#d97706');
-                el('tsResultHeader').innerHTML = `<strong style="color:${color}">${icon} Concluído — ${sentCount} enviado${sentCount !== 1 ? 's' : ''}, ${failedCount} falha${failedCount !== 1 ? 's' : ''}</strong>`;
+                el('tsResultHeader').innerHTML = `<strong style="color:${color}">${icon} Concluído — ${sentCount} enviado${sentCount !== 1 ? 's' : ''}, ${failedCount} falha${failedCount !== 1 ? 's' : ''} (${tsState.channelIds.length} canal${tsState.channelIds.length !== 1 ? 'is' : ''} × ${phones.length} número${phones.length !== 1 ? 's' : ''})</strong>`;
                 el('tsBtnAbort').style.display = 'none';
                 el('tsBtnNew').style.display = '';
                 tsState.abortController = null;
@@ -5527,7 +5629,8 @@ Equipe de Gestao"></textarea>
                     tsLoadChannels();
                     tsShowStep(2);
                 } else if (tsState.step === 2) {
-                    if (!tsState.channelId) { toast.warning('Selecione um canal.'); return; }
+                    // Task #256: ao menos um canal selecionado
+                    if (!tsState.channelIds.length) { toast.warning('Selecione ao menos um canal.'); return; }
                     tsLoadTemplates();
                     tsShowStep(3);
                     setTimeout(tsLoadTemplatePreview, 300);
@@ -5541,7 +5644,9 @@ Equipe de Gestao"></textarea>
 
             function tsOpenModal() {
                 tsState = {
-                    step: 1, phones: [], channelId: null, channelLabel: '',
+                    step: 1, phones: [],
+                    // Task #256: reset de seleção multi-canal
+                    channelIds: [], channelLabels: {},
                     templateId: null, templateName: '', abortController: null,
                     channels: tsState.channels, templates: tsState.templates,
                 };
@@ -5650,7 +5755,7 @@ Equipe de Gestao"></textarea>
                 <!-- Passo 2: Canal -->
                 <div id="tsPane2" style="display:none;">
                     <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;">
-                        Selecione o canal Z-API que será usado para enviar as mensagens de teste.
+                        Selecione um ou mais canais Z-API. Cada canal selecionado enviará o template para todos os números informados.
                     </p>
                     <div class="ts-channel-grid" id="tsChannelGrid">
                         <div style="color:var(--text-secondary);font-size:0.875rem;">Carregando canais...</div>
