@@ -1474,13 +1474,12 @@
                         toast.success(msg);
                     }
                 } else {
-                    // Task #276 — mostra raw_response mesmo em falha para diagnóstico
+                    // Task #276 — mostra raw_response sempre (mesmo {} ou null) e body_error
+                    const putRaw = JSON.stringify(data.raw_response ?? null);
                     let errDetail = data.error || data.body_error || '';
-                    if (data.raw_response) {
-                        const putRaw = JSON.stringify(data.raw_response);
-                        errDetail += errDetail ? ` | PUT raw: ${putRaw.slice(0, 100)}` : `PUT raw: ${putRaw.slice(0, 100)}`;
-                    }
-                    toast.error(`Falha ao registrar webhook na Z-API. Verifique se a instância está conectada.${errDetail ? ` Detalhe: ${errDetail}` : ''}`);
+                    const rawSnip = `PUT raw: ${putRaw.slice(0, 120)}${putRaw.length > 120 ? '…' : ''}`;
+                    errDetail = errDetail ? `${errDetail} | ${rawSnip}` : rawSnip;
+                    toast.error(`Falha ao registrar webhook na Z-API. Verifique se a instância está conectada. Detalhe: ${errDetail}`);
                 }
 
                 await loadZAPIChannels();

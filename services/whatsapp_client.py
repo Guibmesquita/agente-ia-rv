@@ -877,17 +877,19 @@ class ZAPIClient:
                 response = await client.get(url, headers=self._get_headers(), timeout=timeout)
                 data = response.json() if response.content else {}
                 
+                body_err = data.get("error", "") if isinstance(data, dict) else ""
+                # Task #276 — verifica NOT_FOUND independente do HTTP status code:
+                # alguns backends JAX-RS retornam HTTP 200 com {"error":"NOT_FOUND",...}
+                # e outros retornam HTTP 404. Ambos indicam endpoint não suportado.
+                is_not_found = response.status_code == 404 or body_err == "NOT_FOUND"
+                if is_not_found:
+                    print(f"[Z-API] get_webhook_settings → endpoint_not_found (HTTP {response.status_code}, body_err={body_err!r})")
+                    return {"success": True, "settings": {}, "endpoint_not_found": True}
                 if response.status_code == 200:
                     print(f"[Z-API] get_webhook_settings → HTTP 200, raw: {data}")
                     return {"success": True, "settings": data}
-                else:
-                    body_err = data.get("error", "") if isinstance(data, dict) else ""
-                    is_not_found = response.status_code == 404 or body_err == "NOT_FOUND"
-                    print(f"[Z-API] get_webhook_settings → HTTP {response.status_code}, raw: {data}, not_found={is_not_found}")
-                    if is_not_found:
-                        # Endpoint não suportado por esta instância — não é um erro fatal.
-                        return {"success": True, "settings": {}, "endpoint_not_found": True}
-                    return {"success": False, "error": data.get("error", f"HTTP {response.status_code}")}
+                print(f"[Z-API] get_webhook_settings → HTTP {response.status_code}, raw: {data}")
+                return {"success": False, "error": data.get("error", f"HTTP {response.status_code}")}
             except httpx.HTTPError as e:
                 print(f"[Z-API] get_webhook_settings → HTTPError: {e}")
                 return {"success": False, "error": str(e)}
