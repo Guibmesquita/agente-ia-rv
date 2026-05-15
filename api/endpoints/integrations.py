@@ -505,8 +505,8 @@ def _build_webhook_url_suggested(request: Request, channel_id: int) -> str:
     Monta a URL de webhook sugerida para o canal.
 
     Task #270 — Prioridade de resolução da base URL:
-    1. `APP_BASE_URL` (variável de ambiente — override explícito para Railway/outros).
-    2. `REPLIT_DOMAINS` / `REPLIT_DEV_DOMAIN` (injetado pelo Replit automaticamente).
+    1. `WEBHOOK_BASE_URL` (override máximo — específico para URL de webhooks).
+    2. `APP_BASE_URL` / `REPLIT_DOMAINS` via `get_public_base_url()` (URL geral do app).
     3. `request.base_url` — fallback final; pode retornar URL interna
        (http://0.0.0.0:5000/) se o FastAPI não estiver atrás de
        ProxyHeadersMiddleware, mas ainda serve para ambientes com proxy correto.
