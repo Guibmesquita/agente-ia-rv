@@ -1104,8 +1104,14 @@
 
         // ── Modal Adicionar/Editar Canal ──
 
+        // Task #255: rastreia se o usuário editou intencionalmente o Client-Token.
+        // No fluxo de edição, isso impede que reabrir o modal e salvar (sem tocar
+        // no campo) limpe o token próprio existente — bug crítico apontado em revisão.
+        let _zcClientTokenDirty = false;
+
         function zcOpenAdd() {
             _zcEditingId = null;
+            _zcClientTokenDirty = false;
             document.getElementById('zcFormTitle').textContent = 'Adicionar Canal Z-API';
             document.getElementById('zcFormName').value = '';
             document.getElementById('zcFormLabel').value = '';
@@ -1128,6 +1134,7 @@
                 return;
             }
             _zcEditingId = channelId;
+            _zcClientTokenDirty = false;
             document.getElementById('zcFormTitle').textContent = `Editar Canal — ${ch.label || ch.name}`;
             document.getElementById('zcFormName').value = ch.name || '';
             document.getElementById('zcFormLabel').value = ch.label || '';
@@ -1166,6 +1173,9 @@
             });
             _safeBind('zcBtnSaveChannel', 'click', _zcSaveChannel);
             _safeBind('zcBtnTestConn', 'click', _zcTestConn);
+            // Task #255: dirty-tracking do input Client-Token para evitar
+            // limpeza não intencional do token existente ao editar canal.
+            _safeBind('zcFormClientToken', 'input', () => { _zcClientTokenDirty = true; });
 
             // Botão "+ Adicionar Canal" — elemento estático no header de Canais Z-API
             const btnAdd = document.getElementById('btnAddChannel');
@@ -1253,11 +1263,14 @@
                     if (label !== undefined) body.label = label;
                     if (instanceId) body.instance_id = instanceId;
                     if (token) body.token = token;
-                    // Task #255: sempre envia client_token (incl. string vazia) para
-                    // permitir voltar ao fallback global ao limpar o campo na edição.
-                    // O input só existe para canais não-legados (zcFormCredFields visível).
+                    // Task #255: só envia client_token na edição se o usuário tocou
+                    // no campo (dirty). Sem isso, reabrir o modal e salvar limparia
+                    // o token existente acidentalmente. Para limpar o token e voltar
+                    // ao fallback global, basta focar o campo, apagar e salvar — o
+                    // valor vazio (""), com dirty=true, será enviado e o backend
+                    // normaliza para NULL.
                     const credFieldsVisible = document.getElementById('zcFormCredFields').style.display !== 'none';
-                    if (credFieldsVisible) {
+                    if (credFieldsVisible && _zcClientTokenDirty) {
                         body.client_token = clientToken;
                     }
                     body.phone_number = phone;
