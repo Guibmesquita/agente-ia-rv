@@ -377,10 +377,17 @@ function ConversationItem({ conversation, isActive, onClick }) {
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-gray-500 truncate flex-1">{preview}</p>
-          <TicketStatusBadge 
-            ticketStatus={conversation.ticket_status} 
-            escalationLevel={conversation.escalation_level}
-          />
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {conversation.channel_label && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                {conversation.channel_label}
+              </span>
+            )}
+            <TicketStatusBadge 
+              ticketStatus={conversation.ticket_status} 
+              escalationLevel={conversation.escalation_level}
+            />
+          </div>
         </div>
       </div>
       
@@ -656,9 +663,10 @@ function App() {
     dateRange: '',
     unit: '',
     broker: '',
-    category: ''
+    category: '',
+    channel: ''
   });
-  const [filterOptions, setFilterOptions] = useState({ units: [], brokers: [], categories: [] });
+  const [filterOptions, setFilterOptions] = useState({ units: [], brokers: [], categories: [], channels: [] });
   const [isCreating, setIsCreating] = useState(false);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -797,6 +805,7 @@ function App() {
       if (advancedFilters.broker) url += `&broker=${encodeURIComponent(advancedFilters.broker)}`;
       if (advancedFilters.category) url += `&escalation_category=${advancedFilters.category}`;
       if (advancedFilters.dateRange) url += `&date_range=${advancedFilters.dateRange}`;
+      if (advancedFilters.channel) url += `&channel_id=${advancedFilters.channel}`;
       const res = await fetch(url, { credentials: 'include' });
       if (res.status === 401) {
         window.location.href = '/login';
@@ -1543,7 +1552,7 @@ function App() {
                     setTicketFilter('new');
                   } else {
                     setTicketFilter('');
-                    setAdvancedFilters({ conversationType: '', dateRange: '', unit: '', broker: '', category: '' });
+                    setAdvancedFilters({ conversationType: '', dateRange: '', unit: '', broker: '', category: '', channel: '' });
                   }
                 }}
                 className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -1594,6 +1603,14 @@ function App() {
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
                     {CATEGORY_LABELS[advancedFilters.category] || advancedFilters.category}
                     <button onClick={() => setAdvancedFilters(prev => ({ ...prev, category: '' }))} className="hover:text-gray-900">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {advancedFilters.channel && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-700">
+                    {filterOptions.channels.find(c => String(c.id) === String(advancedFilters.channel))?.label || `Canal ${advancedFilters.channel}`}
+                    <button onClick={() => setAdvancedFilters(prev => ({ ...prev, channel: '' }))} className="hover:text-indigo-900">
                       <X className="w-3 h-3" />
                     </button>
                   </span>
@@ -1684,13 +1701,19 @@ function App() {
                           escalationLevel={currentConversation.escalation_level}
                         />
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
                         <span>{formatPhone(currentConversation.phone)}</span>
                         {currentConversation.assessor_unidade && (
                           <span className="text-gray-400">• {currentConversation.assessor_unidade}</span>
                         )}
                         {currentConversation.assessor_broker && (
                           <span className="text-primary font-medium">• {currentConversation.assessor_broker}</span>
+                        )}
+                        {currentConversation.channel_label && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                            Canal: {currentConversation.channel_label}
+                          </span>
                         )}
                       </div>
                       {currentConversation.assigned_to_name && (
@@ -1997,12 +2020,31 @@ function App() {
                   ))}
                 </select>
               </div>
+
+              {filterOptions.channels.length > 0 && (
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                    Canal Z-API
+                  </label>
+                  <select
+                    value={advancedFilters.channel}
+                    onChange={e => setAdvancedFilters(prev => ({ ...prev, channel: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  >
+                    <option value="">Todos os canais</option>
+                    {filterOptions.channels.map(ch => (
+                      <option key={ch.id} value={ch.id}>{ch.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="p-4 border-t border-gray-200 flex gap-3">
               <button
                 onClick={() => {
-                  setAdvancedFilters({ conversationType: '', dateRange: '', unit: '', broker: '', category: '' });
+                  setAdvancedFilters({ conversationType: '', dateRange: '', unit: '', broker: '', category: '', channel: '' });
                 }}
                 className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
               >

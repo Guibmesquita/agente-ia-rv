@@ -22,7 +22,7 @@ from database.models import (
     Conversation, WhatsAppMessage, Assessor, User,
     ConversationStatus, ConversationState, SenderType, MessageDirection,
     TicketStatusV2, EscalationLevel, TicketHistory, TicketHistoryActionType,
-    UserRole
+    UserRole, ZAPIChannel
 )
 from api.endpoints.auth import get_current_user, get_current_user_sse
 from services.sse_manager import get_sse_manager
@@ -57,6 +57,9 @@ class ConversationResponse(BaseModel):
     solved_at: Optional[datetime] = None
     sla_due_at: Optional[datetime] = None
     reopened_count: int = 0
+    # Task #284 — canal de recepção Z-API
+    channel_id: Optional[int] = None
+    channel_label: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -80,6 +83,7 @@ class FilterOptionsResponse(BaseModel):
     units: list = []
     brokers: list = []
     categories: list = []
+    channels: list = []
 
 
 class TicketMetricsResponse(BaseModel):
@@ -161,6 +165,7 @@ async def list_conversations(
     broker: Optional[str] = Query(None, description="Filtrar por broker do assessor"),
     escalation_category: Optional[str] = Query(None, description="Filtrar por categoria de escalação"),
     date_range: Optional[str] = Query(None, description="Filtrar por período (today, 7d, 30d)"),
+    channel_id: Optional[int] = Query(None, description="Filtrar por canal Z-API"),
     skip: int = Query(0, ge=0),
     offset: int = Query(None, ge=0, description="Alias for skip"),
     limit: int = Query(50, ge=1, le=100),
@@ -210,6 +215,9 @@ async def list_conversations(
     
     if escalation_category:
         query = query.filter(Conversation.escalation_category == escalation_category)
+
+    if channel_id is not None:
+        query = query.filter(Conversation.channel_id == channel_id)
     
     if date_range:
         today = date.today()
@@ -228,11 +236,19 @@ async def list_conversations(
     total = query.count()
     conversations = query.order_by(desc(Conversation.last_message_at)).offset(actual_offset).limit(limit).all()
     
+    # Pre-fetch channels for all conversations in one query
+    conv_channel_ids = [c.channel_id for c in conversations if c.channel_id]
+    channel_map: dict = {}
+    if conv_channel_ids:
+        channels = db.query(ZAPIChannel).filter(ZAPIChannel.id.in_(conv_channel_ids)).all()
+        channel_map = {ch.id: ch for ch in channels}
+
     result = []
     for conv in conversations:
         assessor = db.query(Assessor).filter(Assessor.id == conv.assessor_id).first() if conv.assessor_id else None
         assigned_user = db.query(User).filter(User.id == conv.assigned_to).first() if conv.assigned_to else None
-        
+        channel = channel_map.get(conv.channel_id) if conv.channel_id else None
+
         result.append(ConversationResponse(
             id=conv.id,
             phone=conv.phone,
@@ -258,7 +274,10 @@ async def list_conversations(
             first_human_response_at=conv.first_human_response_at,
             solved_at=conv.solved_at,
             sla_due_at=conv.sla_due_at,
-            reopened_count=conv.reopened_count or 0
+            reopened_count=conv.reopened_count or 0,
+            # Task #284 — canal de recepção
+            channel_id=conv.channel_id,
+            channel_label=channel.label or channel.name if channel else None,
         ))
     
     return {"items": result, "total": total, "offset": actual_offset, "limit": limit}
@@ -288,11 +307,25 @@ async def get_filter_options(
         Conversation.escalation_category.isnot(None),
         Conversation.escalation_category != ''
     ).all()
-    
+
+    # Canais Z-API que têm pelo menos uma conversa vinculada
+    channel_ids_in_use = db.query(distinct(Conversation.channel_id)).filter(
+        Conversation.channel_id.isnot(None)
+    ).all()
+    channel_ids_in_use = [r[0] for r in channel_ids_in_use if r[0]]
+    channels_data = []
+    if channel_ids_in_use:
+        channels_qs = db.query(ZAPIChannel).filter(ZAPIChannel.id.in_(channel_ids_in_use)).all()
+        channels_data = [
+            {"id": ch.id, "label": ch.label or ch.name}
+            for ch in sorted(channels_qs, key=lambda c: (c.label or c.name))
+        ]
+
     return FilterOptionsResponse(
         units=sorted([u[0] for u in units if u[0]]),
         brokers=sorted([b[0] for b in brokers if b[0]]),
-        categories=sorted([c[0] for c in categories if c[0]])
+        categories=sorted([c[0] for c in categories if c[0]]),
+        channels=channels_data
     )
 
 
@@ -748,7 +781,8 @@ async def get_conversation(
     
     assessor = db.query(Assessor).filter(Assessor.id == conv.assessor_id).first() if conv.assessor_id else None
     assigned_user = db.query(User).filter(User.id == conv.assigned_to).first() if conv.assigned_to else None
-    
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == conv.channel_id).first() if conv.channel_id else None
+
     return ConversationResponse(
         id=conv.id,
         phone=conv.phone,
@@ -773,7 +807,9 @@ async def get_conversation(
         first_human_response_at=conv.first_human_response_at,
         solved_at=conv.solved_at,
         sla_due_at=conv.sla_due_at,
-        reopened_count=conv.reopened_count or 0
+        reopened_count=conv.reopened_count or 0,
+        channel_id=conv.channel_id,
+        channel_label=channel.label or channel.name if channel else None,
     )
 
 
