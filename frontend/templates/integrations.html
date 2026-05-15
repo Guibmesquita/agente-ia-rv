@@ -921,6 +921,7 @@
                     <div class="zc-channel-phone">📱 ${phone}</div>
                     <div class="zc-channel-meta">👥 ${assessorTxt}</div>
                     <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
+                    ${ch.is_legacy ? '' : `<div class="zc-channel-meta" style="margin-top:2px;">🔐 Client-Token: ${ch.client_token_source === 'own' ? '<span style="color:#1e40af; font-weight:500;">próprio</span>' : '<span style="color:var(--text-secondary);">global (conta)</span>'}</div>`}
                     <div class="zc-card-actions">
                         <button class="btn btn-secondary btn-sm"
                             data-zc-action="config" data-zc-id="${ch.id}">
@@ -1252,7 +1253,13 @@
                     if (label !== undefined) body.label = label;
                     if (instanceId) body.instance_id = instanceId;
                     if (token) body.token = token;
-                    if (clientToken) body.client_token = clientToken;
+                    // Task #255: sempre envia client_token (incl. string vazia) para
+                    // permitir voltar ao fallback global ao limpar o campo na edição.
+                    // O input só existe para canais não-legados (zcFormCredFields visível).
+                    const credFieldsVisible = document.getElementById('zcFormCredFields').style.display !== 'none';
+                    if (credFieldsVisible) {
+                        body.client_token = clientToken;
+                    }
                     body.phone_number = phone;
                     body.description = description;
                     res = await fetch(`${ZC_API}/${_zcEditingId}`, {
@@ -1270,10 +1277,13 @@
                     });
                 }
 
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
                 if (!res.ok) {
+                    const detail = (typeof data.detail === 'string') ? data.detail
+                        : (data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
+                    console.error('[Z-API Channel Save] Falha:', res.status, data);
                     resultDiv.className = 'zc-conn-result fail';
-                    resultDiv.textContent = `Erro: ${data.detail || 'Não foi possível salvar o canal'}`;
+                    resultDiv.textContent = `Erro ao salvar (HTTP ${res.status}): ${detail}`;
                     btn.textContent = orig;
                     btn.disabled = false;
                     return;
@@ -2011,8 +2021,11 @@
                         </div>
                     </div>
                     <div class="form-group" style="margin-bottom:14px;">
-                        <label class="form-label">Client Token</label>
-                        <input type="password" id="zcFormClientToken" class="form-control" placeholder="Client-Token (Security Token do Z-API)" autocomplete="new-password">
+                        <label class="form-label">Client-Token <span style="font-weight:400; color:var(--text-secondary); font-size:0.8rem;">(opcional)</span></label>
+                        <input type="password" id="zcFormClientToken" class="form-control" placeholder="Deixe em branco para usar o Client-Token global da conta" autocomplete="new-password">
+                        <div style="margin-top:6px; padding:8px 12px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; font-size:0.8rem; color:#1e40af; line-height:1.4;">
+                            💡 O Z-API usa um único <strong>Security Token (Client-Token)</strong> por conta, compartilhado por todas as instâncias. Se você deixar este campo em branco, será usado automaticamente o token global configurado em <code>ZAPI_CLIENT_TOKEN</code>.
+                        </div>
                     </div>
                 </div>
 

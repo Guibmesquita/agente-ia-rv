@@ -485,6 +485,21 @@ class ZAPIChannelUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+def _redact(text: str, sensitive_values) -> str:
+    """
+    Task #255 — Remove valores sensíveis (tokens/IDs) de mensagens de erro e
+    tracebacks antes de logar ou expor via API. Mantém apenas substituições
+    para strings com pelo menos 4 caracteres (evita corromper mensagens).
+    """
+    if not text:
+        return text
+    out = text
+    for v in sensitive_values:
+        if v and isinstance(v, str) and len(v) >= 4:
+            out = out.replace(v, "***")
+    return out
+
+
 def _build_webhook_url_suggested(request: Request, channel_id: int) -> str:
     """Monta a URL de webhook sugerida para o canal a partir do host da requisição."""
     base = str(request.base_url).rstrip("/")
@@ -591,7 +606,10 @@ async def list_zapi_channels(
                 "phone_number": ch.phone_number,
                 "instance_id": _mask(ch.instance_id),
                 "token_masked": _mask(ch.token),
-                "client_token_configured": bool(ch.client_token),
+                # Task #255: indica se o canal usa Client-Token próprio ou o global
+                # ("own" = client_token salvo no canal; "global" = usa ZAPI_CLIENT_TOKEN).
+                "client_token_source": "own" if ch.client_token else "global",
+                "client_token_configured": bool(ch.client_token),  # alias legado
                 "is_legacy": ch.is_legacy,
                 "is_active": ch.is_active,
                 "webhook_url": ch.webhook_url,
@@ -662,37 +680,59 @@ async def create_zapi_channel(
     Testa conectividade das credenciais antes de persistir (não bloqueia em caso de
     instância ainda não conectada — apenas informa o status).
     Retorna o canal criado com webhook_url_suggested.
+
+    Task #255: client_token é OPCIONAL — quando omitido, o canal usa o
+    ZAPI_CLIENT_TOKEN global como fallback (mesmo Security Token da conta Z-API).
+    Erros de criação são logados com traceback e retornados com detail informativo.
     """
+    import traceback
+
     _auth_zapi_channel(request)
 
     from database.models import ZAPIChannel
     from services.whatsapp_client import ZAPIClient
 
-    client = ZAPIClient(
-        instance_id=data.instance_id,
-        token=data.token,
-        client_token=data.client_token,
-    )
-    connectivity = await client.check_connectivity(timeout=8.0)
+    # Normaliza client_token vazio → None (semântica: NULL = usa global)
+    client_token = (data.client_token or "").strip() or None
 
-    channel = ZAPIChannel(
-        name=data.name,
-        label=data.label or data.name,
-        instance_id=data.instance_id,
-        token=data.token,
-        client_token=data.client_token,
-        phone_number=data.phone_number,
-        description=data.description,
-        is_legacy=False,
-        is_active=True,
-    )
-    db.add(channel)
-    db.commit()
-    db.refresh(channel)
+    try:
+        client = ZAPIClient(
+            instance_id=data.instance_id,
+            token=data.token,
+            client_token=client_token,
+        )
+        connectivity = await client.check_connectivity(timeout=8.0)
 
-    webhook_url = _build_webhook_url_suggested(request, channel.id)
-    channel.webhook_url = webhook_url
-    db.commit()
+        channel = ZAPIChannel(
+            name=data.name,
+            label=data.label or data.name,
+            instance_id=data.instance_id,
+            token=data.token,
+            client_token=client_token,
+            phone_number=data.phone_number,
+            description=data.description,
+            is_legacy=False,
+            is_active=True,
+        )
+        db.add(channel)
+        db.commit()
+        db.refresh(channel)
+
+        webhook_url = _build_webhook_url_suggested(request, channel.id)
+        channel.webhook_url = webhook_url
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        sensitive_values = (data.token or "", data.instance_id or "", client_token or "")
+        safe_msg = _redact(str(e), sensitive_values)
+        safe_tb = _redact(traceback.format_exc(), sensitive_values)
+        print(f"[Z-API Channel Create] Falha ao criar canal: {type(e).__name__}: {safe_msg}\n{safe_tb}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha ao criar canal ({type(e).__name__}): {safe_msg}",
+        )
 
     return {
         "id": channel.id,
@@ -702,6 +742,7 @@ async def create_zapi_channel(
         "instance_id": data.instance_id[:4] + "****" if len(data.instance_id) >= 8 else "****",
         "is_legacy": channel.is_legacy,
         "is_active": channel.is_active,
+        "client_token_source": "own" if client_token else "global",
         "connectivity_status": connectivity,
         "webhook_url_suggested": webhook_url,
         "created_at": channel.created_at.isoformat() if channel.created_at else None,
@@ -720,6 +761,8 @@ async def update_zapi_channel(
     Canais legados: apenas label, phone_number, description e is_active.
     Canais normais: todos os campos.
     """
+    import traceback
+
     _auth_zapi_channel(request)
 
     from database.models import ZAPIChannel
@@ -728,36 +771,54 @@ async def update_zapi_channel(
     if not channel:
         raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
 
-    if channel.is_legacy:
-        # Credenciais do canal legado são gerenciadas via variáveis de ambiente
-        if data.label is not None:
-            channel.label = data.label
-        if data.phone_number is not None:
-            channel.phone_number = data.phone_number
-        if data.description is not None:
-            channel.description = data.description
-        if data.is_active is not None:
-            channel.is_active = data.is_active
-    else:
-        if data.name is not None:
-            channel.name = data.name
-        if data.label is not None:
-            channel.label = data.label
-        if data.instance_id is not None:
-            channel.instance_id = data.instance_id
-        if data.token is not None:
-            channel.token = data.token
-        if data.client_token is not None:
-            channel.client_token = data.client_token
-        if data.phone_number is not None:
-            channel.phone_number = data.phone_number
-        if data.description is not None:
-            channel.description = data.description
-        if data.is_active is not None:
-            channel.is_active = data.is_active
+    try:
+        if channel.is_legacy:
+            # Credenciais do canal legado são gerenciadas via variáveis de ambiente
+            if data.label is not None:
+                channel.label = data.label
+            if data.phone_number is not None:
+                channel.phone_number = data.phone_number
+            if data.description is not None:
+                channel.description = data.description
+            if data.is_active is not None:
+                channel.is_active = data.is_active
+        else:
+            if data.name is not None:
+                channel.name = data.name
+            if data.label is not None:
+                channel.label = data.label
+            if data.instance_id is not None:
+                channel.instance_id = data.instance_id
+            if data.token is not None:
+                channel.token = data.token
+            if data.client_token is not None:
+                # Task #255: string vazia → NULL (semântica: usa ZAPI_CLIENT_TOKEN global)
+                channel.client_token = data.client_token.strip() or None
+            if data.phone_number is not None:
+                channel.phone_number = data.phone_number
+            if data.description is not None:
+                channel.description = data.description
+            if data.is_active is not None:
+                channel.is_active = data.is_active
 
-    db.commit()
-    db.refresh(channel)
+        db.commit()
+        db.refresh(channel)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        sensitive_values = (
+            data.token or "",
+            data.instance_id or "",
+            data.client_token or "",
+        )
+        safe_msg = _redact(str(e), sensitive_values)
+        safe_tb = _redact(traceback.format_exc(), sensitive_values)
+        print(f"[Z-API Channel Update] Falha ao atualizar canal {channel_id}: {type(e).__name__}: {safe_msg}\n{safe_tb}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha ao atualizar canal ({type(e).__name__}): {safe_msg}",
+        )
 
     return {
         "id": channel.id,
@@ -766,6 +827,7 @@ async def update_zapi_channel(
         "phone_number": channel.phone_number,
         "is_legacy": channel.is_legacy,
         "is_active": channel.is_active,
+        "client_token_source": "own" if channel.client_token else "global",
         "webhook_url_suggested": _build_webhook_url_suggested(request, channel.id),
     }
 

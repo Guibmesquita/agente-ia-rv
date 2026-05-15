@@ -53,13 +53,22 @@ class ZAPIClient:
         """
         Lê credenciais para a chamada atual.
         - Se o cliente foi criado com credenciais explícitas (multi-canal), usa-as.
+          IMPORTANTE: o `client_token` faz fallback para a env var quando vier
+          None/vazio, porque o Z-API tem um único Security Token por conta
+          (compartilhado por todas as instâncias dessa conta). Canais novos
+          podem omitir o client_token e ainda assim autenticar usando o
+          ZAPI_CLIENT_TOKEN global.
         - Caso contrário, relê env vars para refletir atualizações via save-secrets.
         """
         if self._explicit_instance_id:
             return {
                 "instance_id": self._explicit_instance_id,
                 "token": self._explicit_token,
-                "client_token": self._explicit_client_token,
+                "client_token": (
+                    self._explicit_client_token
+                    or os.getenv("ZAPI_CLIENT_TOKEN", "")
+                    or settings.ZAPI_CLIENT_TOKEN
+                ),
             }
         return {
             "instance_id": os.getenv("ZAPI_INSTANCE_ID", "") or settings.ZAPI_INSTANCE_ID,
