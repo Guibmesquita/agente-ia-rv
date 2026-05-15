@@ -851,15 +851,16 @@ class ZAPIClient:
             except httpx.HTTPError as e:
                 return {"success": False, "error": str(e)}
     
-    async def get_webhook_settings(self) -> dict:
+    async def get_webhook_settings(self, timeout: float = 30.0) -> dict:
         """
         Busca configurações atuais dos webhooks da instância.
+        Task #264 — aceita timeout configurável (padrão 30s, use 4s para sondagens de listagem).
         """
         url = f"{self._get_base_url()}/webhooks"
         
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(url, headers=self._get_headers(), timeout=30.0)
+                response = await client.get(url, headers=self._get_headers(), timeout=timeout)
                 data = response.json() if response.content else {}
                 
                 if response.status_code == 200:

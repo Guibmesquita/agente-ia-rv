@@ -597,23 +597,21 @@ async def list_zapi_channels(
     async def _probe_webhook(ch: ZAPIChannel, suggested_url: str):
         """
         Task #264 — Verifica em tempo real se o webhook está registrado na instância Z-API.
-        Timeout agressivo de 4s para não degradar a listagem.
+        Usa ZAPIClient.get_webhook_settings() com timeout agressivo de 4s para não degradar
+        a listagem.
         Retorna: True (registrado e URL bate), False (registrado mas URL diferente ou vazio),
                  "unknown" (não foi possível obter a configuração remota).
         """
         try:
-            import httpx as _httpx
             client = ZAPIClient(
                 instance_id=ch.instance_id,
                 token=ch.token,
                 client_token=ch.client_token,
             )
-            url = f"{client._get_base_url()}/webhooks"
-            async with _httpx.AsyncClient() as _hc:
-                resp = await _hc.get(url, headers=client._get_headers(), timeout=4.0)
-            if resp.status_code != 200:
+            result = await client.get_webhook_settings(timeout=4.0)
+            if not result.get("success"):
                 return "unknown"
-            settings = resp.json() if resp.content else {}
+            settings = result.get("settings") or {}
             # Z-API retorna {"webhookReceived": "https://..."} no campo settings.
             remote_url = settings.get("webhookReceived") or settings.get("value") or ""
             return remote_url.rstrip("/") == suggested_url.rstrip("/")
@@ -643,19 +641,6 @@ async def list_zapi_channels(
         for ch, wh_result in zip(probeable_channels, wh_results):
             status = wh_result if not isinstance(wh_result, Exception) else "unknown"
             webhook_status[ch.id] = status
-            # Sincroniza o flag histórico no banco se o estado real difere (sem travar).
-            if status is True and not ch.webhook_auto_registered:
-                try:
-                    ch.webhook_auto_registered = True
-                    db.commit()
-                except Exception:
-                    db.rollback()
-            elif status is False and ch.webhook_auto_registered:
-                try:
-                    ch.webhook_auto_registered = False
-                    db.commit()
-                except Exception:
-                    db.rollback()
 
     def _wh_registered(ch: ZAPIChannel) -> object:
         """Retorna True, False ou 'unknown' para uso pela UI."""
