@@ -1828,18 +1828,24 @@ async def get_channel_reception_stats(
         .all()
     )
 
+    # Nota: `last_token_failure_at` será implementado quando houver persistência
+    # de falhas de validação de token. Por enquanto retorna null — o campo existe
+    # no contrato da API para que o frontend e futuros consumidores possam depender dele.
     return {
         "channel_id": channel_id,
         "messages_received_24h": count_24h,
         "last_received_at": (
             last_msg.created_at.isoformat() if last_msg and last_msg.created_at else None
         ),
+        "last_token_failure_at": None,
         "recent_events": [
             {
                 "message_type": m.message_type,
                 "phone": m.phone,
                 "body_preview": (m.body or "")[:60] if m.body else None,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
+                # Mensagens persistidas no banco passaram pela validação de token com sucesso.
+                "token_validated": True,
             }
             for m in recent_msgs
         ],

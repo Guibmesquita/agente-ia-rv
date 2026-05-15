@@ -1704,20 +1704,30 @@
                     const cnt = stats.messages_received_24h ?? 0;
                     const lastStr = stats.last_received_at ? _zcRelativeTime(new Date(stats.last_received_at)) : null;
                     const cntColor = cnt > 0 ? '#16a34a' : '#6b7280';
-                    const evRows = (stats.recent_events || []).map(ev =>
-                        `<tr>
-                            <td style="font-size:0.8rem;padding:3px 8px 3px 0;color:#6b7280;white-space:nowrap;">${_zcEsc(ev.created_at ? new Date(ev.created_at).toLocaleTimeString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—')}</td>
-                            <td style="font-family:monospace;font-size:0.78rem;color:#374151;padding:3px 8px 3px 0;">${_zcEsc(ev.message_type || '?')}</td>
-                            <td style="font-size:0.78rem;color:#6b7280;word-break:break-all;">${_zcEsc((ev.body_preview || ev.phone || '(sem preview)').substring(0,50))}</td>
-                        </tr>`
-                    ).join('');
+                    const lastFailStr = stats.last_token_failure_at
+                        ? _zcRelativeTime(new Date(stats.last_token_failure_at))
+                        : null;
+                    const evRows = (stats.recent_events || []).map(ev => {
+                        const validBadge = ev.token_validated === true
+                            ? '<span style="color:#16a34a;font-size:0.75rem;font-weight:600;">✅ token OK</span>'
+                            : ev.token_validated === false
+                                ? '<span style="color:#dc2626;font-size:0.75rem;font-weight:600;">❌ token falhou</span>'
+                                : '<span style="color:#9ca3af;font-size:0.75rem;">—</span>';
+                        return `<tr>
+                            <td style="font-size:0.78rem;padding:3px 8px 3px 0;color:#6b7280;white-space:nowrap;">${_zcEsc(ev.created_at ? new Date(ev.created_at).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—')}</td>
+                            <td style="font-family:monospace;font-size:0.78rem;color:#374151;padding:3px 8px 3px 0;white-space:nowrap;">${_zcEsc(ev.message_type || '?')}</td>
+                            <td style="font-size:0.78rem;color:#6b7280;word-break:break-all;padding:3px 8px 3px 0;">${_zcEsc((ev.body_preview || ev.phone || '(sem preview)').substring(0,40))}</td>
+                            <td style="white-space:nowrap;">${validBadge}</td>
+                        </tr>`;
+                    }).join('');
                     return `
                     <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Recepção de mensagens</p>
                     <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
                         <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Recebidas / 24h</td><td style="color:${cntColor};font-weight:600;">${cnt}</td></tr>
                         <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Última recebida</td><td style="font-size:0.85rem;">${lastStr || '—'}</td></tr>
+                        <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Última falha de token</td><td style="font-size:0.85rem;${lastFailStr ? 'color:#dc2626;font-weight:600;' : 'color:#9ca3af;'}">${lastFailStr ? `${lastFailStr} atrás` : '✅ Nenhuma registrada'}</td></tr>
                     </table>
-                    ${evRows ? `<p style="font-size:0.78rem;font-weight:600;color:#9ca3af;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Últimos webhooks inbound</p><table style="width:100%;border-collapse:collapse;margin-bottom:8px;">${evRows}</table>` : ''}`;
+                    ${evRows ? `<p style="font-size:0.78rem;font-weight:600;color:#9ca3af;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Últimos webhooks inbound</p><table style="width:100%;border-collapse:collapse;margin-bottom:8px;"><thead><tr><th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Hora</th><th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Tipo</th><th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Preview</th><th style="text-align:left;font-size:0.75rem;color:#9ca3af;font-weight:500;">Token</th></tr></thead><tbody>${evRows}</tbody></table>` : ''}`;
                 })() : ''}
                 <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Raw response GET /webhooks</p>
                 ${rawStr}`;
