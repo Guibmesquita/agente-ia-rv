@@ -533,6 +533,7 @@ async def zapi_health_check(request: Request):
 async def list_zapi_channels(
     request: Request,
     db: Session = Depends(get_db),
+    include_webhook_status: bool = False,
 ):
     """
     Task #223 — Lista todos os canais Z-API configurados.
@@ -542,6 +543,8 @@ async def list_zapi_channels(
     - `connectivity_status`: sonda Z-API em tempo real ("connected" / "disconnected" / "unreachable").
     - `assessor_count`: quantidade de assessores vinculados ao canal.
     - `unidades_assigned`: lista de unidades mapeadas para o canal.
+    - `webhook_registered` (Task #264): true | false | "unknown" — incluído APENAS
+      quando `include_webhook_status=true` (sondagem opt-in para não degradar a listagem).
 
     Acesso restrito a admin e gestão RV.
     """
@@ -594,19 +597,23 @@ async def list_zapi_channels(
     async def _probe_webhook(ch: ZAPIChannel, suggested_url: str):
         """
         Task #264 — Verifica em tempo real se o webhook está registrado na instância Z-API.
+        Timeout agressivo de 4s para não degradar a listagem.
         Retorna: True (registrado e URL bate), False (registrado mas URL diferente ou vazio),
                  "unknown" (não foi possível obter a configuração remota).
         """
         try:
+            import httpx as _httpx
             client = ZAPIClient(
                 instance_id=ch.instance_id,
                 token=ch.token,
                 client_token=ch.client_token,
             )
-            result = await client.get_webhook_settings()
-            if not result.get("success"):
+            url = f"{client._get_base_url()}/webhooks"
+            async with _httpx.AsyncClient() as _hc:
+                resp = await _hc.get(url, headers=client._get_headers(), timeout=4.0)
+            if resp.status_code != 200:
                 return "unknown"
-            settings = result.get("settings") or {}
+            settings = resp.json() if resp.content else {}
             # Z-API retorna {"webhookReceived": "https://..."} no campo settings.
             remote_url = settings.get("webhookReceived") or settings.get("value") or ""
             return remote_url.rstrip("/") == suggested_url.rstrip("/")
@@ -621,9 +628,10 @@ async def list_zapi_channels(
     else:
         connectivity = {}
 
-    # Task #264 — sonda webhook de todos os canais ativos não-legados em paralelo.
+    # Task #264 — sonda webhook apenas quando explicitamente solicitado (opt-in).
+    # Padrão (include_webhook_status=False): retorna "unknown" para todos sem chamada remota.
     webhook_status: Dict[int, object] = {}
-    if probeable_channels:
+    if include_webhook_status and probeable_channels:
         wh_suggested_by_id = {
             ch.id: _build_webhook_url_suggested(request, ch.id)
             for ch in probeable_channels
@@ -1268,9 +1276,10 @@ async def sync_zapi_channel_webhook(
         )
         result = await client.update_webhook(webhook_url)
     except Exception as exc:
+        _exc_type = type(exc).__name__
         raise HTTPException(
             status_code=502,
-            detail=f"Erro ao comunicar com a Z-API: {str(exc)}",
+            detail=f"Erro de comunicação com a Z-API ({_exc_type}). Verifique se a instância está acessível.",
         )
 
     if result.get("success"):

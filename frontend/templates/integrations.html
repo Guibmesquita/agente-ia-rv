@@ -813,7 +813,9 @@
 
         async function loadZAPIChannels() {
             try {
-                const res = await fetch(ZC_API, { credentials: 'include' });
+                // Task #264 — include_webhook_status=true ativa sondagem em tempo real
+                // do webhook por canal (opt-in para não degradar listagem).
+                const res = await fetch(`${ZC_API}?include_webhook_status=true`, { credentials: 'include' });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 _zcChannels = data.channels || [];
