@@ -533,7 +533,7 @@
                             ${channelActive ? 'Ativo' : 'Inativo'}
                         </span>
                         <button class="btn btn-secondary btn-sm"
-                            onclick="zcToggleActive(${channelId}, ${!channelActive})"
+                            data-zc-action="toggle-legacy" data-zc-id="${channelId}" data-zc-active="${channelActive}"
                             title="${channelActive ? 'Desativar canal legado' : 'Ativar canal legado'}"
                             style="font-size: 0.8rem; padding: 2px 10px; ${channelActive ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
                             ${channelActive ? '⏸️ Desativar' : '▶️ Ativar'}
@@ -651,6 +651,10 @@
                     </div>
                 `;
             }).join('');
+            // Attach direct listeners for any data-zc-action buttons in the integration cards
+            container.querySelectorAll('[data-zc-action]').forEach(btn => {
+                btn.addEventListener('click', _zcHandleCardAction);
+            });
         }
 
         function getIcon(type) {
@@ -843,12 +847,14 @@
                     ${isActive ? 'Ativo' : 'Inativo'}
                 </span>
                 <button class="btn btn-secondary btn-sm"
-                    onclick="zcToggleActive(${chId}, ${!isActive})"
+                    data-zc-action="toggle-legacy" data-zc-id="${chId}" data-zc-active="${isActive}"
                     title="${isActive ? 'Desativar canal legado' : 'Ativar canal legado'}"
                     style="font-size: 0.8rem; padding: 2px 10px; ${isActive ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
                     ${isActive ? '⏸️ Desativar' : '▶️ Ativar'}
                 </button>
             `;
+            const legacyToggle = container.querySelector('[data-zc-action="toggle-legacy"]');
+            if (legacyToggle) legacyToggle.addEventListener('click', _zcHandleCardAction);
         }
 
         function _connLabel(status) {
@@ -860,6 +866,29 @@
             };
             const [cls, txt] = map[status] || map.unknown;
             return `<span class="zc-conn-pill ${cls}">${txt}</span>`;
+        }
+
+        function _zcHandleCardAction(e) {
+            const btn = e.currentTarget;
+            const action = btn.dataset.zcAction;
+            if (!action) return;
+            if (action === 'copy') { zcCopy(btn, decodeURIComponent(btn.dataset.zcUrl)); return; }
+            if (action === 'toggle-legacy') { zcToggleActive(parseInt(btn.dataset.zcId, 10), btn.dataset.zcActive !== 'true'); return; }
+            const id = parseInt(btn.dataset.zcId, 10);
+            if (action === 'config')           { zcOpenConfig(id); }
+            else if (action === 'edit')        { zcOpenEdit(id); }
+            else if (action === 'toggle')      { zcToggleActive(id, btn.dataset.zcActive !== 'true'); }
+            else if (action === 'unidades')    { zcToggleUnidadesPanel(id); }
+            else if (action === 'assessores')  { zcToggleAssessoresPanel(id); }
+            else if (action === 'delete')      { zcDelete(id); }
+            else if (action === 'assignar-unidade') { zcAssignarUnidade(id); }
+            else if (action === 'add-unidade')      { zcAddUnidade(id); }
+            else if (action === 'unlink-assessor') {
+                zcUnlinkAssessor(parseInt(btn.dataset.zcChannelId, 10), parseInt(btn.dataset.zcAssessorId, 10), decodeURIComponent(btn.dataset.zcNome));
+            }
+            else if (action === 'assign-assessor') {
+                zcAssignAssessor(parseInt(btn.dataset.zcChannelId, 10), parseInt(btn.dataset.zcAssessorId, 10), decodeURIComponent(btn.dataset.zcNome));
+            }
         }
 
         function renderZAPIChannels(channels) {
@@ -895,22 +924,29 @@
                     <div class="zc-channel-meta">👥 ${assessorTxt}</div>
                     <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
                     <div class="zc-card-actions">
-                        <button class="btn btn-secondary btn-sm" onclick="zcOpenConfig(${ch.id})">
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="config" data-zc-id="${ch.id}">
                             🔧 Como configurar
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="zcOpenEdit(${ch.id})">
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="edit" data-zc-id="${ch.id}">
                             ✏️ Editar
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="zcToggleActive(${ch.id}, ${!ch.is_active})"
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="toggle" data-zc-id="${ch.id}" data-zc-active="${ch.is_active}"
                             title="${ch.is_active ? 'Desativar canal' : 'Ativar canal'}"
                             style="${ch.is_active ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
                             ${ch.is_active ? '⏸️ Desativar' : '▶️ Ativar'}
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="zcToggleUnidadesPanel(${ch.id})" id="zcUnidadesBtn-${ch.id}" title="Mapear unidades">
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="unidades" data-zc-id="${ch.id}"
+                            id="zcUnidadesBtn-${ch.id}" title="Mapear unidades">
                             🏢 Unidades
                         </button>
-                        ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm" style="color:var(--danger-color)" onclick="zcDelete(${ch.id})">🗑️</button>` : ''}
-                        <button class="btn btn-secondary btn-sm" onclick="zcToggleAssessoresPanel(${ch.id})" id="zcAssessoresBtn-${ch.id}" title="Gerenciar assessores vinculados">
+                        ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm" style="color:var(--danger-color)" data-zc-action="delete" data-zc-id="${ch.id}">🗑️</button>` : ''}
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="assessores" data-zc-id="${ch.id}"
+                            id="zcAssessoresBtn-${ch.id}" title="Gerenciar assessores vinculados">
                             👤 Assessores
                         </button>
                     </div>
@@ -929,11 +965,11 @@
                         </div>
                         <div class="zc-batch-unidade-row">
                             <select class="zc-unidade-select" id="zcUnidadeSelect-${ch.id}"
-                                onchange="zcOnUnidadeSelectChange(${ch.id})">
+                                data-zc-change="${ch.id}">
                                 <option value="">Selecionar unidade...</option>
                             </select>
                             <button class="zc-mover-btn" id="zcMoverBtn-${ch.id}" disabled
-                                onclick="zcAssignarUnidade(${ch.id})">
+                                data-zc-action="assignar-unidade" data-zc-id="${ch.id}">
                                 Mover todos
                             </button>
                         </div>
@@ -943,7 +979,7 @@
                         <div class="zc-search-wrap">
                             <input type="text" class="zc-search-input" id="zcSearchInput-${ch.id}"
                                 placeholder="Buscar por nome, código ou e-mail..."
-                                oninput="zcSearchAssessores(${ch.id})"
+                                data-zc-search="${ch.id}"
                                 autocomplete="off">
                             <div class="zc-search-results" id="zcSearchResults-${ch.id}"></div>
                         </div>
@@ -958,7 +994,7 @@
                             <select class="zc-unidades-select" id="zcUnidadesSelect-${ch.id}">
                                 <option value="">Selecione uma unidade...</option>
                             </select>
-                            <button class="zc-unidades-add-btn" onclick="zcAddUnidade(${ch.id})" id="zcUnidadesAddBtn-${ch.id}">
+                            <button class="zc-unidades-add-btn" data-zc-action="add-unidade" data-zc-id="${ch.id}" id="zcUnidadesAddBtn-${ch.id}">
                                 + Adicionar
                             </button>
                         </div>
@@ -967,6 +1003,17 @@
             }
             html += '</div>';
             container.innerHTML = html;
+
+            // Attach direct listeners to all rendered buttons (CSP-safe, no bubbling required)
+            container.querySelectorAll('[data-zc-action]').forEach(el => {
+                el.addEventListener('click', _zcHandleCardAction);
+            });
+            container.querySelectorAll('[data-zc-search]').forEach(el => {
+                el.addEventListener('input', () => zcSearchAssessores(parseInt(el.dataset.zcSearch, 10)));
+            });
+            container.querySelectorAll('[data-zc-change]').forEach(el => {
+                el.addEventListener('change', () => zcOnUnidadeSelectChange(parseInt(el.dataset.zcChange, 10)));
+            });
 
             // Reabrir painéis que estavam abertos antes do rerender (Task #234)
             for (const channelId of _panelsToRestore) {
@@ -995,12 +1042,11 @@
             document.getElementById('zcConfigTitle').textContent = `Como configurar — ${ch.label || ch.name}`;
 
             function _whField(label, url) {
-                const encoded = JSON.stringify(url);
                 return `<div class="zc-wh-field">
                     <div class="zc-wh-label">${label}</div>
                     <div class="zc-wh-row">
                         <div class="zc-wh-url">${url}</div>
-                        <button class="zc-copy-btn" onclick="zcCopy(this, ${encoded})">📋 Copiar</button>
+                        <button class="zc-copy-btn" data-zc-action="copy" data-zc-url="${encodeURIComponent(url)}">📋 Copiar</button>
                     </div>
                 </div>`;
             }
@@ -1041,6 +1087,10 @@
                         <li class="zc-step"><span class="zc-step-num">5</span><span class="zc-step-text">Volte a esta página e verifique se o status do canal aparece como <strong>● Conectado</strong>.</span></li>
                     </ol>
                 </div>`;
+            const configBody = document.getElementById('zcConfigBody');
+            configBody.querySelectorAll('[data-zc-action="copy"]').forEach(btn => {
+                btn.addEventListener('click', _zcHandleCardAction);
+            });
             document.getElementById('zcConfigModal').classList.add('active');
         }
 
@@ -1115,6 +1165,71 @@
             });
             document.getElementById('zcBtnSaveChannel').addEventListener('click', _zcSaveChannel);
             document.getElementById('zcBtnTestConn').addEventListener('click', _zcTestConn);
+
+            // ── Event delegation CSP-safe ──────────────────────────────────────
+            // Todos os botões dos cards usam data-zc-action em vez de onclick inline
+            // para evitar bloqueio silencioso pelo CSP (nonce suprime unsafe-inline).
+
+            // ── Delegação centralizada no document (garante captura independente
+            //    do contexto CSS / viewport / bubbling path) ──
+
+            // 1. Cliques — todos os botões dos cards e modais
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-zc-action]');
+                if (!btn) return;
+                const action = btn.dataset.zcAction;
+
+                // Botões "Copiar" dentro do modal de configuração
+                if (action === 'copy') {
+                    zcCopy(btn, decodeURIComponent(btn.dataset.zcUrl));
+                    return;
+                }
+
+                // Toggle do canal legado no card informativo (#integrationsContainer e #zcLegacyStatusContainer)
+                if (action === 'toggle-legacy') {
+                    const id = parseInt(btn.dataset.zcId, 10);
+                    const currentActive = btn.dataset.zcActive === 'true';
+                    zcToggleActive(id, !currentActive);
+                    return;
+                }
+
+                // Botões dentro dos cards de canal (#zapiChannelsList)
+                const id = parseInt(btn.dataset.zcId, 10);
+                if (action === 'config')    { zcOpenConfig(id); }
+                else if (action === 'edit') { zcOpenEdit(id); }
+                else if (action === 'toggle') { zcToggleActive(id, btn.dataset.zcActive !== 'true'); }
+                else if (action === 'unidades')  { zcToggleUnidadesPanel(id); }
+                else if (action === 'assessores') { zcToggleAssessoresPanel(id); }
+                else if (action === 'delete')     { zcDelete(id); }
+                else if (action === 'assignar-unidade') { zcAssignarUnidade(id); }
+                else if (action === 'add-unidade')      { zcAddUnidade(id); }
+                else if (action === 'unlink-assessor') {
+                    zcUnlinkAssessor(
+                        parseInt(btn.dataset.zcChannelId, 10),
+                        parseInt(btn.dataset.zcAssessorId, 10),
+                        decodeURIComponent(btn.dataset.zcNome)
+                    );
+                }
+                else if (action === 'assign-assessor') {
+                    zcAssignAssessor(
+                        parseInt(btn.dataset.zcChannelId, 10),
+                        parseInt(btn.dataset.zcAssessorId, 10),
+                        decodeURIComponent(btn.dataset.zcNome)
+                    );
+                }
+            });
+
+            // 2. Input em campos de busca de assessores (data-zc-search)
+            document.addEventListener('input', (e) => {
+                const inp = e.target.closest('[data-zc-search]');
+                if (inp) { zcSearchAssessores(parseInt(inp.dataset.zcSearch, 10)); }
+            });
+
+            // 3. Change no select de unidade para mover em lote (data-zc-change)
+            document.addEventListener('change', (e) => {
+                const sel = e.target.closest('[data-zc-change]');
+                if (sel) { zcOnUnidadeSelectChange(parseInt(sel.dataset.zcChange, 10)); }
+            });
         });
 
         document.getElementById('btnAddChannel').addEventListener('click', zcOpenAdd);
@@ -1339,9 +1454,15 @@
                         <span class="zc-assessor-meta">${a.codigo_ai}${a.unidade ? ' · ' + a.unidade : ''}</span>
                     </div>
                     <button class="zc-unlink-btn" title="Desvincular assessor do canal"
-                        onclick="zcUnlinkAssessor(${channelId}, ${a.id}, '${a.nome.replace(/'/g, "\\'")}')">✕</button>
+                        data-zc-action="unlink-assessor"
+                        data-zc-channel-id="${channelId}"
+                        data-zc-assessor-id="${a.id}"
+                        data-zc-nome="${encodeURIComponent(a.nome)}">✕</button>
                 </div>
             `).join('');
+            listEl.querySelectorAll('[data-zc-action="unlink-assessor"]').forEach(btn => {
+                btn.addEventListener('click', _zcHandleCardAction);
+            });
         }
 
         async function zcUnlinkAssessor(channelId, assessorId, assessorNome) {
@@ -1546,11 +1667,18 @@
                 } else {
                     resultsEl.innerHTML = assessores.map(a => {
                         const channelLabel = a.channel_id ? `<span style="font-size:0.7rem; color:var(--warning-color, #d97706); font-weight:600;"> · canal ${a.channel_id}</span>` : '';
-                        return `<div class="zc-search-result-item" onclick="zcAssignAssessor(${channelId}, ${a.id}, '${a.nome.replace(/'/g, "\\'")}')">
+                        return `<div class="zc-search-result-item"
+                            data-zc-action="assign-assessor"
+                            data-zc-channel-id="${channelId}"
+                            data-zc-assessor-id="${a.id}"
+                            data-zc-nome="${encodeURIComponent(a.nome)}">
                             <div class="zc-search-result-name">${a.nome}${channelLabel}</div>
                             <div class="zc-search-result-meta">${a.codigo_ai}${a.unidade ? ' · ' + a.unidade : ''}</div>
                         </div>`;
                     }).join('');
+                    resultsEl.querySelectorAll('[data-zc-action="assign-assessor"]').forEach(item => {
+                        item.addEventListener('click', _zcHandleCardAction);
+                    });
                 }
                 resultsEl.classList.add('open');
             } catch (err) {
