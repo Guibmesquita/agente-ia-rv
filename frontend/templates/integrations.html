@@ -472,9 +472,11 @@
         async function loadIntegrations() {
             try {
                 const fetchOptions = { credentials: 'include' };
+                // Os dois fetches críticos determinam se a seção carrega.
+                // O fetch de canais Z-API é auxiliar (best-effort): falha não bloqueia.
                 const [integrationsRes, envMappingRes] = await Promise.all([
                     fetch(`${API_BASE}/`, fetchOptions),
-                    fetch(`${API_BASE}/env-mapping`, fetchOptions)
+                    fetch(`${API_BASE}/env-mapping`, fetchOptions),
                 ]);
 
                 if (!integrationsRes.ok || !envMappingRes.ok) {
@@ -484,7 +486,25 @@
                 const integrations = await integrationsRes.json();
                 const envMapping = await envMappingRes.json();
 
-                renderIntegrations(integrations, envMapping);
+                // Busca canal legado de forma independente; falha é silenciosa.
+                let legacyZapiChannel = null;
+                try {
+                    const zapiChannelsRes = await fetch(ZC_API, fetchOptions);
+                    if (zapiChannelsRes.ok) {
+                        const zapiData = await zapiChannelsRes.json();
+                        const allChannels = zapiData.channels || [];
+                        legacyZapiChannel = allChannels.find(c => c.is_legacy) || null;
+                        // Garante que _zcChannels está populado para que zcToggleActive
+                        // consiga localizar o canal (evita race condition na inicialização)
+                        if (allChannels.length && !_zcChannels.length) {
+                            _zcChannels = allChannels;
+                        }
+                    }
+                } catch (zapiErr) {
+                    console.warn('Não foi possível carregar canais Z-API para o card informativo:', zapiErr);
+                }
+
+                renderIntegrations(integrations, envMapping, legacyZapiChannel);
             } catch (error) {
                 console.error('Erro:', error);
                 document.getElementById('integrationsContainer').innerHTML = `
@@ -495,7 +515,7 @@
             }
         }
 
-        function renderIntegrations(integrations, envMapping) {
+        function renderIntegrations(integrations, envMapping, legacyZapiChannel) {
             const container = document.getElementById('integrationsContainer');
             
             if (integrations.length === 0) {
@@ -508,13 +528,34 @@
             }
 
             container.innerHTML = integrations.map(integration => {
-                // Task #248 — Integrações do tipo 'zapi' agora são gerenciadas
+                // Task #248/#249 — Integrações do tipo 'zapi' são gerenciadas
                 // exclusivamente pela seção "Canais Z-API" abaixo.
-                // Exibimos apenas um card informativo sem campos editáveis.
+                // Exibimos apenas um card informativo que reflete ZAPIChannel.is_active
+                // do canal legado — sem toggle na tabela `integrations`.
                 if (integration.type === 'zapi') {
                     const mapping = envMapping[integration.type] || { settings: {} };
                     const settings = mapping.settings || {};
                     const allConfigured = Object.values(settings).every(c => c.is_configured);
+
+                    // Status real vem de ZAPIChannel, não de integrations.is_active
+                    const channelActive = legacyZapiChannel ? legacyZapiChannel.is_active : null;
+                    const channelId = legacyZapiChannel ? legacyZapiChannel.id : null;
+
+                    const activeStatusHtml = channelId !== null ? `
+                        <span style="font-size: 0.875rem; color: var(--text-secondary);">
+                            Canal legado:
+                        </span>
+                        <span class="status-badge ${channelActive ? 'connected' : 'disconnected'}" style="font-size: 0.8rem;">
+                            ${channelActive ? 'Ativo' : 'Inativo'}
+                        </span>
+                        <button class="btn btn-secondary btn-sm"
+                            onclick="zcToggleActive(${channelId}, ${!channelActive})"
+                            title="${channelActive ? 'Desativar canal legado' : 'Ativar canal legado'}"
+                            style="font-size: 0.8rem; padding: 2px 10px; ${channelActive ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
+                            ${channelActive ? '⏸️ Desativar' : '▶️ Ativar'}
+                        </button>
+                    ` : '';
+
                     return `
                     <div class="integration-card">
                         <div class="integration-header ${integration.type}">
@@ -529,7 +570,7 @@
                         <div class="integration-body">
                             <div style="padding: 20px 24px; display: flex; gap: 16px; align-items: flex-start;">
                                 <div style="font-size: 1.5rem; flex-shrink: 0;">ℹ️</div>
-                                <div>
+                                <div style="flex: 1;">
                                     <p style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">
                                         Canal Z-API legado — gerenciado por variáveis de ambiente
                                     </p>
@@ -538,12 +579,13 @@
                                         <code>ZAPI_CLIENT_TOKEN</code>) são configuradas nas variáveis de ambiente do servidor.
                                         Para criar e gerenciar canais adicionais, utilize a seção <strong>Canais Z-API</strong> abaixo.
                                     </p>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                         <span style="width: 10px; height: 10px; border-radius: 50%; background: ${allConfigured ? '#22c55e' : '#f59e0b'}; display: inline-block;"></span>
                                         <span style="font-size: 0.875rem; color: var(--text-secondary);">
                                             Credenciais: ${allConfigured ? 'todas configuradas' : 'configuração pendente'}
                                         </span>
-                                        <a href="#zapiChannelsSection" style="margin-left: 12px; font-size: 0.875rem; color: var(--primary-color); text-decoration: none;">
+                                        ${activeStatusHtml ? `<span style="margin: 0 4px; color: var(--text-secondary);">|</span>${activeStatusHtml}` : ''}
+                                        <a href="#zapiChannelsSection" style="margin-left: 4px; font-size: 0.875rem; color: var(--primary-color); text-decoration: none;">
                                             → Ver canais ↓
                                         </a>
                                     </div>
@@ -1193,7 +1235,8 @@
                     return;
                 }
                 toast.success(newActiveState ? `Canal "${label}" ativado.` : `Canal "${label}" desativado.`);
-                await loadZAPIChannels();
+                // Recarrega o grid de canais e o card informativo da integração
+                await Promise.all([loadZAPIChannels(), loadIntegrations()]);
             } catch (err) {
                 toast.error(`Erro: ${err.message}`);
             }
