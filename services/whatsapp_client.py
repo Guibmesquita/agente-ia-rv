@@ -642,10 +642,11 @@ class ZAPIClient:
     
     async def update_webhook(self, webhook_url: str) -> dict:
         """
-        Atualiza a URL do webhook para receber mensagens.
+        Atualiza a URL do webhook para receber mensagens (somente evento received).
         Task #268 — loga o raw response completo para diagnóstico do status de registro.
         Task #276 — valida também o corpo da resposta: alguns backends JAX-RS retornam
         HTTP 200 com {"error":"NOT_FOUND",...} quando a instância é inválida.
+        Usado como fallback por update_all_webhooks quando update-every-webhooks não existe.
         """
         url = f"{self._get_base_url()}/update-webhook-received"
         payload = {"value": webhook_url}
@@ -654,8 +655,6 @@ class ZAPIClient:
             try:
                 response = await client.put(url, json=payload, headers=self._get_headers(), timeout=10.0)
                 data = response.json() if response.content else {}
-                # HTTP 200 é necessário mas não suficiente: verifica se o body não contém
-                # campo "error" — alguns backends retornam 200 com erro no body.
                 body_error = data.get("error") if isinstance(data, dict) else None
                 success = response.status_code == 200 and not body_error
                 print(f"[Z-API] update_webhook → HTTP {response.status_code}, body_error={body_error!r}, raw: {data}")
@@ -663,6 +662,55 @@ class ZAPIClient:
             except httpx.HTTPError as e:
                 print(f"[Z-API] update_webhook → HTTPError: {e}")
                 return {"success": False, "error": str(e)}
+
+    async def update_all_webhooks(self, webhook_url: str) -> dict:
+        """
+        Task #279 — Configura TODOS os tipos de evento Z-API de uma vez.
+        Usa PUT /update-every-webhooks (mesmo endpoint do configure_zapi_webhooks.py
+        que funciona para o canal legado). Fallback automático para update_webhook
+        (PUT /update-webhook-received) se o endpoint não for suportado pela instância.
+
+        Payload: {"value": url, "notifySentByMe": false}
+        Retorna dict com success, raw_response, body_error e endpoint_used.
+        """
+        url = f"{self._get_base_url()}/update-every-webhooks"
+        payload = {"value": webhook_url, "notifySentByMe": False}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.put(url, json=payload, headers=self._get_headers(), timeout=10.0)
+                data = response.json() if response.content else {}
+                body_error = data.get("error") if isinstance(data, dict) else None
+
+                # Z-API retorna 404 ou body_error NOT_FOUND quando a instância não
+                # suporta update-every-webhooks — cai no fallback
+                is_not_found = (
+                    response.status_code == 404
+                    or (isinstance(body_error, str) and "NOT_FOUND" in body_error.upper())
+                )
+                if is_not_found:
+                    print(
+                        f"[Z-API] update_all_webhooks → endpoint não suportado "
+                        f"(HTTP {response.status_code}), usando fallback update-webhook-received"
+                    )
+                    fallback = await self.update_webhook(webhook_url)
+                    fallback["endpoint_used"] = "update-webhook-received (fallback)"
+                    return fallback
+
+                success = response.status_code == 200 and not body_error
+                print(
+                    f"[Z-API] update_all_webhooks → HTTP {response.status_code}, "
+                    f"body_error={body_error!r}, raw: {data}"
+                )
+                return {
+                    "success": success,
+                    "raw_response": data,
+                    "body_error": body_error,
+                    "endpoint_used": "update-every-webhooks",
+                }
+            except httpx.HTTPError as e:
+                print(f"[Z-API] update_all_webhooks → HTTPError: {e}")
+                return {"success": False, "error": str(e), "endpoint_used": "update-every-webhooks"}
     
     async def check_phone_exists(self, phone: str) -> dict:
         """

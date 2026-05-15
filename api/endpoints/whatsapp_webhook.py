@@ -1980,10 +1980,21 @@ async def whatsapp_webhook_multichannel(
         valid = bool(incoming_token) and incoming_token in valid_tokens
 
     if not valid:
+        # Task #279 — inclui os primeiros 8 chars do token recebido e as primeiras 4 chars
+        # de cada token esperado (masked) para diagnóstico nos logs do Railway sem expor credenciais.
+        def _mask(t: str) -> str:
+            return (t[:8] + "…") if t else "(vazio)"
+
+        if channel.is_legacy:
+            _expected_hint = "legacy(env)"
+        else:
+            _expected_hints = [_mask(t) for t in sorted(valid_tokens)]
+            _expected_hint = f"[{', '.join(_expected_hints)}] (n={len(valid_tokens)})"
+
         logger.warning(
             f"[WEBHOOK-MC] Token inválido para canal {channel_id} "
-            f"— incoming={(_ct_hint[:6] + '…') if _ct_hint else '(vazio)'} "
-            f"valid_set_size={len(valid_tokens) if not channel.is_legacy else 'legacy'}"
+            f"— received={_mask(incoming_token)} "
+            f"expected={_expected_hint}"
         )
         raise HTTPException(status_code=401, detail="Token inválido ou ausente para este canal")
 

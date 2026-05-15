@@ -1416,7 +1416,10 @@ async def sync_zapi_channel_webhook(
             token=channel.token,
             client_token=channel.client_token,
         )
-        result = await client.update_webhook(webhook_url)
+        # Task #279 — usa update-every-webhooks (configura TODOS os tipos de evento,
+        # mesmo comportamento do canal legado) com fallback automático para
+        # update-webhook-received se o endpoint não for suportado pela instância.
+        result = await client.update_all_webhooks(webhook_url)
     except Exception as exc:
         _exc_type = type(exc).__name__
         raise HTTPException(
@@ -1428,9 +1431,24 @@ async def sync_zapi_channel_webhook(
         channel.webhook_auto_registered = True
         channel.webhook_url = webhook_url
         db.commit()
-        print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual OK: {webhook_url}")
+        print(
+            f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual OK: {webhook_url} "
+            f"(endpoint: {result.get('endpoint_used', '?')})"
+        )
     else:
         print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual falhou: {result}")
+
+    # Task #279 — verifica conectividade da instância após registro.
+    # Se a instância estiver desconectada, mensagens não serão entregues mesmo com webhook registrado.
+    instance_connected: Optional[bool] = None
+    instance_status: Optional[str] = None
+    try:
+        _conn = await client.check_connectivity(timeout=6.0)
+        instance_status = _conn
+        instance_connected = (_conn == "connected")
+        print(f"[Z-API Webhook] Canal {channel_id} — instance status pós-sync: {_conn}")
+    except Exception as _ce:
+        print(f"[Z-API Webhook] Canal {channel_id} — erro ao verificar instância: {_ce}")
 
     # Task #272 — verifica imediatamente pós-registro o que Z-API retorna em GET /webhooks.
     # Task #276 — propaga endpoint_not_found quando GET /webhooks não é suportado pela instância.
@@ -1442,7 +1460,6 @@ async def sync_zapi_channel_webhook(
         vresp = await client.get_webhook_settings(timeout=8.0)
         if vresp.get("success"):
             if vresp.get("endpoint_not_found"):
-                # Task #276 — Z-API não suporta GET /webhooks — não é erro, apenas indisponível.
                 verify_endpoint_not_found = True
                 print(f"[Z-API Webhook] Canal {channel_id} — verify GET /webhooks: endpoint_not_found")
             else:
@@ -1462,6 +1479,9 @@ async def sync_zapi_channel_webhook(
         "channel_id": channel_id,
         "raw_response": result.get("raw_response"),
         "body_error": result.get("body_error"),
+        "endpoint_used": result.get("endpoint_used"),
+        "instance_connected": instance_connected,
+        "instance_status": instance_status,
         "verify_raw": verify_raw,
         "verify_field": verify_field,
         "verify_url": verify_url,

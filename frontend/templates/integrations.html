@@ -957,6 +957,11 @@
                         </div>
                         ${_connLabel(ch.connectivity_status)}
                     </div>
+                    ${ch.connectivity_status === 'disconnected' ? `
+                    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:0.82rem;color:#991b1b;display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:1rem;">⚠️</span>
+                        <span><strong>Z-API desconectada</strong> — mensagens não serão entregues até reconectar via QR Code no painel Z-API.</span>
+                    </div>` : ''}
                     <div class="zc-channel-phone">📱 ${phone}</div>
                     <div class="zc-channel-meta">👥 ${assessorTxt}</div>
                     <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
@@ -1448,7 +1453,11 @@
 
                 if (data.success) {
                     // Task #276 — exibe raw_response do PUT sempre, mesmo quando null/{}
+                    // Task #279 — adiciona alerta de conectividade e endpoint usado
                     let msg = `Webhook registrado!\n📍 URL: ${data.webhook_url}`;
+                    if (data.endpoint_used) {
+                        msg += `\n🔧 Endpoint: ${data.endpoint_used}`;
+                    }
                     const putRawSuc = JSON.stringify(data.raw_response ?? null);
                     msg += `\nZ-API resposta PUT: ${putRawSuc.slice(0, 120)}${putRawSuc.length > 120 ? '…' : ''}`;
                     if (data.verify_url) {
@@ -1466,7 +1475,11 @@
                         msg += `\n⚠️ Z-API não confirmou URL. GET /webhooks raw: ${rawSnip.slice(0, 120)}${rawSnip.length > 120 ? '…' : ''}`;
                         msg += `\nUse 🔍 Diagnóstico para ver a resposta completa.`;
                     }
-                    if (data.url_match === false) {
+                    // Task #279 — alerta proeminente se instância Z-API estiver desconectada
+                    if (data.instance_connected === false) {
+                        msg += `\n\n⚠️ ATENÇÃO: Instância Z-API desconectada (${data.instance_status || 'disconnected'}) — mensagens não serão entregues até reconectar via QR Code no painel Z-API.`;
+                        toast.warning(msg);
+                    } else if (data.url_match === false) {
                         toast.warning(msg);
                     } else {
                         toast.success(msg);
@@ -1591,15 +1604,24 @@
             titleBar.appendChild(closeBtn);
             box.appendChild(titleBar);
 
-            // Task #276 — instância Z-API: status de conectividade
+            // Task #276/#279 — instância Z-API: status de conectividade com texto humanizado
             const instStatus = d.instance_status;
-            const instStatusStr = typeof instStatus === 'string'
-                ? instStatus
-                : (instStatus ? JSON.stringify(instStatus) : '—');
-            const instStatusIcon = instStatus === 'connected' ? '✅'
-                : instStatus === 'disconnected' ? '⚡'
-                : instStatus && typeof instStatus === 'string' && instStatus.startsWith('erro') ? '❌'
-                : '❓';
+            const _instHuman = {
+                connected: '✅ Conectado ao WhatsApp',
+                disconnected: '⚠️ Desconectado — webhook não entregará mensagens',
+                unreachable: '❓ Sem resposta — instância inacessível',
+            };
+            const instStatusStr = _instHuman[instStatus]
+                || (instStatus && typeof instStatus === 'string' ? `❓ ${instStatus}` : '—');
+            const instStatusIcon = '';  // ícone já embutido em instStatusStr
+            // Banner de alerta se desconectado
+            const instDisconnectedBanner = instStatus === 'disconnected'
+                ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem;color:#991b1b;">
+                    <strong>⚠️ Instância Z-API desconectada</strong><br>
+                    Mesmo com o webhook registrado, o Z-API não entregará mensagens enquanto a instância não estiver pareada com um número WhatsApp.<br>
+                    <strong>Solução:</strong> acesse o painel Z-API e escaneie o QR Code para reconectar.
+                  </div>`
+                : '';
 
             // Task #276 — endpoint_not_found: GET /webhooks não suportado
             const endpointNotFoundHtml = d.endpoint_not_found
@@ -1615,10 +1637,11 @@
             const bodyDiv = document.createElement('div');
             bodyDiv.style.cssText = 'font-size:0.9rem;line-height:1.6;';
             bodyDiv.innerHTML = `
+                ${instDisconnectedBanner}
                 ${endpointNotFoundHtml}
                 <table style="width:100%;margin-bottom:12px;border-collapse:collapse;">
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Canal</td><td><strong>${_zcEsc(d.channel_name)}</strong> (id=${_zcEsc(String(d.channel_id))})</td></tr>
-                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Instância Z-API</td><td>${instStatusIcon} <span style="font-family:monospace;font-size:0.82rem;">${_zcEsc(instStatusStr)}</span></td></tr>
+                    <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Instância Z-API</td><td><span style="font-size:0.88rem;">${_zcEsc(instStatusStr)}</span></td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL sugerida</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;color:#1e40af;">${_zcEsc(d.webhook_url_suggested)}</td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">URL no Z-API</td><td style="font-family:monospace;font-size:0.82rem;word-break:break-all;">${_zcEsc(d.detected_url || (d.endpoint_not_found ? '(GET /webhooks não suportado)' : '(não detectada)'))}</td></tr>
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Campo detectado</td><td style="font-family:monospace;">${_zcEsc(d.detected_field || '(nenhum)')}</td></tr>
