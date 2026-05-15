@@ -578,8 +578,10 @@ async def list_zapi_channels(
             return None
         return value[:4] + "****" + value[-4:]
 
-    # Sonda conectividade de cada canal ativo em paralelo (timeout 5s por canal)
+    # Sonda conectividade e status do webhook de cada canal ativo em paralelo.
     active_channels = [ch for ch in channels if ch.is_active]
+    # Canais ativos e não-legados são os únicos que têm webhook auto-gerenciado.
+    probeable_channels = [ch for ch in active_channels if not ch.is_legacy]
 
     async def _probe(ch: ZAPIChannel) -> str:
         client = ZAPIClient(
@@ -589,13 +591,69 @@ async def list_zapi_channels(
         )
         return await client.check_connectivity(timeout=5.0)
 
+    async def _probe_webhook(ch: ZAPIChannel, suggested_url: str):
+        """
+        Task #264 — Verifica em tempo real se o webhook está registrado na instância Z-API.
+        Retorna: True (registrado e URL bate), False (registrado mas URL diferente ou vazio),
+                 "unknown" (não foi possível obter a configuração remota).
+        """
+        try:
+            client = ZAPIClient(
+                instance_id=ch.instance_id,
+                token=ch.token,
+                client_token=ch.client_token,
+            )
+            result = await client.get_webhook_settings()
+            if not result.get("success"):
+                return "unknown"
+            settings = result.get("settings") or {}
+            # Z-API retorna {"webhookReceived": "https://..."} no campo settings.
+            remote_url = settings.get("webhookReceived") or settings.get("value") or ""
+            return remote_url.rstrip("/") == suggested_url.rstrip("/")
+        except Exception:
+            return "unknown"
+
     if active_channels:
-        statuses = await asyncio.gather(*[_probe(ch) for ch in active_channels], return_exceptions=True)
+        conn_results = await asyncio.gather(*[_probe(ch) for ch in active_channels], return_exceptions=True)
         connectivity: Dict[int, str] = {}
-        for ch, result in zip(active_channels, statuses):
+        for ch, result in zip(active_channels, conn_results):
             connectivity[ch.id] = result if isinstance(result, str) else "unreachable"
     else:
         connectivity = {}
+
+    # Task #264 — sonda webhook de todos os canais ativos não-legados em paralelo.
+    webhook_status: Dict[int, object] = {}
+    if probeable_channels:
+        wh_suggested_by_id = {
+            ch.id: _build_webhook_url_suggested(request, ch.id)
+            for ch in probeable_channels
+        }
+        wh_results = await asyncio.gather(
+            *[_probe_webhook(ch, wh_suggested_by_id[ch.id]) for ch in probeable_channels],
+            return_exceptions=True,
+        )
+        for ch, wh_result in zip(probeable_channels, wh_results):
+            status = wh_result if not isinstance(wh_result, Exception) else "unknown"
+            webhook_status[ch.id] = status
+            # Sincroniza o flag histórico no banco se o estado real difere (sem travar).
+            if status is True and not ch.webhook_auto_registered:
+                try:
+                    ch.webhook_auto_registered = True
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            elif status is False and ch.webhook_auto_registered:
+                try:
+                    ch.webhook_auto_registered = False
+                    db.commit()
+                except Exception:
+                    db.rollback()
+
+    def _wh_registered(ch: ZAPIChannel) -> object:
+        """Retorna True, False ou 'unknown' para uso pela UI."""
+        if ch.is_legacy or not ch.is_active:
+            return "unknown"
+        return webhook_status.get(ch.id, "unknown")
 
     return {
         "channels": [
@@ -613,6 +671,8 @@ async def list_zapi_channels(
                 "is_legacy": ch.is_legacy,
                 "is_active": ch.is_active,
                 "webhook_url": ch.webhook_url,
+                # Task #264 — estado computado em tempo real (True/False/"unknown").
+                "webhook_registered": _wh_registered(ch),
                 "webhook_auto_registered": ch.webhook_auto_registered or False,
                 "description": ch.description,
                 "connectivity_status": connectivity.get(ch.id, "unknown"),

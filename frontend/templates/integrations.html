@@ -856,10 +856,16 @@
         }
 
         function _webhookStatusBadge(ch) {
-            if (ch.webhook_auto_registered) {
+            // Task #264 — usa webhook_registered (verificado em tempo real): true/false/"unknown"
+            const status = ch.webhook_registered;
+            if (status === true) {
                 return '<span style="color:#16a34a; font-weight:500;">✅ Registrado</span>';
             }
-            return '<span style="color:#d97706; font-weight:500;">⚠️ Não registrado</span>';
+            if (status === false) {
+                return '<span style="color:#dc2626; font-weight:500;">❌ Não registrado</span>';
+            }
+            // "unknown": instância inacessível ou canal inativo
+            return '<span style="color:#6b7280; font-weight:500;">❓ Desconhecido</span>';
         }
 
         function _connLabel(status) {
