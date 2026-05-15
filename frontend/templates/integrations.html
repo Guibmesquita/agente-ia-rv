@@ -501,6 +501,62 @@
             }
 
             container.innerHTML = integrations.map(integration => {
+                // Task #248 — Integrações do tipo 'zapi' agora são gerenciadas
+                // exclusivamente pela seção "Canais Z-API" abaixo.
+                // Exibimos apenas um card informativo sem campos editáveis.
+                if (integration.type === 'zapi') {
+                    const mapping = envMapping[integration.type] || { settings: {} };
+                    const settings = mapping.settings || {};
+                    const allConfigured = Object.values(settings).every(c => c.is_configured);
+                    return `
+                    <div class="integration-card">
+                        <div class="integration-header ${integration.type}">
+                            <div class="integration-title">
+                                <div class="integration-icon">${getIcon(integration.type)}</div>
+                                <div>
+                                    <h2>${integration.name}</h2>
+                                    <small style="opacity: 0.8;">Tipo: ${integration.type}</small>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" ${integration.is_active ? 'checked' : ''}
+                                           data-action="toggle-integration" data-id="${integration.id}">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span class="status-badge ${integration.is_active ? 'connected' : 'disconnected'}">
+                                    ${integration.is_active ? 'Ativo' : 'Inativo'}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="integration-body">
+                            <div style="padding: 20px 24px; display: flex; gap: 16px; align-items: flex-start;">
+                                <div style="font-size: 1.5rem; flex-shrink: 0;">ℹ️</div>
+                                <div>
+                                    <p style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">
+                                        Canal Z-API legado — gerenciado por variáveis de ambiente
+                                    </p>
+                                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 12px;">
+                                        As credenciais deste canal (<code>ZAPI_INSTANCE_ID</code>, <code>ZAPI_TOKEN</code>,
+                                        <code>ZAPI_CLIENT_TOKEN</code>) são configuradas nas variáveis de ambiente do servidor.
+                                        Para criar e gerenciar canais adicionais, utilize a seção <strong>Canais Z-API</strong> abaixo.
+                                    </p>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="width: 10px; height: 10px; border-radius: 50%; background: ${allConfigured ? '#22c55e' : '#f59e0b'}; display: inline-block;"></span>
+                                        <span style="font-size: 0.875rem; color: var(--text-secondary);">
+                                            Credenciais: ${allConfigured ? 'todas configuradas' : 'configuração pendente'}
+                                        </span>
+                                        <a href="#zapiChannelsSection" style="margin-left: 12px; font-size: 0.875rem; color: var(--primary-color); text-decoration: none;">
+                                            → Ver canais ↓
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }
+
                 const mapping = envMapping[integration.type] || { settings: {} };
                 const settings = mapping.settings || {};
 
@@ -715,6 +771,12 @@
         const ZC_API = '/api/integrations/zapi/channels';
         let _zcChannels = [];
         let _zcEditingId = null;
+
+        // Task #234/#238 — declaradas aqui para evitar temporal dead zone
+        // (const/let NÃO são hoistados, mas são usados em renderZAPIChannels
+        // que é chamado antes destas linhas originais)
+        const _zcSearchTimers = {};
+        const _zcOpenPanels = new Set();
 
         loadIntegrations();
         loadTrustedSources();
@@ -1161,9 +1223,6 @@
         // ══════════════════════════════════════════════════════════════
         // Task #234 — Painel de assessores por canal
         // ══════════════════════════════════════════════════════════════
-
-        const _zcSearchTimers = {};
-        const _zcOpenPanels = new Set();
 
         function zcToggleAssessoresPanel(channelId) {
             const panel = document.getElementById(`zcAssessoresPanel-${channelId}`);
