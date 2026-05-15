@@ -1447,12 +1447,10 @@
                 }
 
                 if (data.success) {
-                    // Task #276 — exibe raw_response do PUT sempre (truncado) para visibilidade real
+                    // Task #276 — exibe raw_response do PUT sempre, mesmo quando null/{}
                     let msg = `Webhook registrado!\n📍 URL: ${data.webhook_url}`;
-                    if (data.raw_response !== undefined && data.raw_response !== null) {
-                        const putRaw = JSON.stringify(data.raw_response);
-                        msg += `\nZ-API resposta PUT: ${putRaw.slice(0, 120)}${putRaw.length > 120 ? '…' : ''}`;
-                    }
+                    const putRawSuc = JSON.stringify(data.raw_response ?? null);
+                    msg += `\nZ-API resposta PUT: ${putRawSuc.slice(0, 120)}${putRawSuc.length > 120 ? '…' : ''}`;
                     if (data.verify_url) {
                         const matchIcon = data.url_match ? '✅' : '⚠️';
                         msg += `\n${matchIcon} Z-API confirmou (campo: ${data.verify_field || '?'}): ${data.verify_url}`;
