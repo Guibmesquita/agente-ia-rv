@@ -5281,8 +5281,11 @@ Equipe de Gestao"></textarea>
                     // Task #256: ao menos um canal deve ser selecionado
                     nextBtn.disabled = tsState.channelIds.length === 0;
                 } else if (s === 3) {
-                    // Task #259: habilita quando há texto digitado
-                    if (disparBtn) disparBtn.disabled = tsState.messageText.trim().length === 0;
+                    // Task #259: habilita quando há texto digitado e dentro do limite
+                    if (disparBtn) {
+                        const len = tsState.messageText.trim().length;
+                        disparBtn.disabled = len === 0 || tsState.messageText.length > 4096;
+                    }
                 }
             }
 
@@ -5725,7 +5728,7 @@ Equipe de Gestao"></textarea>
                 <!-- Passo 2: Canal -->
                 <div id="tsPane2" style="display:none;">
                     <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;">
-                        Selecione um ou mais canais Z-API. Cada canal selecionado enviará o template para todos os números informados.
+                        Selecione um ou mais canais Z-API. Cada canal selecionado enviará a mensagem para todos os números informados.
                     </p>
                     <div class="ts-channel-grid" id="tsChannelGrid">
                         <div style="color:var(--text-secondary);font-size:0.875rem;">Carregando canais...</div>
