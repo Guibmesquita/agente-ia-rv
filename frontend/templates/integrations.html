@@ -808,10 +808,8 @@
         const _zcSearchTimers = {};
         const _zcOpenPanels = new Set();
 
-        loadIntegrations();
-        loadTrustedSources();
-        loadZAPIChannels();
-        initZAPIHealth();
+        // Inicialização movida para DOMContentLoaded mais abaixo
+        // (garante que todos os elementos existam antes de qualquer attach de listener)
 
         async function loadZAPIChannels() {
             try {
@@ -1151,23 +1149,33 @@
             document.getElementById('zcConfigModalClose').addEventListener('click', () => {
                 document.getElementById('zcConfigModal').classList.remove('active');
             });
-            document.getElementById('zcConfigModalCloseBtn').addEventListener('click', () => {
-                document.getElementById('zcConfigModal').classList.remove('active');
+            // Fail-soft: cada bind isolado com guard para não interromper init se algum elemento faltar
+            const _safeBind = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+            _safeBind('zcConfigModalCloseBtn', 'click', () => {
+                const m = document.getElementById('zcConfigModal'); if (m) m.classList.remove('active');
             });
-            document.getElementById('zcConfigModal').addEventListener('click', (e) => {
+            _safeBind('zcConfigModal', 'click', (e) => {
                 if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
             });
-            document.getElementById('zcFormModalClose').addEventListener('click', () => {
-                document.getElementById('zcFormModal').classList.remove('active');
+            _safeBind('zcFormModalClose', 'click', () => {
+                const m = document.getElementById('zcFormModal'); if (m) m.classList.remove('active');
             });
-            document.getElementById('zcFormModal').addEventListener('click', (e) => {
+            _safeBind('zcFormModal', 'click', (e) => {
                 if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
             });
-            document.getElementById('zcBtnSaveChannel').addEventListener('click', _zcSaveChannel);
-            document.getElementById('zcBtnTestConn').addEventListener('click', _zcTestConn);
-        });
+            _safeBind('zcBtnSaveChannel', 'click', _zcSaveChannel);
+            _safeBind('zcBtnTestConn', 'click', _zcTestConn);
 
-        document.getElementById('btnAddChannel').addEventListener('click', zcOpenAdd);
+            // Botão "+ Adicionar Canal" — elemento estático no header de Canais Z-API
+            const btnAdd = document.getElementById('btnAddChannel');
+            if (btnAdd) btnAdd.addEventListener('click', zcOpenAdd);
+
+            // Inicialização de dados (depois que todos os elementos estáticos existem)
+            loadIntegrations();
+            loadTrustedSources();
+            loadZAPIChannels();
+            initZAPIHealth();
+        });
 
         async function _zcTestConn() {
             const btn = document.getElementById('zcBtnTestConn');
@@ -1870,39 +1878,45 @@
             }
         }
 
-        document.getElementById('addSourceBtn').addEventListener('click', function() {
-            addTrustedSource();
-        });
+        document.addEventListener('DOMContentLoaded', () => {
+            const addSourceBtn = document.getElementById('addSourceBtn');
+            if (addSourceBtn) addSourceBtn.addEventListener('click', addTrustedSource);
 
-        document.getElementById('integrationsContainer').addEventListener('click', function(e) {
-            const target = e.target.closest('[data-action]');
-            if (!target) return;
-            const action = target.dataset.action;
-            if (action === 'retry-load') {
-                loadIntegrations();
-            } else if (action === 'init-defaults') {
-                initDefaults();
-            } else if (action === 'save-secrets') {
-                saveSecrets(target.dataset.type, target);
-            } else if (action === 'test-connection') {
-                testConnection(parseInt(target.dataset.id), target);
+            const integrationsContainer = document.getElementById('integrationsContainer');
+            if (integrationsContainer) {
+                integrationsContainer.addEventListener('click', function(e) {
+                    const target = e.target.closest('[data-action]');
+                    if (!target) return;
+                    const action = target.dataset.action;
+                    if (action === 'retry-load') {
+                        loadIntegrations();
+                    } else if (action === 'init-defaults') {
+                        initDefaults();
+                    } else if (action === 'save-secrets') {
+                        saveSecrets(target.dataset.type, target);
+                    } else if (action === 'test-connection') {
+                        testConnection(parseInt(target.dataset.id), target);
+                    }
+                });
+                integrationsContainer.addEventListener('change', function(e) {
+                    const target = e.target.closest('[data-action="toggle-integration"]');
+                    if (!target) return;
+                    toggleIntegration(parseInt(target.dataset.id), target.checked);
+                });
             }
-        });
 
-        document.getElementById('integrationsContainer').addEventListener('change', function(e) {
-            const target = e.target.closest('[data-action="toggle-integration"]');
-            if (!target) return;
-            toggleIntegration(parseInt(target.dataset.id), target.checked);
-        });
-
-        document.getElementById('trustedSourcesList').addEventListener('click', function(e) {
-            const target = e.target.closest('[data-action]');
-            if (!target) return;
-            const action = target.dataset.action;
-            if (action === 'toggle-source') {
-                toggleSourceStatus(parseInt(target.dataset.id), target.dataset.status === 'true');
-            } else if (action === 'delete-source') {
-                deleteSource(parseInt(target.dataset.id));
+            const trustedSourcesList = document.getElementById('trustedSourcesList');
+            if (trustedSourcesList) {
+                trustedSourcesList.addEventListener('click', function(e) {
+                    const target = e.target.closest('[data-action]');
+                    if (!target) return;
+                    const action = target.dataset.action;
+                    if (action === 'toggle-source') {
+                        toggleSourceStatus(parseInt(target.dataset.id), target.dataset.status === 'true');
+                    } else if (action === 'delete-source') {
+                        deleteSource(parseInt(target.dataset.id));
+                    }
+                });
             }
         });
 
