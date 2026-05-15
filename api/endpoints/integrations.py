@@ -500,6 +500,30 @@ def _redact(text: str, sensitive_values) -> str:
     return out
 
 
+def _extract_url_from_webhook_settings(settings: dict) -> tuple:
+    """
+    Task #272 — Helper compartilhado para extrair a URL de webhook de um dict de
+    configurações do Z-API. Usado em _probe_webhook, sync-webhook verify e webhook-debug
+    para garantir comportamento consistente.
+
+    Testa campos planos em ordem de prioridade e, para dicts aninhados, percorre
+    um nível de profundidade. Retorna (field_name, url) ou (None, "").
+    """
+    _candidates = (
+        "webhookReceived", "webhookDelivery", "webhookUrl",
+        "value", "webhook", "url",
+    )
+    for _k in _candidates:
+        _v = settings.get(_k)
+        if _v and isinstance(_v, str) and _v.startswith("http"):
+            return _k, _v
+        if _v and isinstance(_v, dict):
+            for _nk, _nv in _v.items():
+                if _nv and isinstance(_nv, str) and _nv.startswith("http"):
+                    return f"{_k}.{_nk}", _nv
+    return None, ""
+
+
 def _build_webhook_url_suggested(request: Request, channel_id: int) -> str:
     """
     Monta a URL de webhook sugerida para o canal.
@@ -634,29 +658,9 @@ async def list_zapi_channels(
             if not result.get("success"):
                 return "unknown"
             settings = result.get("settings") or {}
-            # Task #272 — percorre campos conhecidos do Z-API em ordem de prioridade.
-            # Versões diferentes da API podem usar nomes de campo distintos.
-            # Suporte a campos aninhados (ex: {"webhook": {"url": "https://..."}}).
-            _candidate_keys = (
-                "webhookReceived", "webhookDelivery", "webhookUrl",
-                "value", "webhook", "url",
-            )
-            remote_url = ""
-            found_key = None
-            for _k in _candidate_keys:
-                _v = settings.get(_k)
-                if _v and isinstance(_v, str) and _v.startswith("http"):
-                    remote_url = _v
-                    found_key = _k
-                    break
-                if _v and isinstance(_v, dict):
-                    for _nk, _nv in _v.items():
-                        if _nv and isinstance(_nv, str) and _nv.startswith("http"):
-                            remote_url = _nv
-                            found_key = f"{_k}.{_nk}"
-                            break
-                    if found_key:
-                        break
+            # Task #272 — usa o helper compartilhado _extract_url_from_webhook_settings
+            # para consistência com sync-verify e webhook-debug (inclui nested fields).
+            found_key, remote_url = _extract_url_from_webhook_settings(settings)
             if found_key:
                 print(f"[WEBHOOK-PROBE] ch={ch.id} campo={found_key!r} url={remote_url!r} expected={suggested_url!r}")
             else:
@@ -1420,7 +1424,8 @@ async def sync_zapi_channel_webhook(
         print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual falhou: {result}")
 
     # Task #272 — verifica imediatamente pós-registro o que Z-API retorna em GET /webhooks.
-    # Isso detecta se a URL foi realmente persistida e qual campo Z-API usa para armazená-la.
+    # Usa o helper _extract_url_from_webhook_settings para consistência com _probe_webhook
+    # e webhook-debug (inclui suporte a campos aninhados).
     verify_raw: Optional[dict] = None
     verify_field: Optional[str] = None
     verify_url: Optional[str] = None
@@ -1429,16 +1434,7 @@ async def sync_zapi_channel_webhook(
         if vresp.get("success"):
             vsettings = vresp.get("settings") or {}
             verify_raw = vsettings
-            _candidate_keys = (
-                "webhookReceived", "webhookDelivery", "webhookUrl",
-                "value", "webhook", "url",
-            )
-            for _k in _candidate_keys:
-                _v = vsettings.get(_k)
-                if _v and isinstance(_v, str) and _v.startswith("http"):
-                    verify_field = _k
-                    verify_url = _v
-                    break
+            verify_field, verify_url = _extract_url_from_webhook_settings(vsettings)
             print(
                 f"[Z-API Webhook] Canal {channel_id} — verify GET /webhooks: "
                 f"campo={verify_field!r} url={verify_url!r}"
@@ -1547,24 +1543,12 @@ async def debug_zapi_channel_webhook(
                 _v = settings.get(_k)
                 diag["all_candidate_fields"][_k] = _v
 
-            # Detecção com suporte a campos aninhados (ex: {"webhook": {"url": "https://..."}})
-            for _k in _candidates:
-                _v = settings.get(_k)
-                if _v and isinstance(_v, str) and _v.startswith("http"):
-                    diag["detected_field"] = _k
-                    diag["detected_url"] = _v
-                    diag["url_match"] = (_v.rstrip("/") == webhook_url.rstrip("/"))
-                    break
-                if _v and isinstance(_v, dict):
-                    # Um nível de profundidade: procura URL dentro do objeto aninhado
-                    for _nk, _nv in _v.items():
-                        if _nv and isinstance(_nv, str) and _nv.startswith("http"):
-                            diag["detected_field"] = f"{_k}.{_nk}"
-                            diag["detected_url"] = _nv
-                            diag["url_match"] = (_nv.rstrip("/") == webhook_url.rstrip("/"))
-                            break
-                    if diag["detected_url"]:
-                        break
+            # Usa o helper compartilhado para detecção consistente (inclui campos aninhados)
+            _det_field, _det_url = _extract_url_from_webhook_settings(settings)
+            if _det_field:
+                diag["detected_field"] = _det_field
+                diag["detected_url"] = _det_url
+                diag["url_match"] = (_det_url.rstrip("/") == webhook_url.rstrip("/"))
 
     except Exception as exc:
         diag["error"] = f"{type(exc).__name__}: {exc}"

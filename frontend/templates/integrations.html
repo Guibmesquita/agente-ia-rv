@@ -1446,12 +1446,15 @@
                     let msg = `Webhook registrado!\n📍 URL: ${data.webhook_url}`;
                     if (data.verify_url) {
                         const matchIcon = data.url_match ? '✅' : '⚠️';
-                        msg += `\n${matchIcon} Z-API confirmou: ${data.verify_url}`;
+                        msg += `\n${matchIcon} Z-API confirmou (campo: ${data.verify_field || '?'}): ${data.verify_url}`;
                         if (!data.url_match) {
-                            msg += `\n⚠️ URL registrada no Z-API não bate com a URL sugerida.`;
+                            msg += `\n⚠️ URL no Z-API difere da sugerida — use 🔍 Diagnóstico para detalhes.`;
                         }
                     } else if (data.verify_raw !== null && data.verify_raw !== undefined) {
-                        msg += `\n⚠️ Z-API não retornou URL de confirmação. Raw: ${JSON.stringify(data.verify_raw).slice(0, 120)}`;
+                        // Z-API respondeu mas sem campo de URL detectável — mostra raw compacto
+                        const rawSnip = JSON.stringify(data.verify_raw);
+                        msg += `\n⚠️ Z-API não confirmou URL. GET /webhooks raw: ${rawSnip.slice(0, 150)}${rawSnip.length > 150 ? '…' : ''}`;
+                        msg += `\nUse 🔍 Diagnóstico para ver a resposta completa.`;
                     }
                     if (data.url_match === false) {
                         toast.warning(msg);
