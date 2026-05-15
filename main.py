@@ -670,6 +670,8 @@ def _apply_incremental_migrations():
         "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS phone_number VARCHAR(50)",
         "ALTER TABLE zapi_channels ALTER COLUMN name TYPE VARCHAR(100)",
         "ALTER TABLE zapi_channels ALTER COLUMN client_token DROP NOT NULL",
+        # Task #261 — marca mensagens originadas de disparos de teste.
+        "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS is_test_dispatch BOOLEAN DEFAULT FALSE",
     ]
     db = SessionLocal()
     ok = 0

@@ -160,7 +160,24 @@ def get_or_create_conversation(
     assessor = None
     if real_phone:
         assessor, _ = identify_contact(db, real_phone)
-    
+
+    # Task #261 — resolve canal de ENTREGA (assessor-assigned), não canal inbound.
+    # Prioridade: canal explícito no Assessor → mapeamento unidade → canal inbound como fallback.
+    delivery_channel_id = channel_id
+    if assessor:
+        try:
+            if assessor.channel_id:
+                delivery_channel_id = assessor.channel_id
+            elif assessor.unidade:
+                from database.models import UnidadeChannelMapping
+                _ucm = db.query(UnidadeChannelMapping).filter(
+                    UnidadeChannelMapping.unidade == assessor.unidade
+                ).first()
+                if _ucm and _ucm.channel_id:
+                    delivery_channel_id = _ucm.channel_id
+        except Exception:
+            pass  # mantém fallback para canal inbound em caso de erro
+
     if not conv:
         from database.models import ConversationState
         
@@ -178,7 +195,7 @@ def get_or_create_conversation(
             lid_collected_at=datetime.utcnow() if (sender_lid or lid_from_phone) else None,
             escalation_level=EscalationLevel.T0_BOT.value,
             ticket_status=None,
-            channel_id=channel_id,
+            channel_id=delivery_channel_id,
         )
         db.add(conv)
         db.commit()
@@ -210,8 +227,11 @@ def get_or_create_conversation(
         elif assessor and not conv.contact_name:
             conv.contact_name = assessor.nome
             updated = True
-        if channel_id and not conv.channel_id:
-            conv.channel_id = channel_id
+        # Task #261 — atualiza channel_id com canal de entrega (assessor-assigned),
+        # não o canal inbound, para que resolve_channel_client_for_conversation
+        # encontre o canal correto via conversation.channel_id como fallback.
+        if delivery_channel_id and not conv.channel_id:
+            conv.channel_id = delivery_channel_id
             updated = True
         if updated:
             db.commit()
@@ -257,6 +277,7 @@ def save_message_zapi(
     sender_lid: str = None,
     chat_lid: str = None,
     channel_id: Optional[int] = None,
+    is_test_dispatch: bool = False,
 ) -> WhatsAppMessage:
     """
     Salva uma mensagem no banco de dados e atualiza a conversa (formato Z-API).
@@ -307,6 +328,7 @@ def save_message_zapi(
         conversation_ticket_id=conversation_ticket_id,
         conversation_id=conversation.id,
         channel_id=channel_id,
+        is_test_dispatch=is_test_dispatch,
     )
     
     db.add(message)

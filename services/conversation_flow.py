@@ -713,21 +713,18 @@ async def check_pending_confirmations(db: Session, zapi_client, timeout_minutes:
 
 def resolve_channel_client_for_conversation(conversation: Optional[Conversation], db: Session):
     """
-    Task #223 — Ponto de integração central para resolução do canal WhatsApp.
+    Task #223/#261 — Ponto de integração central para resolução do canal WhatsApp.
 
-    Dado uma Conversation (que pode ter `channel_id` preenchido), retorna o
-    `ZAPIClient` correto para enviar a resposta do agente. Usado pelo pipeline
-    de resposta (process_text_message, process_audio_message, etc.) quando
-    Tasks #224+ forem implementadas para suporte completo a multi-canal.
+    Dado uma Conversation, retorna o ZAPIClient correto para enviar a resposta
+    do agente. Prioriza o canal ATRIBUÍDO ao assessor (canal de entrega), não o
+    canal pelo qual a mensagem chegou (canal inbound).
 
-    Cadeia de resolução:
-    1. Se `conversation.channel_id` estiver preenchido → usa esse canal.
-    2. Senão, resolve via assessor → unidade → canal legado (env vars).
-    3. Fallback: sempre retorna o cliente legado sem lançar exceção.
-
-    Uso futuro (Tasks #224+):
-        client = resolve_channel_client_for_conversation(conversation, db)
-        await client.send_text(phone, response)
+    Cadeia de resolução (Task #261 — canal de ENTREGA):
+    1. Se a conversa tiver assessor vinculado → resolve via get_zapi_client_for_assessor
+       (canal explícito no Assessor.channel_id → mapeamento unidade → legado).
+    2. Senão, se conversation.channel_id estiver preenchido → usa como fallback
+       (preserva compatibilidade para conversas sem assessor identificado).
+    3. Fallback final: cliente legado (env vars) — nunca lança exceção.
     """
     from services.whatsapp_client import get_zapi_client_for_channel, get_zapi_client_for_assessor, zapi_client
 
@@ -735,20 +732,23 @@ def resolve_channel_client_for_conversation(conversation: Optional[Conversation]
         return zapi_client
 
     try:
-        if conversation.channel_id:
-            return get_zapi_client_for_channel(conversation.channel_id, db)
-
-        # Tenta resolver via assessor vinculado
-        assessor_phone = None
-        assessor_unidade = None
-        if hasattr(conversation, "assessor_id") and conversation.assessor_id:
+        # Task #261 — Prioridade: canal atribuído ao assessor (entrega), não canal inbound.
+        if conversation.assessor_id:
             from database.models import Assessor
             assessor = db.query(Assessor).filter(Assessor.id == conversation.assessor_id).first()
             if assessor:
-                assessor_phone = assessor.telefone_whatsapp
-                assessor_unidade = assessor.unidade
+                return get_zapi_client_for_assessor(
+                    assessor.telefone_whatsapp,
+                    assessor.unidade,
+                    db,
+                )
 
-        return get_zapi_client_for_assessor(assessor_phone, assessor_unidade, db)
+        # Fallback: conversation.channel_id (pode ser o canal inbound da criação,
+        # mas é melhor do que o legado para conversas sem assessor identificado).
+        if conversation.channel_id:
+            return get_zapi_client_for_channel(conversation.channel_id, db)
+
+        return zapi_client
     except Exception as exc:
         print(f"[FLOW] Aviso: erro ao resolver canal para conversa {getattr(conversation, 'id', '?')}: {exc} — usando legado")
         return zapi_client

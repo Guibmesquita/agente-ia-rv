@@ -532,6 +532,29 @@ async def test_send_stream(
                         sent_ch += 1
                         sent_total += 1
                         _log.info(f"[TEST-SEND] status=sent canal={ch_label} phone={phone} ({global_idx}/{total})")
+                        # Task #261 — persistir mensagem de teste na conversa do destinatário.
+                        # Usa SessionLocal dedicado para não conflitar com a sessão da request SSE.
+                        _db2 = SessionLocal()
+                        try:
+                            from api.endpoints.whatsapp_webhook import save_message_zapi as _swz
+                            import uuid as _uuid
+                            _swz(
+                                _db2,
+                                message_id=f"TEST-{_uuid.uuid4().hex[:16]}",
+                                zaap_id=None,
+                                phone=phone,
+                                direction="outbound",
+                                message_type="text",
+                                from_me=True,
+                                body=rendered_content,
+                                sender_type="bot",
+                                channel_id=ch_id,
+                                is_test_dispatch=True,
+                            )
+                        except Exception as _pe:
+                            _log.warning(f"[TEST-SEND] Falha ao persistir na conversa de {phone}: {_pe}")
+                        finally:
+                            _db2.close()
                     else:
                         failed_ch += 1
                         failed_total += 1

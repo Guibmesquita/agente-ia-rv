@@ -213,9 +213,14 @@ function ChatBubble({ message, contactName, onContextMenu }) {
             ? 'bg-primary text-white' 
             : 'bg-emerald-600 text-white'
         }`}>
-          <div className="flex items-center space-x-2 rtl:space-x-reverse mb-1">
+          <div className="flex items-center space-x-2 rtl:space-x-reverse mb-1 flex-wrap gap-y-1">
             <span className="text-sm font-semibold">{senderName}</span>
             <span className="text-sm opacity-75">{time}</span>
+            {message.is_test_dispatch && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-white/20 text-white border border-white/30">
+                Disparo de teste
+              </span>
+            )}
           </div>
           <p className="text-sm py-2 whitespace-pre-wrap break-words">{content}</p>
           <MessageStatusIndicator status={message.message_status} />

@@ -105,6 +105,7 @@ class MessageResponse(BaseModel):
     ai_error_detail: Optional[str] = None
     message_status: Optional[str] = None
     is_from_campaign: bool = False
+    is_test_dispatch: bool = False
     created_at: Optional[datetime] = None
     media_url: Optional[str] = None
     media_filename: Optional[str] = None
@@ -811,6 +812,7 @@ async def get_conversation_messages(
             ai_error_detail=getattr(msg, 'ai_error_detail', None),
             message_status=msg.message_status,
             is_from_campaign=msg.is_from_campaign or False,
+            is_test_dispatch=msg.is_test_dispatch or False,
             created_at=msg.created_at
         )
         for msg in messages

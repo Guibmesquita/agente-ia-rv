@@ -716,6 +716,8 @@ class WhatsAppMessage(Base):
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
     conversation_ticket_id = Column(Integer, ForeignKey("conversation_tickets.id"), nullable=True)
     is_from_campaign = Column(Boolean, default=False)
+    # Task #261 — marca mensagens originadas de disparos de teste (wizard de teste).
+    is_test_dispatch = Column(Boolean, default=False)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
     # Task #223 — canal WhatsApp pelo qual a mensagem foi recebida/enviada.
