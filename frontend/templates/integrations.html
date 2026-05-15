@@ -390,6 +390,13 @@
                         </button>
                     </div>
                     <div class="integration-body">
+                        <div style="padding: 12px 24px 0; display: flex; gap: 10px; align-items: center; background: #f0fdf4; border-bottom: 1px solid #bbf7d0; border-radius: 0;">
+                            <span style="font-size: 0.8rem; color: #166534;">
+                                💡 O <strong>Canal Principal SVN</strong> (legado) usa as credenciais configuradas nas variáveis de ambiente do servidor
+                                (<code>ZAPI_INSTANCE_ID</code>, <code>ZAPI_TOKEN</code>, <code>ZAPI_CLIENT_TOKEN</code>) e não pode ser editado aqui.
+                                Para novos canais, clique em <strong>+ Adicionar Canal</strong>.
+                            </span>
+                        </div>
                         <div id="zapiChannelsList">
                             <div class="loading"><div class="spinner"></div></div>
                         </div>
@@ -517,16 +524,6 @@
                                     <h2>${integration.name}</h2>
                                     <small style="opacity: 0.8;">Tipo: ${integration.type}</small>
                                 </div>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 16px;">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" ${integration.is_active ? 'checked' : ''}
-                                           data-action="toggle-integration" data-id="${integration.id}">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                                <span class="status-badge ${integration.is_active ? 'connected' : 'disconnected'}">
-                                    ${integration.is_active ? 'Ativo' : 'Inativo'}
-                                </span>
                             </div>
                         </div>
                         <div class="integration-body">
