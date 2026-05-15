@@ -5214,11 +5214,10 @@ Equipe de Gestao"></textarea>
                 // Task #256: múltiplos canais
                 channelIds: [],    // array de IDs selecionados
                 channelLabels: {}, // map id → label
-                templateId: null,
-                templateName: '',
+                // Task #259: mensagem livre composta diretamente no wizard
+                messageText: '',
                 abortController: null,
                 channels: [],
-                templates: [],
             };
 
             // ── Normalização de número ──
@@ -5282,7 +5281,8 @@ Equipe de Gestao"></textarea>
                     // Task #256: ao menos um canal deve ser selecionado
                     nextBtn.disabled = tsState.channelIds.length === 0;
                 } else if (s === 3) {
-                    if (disparBtn) disparBtn.disabled = !tsState.templateId;
+                    // Task #259: habilita quando há texto digitado
+                    if (disparBtn) disparBtn.disabled = tsState.messageText.trim().length === 0;
                 }
             }
 
@@ -5395,71 +5395,42 @@ Equipe de Gestao"></textarea>
                 tsUpdateNextBtn();
             }
 
-            // ── Carregamento de templates ──
-            async function tsLoadTemplates() {
-                el('tsTemplateSelect').innerHTML = '<option value="">Carregando...</option>';
-                try {
-                    const res = await fetch('/api/campaigns/templates', { credentials: 'include' });
-                    if (!res.ok) throw new Error('Erro ao carregar templates');
-                    const templates = await res.json();
-                    tsState.templates = templates;
-                    el('tsTemplateSelect').innerHTML = '<option value="">Selecione um template...</option>'
-                        + templates.map(t => `<option value="${t.id}">${t.name}${t.description ? ' — ' + t.description.substring(0,40) : ''}</option>`).join('');
-                } catch (e) {
-                    el('tsTemplateSelect').innerHTML = `<option value="">Erro: ${e.message}</option>`;
-                }
-            }
-
-            async function tsLoadTemplatePreview() {
-                const templateId = el('tsTemplateSelect').value;
-                const previewName = el('tsPreviewName').value || 'Assessor Teste';
-                const previewBox = el('tsTemplatePreview');
-                const attachHint = el('tsAttachHint');
+            // ── Task #259: atualização ao vivo do compositor de mensagem ──
+            function tsUpdateMessageCompose() {
+                const area = el('tsMsgArea');
+                const counter = el('tsMsgCounter');
                 const confirmBox = el('tsConfirmBox');
-                if (!templateId) {
-                    previewBox.textContent = 'Selecione um template para ver o preview.';
-                    if (attachHint) attachHint.style.display = 'none';
-                    if (confirmBox) confirmBox.style.display = 'none';
-                    tsState.templateId = null;
-                    tsState.templateName = '';
-                    tsUpdateNextBtn();
-                    return;
+                if (!area) return;
+                const text = area.value;
+                tsState.messageText = text;
+
+                // Contador de caracteres
+                if (counter) {
+                    const len = text.length;
+                    counter.textContent = `${len} / 4096`;
+                    counter.style.color = len > 4096 ? '#dc2626' : (len > 3500 ? '#d97706' : 'var(--text-secondary)');
                 }
-                previewBox.textContent = 'Carregando preview...';
-                try {
-                    const params = new URLSearchParams({ template_id: templateId, preview_name: previewName });
-                    const res = await fetch(`/api/campaigns/template-preview?${params}`, { credentials: 'include' });
-                    if (!res.ok) throw new Error('Erro ao carregar preview');
-                    const data = await res.json();
-                    previewBox.textContent = data.rendered_content;
-                    tsState.templateId = parseInt(templateId);
-                    tsState.templateName = data.template_name;
-                    if (attachHint) {
-                        if (data.attachment_url) {
-                            const icon = { image: '🖼', video: '🎬', audio: '🎵', document: '📄' }[data.attachment_type] || '📎';
-                            attachHint.style.display = 'flex';
-                            attachHint.innerHTML = `${icon} <span>Anexo: <strong>${data.attachment_filename || 'arquivo'}</strong> (${data.attachment_type || 'documento'})</span>`;
-                        } else {
-                            attachHint.style.display = 'none';
-                        }
-                    }
-                    // Task #256: confirmação com múltiplos canais
-                    const validCount = tsState.phones.length;
-                    const selChannels = tsState.channelIds.map(cid => {
-                        const ch = tsState.channels.find(c => c.id === cid);
-                        const lbl = tsState.channelLabels[cid] || (ch ? (ch.label || ch.name) : `#${cid}`);
-                        const ph = ch?.phone_number ? ` — ${ch.phone_number}` : '';
-                        return `<span style="display:inline-block;background:rgba(119,43,33,0.1);border-radius:4px;padding:1px 6px;margin:1px;font-size:0.82rem;">${lbl}${ph}</span>`;
-                    }).join(' ');
-                    const totalSends = validCount * tsState.channelIds.length;
-                    if (confirmBox) {
+
+                // Caixa de confirmação
+                if (confirmBox) {
+                    if (text.trim().length === 0) {
+                        confirmBox.style.display = 'none';
+                    } else {
+                        const preview = text.length > 120 ? text.substring(0, 120) + '…' : text;
+                        const validCount = tsState.phones.length;
+                        const selChannels = tsState.channelIds.map(cid => {
+                            const ch = tsState.channels.find(c => c.id === cid);
+                            const lbl = tsState.channelLabels[cid] || (ch ? (ch.label || ch.name) : `#${cid}`);
+                            return `<span style="display:inline-block;background:rgba(119,43,33,0.1);border-radius:4px;padding:1px 6px;margin:1px;font-size:0.82rem;">${lbl}</span>`;
+                        }).join(' ');
+                        const totalSends = validCount * tsState.channelIds.length;
                         confirmBox.style.display = 'block';
-                        confirmBox.innerHTML = `Enviar <strong>"${data.template_name}"</strong> para <strong>${validCount} número${validCount !== 1 ? 's' : ''}</strong> via ${selChannels}<br>
-                            <span style="font-size:0.8rem;margin-top:4px;display:inline-block;">Total: <strong>${totalSends} envio${totalSends !== 1 ? 's' : ''}</strong> (${tsState.channelIds.length} canal${tsState.channelIds.length !== 1 ? 'is' : ''} × ${validCount} número${validCount !== 1 ? 's' : ''})</span>`;
+                        confirmBox.innerHTML = `<div style="font-style:italic;color:#713f12;margin-bottom:8px;">"${preview.replace(/</g,'&lt;').replace(/>/g,'&gt;')}"</div>`
+                            + `Enviar para <strong>${validCount} número${validCount !== 1 ? 's' : ''}</strong> via ${selChannels || '<em>nenhum canal</em>'}<br>`
+                            + `<span style="font-size:0.8rem;margin-top:4px;display:inline-block;">Total: <strong>${totalSends} envio${totalSends !== 1 ? 's' : ''}</strong>`
+                            + (tsState.channelIds.length > 0 ? ` (${tsState.channelIds.length} canal${tsState.channelIds.length !== 1 ? 'is' : ''} × ${validCount} número${validCount !== 1 ? 's' : ''})` : '')
+                            + `</span>`;
                     }
-                } catch (e) {
-                    previewBox.textContent = 'Erro ao carregar preview: ' + e.message;
-                    tsState.templateId = null;
                 }
                 tsUpdateNextBtn();
             }
@@ -5467,8 +5438,8 @@ Equipe de Gestao"></textarea>
             // ── Disparo via SSE (fetch + ReadableStream) ──
             async function tsDispatch() {
                 const phones = tsState.phones;
-                // Task #256: valida múltiplos canais
-                if (!phones.length || !tsState.channelIds.length || !tsState.templateId) return;
+                // Task #259: valida mensagem + canais
+                if (!phones.length || !tsState.channelIds.length || !tsState.messageText.trim()) return;
 
                 const totalSends = phones.length * tsState.channelIds.length;
 
@@ -5510,8 +5481,7 @@ Equipe de Gestao"></textarea>
                         body: JSON.stringify({
                             phones: phones,
                             channel_ids: tsState.channelIds,
-                            template_id: tsState.templateId,
-                            preview_name: el('tsPreviewName').value || 'Assessor Teste',
+                            message_text: tsState.messageText,
                         }),
                         signal: tsState.abortController.signal,
                     });
@@ -5631,9 +5601,13 @@ Equipe de Gestao"></textarea>
                 } else if (tsState.step === 2) {
                     // Task #256: ao menos um canal selecionado
                     if (!tsState.channelIds.length) { toast.warning('Selecione ao menos um canal.'); return; }
-                    tsLoadTemplates();
                     tsShowStep(3);
-                    setTimeout(tsLoadTemplatePreview, 300);
+                    // Foca no textarea e atualiza confirmação com o estado atual
+                    setTimeout(() => {
+                        const a = el('tsMsgArea');
+                        if (a) a.focus();
+                        tsUpdateMessageCompose();
+                    }, 50);
                 }
             }
 
@@ -5647,12 +5621,16 @@ Equipe de Gestao"></textarea>
                     step: 1, phones: [],
                     // Task #256: reset de seleção multi-canal
                     channelIds: [], channelLabels: {},
-                    templateId: null, templateName: '', abortController: null,
-                    channels: tsState.channels, templates: tsState.templates,
+                    // Task #259: reset de mensagem livre
+                    messageText: '',
+                    abortController: null,
+                    channels: tsState.channels,
                 };
                 if (el('tsPhonesArea')) el('tsPhonesArea').value = '';
                 if (el('tsPhoneCounter')) el('tsPhoneCounter').innerHTML = 'Digite os números acima';
                 if (el('tsPhoneWarning')) el('tsPhoneWarning').style.display = 'none';
+                if (el('tsMsgArea')) el('tsMsgArea').value = '';
+                if (el('tsMsgCounter')) el('tsMsgCounter').textContent = '0 / 4096';
                 if (el('tsConfirmBox')) el('tsConfirmBox').style.display = 'none';
                 tsShowStep(1);
                 el('tsModalOverlay').classList.add('active');
@@ -5704,17 +5682,9 @@ Equipe de Gestao"></textarea>
                 const phonesArea = el('tsPhonesArea');
                 if (phonesArea) phonesArea.addEventListener('input', tsUpdatePhoneCounter);
 
-                const templateSelect = el('tsTemplateSelect');
-                if (templateSelect) templateSelect.addEventListener('change', tsLoadTemplatePreview);
-
-                const previewName = el('tsPreviewName');
-                if (previewName) {
-                    let _debounceTimer;
-                    previewName.addEventListener('input', function() {
-                        clearTimeout(_debounceTimer);
-                        _debounceTimer = setTimeout(tsLoadTemplatePreview, 400);
-                    });
-                }
+                // Task #259: compositor de mensagem livre
+                const msgArea = el('tsMsgArea');
+                if (msgArea) msgArea.addEventListener('input', tsUpdateMessageCompose);
             });
         })();
     </script>
@@ -5733,7 +5703,7 @@ Equipe de Gestao"></textarea>
                 <div class="ts-step-indicator">
                     <div class="ts-step-item active" id="tsStepItem1">1. Números</div>
                     <div class="ts-step-item" id="tsStepItem2">2. Canal de saída</div>
-                    <div class="ts-step-item" id="tsStepItem3">3. Template</div>
+                    <div class="ts-step-item" id="tsStepItem3">3. Mensagem</div>
                 </div>
 
                 <!-- Passo 1: Números -->
@@ -5762,23 +5732,18 @@ Equipe de Gestao"></textarea>
                     </div>
                 </div>
 
-                <!-- Passo 3: Template -->
+                <!-- Passo 3: Mensagem livre (Task #259) -->
                 <div id="tsPane3" style="display:none;">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:end;">
-                        <div>
-                            <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Template</label>
-                            <select id="tsTemplateSelect" class="form-select" style="width:100%;">
-                                <option value="">Selecione um template...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Nome para preview</label>
-                            <input type="text" id="tsPreviewName" class="form-input" value="Assessor Teste" placeholder="Nome de exemplo nas variáveis" style="width:100%;">
-                        </div>
+                    <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;">
+                        Digite a mensagem que será enviada para todos os números e canais selecionados.
+                    </p>
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+                        <label style="font-weight:600;font-size:0.875rem;">Mensagem</label>
+                        <span id="tsMsgCounter" style="font-size:0.78rem;color:var(--text-secondary);">0 / 4096</span>
                     </div>
-                    <label style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:8px;">Preview da mensagem</label>
-                    <div class="ts-template-preview" id="tsTemplatePreview">Selecione um template para ver o preview.</div>
-                    <div class="ts-attachment-hint" id="tsAttachHint" style="display:none;"></div>
+                    <textarea id="tsMsgArea" class="ts-phone-textarea"
+                        style="min-height:160px;resize:vertical;"
+                        placeholder="Digite sua mensagem aqui…&#10;&#10;Ex: Olá! Passando para avisar sobre a oportunidade em Renda Fixa com taxa acima do CDI. Entre em contato para mais detalhes."></textarea>
                     <div class="ts-confirm-box" id="tsConfirmBox" style="display:none;margin-top:16px;"></div>
                 </div>
 

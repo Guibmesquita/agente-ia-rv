@@ -370,8 +370,8 @@ class TestSendRequest(BaseModel):
     phones: List[str]
     # Task #256: múltiplos canais — cada canal envia o template para todos os números.
     channel_ids: List[int]
-    template_id: int
-    preview_name: str = "Assessor Teste"
+    # Task #259: mensagem livre composta no wizard (substitui template_id + preview_name)
+    message_text: str
 
 
 def _normalize_phone_for_test(raw: str) -> tuple:
@@ -470,6 +470,13 @@ async def test_send_stream(
             seen_ids.add(cid)
             unique_channel_ids.append(cid)
 
+    # Task #259: valida mensagem livre
+    message_text = data.message_text.strip()
+    if not message_text:
+        raise HTTPException(status_code=400, detail="A mensagem não pode estar vazia")
+    if len(message_text) > 4096:
+        raise HTTPException(status_code=400, detail="A mensagem excede o limite de 4096 caracteres")
+
     from database.models import ZAPIChannel as _ZCh
     from services.whatsapp_client import ZAPIClient as _ZC
 
@@ -490,13 +497,6 @@ async def test_send_stream(
         label = ch.label or ch.name or f"Canal #{cid}"
         channels_ready.append((ch.id, label, client))
 
-    template = db.query(MessageTemplate).filter(
-        MessageTemplate.id == data.template_id,
-        MessageTemplate.is_active == 1,
-    ).first()
-    if not template:
-        raise HTTPException(status_code=404, detail="Template não encontrado")
-
     # Normalizar e filtrar números válidos
     normalized = []
     for raw in data.phones:
@@ -507,8 +507,8 @@ async def test_send_stream(
     if not normalized:
         raise HTTPException(status_code=400, detail="Nenhum número válido encontrado")
 
-    # Renderizar mensagem uma vez (sem acesso ao DB no gerador)
-    rendered_content = _render_preview_content(str(template.content), data.preview_name)
+    # Mensagem já pronta — sem substituição de variáveis (texto livre)
+    rendered_content = message_text
 
     total = len(normalized) * len(channels_ready)
 
