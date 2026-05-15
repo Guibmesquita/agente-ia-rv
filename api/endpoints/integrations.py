@@ -613,6 +613,7 @@ async def list_zapi_channels(
                 "is_legacy": ch.is_legacy,
                 "is_active": ch.is_active,
                 "webhook_url": ch.webhook_url,
+                "webhook_auto_registered": ch.webhook_auto_registered or False,
                 "description": ch.description,
                 "connectivity_status": connectivity.get(ch.id, "unknown"),
                 "assessor_count": assessor_count_by_channel.get(ch.id, 0),
@@ -734,6 +735,21 @@ async def create_zapi_channel(
             detail=f"Falha ao criar canal ({type(e).__name__}): {safe_msg}",
         )
 
+    # Task #264 — registra automaticamente o webhook na instância Z-API.
+    # Não bloqueia a criação em caso de falha (instância pode estar desconectada).
+    webhook_registration: dict = {"success": False, "skipped": True}
+    try:
+        webhook_registration = await client.update_webhook(webhook_url)
+        if webhook_registration.get("success"):
+            channel.webhook_auto_registered = True
+            db.commit()
+            print(f"[Z-API Webhook] Canal {channel.id} — webhook auto-registrado: {webhook_url}")
+        else:
+            print(f"[Z-API Webhook] Canal {channel.id} — auto-registro falhou (instância pode estar desconectada): {webhook_registration}")
+    except Exception as _whe:
+        webhook_registration = {"success": False, "error": str(_whe)}
+        print(f"[Z-API Webhook] Canal {channel.id} — erro no auto-registro: {_whe}")
+
     return {
         "id": channel.id,
         "name": channel.name,
@@ -745,6 +761,7 @@ async def create_zapi_channel(
         "client_token_source": "own" if client_token else "global",
         "connectivity_status": connectivity,
         "webhook_url_suggested": webhook_url,
+        "webhook_registration": webhook_registration,
         "created_at": channel.created_at.isoformat() if channel.created_at else None,
     }
 
@@ -823,6 +840,32 @@ async def update_zapi_channel(
             detail=f"Falha ao atualizar canal ({type(e).__name__}): {safe_msg}",
         )
 
+    # Task #264 — re-registra webhook quando canal é ativado ou credenciais mudam.
+    _credentials_changed = not channel.is_legacy and (
+        data.instance_id is not None or data.token is not None or "client_token" in data.model_fields_set
+    )
+    _being_activated = not channel.is_legacy and data.is_active is True
+    if channel.is_active and (_being_activated or _credentials_changed):
+        try:
+            from services.whatsapp_client import ZAPIClient as _ZC
+            _wh_url = _build_webhook_url_suggested(request, channel.id)
+            _wh_client = _ZC(
+                instance_id=channel.instance_id,
+                token=channel.token,
+                client_token=channel.client_token,
+            )
+            _wr = await _wh_client.update_webhook(_wh_url)
+            if _wr.get("success"):
+                channel.webhook_auto_registered = True
+                channel.webhook_url = _wh_url
+                db.commit()
+                print(f"[Z-API Webhook] Canal {channel_id} — webhook re-registrado: {_wh_url}")
+            else:
+                print(f"[Z-API Webhook] Canal {channel_id} — re-registro falhou: {_wr}")
+        except Exception as _whe:
+            print(f"[Z-API Webhook] Canal {channel_id} — erro no re-registro: {_whe}")
+
+    webhook_url_suggested = _build_webhook_url_suggested(request, channel.id)
     return {
         "id": channel.id,
         "name": channel.name,
@@ -831,7 +874,8 @@ async def update_zapi_channel(
         "is_legacy": channel.is_legacy,
         "is_active": channel.is_active,
         "client_token_source": "own" if channel.client_token else "global",
-        "webhook_url_suggested": _build_webhook_url_suggested(request, channel.id),
+        "webhook_url_suggested": webhook_url_suggested,
+        "webhook_auto_registered": channel.webhook_auto_registered or False,
     }
 
 
@@ -1116,6 +1160,74 @@ async def delete_zapi_channel(
     db.commit()
 
     return {"message": f"Canal '{label}' removido com sucesso"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #264 — Sincronização manual de webhook por canal
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/zapi/channels/{channel_id}/sync-webhook")
+async def sync_zapi_channel_webhook(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #264 — Registra (ou re-registra) a URL de webhook na instância Z-API do canal.
+    Idempotente: pode ser chamado múltiplas vezes sem efeitos colaterais.
+    Canais legados não são suportados (webhook gerenciado via env vars).
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel
+    from services.whatsapp_client import ZAPIClient
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    if channel.is_legacy:
+        raise HTTPException(
+            status_code=400,
+            detail="Canais legados não suportam registro automático de webhook (configurado via variáveis de ambiente).",
+        )
+
+    if not channel.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Canal inativo. Ative o canal antes de sincronizar o webhook.",
+        )
+
+    webhook_url = _build_webhook_url_suggested(request, channel.id)
+
+    try:
+        client = ZAPIClient(
+            instance_id=channel.instance_id,
+            token=channel.token,
+            client_token=channel.client_token,
+        )
+        result = await client.update_webhook(webhook_url)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro ao comunicar com a Z-API: {str(exc)}",
+        )
+
+    if result.get("success"):
+        channel.webhook_auto_registered = True
+        channel.webhook_url = webhook_url
+        db.commit()
+        print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual OK: {webhook_url}")
+    else:
+        print(f"[Z-API Webhook] Canal {channel_id} — sync-webhook manual falhou: {result}")
+
+    return {
+        "success": result.get("success", False),
+        "webhook_url": webhook_url,
+        "channel_id": channel_id,
+        "raw_response": result.get("raw_response"),
+        "error": result.get("error"),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

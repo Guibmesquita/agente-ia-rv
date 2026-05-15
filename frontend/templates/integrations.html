@@ -855,6 +855,13 @@
             if (legacyToggle) legacyToggle.addEventListener('click', _zcHandleCardAction);
         }
 
+        function _webhookStatusBadge(ch) {
+            if (ch.webhook_auto_registered) {
+                return '<span style="color:#16a34a; font-weight:500;">✅ Registrado</span>';
+            }
+            return '<span style="color:#d97706; font-weight:500;">⚠️ Não registrado</span>';
+        }
+
         function _connLabel(status) {
             const map = {
                 connected: ['connected', '● Conectado'],
@@ -879,6 +886,7 @@
             else if (action === 'unidades')    { zcToggleUnidadesPanel(id); }
             else if (action === 'assessores')  { zcToggleAssessoresPanel(id); }
             else if (action === 'delete')      { zcDelete(id); }
+            else if (action === 'sync-webhook') { zcSyncWebhook(id); }
             else if (action === 'assignar-unidade') { zcAssignarUnidade(id); }
             else if (action === 'add-unidade')      { zcAddUnidade(id); }
             else if (action === 'unlink-assessor') {
@@ -922,6 +930,7 @@
                     <div class="zc-channel-meta">👥 ${assessorTxt}</div>
                     <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
                     ${ch.is_legacy ? '' : `<div class="zc-channel-meta" style="margin-top:2px;">🔐 Client-Token: ${ch.client_token_source === 'own' ? '<span style="color:#1e40af; font-weight:500;">próprio</span>' : '<span style="color:var(--text-secondary);">global (conta)</span>'}</div>`}
+                    ${!ch.is_legacy ? `<div class="zc-channel-meta" style="margin-top:2px;" id="zcWebhookStatus-${ch.id}">🔗 Webhook: ${_webhookStatusBadge(ch)}</div>` : ''}
                     <div class="zc-card-actions">
                         <button class="btn btn-secondary btn-sm"
                             data-zc-action="config" data-zc-id="${ch.id}">
@@ -937,6 +946,12 @@
                             style="${ch.is_active ? 'color:var(--warning-color, #d97706)' : 'color:var(--success-color, #16a34a)'}">
                             ${ch.is_active ? '⏸️ Desativar' : '▶️ Ativar'}
                         </button>
+                        ${!ch.is_legacy ? `<button class="btn btn-secondary btn-sm"
+                            data-zc-action="sync-webhook" data-zc-id="${ch.id}"
+                            id="zcSyncWebhookBtn-${ch.id}"
+                            title="Registrar URL de webhook na instância Z-API para que mensagens cheguem ao agente">
+                            🔗 Sincronizar webhook
+                        </button>` : ''}
                         <button class="btn btn-secondary btn-sm"
                             data-zc-action="unidades" data-zc-id="${ch.id}"
                             id="zcUnidadesBtn-${ch.id}" title="Mapear unidades">
@@ -1364,6 +1379,44 @@
                 await loadZAPIChannels();
             } catch (err) {
                 toast.error(`Erro: ${err.message}`);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // Task #264 — Sincronização de webhook por canal
+        // ══════════════════════════════════════════════════════════════
+
+        async function zcSyncWebhook(channelId) {
+            const ch = _zcChannels.find(c => c.id === channelId);
+            if (!ch) return;
+            const btn = document.getElementById(`zcSyncWebhookBtn-${channelId}`);
+            const origText = btn ? btn.innerHTML : '';
+            if (btn) { btn.innerHTML = '⏳ Registrando...'; btn.disabled = true; }
+
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/sync-webhook`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok) {
+                    toast.error(`Erro: ${data.detail || 'Não foi possível registrar o webhook'}`);
+                    return;
+                }
+
+                if (data.success) {
+                    toast.success(`Webhook registrado com sucesso!\n${data.webhook_url}`);
+                } else {
+                    const errMsg = data.error ? ` Erro: ${data.error}` : '';
+                    toast.error(`Falha ao registrar webhook na Z-API. Verifique se a instância está conectada.${errMsg}`);
+                }
+
+                await loadZAPIChannels();
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            } finally {
+                if (btn) { btn.innerHTML = origText; btn.disabled = false; }
             }
         }
 

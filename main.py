@@ -672,6 +672,8 @@ def _apply_incremental_migrations():
         "ALTER TABLE zapi_channels ALTER COLUMN client_token DROP NOT NULL",
         # Task #261 — marca mensagens originadas de disparos de teste.
         "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS is_test_dispatch BOOLEAN DEFAULT FALSE",
+        # Task #264 — rastreia se o webhook foi registrado com sucesso na instância Z-API.
+        "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS webhook_auto_registered BOOLEAN DEFAULT FALSE",
     ]
     db = SessionLocal()
     ok = 0

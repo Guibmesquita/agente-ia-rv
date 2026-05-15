@@ -1672,6 +1672,8 @@ class ZAPIChannel(Base):
     webhook_url = Column(String(500), nullable=True)
     # Campo legado mantido para compatibilidade até migração completa.
     webhook_url_suffix = Column(String(100), nullable=True)
+    # Task #264 — True quando o webhook foi registrado com sucesso via /update-webhook-received.
+    webhook_auto_registered = Column(Boolean, default=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
