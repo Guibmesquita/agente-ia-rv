@@ -385,9 +385,14 @@
                                 </div>
                             </div>
                         </div>
-                        <button id="btnAddChannel" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); backdrop-filter: blur(4px);">
-                            + Adicionar Canal
-                        </button>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <button id="btnSyncAllWebhooks" class="btn" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.35); backdrop-filter: blur(4px); display:none;">
+                                🔗 Sincronizar todos
+                            </button>
+                            <button id="btnAddChannel" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); backdrop-filter: blur(4px);">
+                                + Adicionar Canal
+                            </button>
+                        </div>
                     </div>
                     <div class="integration-body">
                         <div style="padding: 12px 24px 0; display: flex; gap: 10px; align-items: center; background: #f0fdf4; border-bottom: 1px solid #bbf7d0; border-radius: 0;">
@@ -907,6 +912,18 @@
 
         function renderZAPIChannels(channels) {
             const container = document.getElementById('zapiChannelsList');
+
+            // Task #265 — mostrar botão "Sincronizar todos" quando há ≥1 canal não-legado
+            // com webhook_auto_registered == false (ou seja, ainda não sincronizado).
+            // A condição is_active é intencional: o endpoint de sync só processa canais
+            // ativos, portanto exibir o botão apenas quando há ativos pendentes evita
+            // confundir o usuário com um botão que não teria efeito real sobre canais inativos.
+            const btnSyncAll = document.getElementById('btnSyncAllWebhooks');
+            if (btnSyncAll) {
+                const needsSync = channels.some(c => !c.is_legacy && c.is_active && !c.webhook_auto_registered);
+                btnSyncAll.style.display = needsSync ? '' : 'none';
+            }
+
             if (!channels.length) {
                 container.innerHTML = `<div class="alert alert-info">Nenhum canal configurado.</div>`;
                 return;
@@ -1204,6 +1221,10 @@
             const btnAdd = document.getElementById('btnAddChannel');
             if (btnAdd) btnAdd.addEventListener('click', zcOpenAdd);
 
+            // Botão "Sincronizar todos os webhooks" — Task #265
+            const btnSyncAll = document.getElementById('btnSyncAllWebhooks');
+            if (btnSyncAll) btnSyncAll.addEventListener('click', zcSyncAllWebhooks);
+
             // Inicialização de dados (depois que todos os elementos estáticos existem)
             loadIntegrations();
             loadTrustedSources();
@@ -1425,6 +1446,55 @@
                 toast.error(`Erro: ${err.message}`);
             } finally {
                 if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // Task #265 — Sincronização em lote de webhooks
+        // ══════════════════════════════════════════════════════════════
+
+        async function zcSyncAllWebhooks() {
+            const btn = document.getElementById('btnSyncAllWebhooks');
+            const origHtml = btn ? btn.innerHTML : '';
+            if (btn) { btn.innerHTML = '⏳ Sincronizando...'; btn.disabled = true; }
+
+            try {
+                const res = await fetch(`${ZC_API}/sync-all-webhooks`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok) {
+                    toast.error(`Erro ao sincronizar: ${data.detail || 'Falha desconhecida'}`);
+                    return;
+                }
+
+                const { synced = 0, failed = 0, results = [], message } = data;
+
+                if (failed === 0 && synced > 0) {
+                    toast.success(`✅ ${message}`);
+                } else if (synced === 0 && failed > 0) {
+                    const failDetails = results
+                        .filter(r => !r.success)
+                        .map(r => `• ${r.label}: ${r.error || 'falha'}`)
+                        .join('\n');
+                    toast.error(`❌ ${message}\n${failDetails}`);
+                } else if (synced === 0 && failed === 0) {
+                    toast.info(message || 'Nenhum canal elegível para sincronização.');
+                } else {
+                    const failDetails = results
+                        .filter(r => !r.success)
+                        .map(r => `• ${r.label}: ${r.error || 'falha'}`)
+                        .join('\n');
+                    toast.warning(`⚠️ ${message}${failDetails ? '\n' + failDetails : ''}`);
+                }
+
+                await loadZAPIChannels();
+            } catch (err) {
+                toast.error(`Erro: ${err.message}`);
+            } finally {
+                if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
             }
         }
 

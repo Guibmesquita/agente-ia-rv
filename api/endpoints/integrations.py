@@ -1216,6 +1216,102 @@ async def delete_zapi_channel(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Task #265 — Sincronização em lote de webhooks
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/zapi/channels/sync-all-webhooks")
+async def sync_all_zapi_webhooks(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #265 — Sincroniza webhooks de todos os canais ativos não-legados em paralelo.
+    Retorna lista com status individual por canal (sucesso/falha).
+    """
+    _auth_zapi_channel(request)
+
+    import asyncio
+    from database.models import ZAPIChannel
+    from services.whatsapp_client import ZAPIClient
+
+    channels = (
+        db.query(ZAPIChannel)
+        .filter(
+            ZAPIChannel.is_legacy.is_(False),
+            ZAPIChannel.is_active.is_(True),
+        )
+        .all()
+    )
+
+    if not channels:
+        return {"results": [], "synced": 0, "failed": 0, "message": "Nenhum canal elegível para sincronização."}
+
+    async def _sync_one(ch: ZAPIChannel):
+        webhook_url = _build_webhook_url_suggested(request, ch.id)
+        try:
+            client = ZAPIClient(
+                instance_id=ch.instance_id,
+                token=ch.token,
+                client_token=ch.client_token,
+            )
+            result = await client.update_webhook(webhook_url)
+        except Exception as exc:
+            _exc_type = type(exc).__name__
+            print(f"[Z-API Webhook] Batch sync canal {ch.id} — exceção {_exc_type}: {exc}")
+            return {
+                "channel_id": ch.id,
+                "label": ch.label or ch.name,
+                "success": False,
+                "webhook_url": webhook_url,
+                "error": f"{_exc_type}: {exc}",
+            }
+
+        success = result.get("success", False)
+        if success:
+            ch.webhook_auto_registered = True
+            ch.webhook_url = webhook_url
+            print(f"[Z-API Webhook] Batch sync canal {ch.id} OK: {webhook_url}")
+        else:
+            print(f"[Z-API Webhook] Batch sync canal {ch.id} falhou: {result}")
+
+        return {
+            "channel_id": ch.id,
+            "label": ch.label or ch.name,
+            "success": success,
+            "webhook_url": webhook_url,
+            "error": result.get("error") if not success else None,
+        }
+
+    results = await asyncio.gather(*[_sync_one(ch) for ch in channels])
+
+    synced = sum(1 for r in results if r["success"])
+    failed = len(results) - synced
+
+    if synced > 0:
+        try:
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            _exc_type = type(exc).__name__
+            print(f"[Z-API Webhook] Batch sync — erro ao persistir flags: {exc}")
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Webhooks registrados na Z-API ({synced} de {len(results)}), porém não foi possível "
+                    f"persistir os flags no banco de dados ({_exc_type}). "
+                    "Tente sincronizar novamente."
+                ),
+            )
+
+    return {
+        "results": list(results),
+        "synced": synced,
+        "failed": failed,
+        "message": f"{synced} canal(is) sincronizado(s) com sucesso, {failed} com falha.",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Task #264 — Sincronização manual de webhook por canal
 # ─────────────────────────────────────────────────────────────────────────────
 
