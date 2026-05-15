@@ -829,7 +829,11 @@
             const container = document.getElementById('zcLegacyStatusContainer');
             if (!container) return;
             const legacyCh = _zcChannels.find(c => c.is_legacy);
-            if (!legacyCh) return;
+            if (!legacyCh) {
+                // Sem canal legado: limpa qualquer conteúdo residual
+                container.innerHTML = '';
+                return;
+            }
             const isActive = legacyCh.is_active;
             const chId = legacyCh.id;
             container.innerHTML = `
