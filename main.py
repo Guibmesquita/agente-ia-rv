@@ -202,38 +202,62 @@ async def _auto_register_webhooks_startup():
             "— tentando re-registro automático..."
         )
 
+        # Task #304 — log estruturado por canal com resultado individual.
         updated = 0
+        results_log = []
         for ch in channels:
             webhook_url = f"{webhook_base}/api/whatsapp/webhook/{ch.id}"
+            canal_label = ch.label or ch.name
             try:
                 client = ZAPIClient(
                     instance_id=ch.instance_id,
                     token=ch.token,
                     client_token=ch.client_token,
                 )
-                result = await client.update_webhook(webhook_url)
+                # Task #304 — usa update_all_webhooks (configura todos os tipos de evento)
+                # com fallback automático para update_webhook se não suportado.
+                result = await client.update_all_webhooks(webhook_url)
                 if result.get("success"):
                     ch.webhook_auto_registered = True
                     ch.webhook_url = webhook_url
                     updated += 1
+                    endpoint_used = result.get("endpoint_used", "?")
                     print(
-                        f"[WEBHOOK-STARTUP] Canal {ch.id} ({ch.label or ch.name}) "
-                        f"— webhook registrado: {webhook_url}"
+                        f"[WEBHOOK-STARTUP] ✅ Canal {ch.id} ({canal_label}) "
+                        f"registrado — url={webhook_url} endpoint={endpoint_used}"
+                    )
+                    results_log.append(
+                        f"  ✅ Canal {ch.id} ({canal_label}): OK ({endpoint_used})"
                     )
                 else:
+                    err = result.get("error") or result.get("body_error") or str(result)
                     print(
-                        f"[WEBHOOK-STARTUP] Canal {ch.id} ({ch.label or ch.name}) "
-                        f"— falha no re-registro (instância pode estar desconectada): {result}"
+                        f"[WEBHOOK-STARTUP] ❌ Canal {ch.id} ({canal_label}) "
+                        f"— falha (instância pode estar desconectada): {err}"
+                    )
+                    results_log.append(
+                        f"  ❌ Canal {ch.id} ({canal_label}): falha — {err}"
                     )
             except Exception as exc:
+                _etype = type(exc).__name__
                 print(
-                    f"[WEBHOOK-STARTUP] Canal {ch.id} ({ch.label or ch.name}) "
-                    f"— erro: {type(exc).__name__}: {exc}"
+                    f"[WEBHOOK-STARTUP] ❌ Canal {ch.id} ({canal_label}) "
+                    f"— erro {_etype}: {exc}"
+                )
+                results_log.append(
+                    f"  ❌ Canal {ch.id} ({canal_label}): {_etype}: {exc}"
                 )
 
         if updated > 0:
             db.commit()
-            print(f"[WEBHOOK-STARTUP] {updated} canal(is) registrado(s) com sucesso.")
+
+        # Sumário consolidado — facilita diagnóstico em logs Railway/produção
+        print(
+            f"[WEBHOOK-STARTUP] Resultado: {updated}/{len(channels)} canal(is) registrado(s). "
+            f"(base_url={webhook_base!r})"
+        )
+        if results_log:
+            print("[WEBHOOK-STARTUP] Detalhe por canal:\n" + "\n".join(results_log))
     except Exception as exc:
         print(f"[WEBHOOK-STARTUP] Erro inesperado: {type(exc).__name__}: {exc}")
         db.rollback()

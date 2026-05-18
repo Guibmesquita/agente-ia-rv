@@ -1710,6 +1710,229 @@ async def debug_zapi_channel_webhook(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Task #304 — Self-test de acessibilidade do webhook por canal (endpoint standalone)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/zapi/channels/{channel_id}/self-test-webhook")
+async def self_test_zapi_channel_webhook(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #304 — Verifica se a URL de webhook do canal é acessível e se o token
+    de autenticação é aceito, sem depender de mensagens reais do Z-API.
+
+    Envia um POST sintético ao próprio endpoint `/api/whatsapp/webhook/{channel_id}`
+    com payload tipo `__webhook_diagnostic_test__`. O handler ignora este tipo sem
+    processar conversas. Retorna resultado estruturado:
+
+    - `reachable_and_token_valid`: URL acessível, token aceito (HTTP 200)
+    - `token_rejected`: URL acessível mas token rejeitado (HTTP 401/403)
+    - `url_not_found`: endpoint não encontrado (HTTP 404)
+    - `unreachable`: servidor inacessível (ConnectError)
+    - `timeout`: sem resposta no prazo
+    - `error`: outro erro inesperado
+
+    Acesso restrito a admin/gestao_rv.
+    """
+    _auth_zapi_channel(request)
+
+    from database.models import ZAPIChannel
+
+    channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail=f"Canal {channel_id} não encontrado")
+
+    if channel.is_legacy:
+        raise HTTPException(
+            status_code=400,
+            detail="Canais legados não possuem endpoint de webhook por canal — configurado via variáveis de ambiente.",
+        )
+
+    if not channel.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Canal inativo. Ative o canal antes de executar o self-test.",
+        )
+
+    webhook_url = _build_webhook_url_suggested(request, channel.id)
+
+    import httpx as _httpx_st
+    import os as _os_st
+    from core.config import get_settings as _get_cfg_st
+
+    _cfg_st = _get_cfg_st()
+    _test_token = (
+        channel.client_token
+        or _os_st.getenv("ZAPI_CLIENT_TOKEN", "")
+        or _cfg_st.ZAPI_CLIENT_TOKEN
+        or channel.token
+    )
+
+    self_test: dict = {
+        "channel_id": channel_id,
+        "channel_name": channel.label or channel.name,
+        "url_tested": webhook_url,
+        "token_hint": (_test_token[:4] + "****") if len(_test_token) > 4 else "***",
+        "status_code": None,
+        "result": None,
+        "error": None,
+    }
+
+    try:
+        async with _httpx_st.AsyncClient(timeout=8.0, verify=True) as _hc:
+            _resp = await _hc.post(
+                webhook_url,
+                json={"type": "__webhook_diagnostic_test__", "instanceId": channel.instance_id},
+                headers={
+                    "client-token": _test_token,
+                    "Content-Type": "application/json",
+                },
+            )
+        self_test["status_code"] = _resp.status_code
+        if _resp.status_code == 200:
+            self_test["result"] = "reachable_and_token_valid"
+        elif _resp.status_code in (401, 403):
+            self_test["result"] = "token_rejected"
+        elif _resp.status_code == 404:
+            self_test["result"] = "url_not_found"
+        else:
+            self_test["result"] = f"unexpected_http_{_resp.status_code}"
+
+    except _httpx_st.ConnectError as _ce:
+        self_test["result"] = "unreachable"
+        self_test["error"] = f"Servidor inacessível: {_ce}"
+    except _httpx_st.TimeoutException:
+        self_test["result"] = "timeout"
+        self_test["error"] = "Timeout — o servidor não respondeu no prazo de 8 s"
+    except Exception as _exc:
+        self_test["result"] = "error"
+        self_test["error"] = f"{type(_exc).__name__}: {_exc}"
+
+    print(
+        f"[WEBHOOK-SELFTEST] Canal {channel_id} ({self_test['channel_name']}) "
+        f"→ {self_test['result']} (HTTP {self_test['status_code']}) — {webhook_url}"
+    )
+    return self_test
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task #304 — Alias de registro em lote com log estruturado por canal
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/zapi/channels/register-all-webhooks")
+async def register_all_zapi_webhooks(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #304 — Alias para sync-all-webhooks com log estruturado por canal.
+    Registra (ou re-registra) webhooks de todos os canais ativos não-legados
+    em paralelo. Usa `update_all_webhooks` para configurar todos os tipos de
+    evento simultaneamente.
+
+    Retorna lista com status individual por canal e contadores globais.
+    Acesso restrito a admin/gestao_rv.
+    """
+    _auth_zapi_channel(request)
+
+    import asyncio
+    from database.models import ZAPIChannel
+    from services.whatsapp_client import ZAPIClient
+
+    channels = (
+        db.query(ZAPIChannel)
+        .filter(
+            ZAPIChannel.is_legacy.is_(False),
+            ZAPIChannel.is_active.is_(True),
+        )
+        .all()
+    )
+
+    if not channels:
+        return {
+            "results": [],
+            "synced": 0,
+            "failed": 0,
+            "message": "Nenhum canal elegível para registro de webhook.",
+        }
+
+    async def _register_one(ch: ZAPIChannel):
+        webhook_url = _build_webhook_url_suggested(request, ch.id)
+        try:
+            client = ZAPIClient(
+                instance_id=ch.instance_id,
+                token=ch.token,
+                client_token=ch.client_token,
+            )
+            result = await client.update_all_webhooks(webhook_url)
+        except Exception as exc:
+            _exc_type = type(exc).__name__
+            print(
+                f"[WEBHOOK-REGISTER-ALL] Canal {ch.id} ({ch.label or ch.name}) "
+                f"— exceção {_exc_type}: {exc}"
+            )
+            return {
+                "channel_id": ch.id,
+                "label": ch.label or ch.name,
+                "webhook_url": webhook_url,
+                "success": False,
+                "endpoint_used": None,
+                "error": f"{_exc_type}: {exc}",
+            }
+
+        success = result.get("success", False)
+        if success:
+            ch.webhook_auto_registered = True
+            ch.webhook_url = webhook_url
+            print(
+                f"[WEBHOOK-REGISTER-ALL] Canal {ch.id} ({ch.label or ch.name}) "
+                f"✅ OK — url={webhook_url} endpoint={result.get('endpoint_used', '?')}"
+            )
+        else:
+            print(
+                f"[WEBHOOK-REGISTER-ALL] Canal {ch.id} ({ch.label or ch.name}) "
+                f"❌ falha — {result.get('error') or result}"
+            )
+
+        return {
+            "channel_id": ch.id,
+            "label": ch.label or ch.name,
+            "webhook_url": webhook_url,
+            "success": success,
+            "endpoint_used": result.get("endpoint_used"),
+            "error": result.get("error") if not success else None,
+        }
+
+    results = await asyncio.gather(*[_register_one(ch) for ch in channels])
+
+    synced = sum(1 for r in results if r["success"])
+    failed = len(results) - synced
+
+    if synced > 0:
+        try:
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            _exc_type = type(exc).__name__
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Webhooks registrados na Z-API ({synced} de {len(results)}), porém não foi possível "
+                    f"persistir os flags no banco ({_exc_type}). Tente novamente."
+                ),
+            )
+
+    return {
+        "results": list(results),
+        "synced": synced,
+        "failed": failed,
+        "message": f"{synced} canal(is) registrado(s) com sucesso, {failed} com falha.",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Task #233 — Mapeamento de Unidades por Canal Z-API
 # ─────────────────────────────────────────────────────────────────────────────
 

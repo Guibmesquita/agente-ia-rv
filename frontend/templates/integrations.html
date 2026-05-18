@@ -917,6 +917,7 @@
             else if (action === 'delete')      { zcDelete(id); }
             else if (action === 'sync-webhook') { zcSyncWebhook(id); }
             else if (action === 'webhook-diag')  { zcWebhookDiag(id); }
+            else if (action === 'self-test')         { zcSelfTestWebhook(id); }
             else if (action === 'assignar-unidade') { zcAssignarUnidade(id); }
             else if (action === 'add-unidade')      { zcAddUnidade(id); }
             else if (action === 'unlink-assessor') {
@@ -1014,6 +1015,12 @@
                             id="zcSyncWebhookBtn-${ch.id}"
                             title="Registrar URL de webhook na instância Z-API para que mensagens cheguem ao agente">
                             🔗 Sincronizar webhook
+                        </button>
+                        <button class="btn btn-secondary btn-sm"
+                            data-zc-action="self-test" data-zc-id="${ch.id}"
+                            id="zcSelfTestBtn-${ch.id}"
+                            title="Verifica se a URL de webhook está acessível e se o token é aceito">
+                            🧪 Self-test
                         </button>
                         <button class="btn btn-secondary btn-sm"
                             data-zc-action="webhook-diag" data-zc-id="${ch.id}"
@@ -1856,16 +1863,59 @@
         }
 
         // ══════════════════════════════════════════════════════════════
+        // Task #304 — Self-test de acessibilidade de webhook por canal
+        // ══════════════════════════════════════════════════════════════
+
+        async function zcSelfTestWebhook(channelId) {
+            const btn = document.getElementById(`zcSelfTestBtn-${channelId}`);
+            if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/self-test-webhook`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok) {
+                    toast.error(`Self-test: ${data.detail || 'Erro desconhecido'}`);
+                    return;
+                }
+
+                const resultLabels = {
+                    reachable_and_token_valid: '✅ URL acessível e token válido',
+                    token_rejected:            '🔑 Token rejeitado (401/403)',
+                    url_not_found:             '🔎 URL não encontrada (404)',
+                    unreachable:               '🔌 Servidor inacessível',
+                    timeout:                   '⏱️ Timeout — sem resposta',
+                };
+                const label = resultLabels[data.result] || `⚠️ ${data.result}`;
+                const isOk = data.result === 'reachable_and_token_valid';
+                const detail = data.error ? `\n${data.error}` : (data.status_code ? ` (HTTP ${data.status_code})` : '');
+
+                if (isOk) {
+                    toast.success(`${label}${detail}`);
+                } else {
+                    toast.warning(`${label}${detail}`);
+                }
+            } catch (err) {
+                toast.error(`Self-test: ${err.message}`);
+            } finally {
+                if (btn) { btn.textContent = '🧪 Self-test'; btn.disabled = false; }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
         // Task #265 — Sincronização em lote de webhooks
         // ══════════════════════════════════════════════════════════════
 
         async function zcSyncAllWebhooks() {
             const btn = document.getElementById('btnSyncAllWebhooks');
             const origHtml = btn ? btn.innerHTML : '';
-            if (btn) { btn.innerHTML = '⏳ Sincronizando...'; btn.disabled = true; }
+            if (btn) { btn.innerHTML = '⏳ Registrando...'; btn.disabled = true; }
 
             try {
-                const res = await fetch(`${ZC_API}/sync-all-webhooks`, {
+                const res = await fetch(`${ZC_API}/register-all-webhooks`, {
                     method: 'POST',
                     credentials: 'include',
                 });
