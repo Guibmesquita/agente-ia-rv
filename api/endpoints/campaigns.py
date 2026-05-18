@@ -2997,14 +2997,19 @@ async def get_campaign_delivery_report(
                 )
                 .first()
             )
-            conv = (
-                db.query(Conversation)
-                .filter(Conversation.phone == clean_phone)
-                .first()
-            )
+            # Task #302 — lookup por (phone, channel_id) quando canal conhecido, para evitar
+            # falso "mismatch" em cenários multicanal onde o mesmo telefone existe em canais distintos.
+            conv_query = db.query(Conversation).filter(Conversation.phone == clean_phone)
+            if d.channel_id:
+                conv = conv_query.filter(Conversation.channel_id == d.channel_id).first()
+                if conv is None:
+                    # fallback: qualquer conversa com esse telefone (canal ainda não setado)
+                    conv = conv_query.first()
+            else:
+                conv = conv_query.first()
 
         channel_match = None
-        if msg and conv:
+        if msg and conv and d.channel_id is not None:
             channel_match = (msg.channel_id == d.channel_id and conv.channel_id == d.channel_id)
 
         items.append({
@@ -3025,6 +3030,8 @@ async def get_campaign_delivery_report(
         })
 
     sent = [i for i in items if i["status"] == "sent"]
+    failed = [i for i in items if i["status"] == "failed"]
+    pending = [i for i in items if i["status"] not in ("sent", "failed")]
     missing_msg = [i for i in sent if not i["has_whatsapp_message"]]
     missing_conv = [i for i in sent if not i["has_conversation"]]
     channel_mismatch = [i for i in sent if i["channel_id_match"] is False]
@@ -3035,14 +3042,17 @@ async def get_campaign_delivery_report(
         "campaign_status": campaign.status,
         "total_dispatches": len(items),
         "sent": len(sent),
-        "failed": len([i for i in items if i["status"] == "failed"]),
-        "pending": len([i for i in items if i["status"] == "pending"]),
+        "failed": len(failed),
+        "pending": len(pending),
         "issues": {
             "missing_whatsapp_message": len(missing_msg),
             "missing_conversation": len(missing_conv),
             "channel_id_mismatch": len(channel_mismatch),
         },
-        "dispatches": items,
+        # dispatches agrupados por status para facilitar análise
+        "dispatches_sent": [i for i in items if i["status"] == "sent"],
+        "dispatches_failed": failed,
+        "dispatches_pending": pending,
     }
 
 
@@ -3881,6 +3891,7 @@ def _persist_campaign_message(
                     "direction": "outbound",
                     "sender_type": "bot",
                     "is_from_campaign": True,
+                    "last_message_at": datetime.utcnow().isoformat(),
                 })
             )
         except Exception as _sse_err:

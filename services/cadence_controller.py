@@ -1237,6 +1237,7 @@ def _persist_unified_campaign_message(
                     "direction": "outbound",
                     "sender_type": "bot",
                     "is_from_campaign": True,
+                    "last_message_at": datetime.utcnow().isoformat(),
                 })
             )
         except Exception as _sse_err:
