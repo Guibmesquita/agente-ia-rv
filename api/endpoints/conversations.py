@@ -199,7 +199,7 @@ async def list_conversations(
     if ticket_status:
         if ticket_status == "new":
             query = query.filter(
-                or_(Conversation.ticket_status == ticket_status, Conversation.ticket_status == None)
+                or_(Conversation.ticket_status == ticket_status, Conversation.ticket_status.is_(None))
             )
         else:
             query = query.filter(Conversation.ticket_status == ticket_status)

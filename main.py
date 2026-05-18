@@ -986,7 +986,7 @@ def _backfill_conversation_ticket_status():
         result = db.execute(sql_text(
             "UPDATE conversations SET ticket_status = 'new' "
             "WHERE ticket_status IS NULL "
-            "AND status NOT IN ('closed', 'archived')"
+            "AND (status IS NULL OR status NOT IN ('closed', 'archived'))"
         ))
         updated = result.rowcount
         db.commit()
