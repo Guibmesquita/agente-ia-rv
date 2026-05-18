@@ -1135,40 +1135,57 @@ def _persist_unified_campaign_message(
 ):
     """Task #287 — propaga channel_id, assessor_id e campaign_id na conversa/mensagem
     criada após envio bem-sucedido, garantindo roteamento correto das respostas do agente.
+    Task #302 — usa sessão DB própria (isolada da sessão do motor de cadência) para
+    garantir que a mensagem seja persistida mesmo se a sessão do motor estiver em estado
+    de erro. Também seta last_message_at e emite SSE para a Central de Conversas.
     """
+    _conv_id_for_sse = None
+    _own_db = None
     try:
-        from database.models import WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation, Assessor as _Ass
+        from database.database import SessionLocal
+        from database.models import (
+            WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation, Assessor as _Ass
+        )
+        from datetime import datetime as _dt
+
         clean_phone = ''.join(filter(str.isdigit, phone))
         if not clean_phone:
             return
 
-        conversation = db.query(Conversation).filter(
+        # Task #302 — sessão isolada: não depende do estado da sessão do motor de cadência
+        _own_db = SessionLocal()
+        now = _dt.utcnow()
+
+        conversation = _own_db.query(Conversation).filter(
             Conversation.phone == clean_phone
         ).first()
 
         _created_new = False
         if not conversation:
-            conversation = Conversation(phone=clean_phone, channel_id=channel_id, ticket_status="new")
-            db.add(conversation)
-            db.flush()
+            conversation = Conversation(
+                phone=clean_phone,
+                channel_id=channel_id,
+                ticket_status="new",
+                last_message_at=now,
+            )
+            _own_db.add(conversation)
+            _own_db.flush()
             _created_new = True
         else:
-            _updated = False
             if channel_id and not conversation.channel_id:
                 conversation.channel_id = channel_id
-                _updated = True
             if not conversation.ticket_status:
                 conversation.ticket_status = "new"
-                _updated = True
-            if _updated:
-                db.flush()
+            # Task #302 — garantir que last_message_at reflita o envio da campanha
+            conversation.last_message_at = now
+            _own_db.flush()
 
         if _created_new and not conversation.assessor_id:
             try:
-                _assessor = db.query(_Ass).filter(_Ass.telefone_whatsapp == clean_phone).first()
+                _assessor = _own_db.query(_Ass).filter(_Ass.telefone_whatsapp == clean_phone).first()
                 if _assessor:
                     conversation.assessor_id = _assessor.id
-                    db.flush()
+                    _own_db.flush()
             except Exception as _lookup_err:
                 print(f"[CADENCE] Aviso: lookup de assessor falhou para telefone={clean_phone} canal={channel_id}: {_lookup_err}")
 
@@ -1188,11 +1205,42 @@ def _persist_unified_campaign_message(
             is_from_campaign=True,
             campaign_id=campaign_id,
         )
-        db.add(record)
-        db.flush()
-        print(f"[CADENCE] Mensagem salva: telefone={clean_phone} canal={channel_id} campanha_id={campaign_id}")
+        _own_db.add(record)
+        _own_db.commit()
+        _conv_id_for_sse = conversation.id
+        print(f"[CADENCE] Mensagem salva: telefone={clean_phone} canal={channel_id} campanha_id={campaign_id} conv_id={_conv_id_for_sse}")
     except Exception as e:
         print(f"[CADENCE] Erro ao salvar mensagem de campanha: {e}")
+        if _own_db:
+            try:
+                _own_db.rollback()
+            except Exception:
+                pass
+    finally:
+        if _own_db:
+            try:
+                _own_db.close()
+            except Exception:
+                pass
+
+    # Task #302 — emite notificação SSE para a Central de Conversas atualizar em tempo real.
+    # Executado fora do try/except principal para não afetar o commit já realizado.
+    if _conv_id_for_sse:
+        try:
+            from services.sse_manager import get_sse_manager
+            _sse = get_sse_manager()
+            asyncio.get_event_loop().create_task(
+                _sse.notify_new_message(_conv_id_for_sse, {
+                    "phone": phone,
+                    "channel_id": channel_id,
+                    "campaign_id": campaign_id,
+                    "direction": "outbound",
+                    "sender_type": "bot",
+                    "is_from_campaign": True,
+                })
+            )
+        except Exception as _sse_err:
+            print(f"[CADENCE] Aviso: falha ao emitir SSE para conv_id={_conv_id_for_sse}: {_sse_err}")
 
 
 async def cadence_loop():

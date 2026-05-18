@@ -2958,6 +2958,94 @@ async def cancel_campaign_dispatch(
     return {"success": True, "message": "Solicitação de cancelamento enviada"}
 
 
+@router.get("/{campaign_id}/delivery-report")
+async def get_campaign_delivery_report(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """Task #302 — Diagnóstico de entrega de campanha.
+
+    Para cada dispatch com status 'sent', verifica se existe WhatsAppMessage
+    e Conversation correspondentes no banco, e se o channel_id bate.
+    Útil para identificar onde mensagens de campanha estão se perdendo.
+    """
+    from database.models import WhatsAppMessage, Conversation
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    dispatches = (
+        db.query(CampaignDispatch)
+        .filter(CampaignDispatch.campaign_id == campaign_id)
+        .order_by(CampaignDispatch.id.asc())
+        .all()
+    )
+
+    items = []
+    for d in dispatches:
+        clean_phone = ''.join(filter(str.isdigit, d.assessor_phone or ""))
+
+        msg = None
+        conv = None
+        if clean_phone:
+            msg = (
+                db.query(WhatsAppMessage)
+                .filter(
+                    WhatsAppMessage.campaign_id == campaign_id,
+                    WhatsAppMessage.phone == clean_phone,
+                )
+                .first()
+            )
+            conv = (
+                db.query(Conversation)
+                .filter(Conversation.phone == clean_phone)
+                .first()
+            )
+
+        channel_match = None
+        if msg and conv:
+            channel_match = (msg.channel_id == d.channel_id and conv.channel_id == d.channel_id)
+
+        items.append({
+            "dispatch_id": d.id,
+            "phone": d.assessor_phone,
+            "status": d.status,
+            "channel_id": d.channel_id,
+            "sent_at": d.sent_at.isoformat() if d.sent_at else None,
+            "error_message": d.error_message,
+            "has_whatsapp_message": msg is not None,
+            "message_id": msg.id if msg else None,
+            "message_channel_id": msg.channel_id if msg else None,
+            "has_conversation": conv is not None,
+            "conversation_id": conv.id if conv else None,
+            "conversation_channel_id": conv.channel_id if conv else None,
+            "conversation_last_message_at": conv.last_message_at.isoformat() if conv and conv.last_message_at else None,
+            "channel_id_match": channel_match,
+        })
+
+    sent = [i for i in items if i["status"] == "sent"]
+    missing_msg = [i for i in sent if not i["has_whatsapp_message"]]
+    missing_conv = [i for i in sent if not i["has_conversation"]]
+    channel_mismatch = [i for i in sent if i["channel_id_match"] is False]
+
+    return {
+        "campaign_id": campaign_id,
+        "campaign_name": campaign.name,
+        "campaign_status": campaign.status,
+        "total_dispatches": len(items),
+        "sent": len(sent),
+        "failed": len([i for i in items if i["status"] == "failed"]),
+        "pending": len([i for i in items if i["status"] == "pending"]),
+        "issues": {
+            "missing_whatsapp_message": len(missing_msg),
+            "missing_conversation": len(missing_conv),
+            "channel_id_mismatch": len(channel_mismatch),
+        },
+        "dispatches": items,
+    }
+
+
 @router.get("/")
 async def list_campaigns(
     skip: int = 0,
@@ -3701,14 +3789,18 @@ def _persist_campaign_message(
 
     Task #287 — propaga channel_id, assessor_id e campaign_id para garantir
     roteamento correto das respostas do agente (resolve_channel_client_for_conversation).
+    Task #302 — seta last_message_at (para ordenação na Central) e emite SSE.
     """
     if not phone or not message:
         return
+    _conv_id_for_sse = None
     try:
         from database.models import WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation, Assessor as _Assessor
         clean_phone = ''.join(filter(str.isdigit, phone))
         if not clean_phone:
             return
+
+        now = datetime.utcnow()
 
         conversation = db_session.query(Conversation).filter(
             Conversation.phone == clean_phone
@@ -3716,20 +3808,23 @@ def _persist_campaign_message(
 
         _created_new = False
         if not conversation:
-            conversation = Conversation(phone=clean_phone, channel_id=channel_id, ticket_status="new")
+            conversation = Conversation(
+                phone=clean_phone,
+                channel_id=channel_id,
+                ticket_status="new",
+                last_message_at=now,
+            )
             db_session.add(conversation)
             db_session.flush()
             _created_new = True
         else:
-            _updated = False
             if channel_id and not conversation.channel_id:
                 conversation.channel_id = channel_id
-                _updated = True
             if not conversation.ticket_status:
                 conversation.ticket_status = "new"
-                _updated = True
-            if _updated:
-                db_session.flush()
+            # Task #302 — garantir que last_message_at reflita o envio da campanha
+            conversation.last_message_at = now
+            db_session.flush()
 
         if _created_new and not conversation.assessor_id:
             try:
@@ -3762,13 +3857,34 @@ def _persist_campaign_message(
         )
         db_session.add(record)
         db_session.commit()
-        print(f"[CAMPAIGN_MSG] Mensagem salva: telefone={clean_phone} canal={channel_id} campanha_id={campaign_id}")
+        _conv_id_for_sse = conversation.id
+        print(f"[CAMPAIGN_MSG] Mensagem salva: telefone={clean_phone} canal={channel_id} campanha_id={campaign_id} conv_id={_conv_id_for_sse}")
     except Exception as e:
         print(f"[CAMPAIGN_MSG] Erro ao salvar mensagem de campanha: {e}")
         try:
             db_session.rollback()
         except Exception:
             pass
+
+    # Task #302 — emite notificação SSE para a Central de Conversas atualizar em tempo real.
+    # Executado fora do try/except principal para não afetar o commit já realizado.
+    if _conv_id_for_sse:
+        try:
+            import asyncio
+            from services.sse_manager import get_sse_manager
+            _sse = get_sse_manager()
+            asyncio.get_event_loop().create_task(
+                _sse.notify_new_message(_conv_id_for_sse, {
+                    "phone": phone,
+                    "channel_id": channel_id,
+                    "campaign_id": campaign_id,
+                    "direction": "outbound",
+                    "sender_type": "bot",
+                    "is_from_campaign": True,
+                })
+            )
+        except Exception as _sse_err:
+            print(f"[CAMPAIGN_MSG] Aviso: falha ao emitir SSE para conv_id={_conv_id_for_sse}: {_sse_err}")
 
 
 class CadenceDispatchRequest(BaseModel):
