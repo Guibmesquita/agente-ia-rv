@@ -405,6 +405,8 @@
                         <div id="zapiChannelsList">
                             <div class="loading"><div class="spinner"></div></div>
                         </div>
+                        <!-- Task #304 — painel de resultados inline do registro em lote -->
+                        <div id="zcRegisterAllResults" style="display:none; padding: 0 24px 20px;"></div>
                     </div>
                 </div>
 
@@ -931,15 +933,13 @@
         function renderZAPIChannels(channels) {
             const container = document.getElementById('zapiChannelsList');
 
-            // Task #265 — mostrar botão "Sincronizar todos" quando há ≥1 canal não-legado
-            // com webhook_auto_registered == false (ou seja, ainda não sincronizado).
-            // A condição is_active é intencional: o endpoint de sync só processa canais
-            // ativos, portanto exibir o botão apenas quando há ativos pendentes evita
-            // confundir o usuário com um botão que não teria efeito real sobre canais inativos.
+            // Task #304 — mostrar botão "Registrar todos os webhooks" sempre que há ≥1 canal
+            // não-legado ativo (independentemente de já estar registrado), pois o admin pode
+            // precisar re-registrar após troca de domínio, regen de token, etc.
             const btnSyncAll = document.getElementById('btnSyncAllWebhooks');
             if (btnSyncAll) {
-                const needsSync = channels.some(c => !c.is_legacy && c.is_active && !c.webhook_auto_registered);
-                btnSyncAll.style.display = needsSync ? '' : 'none';
+                const hasNonLegacyActive = channels.some(c => !c.is_legacy && c.is_active);
+                btnSyncAll.style.display = hasNonLegacyActive ? '' : 'none';
             }
 
             // Task #296 — banner de alerta acima do grid. Primeiro critério (webhook não registrado)
@@ -1911,8 +1911,21 @@
 
         async function zcSyncAllWebhooks() {
             const btn = document.getElementById('btnSyncAllWebhooks');
+            const resultsPanel = document.getElementById('zcRegisterAllResults');
             const origHtml = btn ? btn.innerHTML : '';
             if (btn) { btn.innerHTML = '⏳ Registrando...'; btn.disabled = true; }
+
+            // Mostra painel de carregamento inline
+            if (resultsPanel) {
+                resultsPanel.style.display = 'block';
+                resultsPanel.innerHTML = `
+                    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
+                        <div style="font-size:0.85rem;color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
+                            <div class="spinner" style="width:16px;height:16px;border-width:2px;"></div>
+                            Registrando webhooks em todos os canais…
+                        </div>
+                    </div>`;
+            }
 
             try {
                 const res = await fetch(`${ZC_API}/register-all-webhooks`, {
@@ -1922,33 +1935,69 @@
                 const data = await res.json().catch(() => ({}));
 
                 if (!res.ok) {
-                    toast.error(`Erro ao sincronizar: ${data.detail || 'Falha desconhecida'}`);
+                    if (resultsPanel) {
+                        resultsPanel.innerHTML = `
+                            <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
+                                <p style="color:var(--danger-color);font-size:0.875rem;">❌ ${_zcEsc(data.detail || 'Falha desconhecida')}</p>
+                            </div>`;
+                    } else {
+                        toast.error(`Erro ao registrar: ${data.detail || 'Falha desconhecida'}`);
+                    }
                     return;
                 }
 
                 const { synced = 0, failed = 0, results = [], message } = data;
 
-                if (failed === 0 && synced > 0) {
-                    toast.success(`✅ ${message}`);
-                } else if (synced === 0 && failed > 0) {
-                    const failDetails = results
-                        .filter(r => !r.success)
-                        .map(r => `• ${r.label}: ${r.error || 'falha'}`)
-                        .join('\n');
-                    toast.error(`❌ ${message}\n${failDetails}`);
-                } else if (synced === 0 && failed === 0) {
-                    toast.info(message || 'Nenhum canal elegível para sincronização.');
+                // Monta painel inline com resultado por canal
+                if (resultsPanel) {
+                    const rows = results.map(r => {
+                        const icon = r.success ? '✅' : '❌';
+                        const urlShort = r.webhook_url ? r.webhook_url.replace(/^https?:\/\/[^/]+/, '') : '—';
+                        const errTxt = r.error ? `<span style="color:var(--danger-color);font-size:0.78rem;"> — ${_zcEsc(r.error)}</span>` : '';
+                        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:0.85rem;">
+                            <span style="flex-shrink:0;">${icon}</span>
+                            <div>
+                                <strong>${_zcEsc(r.label)}</strong>${errTxt}
+                                ${r.success ? `<div style="font-family:monospace;font-size:0.75rem;color:var(--text-secondary);margin-top:2px;">${_zcEsc(urlShort)}</div>` : ''}
+                            </div>
+                        </div>`;
+                    }).join('');
+
+                    const summaryColor = failed === 0 ? '#166534' : (synced === 0 ? '#991b1b' : '#92400e');
+                    const summaryBg   = failed === 0 ? '#f0fdf4' : (synced === 0 ? '#fef2f2' : '#fffbeb');
+                    const summaryBorder = failed === 0 ? '#bbf7d0' : (synced === 0 ? '#fecaca' : '#fcd34d');
+
+                    resultsPanel.innerHTML = `
+                        <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
+                            <div style="background:${summaryBg};border:1px solid ${summaryBorder};border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.875rem;color:${summaryColor};font-weight:600;">
+                                ${_zcEsc(message)}
+                            </div>
+                            ${rows ? `<div style="border:1px solid var(--border-color);border-radius:8px;overflow:hidden;padding:0 12px;">${rows}</div>` : ''}
+                            <button onclick="document.getElementById('zcRegisterAllResults').style.display='none';"
+                                style="margin-top:10px;font-size:0.8rem;background:none;border:none;cursor:pointer;color:var(--text-secondary);padding:0;">
+                                Fechar
+                            </button>
+                        </div>`;
                 } else {
-                    const failDetails = results
-                        .filter(r => !r.success)
-                        .map(r => `• ${r.label}: ${r.error || 'falha'}`)
-                        .join('\n');
-                    toast.warning(`⚠️ ${message}${failDetails ? '\n' + failDetails : ''}`);
+                    if (failed === 0 && synced > 0) {
+                        toast.success(`✅ ${message}`);
+                    } else if (synced === 0 && failed === 0) {
+                        toast.info(message || 'Nenhum canal elegível.');
+                    } else {
+                        toast.warning(`⚠️ ${message}`);
+                    }
                 }
 
                 await loadZAPIChannels();
             } catch (err) {
-                toast.error(`Erro: ${err.message}`);
+                if (resultsPanel) {
+                    resultsPanel.innerHTML = `
+                        <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
+                            <p style="color:var(--danger-color);font-size:0.875rem;">❌ ${_zcEsc(err.message)}</p>
+                        </div>`;
+                } else {
+                    toast.error(`Erro: ${err.message}`);
+                }
             } finally {
                 if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
             }

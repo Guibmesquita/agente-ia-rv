@@ -202,9 +202,32 @@ async def _auto_register_webhooks_startup():
             "— tentando re-registro automático..."
         )
 
-        # Task #304 — log estruturado por canal com resultado individual.
+        # Task #304 — log estruturado por canal com resultado individual
+        # e persistência em webhook_receipt_log.
         updated = 0
         results_log = []
+
+        def _persist_startup_log(channel_id: Optional[int], validation: str, detail: Optional[str] = None):
+            """Persiste tentativa de registro de startup no webhook_receipt_log."""
+            try:
+                from database.models import WebhookReceiptLog
+                _log_db = SessionLocal()
+                try:
+                    _log_db.add(WebhookReceiptLog(
+                        channel_id=channel_id,
+                        remote_ip="startup",
+                        event_type="startup_register",
+                        validation_result=validation[:32],
+                        error_detail=(detail[:256] if detail else None),
+                    ))
+                    _log_db.commit()
+                except Exception:
+                    _log_db.rollback()
+                finally:
+                    _log_db.close()
+            except Exception:
+                pass
+
         for ch in channels:
             webhook_url = f"{webhook_base}/api/whatsapp/webhook/{ch.id}"
             canal_label = ch.label or ch.name
@@ -229,6 +252,7 @@ async def _auto_register_webhooks_startup():
                     results_log.append(
                         f"  ✅ Canal {ch.id} ({canal_label}): OK ({endpoint_used})"
                     )
+                    _persist_startup_log(ch.id, "ok", f"url={webhook_url} endpoint={endpoint_used}")
                 else:
                     err = result.get("error") or result.get("body_error") or str(result)
                     print(
@@ -238,15 +262,18 @@ async def _auto_register_webhooks_startup():
                     results_log.append(
                         f"  ❌ Canal {ch.id} ({canal_label}): falha — {err}"
                     )
+                    _persist_startup_log(ch.id, "failed", err[:256] if err else None)
             except Exception as exc:
                 _etype = type(exc).__name__
+                _emsg = f"{_etype}: {exc}"
                 print(
                     f"[WEBHOOK-STARTUP] ❌ Canal {ch.id} ({canal_label}) "
-                    f"— erro {_etype}: {exc}"
+                    f"— erro {_emsg}"
                 )
                 results_log.append(
-                    f"  ❌ Canal {ch.id} ({canal_label}): {_etype}: {exc}"
+                    f"  ❌ Canal {ch.id} ({canal_label}): {_emsg}"
                 )
+                _persist_startup_log(ch.id, "failed", _emsg[:256])
 
         if updated > 0:
             db.commit()

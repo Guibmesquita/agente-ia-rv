@@ -1721,24 +1721,34 @@ async def self_test_zapi_channel_webhook(
 ):
     """
     Task #304 — Verifica se a URL de webhook do canal é acessível e se o token
-    de autenticação é aceito, sem depender de mensagens reais do Z-API.
+    de autenticação é aceito, confirmando a chegada via `webhook_receipt_log`.
 
-    Envia um POST sintético ao próprio endpoint `/api/whatsapp/webhook/{channel_id}`
-    com payload tipo `__webhook_diagnostic_test__`. O handler ignora este tipo sem
-    processar conversas. Retorna resultado estruturado:
+    Fluxo:
+    1. Registra `start_time` antes do envio.
+    2. Envia POST sintético `__webhook_diagnostic_test__` ao endpoint de webhook.
+    3. Em caso de falha de rede → `unreachable` / `timeout` imediato.
+    4. Após receber resposta HTTP, aguarda até 5 s (10 × 0.5 s) consultando
+       `webhook_receipt_log` por entrada com `channel_id` e `created_at >= start_time`:
+       - Entrada com `validation_result='ok'`           → `reachable_and_token_valid`
+       - Entrada com `validation_result='token_rejected'` → `token_rejected`
+       - Sem entrada após 5 s (mas HTTP 200)            → `reachable_log_missing`
+       - Sem entrada após 5 s (HTTP 401/403)            → `token_rejected`
+    5. HTTP 404                                         → `url_not_found`
 
-    - `reachable_and_token_valid`: URL acessível, token aceito (HTTP 200)
-    - `token_rejected`: URL acessível mas token rejeitado (HTTP 401/403)
-    - `url_not_found`: endpoint não encontrado (HTTP 404)
-    - `unreachable`: servidor inacessível (ConnectError)
-    - `timeout`: sem resposta no prazo
-    - `error`: outro erro inesperado
+    Distingue claramente: "Z-API não enviou" (unreachable/timeout) de
+    "enviou mas foi rejeitado" (token_rejected) de "chegou com sucesso" (log confirmado).
 
     Acesso restrito a admin/gestao_rv.
     """
     _auth_zapi_channel(request)
 
-    from database.models import ZAPIChannel
+    import asyncio
+    import httpx as _httpx_st
+    import os as _os_st
+    from datetime import datetime as _dt
+    from core.config import get_settings as _get_cfg_st
+    from database.models import ZAPIChannel, WebhookReceiptLog
+    from database.database import SessionLocal
 
     channel = db.query(ZAPIChannel).filter(ZAPIChannel.id == channel_id).first()
     if not channel:
@@ -1757,11 +1767,6 @@ async def self_test_zapi_channel_webhook(
         )
 
     webhook_url = _build_webhook_url_suggested(request, channel.id)
-
-    import httpx as _httpx_st
-    import os as _os_st
-    from core.config import get_settings as _get_cfg_st
-
     _cfg_st = _get_cfg_st()
     _test_token = (
         channel.client_token
@@ -1777,9 +1782,16 @@ async def self_test_zapi_channel_webhook(
         "token_hint": (_test_token[:4] + "****") if len(_test_token) > 4 else "***",
         "status_code": None,
         "result": None,
+        "latency_ms": None,
+        "log_entry_found": False,
         "error": None,
     }
 
+    # ── 1. Registra momento de início para correlação no log ─────────────────
+    start_time = _dt.utcnow()
+    t0 = asyncio.get_event_loop().time()
+
+    # ── 2. Envia POST sintético ───────────────────────────────────────────────
     try:
         async with _httpx_st.AsyncClient(timeout=8.0, verify=True) as _hc:
             _resp = await _hc.post(
@@ -1791,28 +1803,91 @@ async def self_test_zapi_channel_webhook(
                 },
             )
         self_test["status_code"] = _resp.status_code
-        if _resp.status_code == 200:
-            self_test["result"] = "reachable_and_token_valid"
-        elif _resp.status_code in (401, 403):
-            self_test["result"] = "token_rejected"
-        elif _resp.status_code == 404:
-            self_test["result"] = "url_not_found"
-        else:
-            self_test["result"] = f"unexpected_http_{_resp.status_code}"
+        self_test["latency_ms"] = int((asyncio.get_event_loop().time() - t0) * 1000)
 
     except _httpx_st.ConnectError as _ce:
         self_test["result"] = "unreachable"
         self_test["error"] = f"Servidor inacessível: {_ce}"
+        print(
+            f"[WEBHOOK-SELFTEST] Canal {channel_id} ({self_test['channel_name']}) "
+            f"→ unreachable — {webhook_url}: {_ce}"
+        )
+        return self_test
     except _httpx_st.TimeoutException:
         self_test["result"] = "timeout"
         self_test["error"] = "Timeout — o servidor não respondeu no prazo de 8 s"
+        print(
+            f"[WEBHOOK-SELFTEST] Canal {channel_id} ({self_test['channel_name']}) → timeout"
+        )
+        return self_test
     except Exception as _exc:
         self_test["result"] = "error"
         self_test["error"] = f"{type(_exc).__name__}: {_exc}"
+        return self_test
+
+    # HTTP 404 → endpoint não encontrado, sem necessidade de aguardar log
+    if self_test["status_code"] == 404:
+        self_test["result"] = "url_not_found"
+        print(
+            f"[WEBHOOK-SELFTEST] Canal {channel_id} → url_not_found (HTTP 404) — {webhook_url}"
+        )
+        return self_test
+
+    # ── 3. Aguarda até 5 s confirmando chegada no webhook_receipt_log ─────────
+    # O handler de webhook grava o log via background_task após enviar a resposta.
+    # Polling garante que não perdemos a janela de escritas assíncronas.
+    POLL_INTERVAL = 0.5
+    MAX_POLLS = 10  # 10 × 0.5 s = 5 s
+
+    found_validation_result: Optional[str] = None
+    for _ in range(MAX_POLLS):
+        await asyncio.sleep(POLL_INTERVAL)
+        _log_db = SessionLocal()
+        try:
+            _entry = (
+                _log_db.query(WebhookReceiptLog)
+                .filter(
+                    WebhookReceiptLog.channel_id == channel_id,
+                    WebhookReceiptLog.created_at >= start_time,
+                )
+                .order_by(WebhookReceiptLog.created_at.desc())
+                .first()
+            )
+            if _entry:
+                found_validation_result = _entry.validation_result
+                self_test["log_entry_found"] = True
+                break
+        except Exception:
+            pass
+        finally:
+            _log_db.close()
+
+    # ── 4. Classifica resultado com base em evidência do log ─────────────────
+    if found_validation_result == "ok":
+        self_test["result"] = "reachable_and_token_valid"
+    elif found_validation_result in ("token_rejected",):
+        self_test["result"] = "token_rejected"
+    elif found_validation_result is not None:
+        # Outro validation_result do log (channel_not_found, channel_inactive, etc.)
+        self_test["result"] = f"log_{found_validation_result}"
+    elif self_test["status_code"] == 200:
+        # Chegou HTTP 200 mas log não encontrado no polling — pode ser lag de DB
+        self_test["result"] = "reachable_log_missing"
+        self_test["error"] = (
+            "HTTP 200 recebido mas nenhuma entrada encontrada em webhook_receipt_log "
+            "em 5 s. O webhook chegou ao servidor mas o registro de auditoria não "
+            "foi confirmado a tempo."
+        )
+    elif self_test["status_code"] in (401, 403):
+        self_test["result"] = "token_rejected"
+    else:
+        self_test["result"] = f"unexpected_http_{self_test['status_code']}"
 
     print(
         f"[WEBHOOK-SELFTEST] Canal {channel_id} ({self_test['channel_name']}) "
-        f"→ {self_test['result']} (HTTP {self_test['status_code']}) — {webhook_url}"
+        f"→ {self_test['result']} (HTTP {self_test['status_code']}, "
+        f"log_found={self_test['log_entry_found']}, latency={self_test['latency_ms']}ms) "
+        f"— {webhook_url}"
     )
     return self_test
 
