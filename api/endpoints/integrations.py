@@ -1376,6 +1376,19 @@ async def sync_all_zapi_webhooks(
 # Task #264 — Sincronização manual de webhook por canal
 # ─────────────────────────────────────────────────────────────────────────────
 
+@router.post("/zapi/channels/{channel_id}/register-webhook")
+async def register_zapi_channel_webhook_alias(
+    channel_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Task #293 — Alias de /sync-webhook com contrato explícito do step 2 da task.
+    Delega inteiramente para sync_zapi_channel_webhook.
+    """
+    return await sync_zapi_channel_webhook(channel_id, request, db)
+
+
 @router.post("/zapi/channels/{channel_id}/sync-webhook")
 async def sync_zapi_channel_webhook(
     channel_id: int,

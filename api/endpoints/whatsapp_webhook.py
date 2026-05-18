@@ -1443,9 +1443,10 @@ async def _process_zapi_payload_internal(
     # quando channel_id=None (endpoint legado). Garante que mensagens de instâncias
     # não-legadas recebidas no endpoint legado sejam corretamente atribuídas ao canal
     # correto, mesmo que o webhook não tenha sido registrado no endpoint per-channel.
-    # Prioridade: instanceId (identificador exato da instância) → connectedPhone (número).
+    # Usa apenas instanceId (identificador exato da instância no Z-API).
+    # Fallback por phone_number é tratado na Task #295.
     if channel_id is None:
-        _inst_hint = payload.get("instanceId") or payload.get("connectedPhone") or ""
+        _inst_hint = payload.get("instanceId") or ""
         if _inst_hint:
             try:
                 from database.models import ZAPIChannel as _ZAPIChannel

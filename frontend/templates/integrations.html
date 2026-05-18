@@ -971,7 +971,7 @@
                         <span style="font-size:1rem;">⚠️</span>
                         <span><strong>Z-API desconectada</strong> — mensagens não serão entregues até reconectar via QR Code no painel Z-API.</span>
                     </div>` : ''}
-                    ${!ch.is_legacy && !ch.webhook_auto_registered && ch.is_active ? `
+                    ${!ch.is_legacy && ch.is_active && (ch.webhook_registered === false || (!ch.webhook_auto_registered && ch.webhook_registered !== true && ch.webhook_registered !== 'registered_no_verify')) ? `
                     <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:0.82rem;color:#92400e;display:flex;align-items:center;gap:6px;">
                         <span style="font-size:1rem;">🔗</span>
                         <span><strong>Webhook não registrado</strong> — mensagens recebidas pelos clientes não chegam ao agente. Clique em <strong>Sincronizar webhook</strong>.</span>
