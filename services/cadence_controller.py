@@ -598,6 +598,17 @@ async def run_cadence_tick():
                     _cds_key_leg = (CAMPAIGN_KIND_LEGACY, campaign.id, channel_id)
                     _channel_daily_sent[_cds_key_leg] = _channel_daily_sent.get(_cds_key_leg, 0) + 1
                     db.commit()
+                    # Task #287 — persiste conversa/mensagem com channel_id para garantir
+                    # roteamento correto das respostas do agente. campaign_id=None pois
+                    # CadenceCampaign usa tabela separada (cadence_campaigns), não campaigns.
+                    _persist_unified_campaign_message(
+                        db,
+                        next_contact.phone,
+                        next_contact.custom_message or "",
+                        campaign.name,
+                        channel_id=channel_id,
+                        campaign_id=None,
+                    )
                     _persist_state(db, last_send_at=now, consecutive_failures=0)
                     emit_event(db, CAMPAIGN_KIND_LEGACY, campaign.id, EVENT_DISPATCH_SENT, {
                         "phone": next_contact.phone,
@@ -991,7 +1002,7 @@ async def run_cadence_tick():
                         _cds_key_uni = (CAMPAIGN_KIND_UNIFIED, campaign.id, dispatch_channel_id)
                         _channel_daily_sent[_cds_key_uni] = _channel_daily_sent.get(_cds_key_uni, 0) + 1
 
-                        _persist_unified_campaign_message(db, phone, message, campaign.name)
+                        _persist_unified_campaign_message(db, phone, message, campaign.name, channel_id=dispatch_channel_id, campaign_id=campaign.id)
 
                         db.commit()
                         _persist_state(db, last_send_at=now, consecutive_failures=0)
@@ -1010,6 +1021,7 @@ async def run_cadence_tick():
                         _consecutive_failures += 1
                         ch_failures_u = _consecutive_failures_by_channel.get(dispatch_channel_id, 0) + 1
                         _consecutive_failures_by_channel[dispatch_channel_id] = ch_failures_u
+                        print(f"[DISPATCH-FAIL] canal={dispatch_channel_id} assessor_phone={phone} motivo={result.get('error_code','UNKNOWN')} detalhe={str(error_msg)[:200]}")
                         # Task #222 — streak por-campanha (somente turbo).
                         _is_turbo_now_u = bool(getattr(campaign, "cadence_turbo_active", False))
                         if _is_turbo_now_u:
@@ -1113,9 +1125,19 @@ async def run_cadence_tick():
         db.close()
 
 
-def _persist_unified_campaign_message(db, phone: str, message: str, campaign_name: str):
+def _persist_unified_campaign_message(
+    db,
+    phone: str,
+    message: str,
+    campaign_name: str,
+    channel_id: Optional[int] = None,
+    campaign_id: Optional[int] = None,
+):
+    """Task #287 — propaga channel_id, assessor_id e campaign_id na conversa/mensagem
+    criada após envio bem-sucedido, garantindo roteamento correto das respostas do agente.
+    """
     try:
-        from database.models import WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation
+        from database.models import WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation, Assessor as _Ass
         clean_phone = ''.join(filter(str.isdigit, phone))
         if not clean_phone:
             return
@@ -1123,10 +1145,26 @@ def _persist_unified_campaign_message(db, phone: str, message: str, campaign_nam
         conversation = db.query(Conversation).filter(
             Conversation.phone == clean_phone
         ).first()
+
+        _created_new = False
         if not conversation:
-            conversation = Conversation(phone=clean_phone)
+            conversation = Conversation(phone=clean_phone, channel_id=channel_id)
             db.add(conversation)
             db.flush()
+            _created_new = True
+        else:
+            if channel_id and not conversation.channel_id:
+                conversation.channel_id = channel_id
+                db.flush()
+
+        if _created_new and not conversation.assessor_id:
+            try:
+                _assessor = db.query(_Ass).filter(_Ass.telefone_whatsapp == clean_phone).first()
+                if _assessor:
+                    conversation.assessor_id = _assessor.id
+                    db.flush()
+            except Exception:
+                pass
 
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
         record = WhatsAppMessage(
@@ -1140,9 +1178,13 @@ def _persist_unified_campaign_message(db, phone: str, message: str, campaign_nam
             ai_intent="campaign_dispatch",
             sender_type=SenderType.BOT.value,
             conversation_id=conversation.id,
+            channel_id=channel_id,
+            is_from_campaign=True,
+            campaign_id=campaign_id,
         )
         db.add(record)
         db.flush()
+        print(f"[CADENCE] Mensagem salva: telefone={clean_phone} canal={channel_id} campanha_id={campaign_id}")
     except Exception as e:
         print(f"[CADENCE] Erro ao salvar mensagem de campanha: {e}")
 

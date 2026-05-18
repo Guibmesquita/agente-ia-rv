@@ -2129,7 +2129,7 @@ async def dispatch_campaign(
                     dispatch.status = "sent"
                     dispatch.sent_at = datetime.utcnow()
                     sent_count += 1
-                    _persist_campaign_message(db, phone, message, campaign.name)
+                    _persist_campaign_message(db, phone, message, campaign.name, channel_id=_a_channel_id, campaign_id=campaign_id)
                 else:
                     dispatch.status = "failed"
                     error_code = result.get("error_code", "UNKNOWN")
@@ -2137,6 +2137,7 @@ async def dispatch_campaign(
                     dispatch.error_message = error_msg
                     dispatch.error_details = translate_error_to_natural_language(error_code, error_msg, phone)
                     failed_count += 1
+                    print(f"[DISPATCH-FAIL] canal={_a_channel_id} assessor={_a_email} motivo={error_code} detalhe={error_msg[:200]}")
             except Exception as e:
                 dispatch.status = "failed"
                 dispatch.error_message = str(e)
@@ -2374,11 +2375,12 @@ async def dispatch_campaign_stream(
                                     dispatch.sent_at = datetime.utcnow()
                                     sent_count += 1
                                     status = "sent"
-                                    _persist_campaign_message(db_session, phone, message, campaign.name)
+                                    _persist_campaign_message(db_session, phone, message, campaign.name, channel_id=_sse_channel_id, campaign_id=campaign_id)
                                     break
                                 else:
                                     error_code = result.get("error_code", "UNKNOWN")
                                     error_msg = result.get("error", "Erro desconhecido")
+                                    print(f"[DISPATCH-FAIL] canal={_sse_channel_id} assessor={assessor_data.get('email_assessor','')} motivo={error_code} detalhe={str(error_msg)[:200]}")
                                     
                                     is_retryable = (
                                         error_code.startswith("HTTP_5") or 
@@ -2815,11 +2817,12 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                                     dispatch.sent_at = datetime.utcnow()
                                     sent_count += 1
                                     status = "sent"
-                                    _persist_campaign_message(db_session, phone, message, campaign.name)
+                                    _persist_campaign_message(db_session, phone, message, campaign.name, channel_id=_base_channel_id, campaign_id=campaign.id)
                                     break
                                 else:
                                     error_code = result.get("error_code", "UNKNOWN")
                                     error_msg = result.get("error", "Erro desconhecido")
+                                    print(f"[DISPATCH-FAIL] canal={_base_channel_id} assessor={assessor.get('email','')} motivo={error_code} detalhe={str(error_msg)[:200]}")
                                     
                                     is_retryable = (
                                         error_code.startswith("HTTP_5") or 
@@ -3686,11 +3689,23 @@ async def debug_campaign(
     }
 
 
-def _persist_campaign_message(db_session: Session, phone: str, message: str, campaign_name: str = ""):
+def _persist_campaign_message(
+    db_session: Session,
+    phone: str,
+    message: str,
+    campaign_name: str = "",
+    channel_id: Optional[int] = None,
+    campaign_id: Optional[int] = None,
+):
+    """Persiste conversa e mensagem de campanha após envio bem-sucedido.
+
+    Task #287 — propaga channel_id, assessor_id e campaign_id para garantir
+    roteamento correto das respostas do agente (resolve_channel_client_for_conversation).
+    """
     if not phone or not message:
         return
     try:
-        from database.models import WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation
+        from database.models import WhatsAppMessage, MessageDirection, MessageType, SenderType, Conversation, Assessor as _Assessor
         clean_phone = ''.join(filter(str.isdigit, phone))
         if not clean_phone:
             return
@@ -3698,10 +3713,30 @@ def _persist_campaign_message(db_session: Session, phone: str, message: str, cam
         conversation = db_session.query(Conversation).filter(
             Conversation.phone == clean_phone
         ).first()
+
+        _created_new = False
         if not conversation:
-            conversation = Conversation(phone=clean_phone)
+            conversation = Conversation(phone=clean_phone, channel_id=channel_id)
             db_session.add(conversation)
             db_session.flush()
+            _created_new = True
+        else:
+            if channel_id and not conversation.channel_id:
+                conversation.channel_id = channel_id
+                db_session.flush()
+
+        if _created_new and not conversation.assessor_id:
+            try:
+                _assessor = (
+                    db_session.query(_Assessor)
+                    .filter(_Assessor.telefone_whatsapp == clean_phone)
+                    .first()
+                )
+                if _assessor:
+                    conversation.assessor_id = _assessor.id
+                    db_session.flush()
+            except Exception:
+                pass
 
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
         record = WhatsAppMessage(
@@ -3715,10 +3750,13 @@ def _persist_campaign_message(db_session: Session, phone: str, message: str, cam
             ai_intent="campaign_dispatch",
             sender_type=SenderType.BOT.value,
             conversation_id=conversation.id,
+            channel_id=channel_id,
+            is_from_campaign=True,
+            campaign_id=campaign_id,
         )
         db_session.add(record)
         db_session.commit()
-        print(f"[CAMPAIGN_MSG] Mensagem de campanha salva no histórico de {clean_phone}")
+        print(f"[CAMPAIGN_MSG] Mensagem salva: telefone={clean_phone} canal={channel_id} campanha_id={campaign_id}")
     except Exception as e:
         print(f"[CAMPAIGN_MSG] Erro ao salvar mensagem de campanha: {e}")
         try:
