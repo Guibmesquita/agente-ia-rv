@@ -972,6 +972,33 @@ def _cleanup_old_cadence_events(retention_days: Optional[int] = None):
         db.close()
 
 
+def _backfill_conversation_ticket_status():
+    """Task #291 — migra conversas com ticket_status=NULL para 'new'.
+
+    Conversas criadas antes desta task (via Z-API sync ou webhook outbound) ficavam
+    com ticket_status=NULL e eram invisíveis no filtro padrão 'Novas' da Central.
+    Idempotente: só atualiza rows com NULL, excluindo conversas já fechadas.
+    """
+    from database.database import SessionLocal
+    from sqlalchemy import text as sql_text
+    db = SessionLocal()
+    try:
+        result = db.execute(sql_text(
+            "UPDATE conversations SET ticket_status = 'new' "
+            "WHERE ticket_status IS NULL "
+            "AND status NOT IN ('closed', 'archived')"
+        ))
+        updated = result.rowcount
+        db.commit()
+        if updated > 0:
+            print(f"[INIT] Backfill ticket_status: {updated} conversa(s) migrada(s) para 'new'")
+    except Exception as e:
+        print(f"[INIT] Aviso: backfill de ticket_status falhou: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _sync_init_database():
     """Operações síncronas de inicialização do banco (roda em thread separada)."""
     import os
@@ -997,6 +1024,7 @@ def _sync_init_database():
         _cleanup_orphan_pre_analysis_materials()
         _backfill_cadence_events()
         _cleanup_old_cadence_events()
+        _backfill_conversation_ticket_status()
 
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")

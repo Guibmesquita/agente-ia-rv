@@ -194,7 +194,7 @@ def get_or_create_conversation(
             lid_source="webhook" if (sender_lid or lid_from_phone) else None,
             lid_collected_at=datetime.utcnow() if (sender_lid or lid_from_phone) else None,
             escalation_level=EscalationLevel.T0_BOT.value,
-            ticket_status=None,
+            ticket_status=TicketStatusV2.NEW.value,
             channel_id=delivery_channel_id,
         )
         db.add(conv)

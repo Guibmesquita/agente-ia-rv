@@ -197,7 +197,12 @@ async def list_conversations(
     
     # V2 Zendesk-like filters
     if ticket_status:
-        query = query.filter(Conversation.ticket_status == ticket_status)
+        if ticket_status == "new":
+            query = query.filter(
+                or_(Conversation.ticket_status == ticket_status, Conversation.ticket_status == None)
+            )
+        else:
+            query = query.filter(Conversation.ticket_status == ticket_status)
     
     if escalation_level:
         query = query.filter(Conversation.escalation_level == escalation_level)

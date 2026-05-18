@@ -1148,13 +1148,19 @@ def _persist_unified_campaign_message(
 
         _created_new = False
         if not conversation:
-            conversation = Conversation(phone=clean_phone, channel_id=channel_id)
+            conversation = Conversation(phone=clean_phone, channel_id=channel_id, ticket_status="new")
             db.add(conversation)
             db.flush()
             _created_new = True
         else:
+            _updated = False
             if channel_id and not conversation.channel_id:
                 conversation.channel_id = channel_id
+                _updated = True
+            if not conversation.ticket_status:
+                conversation.ticket_status = "new"
+                _updated = True
+            if _updated:
                 db.flush()
 
         if _created_new and not conversation.assessor_id:
