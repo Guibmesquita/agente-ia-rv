@@ -1443,8 +1443,8 @@ async def _process_zapi_payload_internal(
     # quando channel_id=None (endpoint legado). Garante que mensagens de instâncias
     # não-legadas recebidas no endpoint legado sejam corretamente atribuídas ao canal
     # correto, mesmo que o webhook não tenha sido registrado no endpoint per-channel.
-    # Usa apenas instanceId (identificador exato da instância no Z-API).
-    # Fallback por phone_number é tratado na Task #295.
+    # Usa instanceId (identificador exato da instância no Z-API) como detecção primária;
+    # Task #298 adiciona fallback por phone_number quando instanceId não está presente.
     if channel_id is None:
         _inst_hint = payload.get("instanceId") or ""
         if _inst_hint:
@@ -1462,7 +1462,69 @@ async def _process_zapi_payload_internal(
                         f"via instanceId={_inst_hint!r} (payload legado)"
                     )
             except Exception as _det_exc:
-                logger.warning(f"[WEBHOOK] Falha na auto-detecção de canal: {_det_exc}")
+                logger.warning(f"[WEBHOOK] Falha na auto-detecção de canal via instanceId: {_det_exc}")
+
+    # Task #298 — Fallback: detectar canal pelo número de telefone do remetente quando
+    # o payload não inclui instanceId (alguns tipos de evento Z-API omitem esse campo).
+    # Tenta campos `phone`, `chatId` e `from` nessa ordem; normaliza para apenas dígitos
+    # e compara com zapi_channels.phone_number (canais ativos, não-legados).
+    if channel_id is None:
+        _phone_field_used: Optional[str] = None
+        _raw_sender: str = ""
+        for _field in ("phone", "chatId", "from"):
+            _val = payload.get(_field)
+            if _val is not None and _val != "":
+                _phone_field_used = _field
+                _raw_sender = str(_val)
+                break
+
+        if _raw_sender:
+            # Normaliza: remove tudo que não é dígito
+            _sender_digits = "".join(filter(str.isdigit, _raw_sender))
+            if _sender_digits:
+                try:
+                    from database.models import ZAPIChannel as _ZAPIChannel
+                    _all_active = (
+                        db.query(_ZAPIChannel)
+                        .filter(
+                            _ZAPIChannel.is_active == True,
+                            _ZAPIChannel.is_legacy == False,
+                            _ZAPIChannel.phone_number != None,  # noqa: E711
+                        )
+                        .all()
+                    )
+                    _phone_matched: Optional[_ZAPIChannel] = None
+                    for _ch in _all_active:
+                        _ch_digits = "".join(filter(str.isdigit, _ch.phone_number or ""))
+                        if _ch_digits and _ch_digits == _sender_digits:
+                            _phone_matched = _ch
+                            break
+
+                    if _phone_matched:
+                        channel_id = _phone_matched.id
+                        logger.info(
+                            f"[WEBHOOK] channel_id auto-detectado={channel_id} "
+                            f"via phone_number (campo='{_phone_field_used}', "
+                            f"valor={_raw_sender!r}) (payload legado)"
+                        )
+                        # Registra a detecção por telefone no webhook_receipt_log para
+                        # rastreabilidade — usa validation_result especial para distinguir
+                        # de entradas criadas pela rota de entrada.
+                        background_tasks.add_task(
+                            _log_webhook_attempt_sync,
+                            channel_id,
+                            (
+                                request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                                or (request.client.host if request.client else "?")
+                            ),
+                            payload.get("type", "?"),
+                            "channel_detected_by_phone",
+                            f"field={_phone_field_used} raw={_raw_sender[:30]}",
+                        )
+                except Exception as _phone_det_exc:
+                    logger.warning(
+                        f"[WEBHOOK] Falha na auto-detecção de canal via phone_number: {_phone_det_exc}"
+                    )
 
     event_type = payload.get("type", "")
 
