@@ -142,6 +142,95 @@ async def run_init_background():
     except Exception as e:
         print(f"[INIT] Erro no cleanup de jobs travados: {e}")
 
+    try:
+        await _auto_register_webhooks_startup()
+    except Exception as e:
+        print(f"[INIT] Erro no re-registro automático de webhooks: {e}")
+
+
+async def _auto_register_webhooks_startup():
+    """
+    Task #293 — Re-registra webhooks de canais ativos não-legados com
+    webhook_auto_registered=False usando WEBHOOK_BASE_URL ou APP_BASE_URL.
+    Idempotente e não-bloqueante: falhas por canal são logadas mas não interrompem o startup.
+    Só executa quando há base URL configurada via env vars (sem request disponível).
+    """
+    import os
+    from database.database import SessionLocal
+    from database.models import ZAPIChannel
+    from services.whatsapp_client import ZAPIClient
+
+    webhook_base = (
+        os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
+        or os.getenv("APP_BASE_URL", "").rstrip("/")
+    )
+    if not webhook_base:
+        print(
+            "[WEBHOOK-STARTUP] WEBHOOK_BASE_URL e APP_BASE_URL não configurados — "
+            "re-registro automático ignorado. Configure uma dessas variáveis para "
+            "habilitar o registro automático de webhooks no startup."
+        )
+        return
+
+    db = SessionLocal()
+    try:
+        channels = (
+            db.query(ZAPIChannel)
+            .filter(
+                ZAPIChannel.is_legacy.is_(False),
+                ZAPIChannel.is_active.is_(True),
+                ZAPIChannel.webhook_auto_registered.is_(False),
+            )
+            .all()
+        )
+
+        if not channels:
+            print("[WEBHOOK-STARTUP] Todos os canais ativos já têm webhook registrado.")
+            return
+
+        print(
+            f"[WEBHOOK-STARTUP] {len(channels)} canal(is) com webhook_auto_registered=false "
+            "— tentando re-registro automático..."
+        )
+
+        updated = 0
+        for ch in channels:
+            webhook_url = f"{webhook_base}/api/whatsapp/webhook/{ch.id}"
+            try:
+                client = ZAPIClient(
+                    instance_id=ch.instance_id,
+                    token=ch.token,
+                    client_token=ch.client_token,
+                )
+                result = await client.update_webhook(webhook_url)
+                if result.get("success"):
+                    ch.webhook_auto_registered = True
+                    ch.webhook_url = webhook_url
+                    updated += 1
+                    print(
+                        f"[WEBHOOK-STARTUP] Canal {ch.id} ({ch.label or ch.name}) "
+                        f"— webhook registrado: {webhook_url}"
+                    )
+                else:
+                    print(
+                        f"[WEBHOOK-STARTUP] Canal {ch.id} ({ch.label or ch.name}) "
+                        f"— falha no re-registro (instância pode estar desconectada): {result}"
+                    )
+            except Exception as exc:
+                print(
+                    f"[WEBHOOK-STARTUP] Canal {ch.id} ({ch.label or ch.name}) "
+                    f"— erro: {type(exc).__name__}: {exc}"
+                )
+
+        if updated > 0:
+            db.commit()
+            print(f"[WEBHOOK-STARTUP] {updated} canal(is) registrado(s) com sucesso.")
+    except Exception as exc:
+        print(f"[WEBHOOK-STARTUP] Erro inesperado: {type(exc).__name__}: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
 
 def _cleanup_stale_processing_jobs():
     """Marca jobs travados em 'processing' (>30min sem update) como 'failed'."""

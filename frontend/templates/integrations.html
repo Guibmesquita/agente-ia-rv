@@ -866,6 +866,8 @@
             // Task #264 — usa webhook_registered (verificado em tempo real): true/false/"unknown"
             // Task #276 — novo valor "registered_no_verify": GET /webhooks não existe no Z-API
             //             mas o banco registra webhook_auto_registered=true. Badge âmbar.
+            // Task #293 — fallback para webhook_auto_registered (flag do DB) quando
+            //             sonda em tempo real não foi executada (listagem sem include_webhook_status).
             const status = ch.webhook_registered;
             if (status === true) {
                 return '<span style="color:#16a34a; font-weight:500;">✅ Registrado</span>';
@@ -874,7 +876,14 @@
                 return '<span style="color:#d97706; font-weight:500;" title="Webhook registrado, mas o Z-API não suporta confirmação via GET /webhooks para esta instância.">⚠️ Registrado*</span>';
             }
             if (status === false) {
-                return '<span style="color:#dc2626; font-weight:500;">❌ Não registrado</span>';
+                return '<span style="color:#dc2626; font-weight:500;" title="Webhook não registrado na instância Z-API — mensagens recebidas não chegam ao agente. Clique em Sincronizar webhook.">❌ Não registrado</span>';
+            }
+            // Fallback: usa webhook_auto_registered do banco quando sonda em tempo real não está disponível
+            if (ch.webhook_auto_registered === false) {
+                return '<span style="color:#dc2626; font-weight:500;" title="Webhook não registrado na instância Z-API — mensagens recebidas não chegam ao agente. Clique em Sincronizar webhook.">❌ Não registrado</span>';
+            }
+            if (ch.webhook_auto_registered === true) {
+                return '<span style="color:#d97706; font-weight:500;" title="Registrado segundo o banco, mas não verificado em tempo real. Use Diagnóstico para confirmar.">⚠️ Registrado*</span>';
             }
             // "unknown": instância inacessível ou canal inativo
             return '<span style="color:#6b7280; font-weight:500;">❓ Desconhecido</span>';
@@ -961,6 +970,11 @@
                     <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:0.82rem;color:#991b1b;display:flex;align-items:center;gap:6px;">
                         <span style="font-size:1rem;">⚠️</span>
                         <span><strong>Z-API desconectada</strong> — mensagens não serão entregues até reconectar via QR Code no painel Z-API.</span>
+                    </div>` : ''}
+                    ${!ch.is_legacy && !ch.webhook_auto_registered && ch.is_active ? `
+                    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:0.82rem;color:#92400e;display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:1rem;">🔗</span>
+                        <span><strong>Webhook não registrado</strong> — mensagens recebidas pelos clientes não chegam ao agente. Clique em <strong>Sincronizar webhook</strong>.</span>
                     </div>` : ''}
                     <div class="zc-channel-phone">📱 ${phone}</div>
                     <div class="zc-channel-meta">👥 ${assessorTxt}</div>

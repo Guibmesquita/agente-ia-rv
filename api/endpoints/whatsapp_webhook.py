@@ -1439,6 +1439,30 @@ async def _process_zapi_payload_internal(
     Contém toda a lógica de negócio *após* a validação do token de autenticação.
     O parâmetro channel_id é opcional: None → canal legado (env vars).
     """
+    # Task #293 — Auto-detect channel_id a partir do instanceId do payload Z-API
+    # quando channel_id=None (endpoint legado). Garante que mensagens de instâncias
+    # não-legadas recebidas no endpoint legado sejam corretamente atribuídas ao canal
+    # correto, mesmo que o webhook não tenha sido registrado no endpoint per-channel.
+    # Prioridade: instanceId (identificador exato da instância) → connectedPhone (número).
+    if channel_id is None:
+        _inst_hint = payload.get("instanceId") or payload.get("connectedPhone") or ""
+        if _inst_hint:
+            try:
+                from database.models import ZAPIChannel as _ZAPIChannel
+                _matched_ch = db.query(_ZAPIChannel).filter(
+                    _ZAPIChannel.instance_id == _inst_hint,
+                    _ZAPIChannel.is_active == True,
+                    _ZAPIChannel.is_legacy == False,
+                ).first()
+                if _matched_ch:
+                    channel_id = _matched_ch.id
+                    logger.info(
+                        f"[WEBHOOK] channel_id auto-detectado={channel_id} "
+                        f"via instanceId={_inst_hint!r} (payload legado)"
+                    )
+            except Exception as _det_exc:
+                logger.warning(f"[WEBHOOK] Falha na auto-detecção de canal: {_det_exc}")
+
     event_type = payload.get("type", "")
 
     if event_type == "DeliveryCallback":
