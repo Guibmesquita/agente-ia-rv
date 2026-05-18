@@ -2137,7 +2137,7 @@ async def dispatch_campaign(
                     dispatch.error_message = error_msg
                     dispatch.error_details = translate_error_to_natural_language(error_code, error_msg, phone)
                     failed_count += 1
-                    print(f"[DISPATCH-FAIL] canal={_a_channel_id} assessor={_a_email} motivo={error_code} detalhe={error_msg[:200]}")
+                    print(f"[DISPATCH-FAIL] canal={_a_channel_id} assessor={_a_email} motivo={error_code} detalhe={error_msg[:200]} api_response={str(result)[:300]}")
             except Exception as e:
                 dispatch.status = "failed"
                 dispatch.error_message = str(e)
@@ -2380,7 +2380,7 @@ async def dispatch_campaign_stream(
                                 else:
                                     error_code = result.get("error_code", "UNKNOWN")
                                     error_msg = result.get("error", "Erro desconhecido")
-                                    print(f"[DISPATCH-FAIL] canal={_sse_channel_id} assessor={assessor_data.get('email_assessor','')} motivo={error_code} detalhe={str(error_msg)[:200]}")
+                                    print(f"[DISPATCH-FAIL] canal={_sse_channel_id} assessor={assessor_data.get('email_assessor','')} motivo={error_code} detalhe={str(error_msg)[:200]} api_response={str(result)[:300]}")
                                     
                                     is_retryable = (
                                         error_code.startswith("HTTP_5") or 
@@ -2822,7 +2822,7 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                                 else:
                                     error_code = result.get("error_code", "UNKNOWN")
                                     error_msg = result.get("error", "Erro desconhecido")
-                                    print(f"[DISPATCH-FAIL] canal={_base_channel_id} assessor={assessor.get('email','')} motivo={error_code} detalhe={str(error_msg)[:200]}")
+                                    print(f"[DISPATCH-FAIL] canal={_base_channel_id} assessor={assessor.get('email','')} motivo={error_code} detalhe={str(error_msg)[:200]} api_response={str(result)[:300]}")
                                     
                                     is_retryable = (
                                         error_code.startswith("HTTP_5") or 
@@ -3735,8 +3735,8 @@ def _persist_campaign_message(
                 if _assessor:
                     conversation.assessor_id = _assessor.id
                     db_session.flush()
-            except Exception:
-                pass
+            except Exception as _lookup_err:
+                print(f"[CAMPAIGN_MSG] Aviso: lookup de assessor falhou para telefone={clean_phone} canal={channel_id}: {_lookup_err}")
 
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
         record = WhatsAppMessage(

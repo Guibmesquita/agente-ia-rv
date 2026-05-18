@@ -1021,7 +1021,7 @@ async def run_cadence_tick():
                         _consecutive_failures += 1
                         ch_failures_u = _consecutive_failures_by_channel.get(dispatch_channel_id, 0) + 1
                         _consecutive_failures_by_channel[dispatch_channel_id] = ch_failures_u
-                        print(f"[DISPATCH-FAIL] canal={dispatch_channel_id} assessor_phone={phone} motivo={result.get('error_code','UNKNOWN')} detalhe={str(error_msg)[:200]}")
+                        print(f"[DISPATCH-FAIL] canal={dispatch_channel_id} assessor_phone={phone} motivo={result.get('error_code','UNKNOWN')} detalhe={str(error_msg)[:200]} api_response={str(result)[:300]}")
                         # Task #222 — streak por-campanha (somente turbo).
                         _is_turbo_now_u = bool(getattr(campaign, "cadence_turbo_active", False))
                         if _is_turbo_now_u:
@@ -1163,8 +1163,8 @@ def _persist_unified_campaign_message(
                 if _assessor:
                     conversation.assessor_id = _assessor.id
                     db.flush()
-            except Exception:
-                pass
+            except Exception as _lookup_err:
+                print(f"[CADENCE] Aviso: lookup de assessor falhou para telefone={clean_phone} canal={channel_id}: {_lookup_err}")
 
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
         record = WhatsAppMessage(
