@@ -1849,6 +1849,7 @@ async def self_test_zapi_channel_webhook(
                 .filter(
                     WebhookReceiptLog.channel_id == channel_id,
                     WebhookReceiptLog.created_at >= start_time,
+                    WebhookReceiptLog.event_type == "__webhook_diagnostic_test__",
                 )
                 .order_by(WebhookReceiptLog.created_at.desc())
                 .first()

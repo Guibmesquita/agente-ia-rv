@@ -1788,7 +1788,7 @@
                     <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;">Reg. no banco</td><td>${d.webhook_auto_registered ? '<span style="color:#16a34a;">✅ Sim</span>' : '<span style="color:#dc2626;">❌ Não</span>'}</td></tr>
                 </table>
                 ${candidateRows ? `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Campos recebidos do Z-API</p><table style="width:100%;border-collapse:collapse;margin-bottom:12px;">${candidateRows}</table>` : ''}
-                ${selfTestHtml}
+                <div id="zcDiagSelfTestSection">${selfTestHtml}</div>
                 ${stats ? (() => {
                     const cnt = stats.messages_received_24h ?? 0;
                     const lastStr = stats.last_received_at ? _zcRelativeTime(new Date(stats.last_received_at)) : null;
@@ -1844,7 +1844,14 @@
 
             // Botões de ação
             const footer = document.createElement('div');
-            footer.style.cssText = 'margin-top:16px;display:flex;gap:8px;justify-content:flex-end;';
+            footer.style.cssText = 'margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;';
+
+            // Task #304 — botão "🧪 Testar alcançabilidade" no modal de Diagnóstico
+            const selfTestModalBtn = document.createElement('button');
+            selfTestModalBtn.className = 'btn btn-secondary btn-sm';
+            selfTestModalBtn.textContent = '🧪 Testar alcançabilidade';
+            selfTestModalBtn.addEventListener('click', () => zcRunSelfTestInModal(d.channel_id, selfTestModalBtn));
+
             const syncBtn = document.createElement('button');
             syncBtn.className = 'btn btn-primary btn-sm';
             syncBtn.textContent = '🔗 Sincronizar webhook';
@@ -1853,6 +1860,7 @@
             closeBtn2.className = 'btn btn-secondary btn-sm';
             closeBtn2.textContent = 'Fechar';
             closeBtn2.onclick = () => overlay.remove();
+            footer.appendChild(selfTestModalBtn);
             footer.appendChild(syncBtn);
             footer.appendChild(closeBtn2);
             box.appendChild(footer);
@@ -1902,6 +1910,70 @@
                 toast.error(`Self-test: ${err.message}`);
             } finally {
                 if (btn) { btn.textContent = '🧪 Self-test'; btn.disabled = false; }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // Task #304 — Teste de alcançabilidade no modal de Diagnóstico
+        // ══════════════════════════════════════════════════════════════
+
+        async function zcRunSelfTestInModal(channelId, btn) {
+            const section = document.getElementById('zcDiagSelfTestSection');
+            const origText = btn ? btn.textContent : '';
+            if (btn) { btn.textContent = '⏳ Testando…'; btn.disabled = true; }
+            if (section) {
+                section.innerHTML = `
+                    <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Teste de alcançabilidade</p>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:#6b7280;">
+                        <div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>
+                        Enviando requisição de teste e aguardando confirmação no log (até 5 s)…
+                    </div>`;
+            }
+
+            try {
+                const res = await fetch(`${ZC_API}/${channelId}/self-test-webhook`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                const data = await res.json().catch(() => ({}));
+
+                const _stLabels = {
+                    reachable_and_token_valid: { icon: '✅', label: 'URL acessível e token válido', color: '#16a34a' },
+                    token_rejected:            { icon: '🔑', label: 'URL acessível mas token rejeitado (401/403)', color: '#dc2626' },
+                    url_not_found:             { icon: '🔎', label: 'URL não encontrada no servidor (404)', color: '#dc2626' },
+                    unreachable:               { icon: '🔌', label: 'Servidor inacessível — webhook não chega', color: '#dc2626' },
+                    timeout:                   { icon: '⏱️', label: 'Timeout — servidor não respondeu em 8 s', color: '#dc2626' },
+                    reachable_log_missing:     { icon: '⚠️', label: 'HTTP 200 recebido mas log não confirmado em 5 s', color: '#d97706' },
+                };
+                const result = (!res.ok && data.detail) ? null : data.result;
+                const entry = _stLabels[result] || { icon: '⚠️', label: result || 'Resultado desconhecido', color: '#d97706' };
+
+                if (section) {
+                    const http = data.status_code != null ? ` | HTTP ${data.status_code}` : '';
+                    const errRow = data.error
+                        ? `<tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Detalhe</td>
+                           <td style="font-size:0.82rem;color:#b91c1c;word-break:break-all;">${_zcEsc(data.error)}</td></tr>`
+                        : '';
+                    const apiErrRow = (!res.ok && data.detail)
+                        ? `<tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Detalhe</td>
+                           <td style="font-size:0.82rem;color:#b91c1c;">${_zcEsc(data.detail)}</td></tr>`
+                        : '';
+                    section.innerHTML = `
+                        <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Teste de alcançabilidade</p>
+                        <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+                            <tr><td style="color:#6b7280;padding:2px 8px 2px 0;white-space:nowrap;font-size:0.85rem;">Resultado</td>
+                                <td style="color:${entry.color};font-weight:600;">${entry.icon} ${entry.label}${http}</td></tr>
+                            ${errRow}${apiErrRow}
+                        </table>`;
+                }
+            } catch (err) {
+                if (section) {
+                    section.innerHTML = `
+                        <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Teste de alcançabilidade</p>
+                        <p style="color:#dc2626;font-size:0.85rem;">❌ ${_zcEsc(err.message)}</p>`;
+                }
+            } finally {
+                if (btn) { btn.textContent = origText; btn.disabled = false; }
             }
         }
 
@@ -1967,17 +2039,26 @@
                     const summaryBg   = failed === 0 ? '#f0fdf4' : (synced === 0 ? '#fef2f2' : '#fffbeb');
                     const summaryBorder = failed === 0 ? '#bbf7d0' : (synced === 0 ? '#fecaca' : '#fcd34d');
 
-                    resultsPanel.innerHTML = `
-                        <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
-                            <div style="background:${summaryBg};border:1px solid ${summaryBorder};border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.875rem;color:${summaryColor};font-weight:600;">
-                                ${_zcEsc(message)}
-                            </div>
-                            ${rows ? `<div style="border:1px solid var(--border-color);border-radius:8px;overflow:hidden;padding:0 12px;">${rows}</div>` : ''}
-                            <button onclick="document.getElementById('zcRegisterAllResults').style.display='none';"
-                                style="margin-top:10px;font-size:0.8rem;background:none;border:none;cursor:pointer;color:var(--text-secondary);padding:0;">
-                                Fechar
-                            </button>
-                        </div>`;
+                    // Constrói o painel inline via DOM para evitar onclick inline (CSP)
+                    resultsPanel.innerHTML = '';
+                    const _rpWrap = document.createElement('div');
+                    _rpWrap.style.cssText = 'border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;';
+                    const _rpSummary = document.createElement('div');
+                    _rpSummary.style.cssText = `background:${summaryBg};border:1px solid ${summaryBorder};border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.875rem;color:${summaryColor};font-weight:600;`;
+                    _rpSummary.textContent = message;
+                    _rpWrap.appendChild(_rpSummary);
+                    if (rows) {
+                        const _rpRows = document.createElement('div');
+                        _rpRows.style.cssText = 'border:1px solid var(--border-color);border-radius:8px;overflow:hidden;padding:0 12px;';
+                        _rpRows.innerHTML = rows;
+                        _rpWrap.appendChild(_rpRows);
+                    }
+                    const _rpClose = document.createElement('button');
+                    _rpClose.style.cssText = 'margin-top:10px;font-size:0.8rem;background:none;border:none;cursor:pointer;color:var(--text-secondary);padding:0;';
+                    _rpClose.textContent = 'Fechar';
+                    _rpClose.addEventListener('click', () => { resultsPanel.style.display = 'none'; });
+                    _rpWrap.appendChild(_rpClose);
+                    resultsPanel.appendChild(_rpWrap);
                 } else {
                     if (failed === 0 && synced > 0) {
                         toast.success(`✅ ${message}`);
