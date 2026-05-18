@@ -939,6 +939,31 @@
                 btnSyncAll.style.display = needsSync ? '' : 'none';
             }
 
+            // Task #296 — banner proeminente acima do grid quando há canais com webhook
+            // não registrado. Mais visível que apenas o badge no card individual.
+            const existingBanner = document.getElementById('zcWebhookUnregisteredBanner');
+            if (existingBanner) existingBanner.remove();
+            const unregisteredChannels = channels.filter(c => !c.is_legacy && c.is_active && !c.webhook_auto_registered);
+            if (unregisteredChannels.length > 0) {
+                const banner = document.createElement('div');
+                banner.id = 'zcWebhookUnregisteredBanner';
+                const noun = unregisteredChannels.length === 1 ? 'canal não-legado ativo' : 'canais não-legados ativos';
+                banner.style.cssText = 'background:#fff3cd;border:1.5px solid #f59e0b;border-radius:8px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;';
+                banner.innerHTML = `
+                    <span style="font-size:1.3rem;flex-shrink:0;">⚠️</span>
+                    <div style="flex:1;">
+                        <strong style="color:#92400e;">${unregisteredChannels.length} ${noun} com webhook não registrado</strong>
+                        <p style="margin:4px 0 0;font-size:0.85rem;color:#78350f;line-height:1.5;">
+                            Mensagens de clientes não chegam ao agente enquanto o webhook não estiver configurado.<br>
+                            <strong>Para corrigir:</strong> abra o card do canal → clique em
+                            <strong>🔗 Sincronizar webhook</strong>. Se o problema persistir,
+                            clique em <strong>🔍 Diagnóstico</strong> para ver detalhes do erro.
+                        </p>
+                    </div>
+                `;
+                container.parentNode.insertBefore(banner, container);
+            }
+
             if (!channels.length) {
                 container.innerHTML = `<div class="alert alert-info">Nenhum canal configurado.</div>`;
                 return;
@@ -1743,6 +1768,26 @@
                     </table>
                     ${evRows ? `<p style="font-size:0.78rem;font-weight:600;color:#9ca3af;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Últimos webhooks inbound</p><table style="width:100%;border-collapse:collapse;margin-bottom:8px;"><thead><tr><th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Hora</th><th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Tipo</th><th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Preview</th><th style="text-align:left;font-size:0.75rem;color:#9ca3af;font-weight:500;">Token</th></tr></thead><tbody>${evRows}</tbody></table>` : ''}`;
                 })() : ''}
+                ${(() => {
+                    // Task #296 — audit log de tentativas do endpoint multichannel
+                    const attempts = d.recent_attempts || [];
+                    if (!attempts.length) return `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Tentativas de webhook</p><p style="color:#9ca3af;font-size:0.85rem;">Nenhuma tentativa registrada ainda — o Z-API ainda não enviou webhooks para este canal.</p>`;
+                    const _resultLabel = {ok:'✅ Ok', token_rejected:'❌ Token rejeitado', channel_not_found:'❌ Canal não encontrado', channel_inactive:'⚠️ Canal inativo', parse_error:'⚠️ Erro de parse'};
+                    const _resultColor = r => r === 'ok' ? '#16a34a' : r.startsWith('token') || r.startsWith('channel') ? '#dc2626' : '#d97706';
+                    const rows = attempts.map(a => `<tr>
+                        <td style="font-size:0.78rem;padding:3px 8px 3px 0;color:#6b7280;white-space:nowrap;">${_zcEsc(a.created_at ? new Date(a.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—')}</td>
+                        <td style="font-family:monospace;font-size:0.78rem;color:#374151;padding:3px 8px 3px 0;white-space:nowrap;">${_zcEsc(a.event_type || '?')}</td>
+                        <td style="font-size:0.78rem;font-weight:600;white-space:nowrap;padding:3px 8px 3px 0;color:${_resultColor(a.validation_result)}">${_resultLabel[a.validation_result] || _zcEsc(a.validation_result)}</td>
+                        <td style="font-size:0.75rem;color:#6b7280;word-break:break-all;">${_zcEsc(a.error_detail || '')}</td>
+                    </tr>`).join('');
+                    return `<p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Tentativas de webhook (últimas 5)</p>
+                    <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+                        <th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Hora</th>
+                        <th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Evento</th>
+                        <th style="text-align:left;font-size:0.75rem;color:#9ca3af;padding:2px 8px 2px 0;font-weight:500;">Resultado</th>
+                        <th style="text-align:left;font-size:0.75rem;color:#9ca3af;font-weight:500;">Detalhe</th>
+                    </tr></thead><tbody>${rows}</tbody></table>`;
+                })()}
                 <p style="font-size:0.8rem;font-weight:600;color:#374151;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Raw response GET /webhooks</p>
                 ${rawStr}`;
             box.appendChild(bodyDiv);

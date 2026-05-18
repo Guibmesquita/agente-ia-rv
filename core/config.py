@@ -76,6 +76,13 @@ def get_public_base_url() -> str:
     domain = get_public_domain()
     if domain:
         return f"https://{domain}"
+    # Task #296 — Railway injeta RAILWAY_STATIC_URL automaticamente com a URL pública
+    # do serviço. Usado quando APP_BASE_URL e REPLIT_DOMAINS não estão configurados,
+    # garantindo que a URL do webhook seja gerada corretamente em ambientes Railway
+    # sem variáveis de ambiente manuais adicionais.
+    railway_url = os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
+    if railway_url:
+        return railway_url
     return ""
 
 

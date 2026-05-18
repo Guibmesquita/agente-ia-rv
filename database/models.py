@@ -1683,6 +1683,33 @@ class ZAPIChannel(Base):
     assessores = relationship("Assessor", back_populates="zapi_channel", foreign_keys="Assessor.channel_id")
 
 
+class WebhookReceiptLog(Base):
+    """
+    Task #296 — Audit log de todas as tentativas de recepção de webhook Z-API.
+
+    Persiste CADA request que chega ao endpoint de webhook (por canal ou legado),
+    incluindo tentativas rejeitadas (token inválido, canal não encontrado).
+    Permite ao admin diagnosticar problemas de recepção sem acesso aos logs do servidor.
+
+    Limpeza automática: entradas com mais de 7 dias são removidas no startup
+    via `_cleanup_old_webhook_logs()` em main.py.
+    """
+    __tablename__ = "webhook_receipt_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # channel_id NULL = canal legado (rota /api/webhook/zapi)
+    channel_id = Column(Integer, ForeignKey("zapi_channels.id", ondelete="SET NULL"), nullable=True, index=True)
+    remote_ip = Column(String(64), nullable=True)
+    # Tipo do evento extraído do payload (ex: "ReceivedCallback", "MessageStatusCallback", "?")
+    event_type = Column(String(64), nullable=True)
+    # Resultado da validação
+    # "ok" | "token_rejected" | "channel_not_found" | "channel_inactive" | "parse_error"
+    validation_result = Column(String(32), nullable=False)
+    # Detalhe do erro (sem expor tokens completos)
+    error_detail = Column(String(256), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class UnidadeChannelMapping(Base):
     """
     Task #223 — Mapeamento unidade → canal WhatsApp.

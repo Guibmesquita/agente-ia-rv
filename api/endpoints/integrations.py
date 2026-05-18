@@ -1676,6 +1676,31 @@ async def debug_zapi_channel_webhook(
 
     diag["self_test"] = self_test
 
+    # Task #296 — incluir últimas 5 tentativas do audit log para o canal
+    try:
+        from database.models import WebhookReceiptLog as _WRL_dbg
+        _attempts = (
+            db.query(_WRL_dbg)
+            .filter(_WRL_dbg.channel_id == channel_id)
+            .order_by(_WRL_dbg.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        diag["recent_attempts"] = [
+            {
+                "id": a.id,
+                "validation_result": a.validation_result,
+                "event_type": a.event_type or "?",
+                "remote_ip": (a.remote_ip or "?")[:20] if a.remote_ip else "?",
+                "error_detail": a.error_detail,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in _attempts
+        ]
+    except Exception as _atmp_exc:
+        diag["recent_attempts"] = []
+        diag.setdefault("error", f"Audit log indisponível: {_atmp_exc}")
+
     print(
         f"[WEBHOOK-DEBUG] Canal {channel_id} — url_suggested={webhook_url!r} "
         f"detected_field={diag['detected_field']!r} detected_url={diag['detected_url']!r} "
@@ -1841,26 +1866,62 @@ async def get_channel_reception_stats(
         .all()
     )
 
-    # Nota: `last_token_failure_at` será implementado quando houver persistência
-    # de falhas de validação de token. Por enquanto retorna null — o campo existe
-    # no contrato da API para que o frontend e futuros consumidores possam depender dele.
+    # Task #296 — audit log de tentativas de webhook (sucesso + falhas)
+    from database.models import WebhookReceiptLog as _WRL
+    from datetime import datetime as _dt2, timedelta as _td
+
+    # Última falha de token nas últimas 48h para o canal
+    last_token_failure = (
+        db.query(_WRL)
+        .filter(
+            _WRL.channel_id == channel_id,
+            _WRL.validation_result == "token_rejected",
+        )
+        .order_by(_WRL.created_at.desc())
+        .first()
+    )
+
+    # Últimas 10 tentativas (sucesso + falha) para o canal
+    recent_attempts = (
+        db.query(_WRL)
+        .filter(_WRL.channel_id == channel_id)
+        .order_by(_WRL.created_at.desc())
+        .limit(10)
+        .all()
+    )
+
     return {
         "channel_id": channel_id,
         "messages_received_24h": count_24h,
         "last_received_at": (
             last_msg.created_at.isoformat() if last_msg and last_msg.created_at else None
         ),
-        "last_token_failure_at": None,
+        # Task #296 — agora real (antes hardcoded como null)
+        "last_token_failure_at": (
+            last_token_failure.created_at.isoformat()
+            if last_token_failure and last_token_failure.created_at else None
+        ),
         "recent_events": [
             {
                 "message_type": m.message_type,
                 "phone": m.phone,
                 "body_preview": (m.body or "")[:60] if m.body else None,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
-                # Mensagens persistidas no banco passaram pela validação de token com sucesso.
                 "token_validated": True,
             }
             for m in recent_msgs
+        ],
+        # Task #296 — audit log de todas as tentativas (sucesso e falhas de token)
+        "recent_webhook_attempts": [
+            {
+                "id": a.id,
+                "validation_result": a.validation_result,
+                "event_type": a.event_type or "?",
+                "remote_ip": (a.remote_ip or "?")[:20] if a.remote_ip else "?",
+                "error_detail": a.error_detail,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in recent_attempts
         ],
     }
 

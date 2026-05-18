@@ -143,6 +143,11 @@ async def run_init_background():
         print(f"[INIT] Erro no cleanup de jobs travados: {e}")
 
     try:
+        _cleanup_old_webhook_logs()
+    except Exception as e:
+        print(f"[INIT] Erro no cleanup de webhook_receipt_log: {e}")
+
+    try:
         await _auto_register_webhooks_startup()
     except Exception as e:
         print(f"[INIT] Erro no re-registro automático de webhooks: {e}")
@@ -160,15 +165,19 @@ async def _auto_register_webhooks_startup():
     from database.models import ZAPIChannel
     from services.whatsapp_client import ZAPIClient
 
+    # Task #296 — usar RAILWAY_STATIC_URL como fallback adicional.
+    # Railway injeta RAILWAY_STATIC_URL automaticamente; APP_BASE_URL e WEBHOOK_BASE_URL
+    # são explícitos mas raramente configurados em Railway sem env vars manuais.
     webhook_base = (
         os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
         or os.getenv("APP_BASE_URL", "").rstrip("/")
+        or os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
     )
     if not webhook_base:
         print(
-            "[WEBHOOK-STARTUP] WEBHOOK_BASE_URL e APP_BASE_URL não configurados — "
-            "re-registro automático ignorado. Configure uma dessas variáveis para "
-            "habilitar o registro automático de webhooks no startup."
+            "[WEBHOOK-STARTUP] WEBHOOK_BASE_URL, APP_BASE_URL e RAILWAY_STATIC_URL não "
+            "configurados — re-registro automático ignorado. Em Railway, RAILWAY_STATIC_URL "
+            "deve ser injetado automaticamente. Verifique as variáveis de ambiente."
         )
         return
 
@@ -228,6 +237,33 @@ async def _auto_register_webhooks_startup():
     except Exception as exc:
         print(f"[WEBHOOK-STARTUP] Erro inesperado: {type(exc).__name__}: {exc}")
         db.rollback()
+    finally:
+        db.close()
+
+
+def _cleanup_old_webhook_logs():
+    """
+    Task #296 — Remove entradas de webhook_receipt_log com mais de 7 dias.
+    Evita crescimento ilimitado da tabela de audit log. Idempotente.
+    """
+    from database.database import SessionLocal
+    from sqlalchemy import text as sql_text
+    from datetime import datetime, timedelta
+
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    db = SessionLocal()
+    try:
+        result = db.execute(
+            sql_text("DELETE FROM webhook_receipt_log WHERE created_at < :cutoff"),
+            {"cutoff": cutoff},
+        )
+        db.commit()
+        deleted = result.rowcount
+        if deleted:
+            print(f"[INIT] webhook_receipt_log: {deleted} entradas antigas removidas (>7d)")
+    except Exception as exc:
+        db.rollback()
+        print(f"[INIT] Erro no cleanup de webhook_receipt_log: {exc}")
     finally:
         db.close()
 
@@ -763,6 +799,18 @@ def _apply_incremental_migrations():
         "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS is_test_dispatch BOOLEAN DEFAULT FALSE",
         # Task #264 — rastreia se o webhook foi registrado com sucesso na instância Z-API.
         "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS webhook_auto_registered BOOLEAN DEFAULT FALSE",
+        # Task #296 — audit log de tentativas de recepção de webhook (sucesso e falhas).
+        """CREATE TABLE IF NOT EXISTS webhook_receipt_log (
+            id SERIAL PRIMARY KEY,
+            channel_id INTEGER REFERENCES zapi_channels(id) ON DELETE SET NULL,
+            remote_ip VARCHAR(64),
+            event_type VARCHAR(64),
+            validation_result VARCHAR(32) NOT NULL,
+            error_detail VARCHAR(256),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_webhook_receipt_log_channel_created ON webhook_receipt_log(channel_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_webhook_receipt_log_created ON webhook_receipt_log(created_at DESC)",
     ]
     db = SessionLocal()
     ok = 0
