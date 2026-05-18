@@ -173,13 +173,6 @@ async def _auto_register_webhooks_startup():
         or os.getenv("APP_BASE_URL", "").rstrip("/")
         or os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
     )
-    if not webhook_base:
-        print(
-            "[WEBHOOK-STARTUP] WEBHOOK_BASE_URL, APP_BASE_URL e RAILWAY_STATIC_URL não "
-            "configurados — re-registro automático ignorado. Em Railway, RAILWAY_STATIC_URL "
-            "deve ser injetado automaticamente. Verifique as variáveis de ambiente."
-        )
-        return
 
     db = SessionLocal()
     try:
@@ -193,20 +186,8 @@ async def _auto_register_webhooks_startup():
             .all()
         )
 
-        if not channels:
-            print("[WEBHOOK-STARTUP] Todos os canais ativos já têm webhook registrado.")
-            return
-
-        print(
-            f"[WEBHOOK-STARTUP] {len(channels)} canal(is) com webhook_auto_registered=false "
-            "— tentando re-registro automático..."
-        )
-
-        # Task #304 — log estruturado por canal com resultado individual
-        # e persistência em webhook_receipt_log.
-        updated = 0
-        results_log = []
-
+        # Task #304 — helper definido antes de qualquer uso para evitar UnboundLocalError
+        # quando _persist_startup_log é chamado no bloco "sem base URL" logo abaixo.
         def _persist_startup_log(channel_id: Optional[int], validation: str, detail: Optional[str] = None):
             """Persiste tentativa de registro de startup no webhook_receipt_log."""
             try:
@@ -227,6 +208,35 @@ async def _auto_register_webhooks_startup():
                     _log_db.close()
             except Exception:
                 pass
+
+        if not webhook_base:
+            # Quando base URL ausente, persiste log de falha por canal para
+            # observabilidade completa (antes retornava cedo sem nenhuma linha no receipt_log).
+            _env_hint = (
+                "WEBHOOK_BASE_URL, APP_BASE_URL e RAILWAY_STATIC_URL não configurados. "
+                "Em Railway, RAILWAY_STATIC_URL deve ser injetado automaticamente."
+            )
+            print(f"[WEBHOOK-STARTUP] {_env_hint} Re-registro automático ignorado.")
+            if channels:
+                for _ch in channels:
+                    _persist_startup_log(_ch.id, "failed", _env_hint[:256])
+                print(
+                    f"[WEBHOOK-STARTUP] {len(channels)} canal(is) marcado(s) como falha "
+                    "no receipt_log (sem base URL)."
+                )
+            return
+
+        if not channels:
+            print("[WEBHOOK-STARTUP] Todos os canais ativos já têm webhook registrado.")
+            return
+
+        print(
+            f"[WEBHOOK-STARTUP] {len(channels)} canal(is) com webhook_auto_registered=false "
+            "— tentando re-registro automático..."
+        )
+
+        updated = 0
+        results_log = []
 
         for ch in channels:
             webhook_url = f"{webhook_base}/api/whatsapp/webhook/{ch.id}"
