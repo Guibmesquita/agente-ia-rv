@@ -491,8 +491,32 @@ async def sync_chats_from_zapi(
 
     channels = db.query(ZAPIChannel).filter(ZAPIChannel.is_active == True).all()
 
+    # Resiliência: se não houver canais ativos na tabela (ex: ambiente sem bootstrap),
+    # cai no cliente legado (env vars) para não regredir comportamento anterior.
     if not channels:
-        return {"success": False, "error": "Nenhum canal Z-API ativo encontrado", "synced": 0, "channels": []}
+        from services.whatsapp_client import zapi_client as _legacy_client
+        if not _legacy_client.instance_id or not _legacy_client.token:
+            return {"success": False, "error": "Nenhum canal Z-API ativo encontrado e cliente legado não configurado", "synced": 0, "channels": []}
+        result = await _legacy_client.get_all_chats(max_pages=5)
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Erro ao buscar chats via cliente legado"), "synced": 0, "channels": []}
+        chats = result.get("chats", [])
+        synced_count = 0
+        for chat in chats:
+            if chat.get("isGroup"):
+                continue
+            phone = chat.get("phone", "") or chat.get("lid", "")
+            if not phone or "@lid" in phone:
+                continue
+            phone = normalize_phone(phone)
+            if not db.query(Conversation).filter(Conversation.phone == phone).first():
+                db.add(Conversation(phone=phone, contact_name=chat.get("name"), status=ConversationStatus.BOT_ACTIVE.value, conversation_state=ConversationState.IDENTIFICATION_PENDING.value))
+                synced_count += 1
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+        return {"success": True, "message": "Sincronização concluída (cliente legado)", "synced": synced_count, "total_chats": len(chats), "channels": [{"canal_id": None, "channel_id": None, "label": "Legado (env vars)", "chats_found": len(chats), "synced": synced_count}]}
 
     total_synced = 0
     total_chats = 0
@@ -503,6 +527,7 @@ async def sync_chats_from_zapi(
 
         if not client.instance_id or not client.token:
             channel_summaries.append({
+                "canal_id": channel.id,
                 "channel_id": channel.id,
                 "label": channel.label or channel.name,
                 "chats_found": 0,
@@ -515,6 +540,7 @@ async def sync_chats_from_zapi(
 
         if not result.get("success"):
             channel_summaries.append({
+                "canal_id": channel.id,
                 "channel_id": channel.id,
                 "label": channel.label or channel.name,
                 "chats_found": 0,
@@ -605,6 +631,7 @@ async def sync_chats_from_zapi(
         except Exception as e:
             db.rollback()
             channel_summaries.append({
+                "canal_id": channel.id,
                 "channel_id": channel.id,
                 "label": channel.label or channel.name,
                 "chats_found": len(chats),
@@ -616,6 +643,7 @@ async def sync_chats_from_zapi(
         total_synced += synced_count
         total_chats += len(chats)
         channel_summaries.append({
+            "canal_id": channel.id,
             "channel_id": channel.id,
             "label": channel.label or channel.name,
             "chats_found": len(chats),
