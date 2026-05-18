@@ -1811,9 +1811,8 @@ async def zapi_webhook(
         expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
         if not expected_ct or incoming_token != expected_ct:
             print(f"[WEBHOOK] Token mismatch - incoming (first 5): '{incoming_token[:5] if incoming_token else 'EMPTY'}'")
-            # Task #296 — logar falha de token no endpoint legado principal
-            background_tasks.add_task(
-                _log_webhook_attempt_sync,
+            # Task #296 — chamada direta (não background_tasks) para garantir persistência antes do raise 401
+            _log_webhook_attempt_sync(
                 None, _zw_ip, "?", "token_rejected",
                 f"zt={(_zw_zt[:6] + '…') if _zw_zt else '(vazio)'} ct={(_zw_ct[:6] + '…') if _zw_ct else '(vazio)'}",
             )
@@ -1995,9 +1994,8 @@ async def whatsapp_webhook_legacy_alias(
         expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
         if not expected_ct or incoming_token != expected_ct:
             logger.warning(f"[WEBHOOK-ALIAS] Token inválido — incoming (5): '{incoming_token[:5] if incoming_token else 'VAZIO'}'")
-            # Task #296 — logar falha de token no alias legado
-            background_tasks.add_task(
-                _log_webhook_attempt_sync,
+            # Task #296 — chamada direta para garantir persistência antes do raise 401
+            _log_webhook_attempt_sync(
                 None, _alias_ip, "?", "token_rejected",
                 f"zt={(_alias_zt[:6] + '…') if _alias_zt else '(vazio)'} ct={(_alias_ct[:6] + '…') if _alias_ct else '(vazio)'}",
             )
@@ -2076,9 +2074,8 @@ async def whatsapp_webhook_multichannel(
     ).first()
 
     if channel is None:
-        # Task #296 — logar tentativa com canal não encontrado/inativo
-        background_tasks.add_task(
-            _log_webhook_attempt_sync,
+        # Task #296 — chamada direta para garantir persistência antes do raise 404
+        _log_webhook_attempt_sync(
             channel_id, _client_ip, _early_type, "channel_not_found",
             f"canal {channel_id} não encontrado ou inativo",
         )
@@ -2137,9 +2134,8 @@ async def whatsapp_webhook_multichannel(
             f"client-token={_mask_recv(_ct_hint)} "
             f"expected={_expected_hint}"
         )
-        # Task #296 — logar falha de token (persistido antes do raise para garantir o log)
-        background_tasks.add_task(
-            _log_webhook_attempt_sync,
+        # Task #296 — chamada direta para garantir persistência antes do raise 401
+        _log_webhook_attempt_sync(
             channel_id, _client_ip, _early_type, "token_rejected",
             f"ct={_mask_recv(_ct_hint)} zt={_mask_recv(_zt_hint)} expected={_expected_hint}",
         )
