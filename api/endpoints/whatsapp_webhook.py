@@ -1798,14 +1798,33 @@ async def zapi_webhook(
     """
     from core.config import get_settings as _get_settings
     _settings = _get_settings()
-    incoming_token = request.headers.get("z-api-token", "") or request.headers.get("client-token", "")
+    # Task #296 — capturar IP e token antes da validação para o audit log
+    _zw_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "?")
+    )
+    _zw_ct = request.headers.get("client-token", "") or ""
+    _zw_zt = request.headers.get("z-api-token", "") or ""
+    incoming_token = _zw_zt or _zw_ct
     expected_token = os.getenv("ZAPI_TOKEN", "") or _settings.ZAPI_TOKEN
     if not expected_token or incoming_token != expected_token:
         expected_ct = os.getenv("ZAPI_CLIENT_TOKEN", "") or _settings.ZAPI_CLIENT_TOKEN
         if not expected_ct or incoming_token != expected_ct:
             print(f"[WEBHOOK] Token mismatch - incoming (first 5): '{incoming_token[:5] if incoming_token else 'EMPTY'}'")
+            # Task #296 — logar falha de token no endpoint legado principal
+            background_tasks.add_task(
+                _log_webhook_attempt_sync,
+                None, _zw_ip, "?", "token_rejected",
+                f"zt={(_zw_zt[:6] + '…') if _zw_zt else '(vazio)'} ct={(_zw_ct[:6] + '…') if _zw_ct else '(vazio)'}",
+            )
             raise HTTPException(status_code=401, detail="Invalid or missing webhook token")
 
+    # Task #296 — logar tentativa bem-sucedida no endpoint legado principal
+    _zw_type = payload.get("type", "?") if payload else "?"
+    background_tasks.add_task(
+        _log_webhook_attempt_sync,
+        None, _zw_ip, _zw_type, "ok", None,
+    )
     return await _process_zapi_payload_internal(payload, request, background_tasks, db, channel_id=None)
 @router.post("/whatsapp")
 async def whatsapp_webhook_legacy(

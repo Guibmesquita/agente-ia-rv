@@ -806,6 +806,8 @@
         const ZC_API = '/api/integrations/zapi/channels';
         let _zcChannels = [];
         let _zcEditingId = null;
+        // Task #296 — canais não-legados ativos com recepção estale (>30 min sem inbound)
+        const _zcStaleReceptionChannels = new Set();
 
         // Task #234/#238 — declaradas aqui para evitar temporal dead zone
         // (const/let NÃO são hoistados, mas são usados em renderZAPIChannels
@@ -939,30 +941,12 @@
                 btnSyncAll.style.display = needsSync ? '' : 'none';
             }
 
-            // Task #296 — banner proeminente acima do grid quando há canais com webhook
-            // não registrado. Mais visível que apenas o badge no card individual.
-            const existingBanner = document.getElementById('zcWebhookUnregisteredBanner');
-            if (existingBanner) existingBanner.remove();
-            const unregisteredChannels = channels.filter(c => !c.is_legacy && c.is_active && !c.webhook_auto_registered);
-            if (unregisteredChannels.length > 0) {
-                const banner = document.createElement('div');
-                banner.id = 'zcWebhookUnregisteredBanner';
-                const noun = unregisteredChannels.length === 1 ? 'canal não-legado ativo' : 'canais não-legados ativos';
-                banner.style.cssText = 'background:#fff3cd;border:1.5px solid #f59e0b;border-radius:8px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;';
-                banner.innerHTML = `
-                    <span style="font-size:1.3rem;flex-shrink:0;">⚠️</span>
-                    <div style="flex:1;">
-                        <strong style="color:#92400e;">${unregisteredChannels.length} ${noun} com webhook não registrado</strong>
-                        <p style="margin:4px 0 0;font-size:0.85rem;color:#78350f;line-height:1.5;">
-                            Mensagens de clientes não chegam ao agente enquanto o webhook não estiver configurado.<br>
-                            <strong>Para corrigir:</strong> abra o card do canal → clique em
-                            <strong>🔗 Sincronizar webhook</strong>. Se o problema persistir,
-                            clique em <strong>🔍 Diagnóstico</strong> para ver detalhes do erro.
-                        </p>
-                    </div>
-                `;
-                container.parentNode.insertBefore(banner, container);
-            }
+            // Task #296 — banner de alerta acima do grid. Primeiro critério (webhook não registrado)
+            // é avaliado imediatamente. O segundo critério (recepção estale >30 min) é avaliado
+            // assincronamente quando _zcLoadReceptionStats termina, via _zcRebuildWebhookBanner().
+            // Limpa o estado de canais estale do render anterior para evitar entradas obsoletas.
+            _zcStaleReceptionChannels.clear();
+            _zcRebuildWebhookBanner();
 
             if (!channels.length) {
                 container.innerHTML = `<div class="alert alert-info">Nenhum canal configurado.</div>`;
@@ -1137,7 +1121,8 @@
             }
         }
 
-        // Task #282 — carrega e exibe estatísticas de recepção inbound de um canal no card.
+        // Task #282/#296 — carrega e exibe estatísticas de recepção inbound de um canal no card.
+        // Task #296: também atualiza _zcStaleReceptionChannels e reconstrói o banner de alerta.
         async function _zcLoadReceptionStats(channelId) {
             const el = document.getElementById(`zcReceptionStats-${channelId}`);
             if (!el) return;
@@ -1153,9 +1138,67 @@
                 const countColor = count > 0 ? '#16a34a' : 'var(--text-secondary)';
                 const lastTxt = last ? ` · última <strong>${last}</strong>` : '';
                 el.innerHTML = `📩 <span style="color:${countColor};font-size:0.82rem;font-weight:${count>0?'600':'400'};">${count} msgs / 24h</span>${lastTxt}`;
+
+                // Task #296 — detectar recepção estale (>30 min) para o banner de alerta.
+                // Considera estale apenas canais não-legados e ativos que nunca receberam mensagem
+                // ou que a última foi há mais de 30 minutos.
+                const ch = _zcChannels.find(c => c.id === channelId);
+                if (ch && !ch.is_legacy && ch.is_active) {
+                    const STALE_MS = 30 * 60 * 1000;
+                    const isStale = !d.last_received_at
+                        || (Date.now() - new Date(d.last_received_at).getTime()) > STALE_MS;
+                    if (isStale) {
+                        _zcStaleReceptionChannels.add(channelId);
+                    } else {
+                        _zcStaleReceptionChannels.delete(channelId);
+                    }
+                    _zcRebuildWebhookBanner();
+                }
             } catch (_e) {
                 el.innerHTML = '📩 <span style="color:var(--text-secondary);font-size:0.82rem;">—</span>';
             }
+        }
+
+        // Task #296 — reconstrói o banner de alerta de webhook acima do grid de canais.
+        // Combina dois critérios independentes:
+        // 1) Canais com webhook_auto_registered=false (webhook definitivamente não configurado)
+        // 2) Canais com recepção estale >30 min (webhook pode estar errado ou Z-API não envia)
+        function _zcRebuildWebhookBanner() {
+            const container = document.getElementById('zapiChannelsList');
+            if (!container) return;
+
+            const existingBanner = document.getElementById('zcWebhookUnregisteredBanner');
+            if (existingBanner) existingBanner.remove();
+
+            const unregistered = _zcChannels.filter(c => !c.is_legacy && c.is_active && !c.webhook_auto_registered);
+            const staleIds = [..._zcStaleReceptionChannels].filter(id => {
+                const c = _zcChannels.find(x => x.id === id);
+                // Só inclui canais que têm webhook registrado — canais não registrados já aparecem acima
+                return c && !c.is_legacy && c.is_active && c.webhook_auto_registered;
+            });
+
+            if (unregistered.length === 0 && staleIds.length === 0) return;
+
+            const banner = document.createElement('div');
+            banner.id = 'zcWebhookUnregisteredBanner';
+            banner.style.cssText = 'background:#fff3cd;border:1.5px solid #f59e0b;border-radius:8px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;';
+
+            let msg = '';
+            if (unregistered.length > 0) {
+                const noun = unregistered.length === 1 ? 'canal não-legado ativo' : 'canais não-legados ativos';
+                msg += `<strong style="color:#92400e;">${unregistered.length} ${noun} com webhook não registrado</strong> — mensagens não chegam ao agente.<br>`;
+            }
+            if (staleIds.length > 0) {
+                const staleNames = staleIds.map(id => {
+                    const c = _zcChannels.find(x => x.id === id);
+                    return c ? (c.label || c.name) : `id=${id}`;
+                }).join(', ');
+                msg += `<strong style="color:#92400e;">${staleIds.length === 1 ? '1 canal' : staleIds.length + ' canais'} sem receber mensagens há mais de 30 min</strong> (${staleNames}) — o webhook pode estar apontando para URL errada.<br>`;
+            }
+            msg += `<span style="font-size:0.85rem;">Para corrigir: abra o card do canal → clique em <strong>🔗 Sincronizar webhook</strong>. Se persistir, use <strong>🔍 Diagnóstico</strong>.</span>`;
+
+            banner.innerHTML = `<span style="font-size:1.3rem;flex-shrink:0;">⚠️</span><div style="flex:1;color:#78350f;line-height:1.6;">${msg}</div>`;
+            container.parentNode.insertBefore(banner, container);
         }
 
         // Task #282 — formata um Date como tempo relativo em pt-BR (ex: "há 5 min", "há 2h")
