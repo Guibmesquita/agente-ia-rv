@@ -481,103 +481,153 @@ async def sync_chats_from_zapi(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Sincroniza chats da Z-API com o banco de dados.
+    Sincroniza chats de TODOS os canais Z-API ativos com o banco de dados.
+    Task #303 — itera sobre todos os ZAPIChannel ativos (legado + não-legados),
+    usa o client correto por canal e vincula channel_id às conversas importadas.
     Chamado automaticamente ao abrir a página de Conversas.
     """
-    from services.whatsapp_client import zapi_client
-    
-    if not zapi_client.instance_id or not zapi_client.token:
-        return {"success": False, "error": "Z-API não configurada", "synced": 0}
-    
-    result = await zapi_client.get_all_chats(max_pages=5)
-    
-    if not result.get("success"):
-        return {"success": False, "error": result.get("error", "Erro ao buscar chats"), "synced": 0}
-    
-    chats = result.get("chats", [])
-    synced_count = 0
-    
-    for chat in chats:
-        if chat.get("isGroup"):
-            continue
-        
-        phone = chat.get("phone", "")
-        lid = chat.get("lid", "")
-        
-        if phone and "@lid" in phone:
-            phone = ""
-        
-        if not phone and lid:
-            phone = lid
-        
-        if not phone:
-            continue
-        
-        phone = normalize_phone(phone) if "@lid" not in phone else phone
-        
-        existing = db.query(Conversation).filter(Conversation.phone == phone).first()
-        
-        phone_for_assessor = phone if "@lid" not in phone else None
+    from database.models import ZAPIChannel
+    from services.whatsapp_client import get_zapi_client_for_channel
 
-        if existing:
-            if chat.get("name") and not existing.contact_name:
-                existing.contact_name = chat.get("name")
-            if chat.get("profileThumbnail"):
-                existing.contact_photo = chat.get("profileThumbnail")
-            if chat.get("lastMessageTime"):
-                try:
-                    last_msg_ts = int(chat.get("lastMessageTime"))
-                    last_msg_dt = datetime.fromtimestamp(last_msg_ts / 1000) if last_msg_ts > 9999999999 else datetime.fromtimestamp(last_msg_ts)
-                    if not existing.last_message_at or last_msg_dt > existing.last_message_at:
-                        existing.last_message_at = last_msg_dt
-                except (ValueError, TypeError):
-                    pass
-            # Reidentificar assessor se ainda não associado
-            if not existing.assessor_id and phone_for_assessor:
-                from services.conversation_flow import identify_contact
-                reassessor, _ = identify_contact(db, phone_for_assessor)
-                if reassessor:
-                    existing.assessor_id = reassessor.id
-                    if not existing.contact_name:
-                        existing.contact_name = reassessor.nome
-        else:
-            assessor = None
-            if phone_for_assessor:
-                from services.conversation_flow import identify_contact
-                assessor, _ = identify_contact(db, phone_for_assessor)
-            
-            last_msg_at = None
-            if chat.get("lastMessageTime"):
-                try:
-                    ts = int(chat.get("lastMessageTime"))
-                    last_msg_at = datetime.fromtimestamp(ts / 1000) if ts > 9999999999 else datetime.fromtimestamp(ts)
-                except (ValueError, TypeError):
-                    last_msg_at = datetime.utcnow()
-            
-            new_conv = Conversation(
-                phone=phone,
-                contact_name=chat.get("name"),
-                contact_photo=chat.get("profileThumbnail"),
-                assessor_id=assessor.id if assessor else None,
-                status=ConversationStatus.BOT_ACTIVE.value,
-                conversation_state=ConversationState.IDENTIFICATION_PENDING.value if not assessor else ConversationState.READY.value,
-                last_message_at=last_msg_at,
-                unread_count=int(chat.get("unread", 0)) if chat.get("unread") else 0
-            )
-            db.add(new_conv)
-            synced_count += 1
-    
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        return {"success": False, "error": str(e), "synced": 0}
-    
+    channels = db.query(ZAPIChannel).filter(ZAPIChannel.is_active == True).all()
+
+    if not channels:
+        return {"success": False, "error": "Nenhum canal Z-API ativo encontrado", "synced": 0, "channels": []}
+
+    total_synced = 0
+    total_chats = 0
+    channel_summaries = []
+
+    for channel in channels:
+        client = get_zapi_client_for_channel(channel.id, db)
+
+        if not client.instance_id or not client.token:
+            channel_summaries.append({
+                "channel_id": channel.id,
+                "label": channel.label or channel.name,
+                "chats_found": 0,
+                "synced": 0,
+                "error": "Canal sem credenciais configuradas",
+            })
+            continue
+
+        result = await client.get_all_chats(max_pages=5)
+
+        if not result.get("success"):
+            channel_summaries.append({
+                "channel_id": channel.id,
+                "label": channel.label or channel.name,
+                "chats_found": 0,
+                "synced": 0,
+                "error": result.get("error", "Erro ao buscar chats"),
+            })
+            continue
+
+        chats = result.get("chats", [])
+        synced_count = 0
+
+        for chat in chats:
+            if chat.get("isGroup"):
+                continue
+
+            phone = chat.get("phone", "")
+            lid = chat.get("lid", "")
+
+            if phone and "@lid" in phone:
+                phone = ""
+
+            if not phone and lid:
+                phone = lid
+
+            if not phone:
+                continue
+
+            phone = normalize_phone(phone) if "@lid" not in phone else phone
+
+            existing = db.query(Conversation).filter(Conversation.phone == phone).first()
+
+            phone_for_assessor = phone if "@lid" not in phone else None
+
+            if existing:
+                if chat.get("name") and not existing.contact_name:
+                    existing.contact_name = chat.get("name")
+                if chat.get("profileThumbnail"):
+                    existing.contact_photo = chat.get("profileThumbnail")
+                if chat.get("lastMessageTime"):
+                    try:
+                        last_msg_ts = int(chat.get("lastMessageTime"))
+                        last_msg_dt = datetime.fromtimestamp(last_msg_ts / 1000) if last_msg_ts > 9999999999 else datetime.fromtimestamp(last_msg_ts)
+                        if not existing.last_message_at or last_msg_dt > existing.last_message_at:
+                            existing.last_message_at = last_msg_dt
+                    except (ValueError, TypeError):
+                        pass
+                # Task #303 — propagar channel_id para conversas órfãs (sem canal, criadas antes da Task #224)
+                if not existing.channel_id:
+                    existing.channel_id = channel.id
+                # Reidentificar assessor se ainda não associado
+                if not existing.assessor_id and phone_for_assessor:
+                    from services.conversation_flow import identify_contact
+                    reassessor, _ = identify_contact(db, phone_for_assessor)
+                    if reassessor:
+                        existing.assessor_id = reassessor.id
+                        if not existing.contact_name:
+                            existing.contact_name = reassessor.nome
+            else:
+                assessor = None
+                if phone_for_assessor:
+                    from services.conversation_flow import identify_contact
+                    assessor, _ = identify_contact(db, phone_for_assessor)
+
+                last_msg_at = None
+                if chat.get("lastMessageTime"):
+                    try:
+                        ts = int(chat.get("lastMessageTime"))
+                        last_msg_at = datetime.fromtimestamp(ts / 1000) if ts > 9999999999 else datetime.fromtimestamp(ts)
+                    except (ValueError, TypeError):
+                        last_msg_at = datetime.utcnow()
+
+                new_conv = Conversation(
+                    phone=phone,
+                    contact_name=chat.get("name"),
+                    contact_photo=chat.get("profileThumbnail"),
+                    assessor_id=assessor.id if assessor else None,
+                    status=ConversationStatus.BOT_ACTIVE.value,
+                    conversation_state=ConversationState.IDENTIFICATION_PENDING.value if not assessor else ConversationState.READY.value,
+                    last_message_at=last_msg_at,
+                    unread_count=int(chat.get("unread", 0)) if chat.get("unread") else 0,
+                    channel_id=channel.id,
+                )
+                db.add(new_conv)
+                synced_count += 1
+
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            channel_summaries.append({
+                "channel_id": channel.id,
+                "label": channel.label or channel.name,
+                "chats_found": len(chats),
+                "synced": 0,
+                "error": f"Erro ao salvar: {e}",
+            })
+            continue
+
+        total_synced += synced_count
+        total_chats += len(chats)
+        channel_summaries.append({
+            "channel_id": channel.id,
+            "label": channel.label or channel.name,
+            "chats_found": len(chats),
+            "synced": synced_count,
+        })
+
     return {
         "success": True,
-        "message": f"Sincronização concluída",
-        "synced": synced_count,
-        "total_chats": len(chats)
+        "message": "Sincronização concluída",
+        "synced": total_synced,
+        "total_chats": total_chats,
+        "channels": channel_summaries,
     }
 
 
@@ -869,17 +919,20 @@ async def sync_conversation_messages(
     """
     Sincroniza mensagens do chat via Z-API.
     Busca mensagens mais recentes e importa para o banco de dados.
+    Task #303 — resolve o ZAPIClient correto pelo canal da conversa.
     """
-    from services.whatsapp_client import zapi_client
-    
+    from services.whatsapp_client import get_zapi_client_for_channel
+
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
-    
-    if not zapi_client.instance_id or not zapi_client.token:
-        raise HTTPException(status_code=500, detail="Z-API não configurada")
-    
-    result = await zapi_client.get_chat_messages(conv.phone, amount=100)
+
+    # Task #303 — client correto pelo canal da conversa; fallback para legado quando channel_id é None
+    _client = get_zapi_client_for_channel(conv.channel_id, db)
+    if not _client.instance_id or not _client.token:
+        raise HTTPException(status_code=500, detail="Z-API não configurada para este canal")
+
+    result = await _client.get_chat_messages(conv.phone, amount=100)
     
     if not result.get("success"):
         return {
@@ -981,14 +1034,12 @@ async def bulk_sync_conversations(
     Importa histórico do Z-API para todas as conversas com phone válido.
     Útil para restaurar mensagens que existem no WhatsApp mas não no banco local.
     Requer autenticação de admin.
+    Task #303 — resolve o ZAPIClient correto pelo canal de cada conversa.
     """
-    from services.whatsapp_client import zapi_client
+    from services.whatsapp_client import get_zapi_client_for_channel
 
     if current_user.role not in [UserRole.ADMIN.value]:
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
-
-    if not zapi_client.instance_id or not zapi_client.token:
-        raise HTTPException(status_code=500, detail="Z-API não configurada")
 
     all_conversations = db.query(Conversation).filter(
         Conversation.phone.isnot(None),
@@ -1004,7 +1055,12 @@ async def bulk_sync_conversations(
 
     for conv in conversations:
         try:
-            result = await zapi_client.get_chat_messages(conv.phone, amount=100)
+            # Task #303 — client correto pelo canal da conversa; fallback para legado quando channel_id é None
+            _client = get_zapi_client_for_channel(conv.channel_id, db)
+            if not _client.instance_id or not _client.token:
+                failed_count += 1
+                continue
+            result = await _client.get_chat_messages(conv.phone, amount=100)
             if not result.get("success"):
                 failed_count += 1
                 continue
@@ -1115,24 +1171,27 @@ async def get_conversation_history_zapi(
     """
     Busca histórico de mensagens diretamente da Z-API (sem salvar no banco).
     Usado para carregar mensagens mais antigas sob demanda via botão "Carregar mais".
-    
+    Task #303 — resolve o ZAPIClient correto pelo canal da conversa.
+
     Args:
         conversation_id: ID da conversa no banco
         amount: Quantidade de mensagens a buscar (padrão 10)
         last_message_id: ID da última mensagem carregada (para paginação Z-API)
     """
-    from services.whatsapp_client import zapi_client
-    
+    from services.whatsapp_client import get_zapi_client_for_channel
+
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
-    
-    if not zapi_client.is_configured():
-        raise HTTPException(status_code=500, detail="Z-API não configurada")
-    
-    result = await zapi_client.get_chat_messages(
-        conv.phone, 
-        amount=amount, 
+
+    # Task #303 — client correto pelo canal da conversa; fallback para legado quando channel_id é None
+    _client = get_zapi_client_for_channel(conv.channel_id, db)
+    if not _client.is_configured():
+        raise HTTPException(status_code=500, detail="Z-API não configurada para este canal")
+
+    result = await _client.get_chat_messages(
+        conv.phone,
+        amount=amount,
         last_message_id=last_message_id
     )
     
