@@ -1473,6 +1473,18 @@ Equipe de Gestao"></textarea>
                             </div>
                         </div>
 
+                        <!-- Task #312 — Banner de pré-voo: canal com problema bloqueia disparo -->
+                        <div id="preflightErrorBanner" style="display: none; margin-bottom: 16px; padding: 14px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
+                            <div style="display: flex; align-items: flex-start; gap: 12px;">
+                                <svg width="20" height="20" fill="none" stroke="#dc2626" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                                <div style="flex: 1;">
+                                    <strong style="color: #991b1b; font-size: 0.9rem;">Canal com problema — disparo bloqueado</strong>
+                                    <p style="margin: 4px 0 8px; color: #7f1d1d; font-size: 0.82rem;">Corrija os problemas abaixo antes de disparar a campanha.</p>
+                                    <div id="preflightErrorList"></div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div id="attachmentWarningBanner" style="display: none; margin-bottom: 16px; padding: 14px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; align-items: flex-start; gap: 12px;">
                             <svg width="20" height="20" fill="none" stroke="#b45309" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
                             <div>
@@ -3010,12 +3022,79 @@ Equipe de Gestao"></textarea>
         }
 
         let currentEventSource = null;
-        
+
+        // Task #312 — Helpers de pré-voo de canais
+        async function _callPreflightCheck(cId) {
+            try {
+                var resp = await fetch(API_BASE + '/' + cId + '/preflight-check', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (!resp.ok) return null;
+                return await resp.json();
+            } catch (e) {
+                console.warn('[preflight-check] Erro ao verificar canais:', e);
+                return null;  // falha de rede não bloqueia o disparo
+            }
+        }
+
+        function _showPreflightError(channels) {
+            var banner = document.getElementById('preflightErrorBanner');
+            var list = document.getElementById('preflightErrorList');
+            if (!banner || !list) return;
+            var html = channels.map(function(ch) {
+                var linkHtml = (!ch.is_legacy && ch.channel_id)
+                    ? ' <a href="/integrations" style="color:#1d4ed8;font-size:0.8rem;white-space:nowrap;">Ver Integrações →</a>'
+                    : '';
+                return '<div style="padding:8px 0;border-top:1px solid #fecaca;font-size:0.85rem;color:#7f1d1d;">'
+                    + (ch.error || ((ch.label || 'Canal') + ' — problema desconhecido.'))
+                    + linkHtml
+                    + '</div>';
+            }).join('');
+            list.innerHTML = html;
+            banner.style.display = 'block';
+        }
+
+        function _hidePreflightError() {
+            var banner = document.getElementById('preflightErrorBanner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        async function _runPreflightGuard(cId) {
+            /* Executa pré-voo e retorna true se ok para prosseguir, false se bloqueado.
+               Atualiza estado do botão e exibe/esconde o banner de erro. */
+            var pfBtn = document.getElementById('dispatchBtn');
+            if (!pfBtn) return true;
+            var origHtml = pfBtn.innerHTML;
+            pfBtn.disabled = true;
+            pfBtn.innerHTML = '<div class="spinner" style="width:18px;height:18px;display:inline-block;vertical-align:middle;margin-right:6px;"></div> Verificando canais...';
+            _hidePreflightError();
+
+            var pf = await _callPreflightCheck(cId);
+
+            pfBtn.innerHTML = origHtml;
+            pfBtn.disabled = false;
+
+            if (!pf) return true;  // erro de rede → falha silenciosa, prossegue
+            if (pf.all_ok) return true;
+
+            var bad = (pf.channels || []).filter(function(ch) { return !ch.ok; });
+            _showPreflightError(bad);
+            return false;
+        }
+
         async function dispatchCampaign() {
             var deliveryMode = document.querySelector('input[name="deliveryMode"]:checked').value;
 
             if (deliveryMode === 'cadence') {
                 return dispatchCadence();
+            }
+
+            // Task #312 — Verificação de pré-condições antes de prosseguir com o disparo
+            if (campaignId) {
+                var _pfOk = await _runPreflightGuard(campaignId);
+                if (!_pfOk) return;
             }
 
             if (campaignId) {
@@ -3299,6 +3378,12 @@ Equipe de Gestao"></textarea>
             var dailyLimit = rawLimit === '' ? null : (parseInt(rawLimit) || null);
             var deadlineDays = parseInt(document.getElementById('cadenceDeadlineDays').value) || 5;
             var cadenceProfile = (document.getElementById('cadenceProfile') || {}).value || 'conservador';
+
+            // Task #312 — Verificação de pré-condições antes de agendar cadência
+            if (campaignId) {
+                var _pfCadOk = await _runPreflightGuard(campaignId);
+                if (!_pfCadOk) return;
+            }
 
             if (campaignId) {
                 try {

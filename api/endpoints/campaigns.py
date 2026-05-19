@@ -2170,6 +2170,267 @@ async def dispatch_campaign(
     }
 
 
+async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
+    """
+    Task #312 — Verifica pré-condições para disparo por canal:
+    (1) Conectividade da instância Z-API.
+    (2) Webhook de recebimento configurado (apenas canais não-legados).
+
+    - channel_ids_raw: lista de channel_id (pode conter None = canal legado).
+    - Retorna { channels: [...], all_ok: bool }.
+    - Nunca lança exceção — erros de verificação são tratados como aviso;
+      falhas de rede no check do webhook são fail-safe (não bloqueiam).
+    """
+    from services.dependency_check import (
+        get_channel_health_cache,
+        get_zapi_status_cache,
+        check_zapi_connectivity,
+        check_zapi_connectivity_for_channel,
+    )
+    from services.whatsapp_client import get_zapi_client_for_channel as _gzc_pf
+    from database.models import ZAPIChannel as _ZCh_pf
+    from core.config import get_public_base_url as _gpbu
+    import os as _os_pf
+
+    public_base = _gpbu()
+    results: list = []
+    all_ok = True
+    seen: set = set()
+
+    for channel_id in channel_ids_raw:
+        cid_key = channel_id if channel_id is not None else "legacy"
+        if cid_key in seen:
+            continue
+        seen.add(cid_key)
+
+        # ── Canal legado (None ou is_legacy=True identificado mais tarde) ──────
+        if channel_id is None:
+            legacy_cache = get_zapi_status_cache()
+            status = legacy_cache.get("status", "unknown")
+            connectivity_ok = status == "connected"
+
+            if not connectivity_ok and status in ("unknown", "error", "timeout"):
+                try:
+                    direct = await check_zapi_connectivity()
+                    status = direct.get("status", "unknown")
+                    connectivity_ok = status == "connected"
+                except Exception:
+                    pass
+
+            results.append({
+                "channel_id": None,
+                "label": "Canal legado",
+                "is_legacy": True,
+                "connectivity_ok": connectivity_ok,
+                "webhook_ok": True,
+                "ok": connectivity_ok,
+                "error": (
+                    None if connectivity_ok
+                    else f"Canal legado — instância desconectada (status: {status}). "
+                         "Reconecte no painel Z-API antes de disparar."
+                ),
+            })
+            if not connectivity_ok:
+                all_ok = False
+            continue
+
+        # ── Canal explícito ──────────────────────────────────────────────────────
+        try:
+            ch_row = db.query(_ZCh_pf).filter(_ZCh_pf.id == channel_id).first()
+        except Exception as _qe:
+            results.append({
+                "channel_id": channel_id,
+                "label": f"Canal #{channel_id}",
+                "is_legacy": False,
+                "connectivity_ok": False,
+                "webhook_ok": False,
+                "ok": False,
+                "error": f"Canal #{channel_id} — erro ao consultar banco de dados: {type(_qe).__name__}.",
+            })
+            all_ok = False
+            continue
+
+        if not ch_row:
+            results.append({
+                "channel_id": channel_id,
+                "label": f"Canal #{channel_id}",
+                "is_legacy": False,
+                "connectivity_ok": False,
+                "webhook_ok": False,
+                "ok": False,
+                "error": f"Canal #{channel_id} — não encontrado na base de dados.",
+            })
+            all_ok = False
+            continue
+
+        label = ch_row.label or ch_row.name or f"Canal #{channel_id}"
+
+        if not ch_row.is_active:
+            results.append({
+                "channel_id": channel_id,
+                "label": label,
+                "is_legacy": bool(ch_row.is_legacy),
+                "connectivity_ok": False,
+                "webhook_ok": False,
+                "ok": False,
+                "error": f"{label} — canal desativado. Ative em Integrações → Canais antes de disparar.",
+            })
+            all_ok = False
+            continue
+
+        # Canais legados identificados na tabela: verifica apenas conectividade via cache global
+        if ch_row.is_legacy:
+            legacy_cache = get_zapi_status_cache()
+            status = legacy_cache.get("status", "unknown")
+            connectivity_ok = status == "connected"
+            results.append({
+                "channel_id": channel_id,
+                "label": label,
+                "is_legacy": True,
+                "connectivity_ok": connectivity_ok,
+                "webhook_ok": True,
+                "ok": connectivity_ok,
+                "error": (
+                    None if connectivity_ok
+                    else f"{label} — instância desconectada (status: {status}). "
+                         "Reconecte no painel Z-API antes de disparar."
+                ),
+            })
+            if not connectivity_ok:
+                all_ok = False
+            continue
+
+        # Canal explícito não-legado ─ verifica conectividade + webhook
+        # 1. Conectividade: cache Task #308 com fallback para chamada direta
+        health_cache = get_channel_health_cache()
+        cached = health_cache.get(channel_id)
+        connectivity_status = cached.get("status", "unknown") if cached else "unknown"
+
+        if not cached or connectivity_status in ("unknown", "error"):
+            try:
+                global_ct = _os_pf.getenv("ZAPI_CLIENT_TOKEN", "")
+                direct = await check_zapi_connectivity_for_channel(
+                    ch_row.instance_id, ch_row.token, ch_row.client_token, global_ct
+                )
+                connectivity_status = direct.get("status", "unknown")
+            except Exception:
+                pass
+
+        connectivity_ok = connectivity_status == "connected"
+
+        # 2. Webhook: apenas canais não-legados (Task #309 mantém registro; aqui verificamos)
+        webhook_ok = True
+        webhook_error_detail = None
+        try:
+            _pf_client = _gzc_pf(channel_id, db)
+            webhook_resp = await _pf_client.get_webhook_settings(timeout=4.0)
+            if webhook_resp.get("endpoint_not_found"):
+                webhook_ok = True  # endpoint não suportado — não bloqueia
+            elif webhook_resp.get("success"):
+                settings = webhook_resp.get("settings") or {}
+                received_url = ""
+                if isinstance(settings, dict):
+                    # Formato 1: {"webhookReceived": {"value": "..."}}
+                    wr = settings.get("webhookReceived") or {}
+                    if isinstance(wr, dict):
+                        received_url = str(wr.get("value", "") or "")
+                    # Formato 2: {"received": {"value": "..."}}
+                    if not received_url:
+                        wr2 = settings.get("received") or {}
+                        if isinstance(wr2, dict):
+                            received_url = str(wr2.get("value", "") or "")
+                    # Formato plano: {"value": "..."}
+                    if not received_url:
+                        received_url = str(settings.get("value", "") or "")
+                received_url = received_url.strip()
+
+                if not received_url:
+                    webhook_ok = False
+                    webhook_error_detail = "webhook de recebimento não configurado"
+                elif public_base:
+                    expected_path = f"/api/whatsapp/webhook/{channel_id}"
+                    if public_base not in received_url and expected_path not in received_url:
+                        webhook_ok = False
+                        webhook_error_detail = (
+                            f"webhook aponta para URL diferente da esperada "
+                            f"({received_url[:60]}{'…' if len(received_url) > 60 else ''})"
+                        )
+                # Se base URL desconhecida e URL não está vazia → ok (não dá pra validar)
+            # get_webhook_settings falhou (status != success, não é endpoint_not_found):
+            # tratamos como não-fatal — falha de rede não deve bloquear o disparo
+        except Exception:
+            webhook_ok = True  # fail-safe: skip webhook check em erro inesperado
+
+        ok = connectivity_ok and webhook_ok
+        error_parts = []
+        if not connectivity_ok:
+            error_parts.append(
+                f"instância desconectada (status: {connectivity_status}). "
+                "Reconecte no painel Z-API antes de disparar."
+            )
+        if not webhook_ok and webhook_error_detail:
+            error_parts.append(f"{webhook_error_detail}. Configure em Integrações → Canais.")
+
+        results.append({
+            "channel_id": channel_id,
+            "label": label,
+            "is_legacy": False,
+            "connectivity_ok": connectivity_ok,
+            "webhook_ok": webhook_ok,
+            "ok": ok,
+            "error": f"{label} — " + " | ".join(error_parts) if error_parts else None,
+        })
+        if not ok:
+            all_ok = False
+
+    return {"channels": results, "all_ok": all_ok}
+
+
+@router.post("/{campaign_id}/preflight-check")
+async def preflight_campaign_channels(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """
+    Task #312 — Verifica pré-condições de disparo (conectividade + webhook) para todos
+    os canais que serão utilizados nesta campanha.
+
+    Resolve os channel_ids a partir de `processed_data` (suporta upload e base)
+    e delega para `_run_preflight_check`. Retorna { channels: [...], all_ok: bool }.
+    Nunca retorna 422 — é uma consulta informacional; quem decide bloquear é o caller.
+    """
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    try:
+        proc = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
+    except Exception:
+        proc = []
+
+    emails: list = []
+    for row in proc:
+        e = (
+            row.get("email_assessor")
+            or row.get("email")
+            or row.get("Email")
+            or row.get("assessor_email")
+            or ""
+        )
+        if e:
+            emails.append(str(e).strip().lower())
+    emails = [e for e in emails if e]
+
+    channel_map = _batch_resolve_channels(list(set(emails)), db) if emails else {}
+    channel_ids: list = list({v for v in channel_map.values()})
+    if not channel_ids:
+        channel_ids = [None]
+
+    result = await _run_preflight_check(channel_ids, db)
+    return result
+
+
 @router.get("/{campaign_id}/dispatch-stream")
 async def dispatch_campaign_stream(
     campaign_id: int,
@@ -2254,6 +2515,23 @@ async def dispatch_campaign_stream(
     # Task #224 — pré-resolver channel_id por e-mail dos assessores desta campanha.
     _sse_all_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
     _sse_channel_map = _batch_resolve_channels(_sse_all_emails, db) if _sse_all_emails else {}
+
+    # Task #312 — Pre-flight check: verifica conectividade e webhook antes de iniciar SSE.
+    # Apenas para path upload (base é roteado antes, via dispatch_campaign_from_base).
+    _pf_sse_cids = list({v for v in _sse_channel_map.values()})
+    if not _pf_sse_cids:
+        _pf_sse_cids = [None]
+    _pf_sse_result = await _run_preflight_check(_pf_sse_cids, db)
+    if not _pf_sse_result["all_ok"]:
+        _pf_sse_bad = [ch for ch in _pf_sse_result["channels"] if not ch.get("ok")]
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "preflight_failed": True,
+                "message": "Um ou mais canais de envio apresentam problemas. Corrija antes de disparar.",
+                "channels": _pf_sse_bad,
+            },
+        )
 
     async def generate_events():
         from core.config import resolve_attachment_for_send
@@ -4199,6 +4477,20 @@ async def dispatch_campaign_cadence(
 
     if not dispatches_data:
         raise HTTPException(status_code=400, detail="Nenhum destinatário encontrado")
+
+    # Task #312 — Pre-flight check: verifica conectividade e webhook antes de criar dispatches.
+    _pf_cad_cids = list({d.get("channel_id") for d in dispatches_data})
+    _pf_cad_result = await _run_preflight_check(_pf_cad_cids, db)
+    if not _pf_cad_result["all_ok"]:
+        _pf_cad_bad = [ch for ch in _pf_cad_result["channels"] if not ch.get("ok")]
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "preflight_failed": True,
+                "message": "Um ou mais canais de envio apresentam problemas. Corrija antes de agendar.",
+                "channels": _pf_cad_bad,
+            },
+        )
 
     # Resolve daily_limit efetivo: se o usuário não informou, usa o valor
     # do perfil de cadência selecionado (50/80/120).
