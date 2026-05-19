@@ -3879,6 +3879,32 @@ def _persist_campaign_message(
                     + ", ".join(_reset_parts)
                 )
 
+        # Task #311 — Corrige channel_id da conversa para o canal da campanha.
+        # Garante que respostas do assessor sejam roteadas pelo canal correto.
+        # Guards: (a) ticket_status = 'open' — atendimento humano ativo, não interferir;
+        #         (b) assessor tem channel_id direto configurado — canal do assessor prevalece.
+        if channel_id and conversation.channel_id != channel_id and conversation.ticket_status != "open":
+            _has_assessor_channel_override = False
+            if conversation.assessor_id:
+                try:
+                    _ov_channel = (
+                        db_session.query(_Assessor.channel_id)
+                        .filter(_Assessor.id == conversation.assessor_id)
+                        .scalar()
+                    )
+                    if _ov_channel:
+                        _has_assessor_channel_override = True
+                except Exception:
+                    pass
+
+            if not _has_assessor_channel_override:
+                _old_channel_id = conversation.channel_id
+                conversation.channel_id = channel_id
+                print(
+                    f"[CAMPAIGN] Conversa {conversation.id} channel_id atualizado: "
+                    f"{_old_channel_id} → {channel_id}"
+                )
+
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
         record = WhatsAppMessage(
             chat_id=clean_phone,
