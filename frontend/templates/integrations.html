@@ -999,6 +999,7 @@
                     <div class="zc-channel-meta" style="margin-top:2px;">🏢 ${unidadesTxt}</div>
                     ${ch.is_legacy ? '' : `<div class="zc-channel-meta" style="margin-top:2px;">🔐 Client-Token: ${ch.client_token_source === 'own' ? '<span style="color:#1e40af; font-weight:500;">próprio</span>' : '<span style="color:var(--text-secondary);">global (conta)</span>'}</div>`}
                     ${!ch.is_legacy ? `<div class="zc-channel-meta" style="margin-top:2px;" id="zcWebhookStatus-${ch.id}">🔗 Webhook: ${_webhookStatusBadge(ch)}</div>` : ''}
+                    ${!ch.is_legacy ? `<div class="zc-channel-meta" style="margin-top:2px; font-size:0.82rem; color:var(--text-secondary);" id="zcWebhookVerified-${ch.id}" title="${ch.last_webhook_verified_at ? 'Última verificação periódica automática' : 'Nenhuma verificação periódica realizada ainda'}">🕐 ${ch.last_webhook_verified_at ? 'Verificado ' + _zcRelativeTime(new Date(ch.last_webhook_verified_at)) : 'Nunca verificado'}</div>` : ''}
                     <!-- Task #282 — reception stats (carregados assincronamente após render) -->
                     <div class="zc-channel-meta" style="margin-top:2px;" id="zcReceptionStats-${ch.id}">
                         📩 <span style="color:var(--text-secondary);font-size:0.82rem;">Carregando recepção…</span>

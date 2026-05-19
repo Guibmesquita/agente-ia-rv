@@ -99,6 +99,10 @@ async def lifespan(app: FastAPI):
     cadence_task = asyncio.create_task(cadence_loop())
     background_tasks.append(cadence_task)
 
+    # Task #309 — Loop de revalidação periódica de webhooks (diário + startup após 30s).
+    webhook_revalidation_task = asyncio.create_task(_webhook_revalidation_loop())
+    background_tasks.append(webhook_revalidation_task)
+
     yield
     
     for task in background_tasks:
@@ -300,6 +304,235 @@ async def _auto_register_webhooks_startup():
         db.rollback()
     finally:
         db.close()
+
+
+async def _verify_and_reregister_channel(ch, webhook_base: str, db) -> str:
+    """
+    Task #309 — Verifica se a URL de webhook registrada no Z-API para o canal `ch`
+    bate com a URL esperada. Se houver divergência (ou webhook ausente), re-registra.
+
+    Retorna um dos três valores de `validation_result`:
+    - "ok"               — URL bate, sem ação necessária.
+    - "url_mismatch_fixed" — URL divergia; re-registro bem-sucedido.
+    - "failed"           — não foi possível verificar ou re-registrar.
+
+    Persiste um evento `periodic_revalidation` em `webhook_receipt_log` em todos os casos.
+    Atualiza `last_webhook_verified_at` no canal quando o resultado é `ok` ou
+    `url_mismatch_fixed`.
+    """
+    from database.models import WebhookReceiptLog
+    import os
+
+    global_ct = os.getenv("ZAPI_CLIENT_TOKEN", "")
+    expected_url = f"{webhook_base}/api/whatsapp/webhook/{ch.id}"
+    canal_label = ch.label or ch.name
+
+    def _log(validation: str, detail: Optional[str] = None):
+        """Persiste evento de revalidação periódica no webhook_receipt_log."""
+        try:
+            from database.database import SessionLocal as _SL
+            _db = _SL()
+            try:
+                _db.add(WebhookReceiptLog(
+                    channel_id=ch.id,
+                    remote_ip="periodic_check",
+                    event_type="periodic_revalidation",
+                    validation_result=validation[:32],
+                    error_detail=(detail[:256] if detail else None),
+                ))
+                _db.commit()
+            except Exception:
+                _db.rollback()
+            finally:
+                _db.close()
+        except Exception:
+            pass
+
+    try:
+        from services.whatsapp_client import ZAPIClient
+        client = ZAPIClient(
+            instance_id=ch.instance_id,
+            token=ch.token,
+            client_token=ch.client_token or global_ct or None,
+        )
+        settings_result = await client.get_webhook_settings(timeout=10.0)
+    except Exception as exc:
+        msg = f"{type(exc).__name__}: {exc}"
+        print(f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — erro ao buscar settings: {msg}")
+        _log("failed", msg)
+        return "failed"
+
+    if not settings_result.get("success"):
+        err = settings_result.get("error", "falha ao chamar /webhooks")
+        print(f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — /webhooks retornou erro: {err}")
+        _log("failed", err[:256] if err else None)
+        return "failed"
+
+    # Quando endpoint não existe no Z-API (NOT_FOUND), não podemos verificar mas
+    # também não é um erro real — preserva o estado atual e anota como ok
+    # (comportamento conservador: evita re-registro desnecessário).
+    if settings_result.get("endpoint_not_found"):
+        print(
+            f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — GET /webhooks não suportado; "
+            "assumindo ok (endpoint_not_found)."
+        )
+        from datetime import datetime, timezone as _tz
+        ch.last_webhook_verified_at = datetime.now(_tz.utc)
+        _log("ok", "endpoint_not_found — URL não verificável, assumindo registrado")
+        return "ok"
+
+    # Extrai URL registrada — Z-API pode guardar em vários campos dependendo da versão
+    settings = settings_result.get("settings") or {}
+    registered_url: Optional[str] = None
+    for field in ("deliveryUrl", "url", "webhookUrl", "value", "received"):
+        val = settings.get(field)
+        if isinstance(val, str) and val.startswith("http"):
+            registered_url = val
+            break
+        # Subestrutura (ex: {"received": {"url": "..."}})
+        if isinstance(val, dict):
+            sub = val.get("url") or val.get("value") or val.get("deliveryUrl")
+            if isinstance(sub, str) and sub.startswith("http"):
+                registered_url = sub
+                break
+
+    if registered_url and registered_url.rstrip("/") == expected_url.rstrip("/"):
+        # URL correta — apenas anota verificação
+        from datetime import datetime, timezone as _tz
+        ch.last_webhook_verified_at = datetime.now(_tz.utc)
+        print(
+            f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — ✅ URL correta: {registered_url}"
+        )
+        _log("ok", f"url={registered_url}")
+        return "ok"
+
+    # URL divergente (ou webhook ausente) — re-registra
+    mismatch_detail = (
+        f"registrada={registered_url!r} esperada={expected_url!r}"
+        if registered_url
+        else f"webhook ausente; esperada={expected_url!r}"
+    )
+    print(
+        f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — ⚠️ divergência detectada: "
+        f"{mismatch_detail}. Re-registrando..."
+    )
+
+    try:
+        reg_result = await client.update_all_webhooks(expected_url)
+    except Exception as exc:
+        msg = f"re-registro falhou: {type(exc).__name__}: {exc}"
+        print(f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — ❌ {msg}")
+        ch.webhook_auto_registered = False
+        _log("failed", f"{mismatch_detail} | {msg}")
+        return "failed"
+
+    if reg_result.get("success"):
+        from datetime import datetime, timezone as _tz
+        ch.webhook_auto_registered = True
+        ch.webhook_url = expected_url
+        ch.last_webhook_verified_at = datetime.now(_tz.utc)
+        print(
+            f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — ✅ re-registrado: "
+            f"url={expected_url} endpoint={reg_result.get('endpoint_used', '?')}"
+        )
+        _log("url_mismatch_fixed", f"{mismatch_detail} → corrigido")
+        return "url_mismatch_fixed"
+    else:
+        err = reg_result.get("error") or reg_result.get("body_error") or str(reg_result)
+        print(f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — ❌ re-registro falhou: {err}")
+        ch.webhook_auto_registered = False
+        _log("failed", f"{mismatch_detail} | {err[:200] if err else None}")
+        return "failed"
+
+
+async def _run_webhook_revalidation(webhook_base: str):
+    """
+    Task #309 — Executa _verify_and_reregister_channel para todos os canais
+    ativos não-legados. Chamado no startup (após _auto_register_webhooks_startup)
+    e pelo loop diário.
+    """
+    from database.database import SessionLocal
+    from database.models import ZAPIChannel
+
+    db = SessionLocal()
+    try:
+        channels = (
+            db.query(ZAPIChannel)
+            .filter(
+                ZAPIChannel.is_active.is_(True),
+                ZAPIChannel.is_legacy.is_(False),
+            )
+            .all()
+        )
+
+        if not channels:
+            print("[WEBHOOK-VERIFY] Nenhum canal ativo não-legado para verificar.")
+            return
+
+        print(
+            f"[WEBHOOK-VERIFY] Iniciando verificação periódica de {len(channels)} canal(is) "
+            f"(base_url={webhook_base!r})..."
+        )
+
+        ok_count = mismatch_fixed = failed_count = 0
+        for ch in channels:
+            result = await _verify_and_reregister_channel(ch, webhook_base, db)
+            if result == "ok":
+                ok_count += 1
+            elif result == "url_mismatch_fixed":
+                mismatch_fixed += 1
+            else:
+                failed_count += 1
+
+        if ok_count + mismatch_fixed > 0:
+            try:
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                print(f"[WEBHOOK-VERIFY] Erro ao persistir resultados: {exc}")
+
+        print(
+            f"[WEBHOOK-VERIFY] Resultado: {ok_count} ok, {mismatch_fixed} corrigidos, "
+            f"{failed_count} com falha. Total: {len(channels)}"
+        )
+    except Exception as exc:
+        print(f"[WEBHOOK-VERIFY] Erro inesperado: {type(exc).__name__}: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _webhook_revalidation_loop():
+    """
+    Task #309 — Loop de revalidação periódica de webhooks.
+    Executa uma vez no startup (após aguardar 30s para o servidor estabilizar)
+    e depois diariamente (a cada 24h).
+    """
+    import asyncio
+    import os
+
+    # Aguarda o startup se estabilizar antes da primeira verificação.
+    await asyncio.sleep(30)
+
+    while True:
+        webhook_base = (
+            os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
+            or os.getenv("APP_BASE_URL", "").rstrip("/")
+            or os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
+        )
+        if webhook_base:
+            try:
+                await _run_webhook_revalidation(webhook_base)
+            except Exception as exc:
+                print(f"[WEBHOOK-VERIFY] Erro no loop de revalidação: {type(exc).__name__}: {exc}")
+        else:
+            print(
+                "[WEBHOOK-VERIFY] Loop de revalidação: sem base URL configurada — "
+                "verificação ignorada neste ciclo."
+            )
+
+        # Aguarda 24h até a próxima rodada
+        await asyncio.sleep(86400)
 
 
 def _cleanup_old_webhook_logs():
@@ -872,6 +1105,8 @@ def _apply_incremental_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_webhook_receipt_log_channel_created ON webhook_receipt_log(channel_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_webhook_receipt_log_created ON webhook_receipt_log(created_at DESC)",
+        # Task #309 — timestamp da última verificação periódica bem-sucedida do webhook.
+        "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS last_webhook_verified_at TIMESTAMPTZ",
     ]
     db = SessionLocal()
     ok = 0

@@ -759,6 +759,8 @@ async def list_zapi_channels(
                 "unidades_assigned": mapping_by_channel.get(ch.id, []),
                 "unidades_mapeadas": mapping_by_channel.get(ch.id, []),  # alias para compatibilidade
                 "webhook_url_suggested": _build_webhook_url_suggested(request, ch.id),
+                # Task #309 — timestamp da última verificação periódica bem-sucedida
+                "last_webhook_verified_at": ch.last_webhook_verified_at.isoformat() if getattr(ch, "last_webhook_verified_at", None) else None,
                 "created_at": ch.created_at.isoformat() if ch.created_at else None,
                 "updated_at": ch.updated_at.isoformat() if ch.updated_at else None,
             }

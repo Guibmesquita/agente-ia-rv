@@ -1674,6 +1674,8 @@ class ZAPIChannel(Base):
     webhook_url_suffix = Column(String(100), nullable=True)
     # Task #264 — True quando o webhook foi registrado com sucesso via /update-webhook-received.
     webhook_auto_registered = Column(Boolean, default=False)
+    # Task #309 — Timestamp da última verificação periódica bem-sucedida do webhook.
+    last_webhook_verified_at = Column(DateTime(timezone=True), nullable=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
