@@ -3849,6 +3849,33 @@ def _persist_campaign_message(
             except Exception as _lookup_err:
                 print(f"[CAMPAIGN_MSG] Aviso: lookup de assessor falhou para telefone={clean_phone} canal={channel_id}: {_lookup_err}")
 
+        # Task #310 — Reset de estado de conversa ao disparar campanha.
+        # Garante que a resposta do assessor não seja interceptada por estado
+        # residual de sessões anteriores (stalled_interactions ou awaiting_confirmation).
+        # Proteção: skip quando há atendimento humano ativo (ticket_status = 'open').
+        #
+        # Cobre conversas novas (defaults já corretos) e existentes. Para conversas
+        # novas os defaults (stalled=0, awaiting=False) garantem que o bloco é no-op.
+        if conversation.ticket_status != "open":
+            from database.models import ConversationState as _CS
+            _prev_stalled = conversation.stalled_interactions or 0
+            _prev_awaiting = bool(conversation.awaiting_confirmation)
+            _any_reset = False
+
+            if _prev_stalled >= 3:
+                conversation.stalled_interactions = 0
+                _any_reset = True
+            if _prev_awaiting:
+                conversation.awaiting_confirmation = False
+                conversation.confirmation_sent_at = None
+                _any_reset = True
+            if _any_reset:
+                conversation.conversation_state = _CS.READY.value
+                print(
+                    f"[CAMPAIGN] Conversa {conversation.id} resetada: "
+                    f"stalled={_prev_stalled}→0, awaiting_confirmation={_prev_awaiting}→False"
+                )
+
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
         record = WhatsAppMessage(
             chat_id=clean_phone,
