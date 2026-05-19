@@ -286,14 +286,16 @@ def merge_duplicate_conversations(db: Session) -> int:
         print(f"[MERGE-DUP] Erro ao carregar conversas: {exc}")
         return 0
 
-    # Mapa phone_string → id da conversa mais antiga com aquele número (qualquer variante).
+    # Mapa canonical_phone → id da conversa mais antiga com aquele número.
+    # Usa canonicalize_phone() como chave de agrupamento — é determinístico e cobre todos
+    # os formatos (12/11/10 dígitos, com/sem 55, com/sem dígito 9 extra) que conversation_phone_keys
+    # gera como variantes. Isso é mais robusto do que min(variants, key=len), que poderia colidir
+    # para sequências numéricas atípicas onde a variante mais curta não é única por grupo.
     canonical_map: dict = {}  # canonical_key → conversation_id (o principal)
     duplicate_pairs: list = []  # list of (keeper_id, dup_id)
 
     for conv in conversations:
-        variants = conversation_phone_keys(conv.phone)
-        # Usa a variante mais curta como chave de agrupamento (evita sensibilidade ao formato).
-        key = min(variants, key=len) if variants else conv.phone
+        key = canonicalize_phone(conv.phone) or conv.phone
 
         if key not in canonical_map:
             canonical_map[key] = conv.id
@@ -316,9 +318,22 @@ def merge_duplicate_conversations(db: Session) -> int:
             if not keeper or not dup:
                 continue
 
-            # 1. Transferir mensagens
+            # 1. Transferir todos os registros filhos antes de deletar o duplicado.
+            # WhatsAppMessage.conversation_id é nullable — sem risco de NOT NULL.
+            # ConversationTicket.conversation_id e TicketHistory.conversation_id são NOT NULL:
+            # sem esta transferência o SQLAlchemy tenta nulificar antes do DELETE e a DB rejeita.
+            from database.models import WhatsAppMessage, ConversationTicket, TicketHistory
+
             db.query(WhatsAppMessage).filter(
                 WhatsAppMessage.conversation_id == dup_id
+            ).update({"conversation_id": keeper_id}, synchronize_session=False)
+
+            db.query(ConversationTicket).filter(
+                ConversationTicket.conversation_id == dup_id
+            ).update({"conversation_id": keeper_id}, synchronize_session=False)
+
+            db.query(TicketHistory).filter(
+                TicketHistory.conversation_id == dup_id
             ).update({"conversation_id": keeper_id}, synchronize_session=False)
 
             # 2. Atualizar metadados do principal se o duplicado tiver atividade mais recente
@@ -328,9 +343,12 @@ def merge_duplicate_conversations(db: Session) -> int:
                 keeper.last_message_at = dup.last_message_at
                 keeper.last_message_preview = dup.last_message_preview
 
-            # 3. Preencher phone canônico no keeper se ainda não tiver
-            if not keeper.phone and dup.phone:
-                keeper.phone = canonicalize_phone(dup.phone)
+            # 3. Garantir que o phone do keeper esteja em formato canônico (13 dígitos).
+            # Antes da Task #318, conversas eram criadas com o phone como veio do Z-API
+            # (podendo ser 10/11/12 dígitos). Após o merge, aproveitamos para normalizar.
+            canonical = canonicalize_phone(keeper.phone or dup.phone or "")
+            if canonical and canonical != keeper.phone:
+                keeper.phone = canonical
 
             # 4. Remover duplicata
             db.delete(dup)
