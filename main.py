@@ -1468,6 +1468,42 @@ def _backfill_conversation_ticket_status():
         db.close()
 
 
+def _normalize_assessor_phones():
+    """Task #319 — normaliza telefones de assessores para o formato canônico 55DDXXXXXXXXX.
+
+    Idempotente: telefones já no formato de 13 dígitos não são alterados.
+    Executado no startup antes da criação do admin para garantir consistência.
+    """
+    from database.database import SessionLocal
+    from database.models import Assessor
+    from services.conversation_flow import canonicalize_phone
+
+    db = SessionLocal()
+    try:
+        assessores = db.query(Assessor).filter(
+            Assessor.telefone_whatsapp.isnot(None),
+            Assessor.telefone_whatsapp != ""
+        ).all()
+
+        updated = 0
+        for a in assessores:
+            canonical = canonicalize_phone(a.telefone_whatsapp)
+            if canonical and canonical != a.telefone_whatsapp:
+                a.telefone_whatsapp = canonical
+                updated += 1
+
+        if updated > 0:
+            db.commit()
+            print(f"[INIT] Normalização de telefones: {updated} assessor(es) atualizados para formato canônico 55DDXXXXXXXXX")
+        else:
+            print("[INIT] Normalização de telefones: todos os assessores já estão no formato canônico")
+    except Exception as e:
+        print(f"[INIT] Aviso: normalização de telefones de assessores falhou: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _sync_init_database():
     """Operações síncronas de inicialização do banco (roda em thread separada)."""
     import os
@@ -1494,6 +1530,8 @@ def _sync_init_database():
         _backfill_cadence_events()
         _cleanup_old_cadence_events()
         _backfill_conversation_ticket_status()
+
+    _normalize_assessor_phones()
 
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")

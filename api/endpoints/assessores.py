@@ -25,6 +25,7 @@ except ImportError:
 from database.database import get_db
 from database.models import Assessor, CustomFieldDefinition, User
 from api.endpoints.auth import require_role
+from services.conversation_flow import canonicalize_phone
 
 router = APIRouter(prefix="/api/assessores", tags=["assessores"])
 
@@ -289,11 +290,14 @@ async def create_assessor(assessor: AssessorCreate, db: Session = Depends(get_db
     if existing:
         raise HTTPException(status_code=400, detail="Já existe um assessor com este e-mail")
     
+    raw_phone = assessor.telefone_whatsapp
+    canonical_phone = canonicalize_phone(raw_phone) if raw_phone else raw_phone
+
     db_assessor = Assessor(
         codigo_ai=assessor.codigo_ai,
         nome=assessor.nome,
         email=assessor.email,
-        telefone_whatsapp=assessor.telefone_whatsapp,
+        telefone_whatsapp=canonical_phone,
         unidade=assessor.unidade,
         equipe=assessor.equipe,
         broker_responsavel=assessor.broker_responsavel,
@@ -320,6 +324,8 @@ async def update_assessor(assessor_id: int, assessor: AssessorUpdate, db: Sessio
             raise HTTPException(status_code=400, detail="Já existe outro assessor com este e-mail")
     
     update_data = assessor.model_dump(exclude_unset=True)
+    if "telefone_whatsapp" in update_data and update_data["telefone_whatsapp"]:
+        update_data["telefone_whatsapp"] = canonicalize_phone(update_data["telefone_whatsapp"])
     phone_changed = "telefone_whatsapp" in update_data and update_data["telefone_whatsapp"] != db_assessor.telefone_whatsapp
     for key, value in update_data.items():
         if key == "custom_fields" and value is not None:
@@ -721,6 +727,8 @@ async def confirm_upload(data: UploadConfirm, db: Session = Depends(get_db), cur
                 if not telefone or str(telefone).strip() == "":
                     errors.append(f"Linha {idx + 2}: Telefone WhatsApp é obrigatório")
                     continue
+                telefone = canonicalize_phone(str(telefone))
+                assessor_data["telefone_whatsapp"] = telefone
                 
                 codigo_ai = assessor_data.get("codigo_ai")
                 
