@@ -2196,8 +2196,11 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
     - channel_ids_raw: lista de channel_id (pode conter None = canal legado).
     - Retorna { channels: [...], all_ok: bool }.
     - Nunca lança exceção — erros de verificação são tratados internamente.
-    - Política fail-closed: falhas de rede, timeout ou resposta não-success no check
-      do webhook BLOQUEIAM o disparo. Somente canais legados passam sem validação de webhook.
+    - Política fail-closed para erros de rede/timeout e respostas non-success.
+    - endpoint_not_found: verifica webhook_auto_registered no banco — se True, o PUT
+      de registro anterior teve sucesso e não bloqueamos (plano Z-API sem GET /webhooks);
+      se False, bloqueamos pedindo configuração manual.
+    - Canais legados passam sem validação de webhook (apenas conectividade).
     """
     from services.dependency_check import (
         get_channel_health_cache,
@@ -2352,14 +2355,22 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
             _pf_client = _gzc_pf(channel_id, db)
             webhook_resp = await _pf_client.get_webhook_settings(timeout=4.0)
             if webhook_resp.get("endpoint_not_found"):
-                # Fail-closed: canal não-legado sem suporte ao endpoint de webhook settings
-                # não oferece garantia de recebimento — bloqueamos o disparo com mensagem clara.
-                # Canais legados já saem no ramo anterior (continue) e não chegam aqui.
-                webhook_ok = False
-                webhook_error_detail = (
-                    "endpoint de webhook settings não disponível neste canal "
-                    "(verifique instância e credenciais no painel Z-API)"
-                )
+                # Alguns planos/versões Z-API não expõem GET /webhooks para leitura,
+                # mas o registro via PUT funciona normalmente.
+                # Estratégia: se o banco registra webhook_auto_registered=True, o PUT
+                # anterior foi bem-sucedido e mensagens chegam — não bloqueamos.
+                # Sem registro anterior (webhook_auto_registered=False), bloqueamos e
+                # pedimos para configurar manualmente em Integrações.
+                if ch_row.webhook_auto_registered:
+                    webhook_ok = True  # PUT feito com sucesso; GET não disponível neste plano
+                    webhook_error_detail = None
+                else:
+                    webhook_ok = False
+                    webhook_error_detail = (
+                        "webhook não configurado (endpoint de leitura indisponível neste plano Z-API "
+                        "e nenhum registro de configuração automática). Configure manualmente "
+                        "via Integrações → Canais"
+                    )
             elif webhook_resp.get("success"):
                 settings = webhook_resp.get("settings") or {}
                 received_url = ""
