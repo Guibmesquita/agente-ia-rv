@@ -484,7 +484,11 @@ async def _run_webhook_revalidation(webhook_base: str):
             else:
                 failed_count += 1
 
-        if ok_count + mismatch_fixed > 0:
+        # Sempre faz commit quando qualquer canal teve estado alterado — inclusive
+        # falhas que marcam webhook_auto_registered=False (sem commit, o banner de
+        # alerta na UI não apareceria no cenário de degradação total).
+        any_mutated = ok_count + mismatch_fixed + failed_count > 0
+        if any_mutated:
             try:
                 db.commit()
             except Exception as exc:
