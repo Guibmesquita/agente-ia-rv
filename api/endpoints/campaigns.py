@@ -2295,11 +2295,20 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
             all_ok = False
             continue
 
-        # Canais legados identificados na tabela: verifica apenas conectividade via cache global
+        # Canais legados na tabela: cache global + fallback direto (idêntico ao ramo channel_id=None)
         if ch_row.is_legacy:
             legacy_cache = get_zapi_status_cache()
             status = legacy_cache.get("status", "unknown")
             connectivity_ok = status == "connected"
+
+            if not connectivity_ok and status in ("unknown", "error", "timeout"):
+                try:
+                    direct = await check_zapi_connectivity()
+                    status = direct.get("status", "unknown")
+                    connectivity_ok = status == "connected"
+                except Exception:
+                    pass
+
             results.append({
                 "channel_id": channel_id,
                 "label": label,
@@ -2374,19 +2383,17 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
                         )
                 # URL configurada mas base URL desconhecida → não dá pra validar destino; ok
             else:
-                # Resposta não-success e não endpoint_not_found (ex: credenciais inválidas,
-                # instância temporariamente em erro). Política explícita: fail-safe —
-                # não bloqueia o disparo. A verificação de conectividade (separada acima)
-                # já captura instâncias verdadeiramente offline. Impedir disparo aqui
-                # criaria falsos-positivos em instâncias lentas ou temporariamente
-                # inacessíveis pelo settings endpoint.
-                webhook_ok = True
-        except Exception:
-            # Erro transitório de rede (timeout, DNS, etc.) — a chamada não completou.
-            # Diferente do else acima (resposta recebida mas com erro): aqui não há dados.
-            # Política: fail-safe — não bloqueia. Trata-se de indisponibilidade transitória,
-            # não de evidência de má-configuração.
-            webhook_ok = True
+                # Resposta não-success do Z-API (ex: credenciais inválidas, instância em erro).
+                # Fail-closed: sem confirmação de configuração válida, bloqueamos o disparo
+                # para evitar envios sem webhook de retorno funcional.
+                webhook_ok = False
+                webhook_error_detail = "configuração do webhook não pôde ser verificada (API Z-API retornou erro). Verifique as credenciais do canal"
+        except Exception as _wh_exc:
+            # Erro de rede ou timeout ao consultar webhook settings.
+            # Fail-closed: sem confirmação de que o webhook está configurado, bloqueamos
+            # para garantir a pré-condição de recebimento antes do disparo.
+            webhook_ok = False
+            webhook_error_detail = f"não foi possível verificar webhook — erro de rede ({type(_wh_exc).__name__}). Verifique a conectividade do canal"
 
         ok = connectivity_ok and webhook_ok
         error_parts = []
