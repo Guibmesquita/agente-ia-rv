@@ -377,6 +377,7 @@ async def _verify_and_reregister_channel(ch, webhook_base: str, db) -> str:
             "assumindo ok (endpoint_not_found)."
         )
         from datetime import datetime, timezone as _tz
+        ch.webhook_auto_registered = True
         ch.last_webhook_verified_at = datetime.now(_tz.utc)
         _log("ok", "endpoint_not_found — URL não verificável, assumindo registrado")
         return "ok"
@@ -397,8 +398,10 @@ async def _verify_and_reregister_channel(ch, webhook_base: str, db) -> str:
                 break
 
     if registered_url and registered_url.rstrip("/") == expected_url.rstrip("/"):
-        # URL correta — apenas anota verificação
+        # URL correta — reavalia webhook_auto_registered para resolver canais que
+        # estavam marcados False mas já têm webhook correto (ex: correção manual no Z-API).
         from datetime import datetime, timezone as _tz
+        ch.webhook_auto_registered = True
         ch.last_webhook_verified_at = datetime.now(_tz.utc)
         print(
             f"[WEBHOOK-VERIFY] Canal {ch.id} ({canal_label}) — ✅ URL correta: {registered_url}"
