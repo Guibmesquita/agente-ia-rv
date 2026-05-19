@@ -156,6 +156,33 @@ async def run_init_background():
     except Exception as e:
         print(f"[INIT] Erro no re-registro automático de webhooks: {e}")
 
+    try:
+        await asyncio.to_thread(_merge_duplicate_conversations_startup)
+    except Exception as e:
+        print(f"[INIT] Erro na fusão de conversas duplicadas: {e}")
+
+
+def _merge_duplicate_conversations_startup():
+    """
+    Task #318 — Funde conversas duplicadas causadas por variações de formato de número.
+    Executado no startup de forma síncrona em thread separada (via asyncio.to_thread).
+    Idempotente: não faz nada se não houver duplicatas.
+    """
+    from database.database import SessionLocal
+    from services.conversation_flow import merge_duplicate_conversations
+
+    db = SessionLocal()
+    try:
+        merged = merge_duplicate_conversations(db)
+        if merged:
+            print(f"[INIT] Fusão de conversas duplicadas concluída: {merged} par(es) fundido(s).")
+    except Exception as exc:
+        print(f"[INIT] Erro na fusão de conversas duplicadas: {exc}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
 
 async def _auto_register_webhooks_startup():
     """

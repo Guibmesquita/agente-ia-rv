@@ -187,17 +187,31 @@ def conversation_phone_keys(phone: str) -> list:
         rest = clean[2:]
 
     if len(rest) == 9 and rest.startswith('9'):
+        # Ex: rest = '999021089' → número já tem o dígito 9 de celular; gerar com e sem.
         rest_without_9 = rest[1:]
         variants.add('55' + ddd + rest)
         variants.add('55' + ddd + rest_without_9)
         variants.add(ddd + rest)
         variants.add(ddd + rest_without_9)
     elif len(rest) == 8 and not rest.startswith('9'):
+        # Ex: rest = '90210890' → número de 8 dígitos sem o dígito 9; gerar com 9 prefixado.
         rest_with_9 = '9' + rest
         variants.add('55' + ddd + rest_with_9)
         variants.add('55' + ddd + rest)
         variants.add(ddd + rest_with_9)
         variants.add(ddd + rest)
+    elif len(rest) == 8 and rest.startswith('9'):
+        # Task #318 — Bug: ex. entrada '554499021089' (12 dígitos, código 55 + DDD 44 +
+        # local '99021089'). O else anterior só gerava '554499021089' e '4499021089',
+        # faltando '44999021089' (11 dígitos) e '5544999021089' (13 dígitos).
+        # Esses são os mesmos contatos que chegam como '44999021089' no Z-API em outros
+        # momentos, causando criação de conversa duplicada.
+        # Solução: inserir '9' entre DDD e rest para cobrir o formato de 9 dígitos.
+        rest_with_extra_9 = '9' + rest  # '9' + '99021089' = '999021089' (9 dígitos)
+        variants.add('55' + ddd + rest)           # '554499021089' (12 dígitos — original)
+        variants.add(ddd + rest)                  # '4499021089'   (10 dígitos)
+        variants.add('55' + ddd + rest_with_extra_9)  # '5544999021089' (13 dígitos)
+        variants.add(ddd + rest_with_extra_9)         # '44999021089'   (11 dígitos) ← a chave
     else:
         variants.add('55' + ddd + rest)
         variants.add(ddd + rest)
@@ -230,9 +244,106 @@ def canonicalize_phone(phone: str) -> str:
         return '55' + clean if not clean.startswith('55') else clean
 
     if len(rest) == 8 and not rest.startswith('9'):
+        # '12345678' → '912345678'
+        rest = '9' + rest
+    elif len(rest) == 8 and rest.startswith('9'):
+        # Task #318 — '99021089' (8 dígitos, começa com 9) → '999021089' (9 dígitos).
+        # Sem este branch, números como '554499021089' ficavam canônicos como
+        # '5544 99021089' (12 dígitos) em vez de '55 44 999021089' (13 dígitos),
+        # divergindo do padrão de 13 dígitos esperado.
         rest = '9' + rest
 
     return '55' + ddd + rest
+
+
+def merge_duplicate_conversations(db: Session) -> int:
+    """
+    Task #318 — Funde conversas duplicadas causadas por variações de formato de telefone.
+
+    Lógica:
+      1. Carrega todas as conversas com phone preenchido.
+      2. Para cada conversa, gera variantes via conversation_phone_keys.
+      3. Detecta pares (A, B) onde phone_B é variante de phone_A e id_A < id_B
+         (mantém A como principal — o mais antigo).
+      4. Move mensagens de B para A (WhatsAppMessage.conversation_id = A.id).
+      5. Atualiza A: last_message_at e last_message_preview do B se B for mais recente;
+         preserva channel_id de A (não sobrescreve lógica de canal).
+      6. Remove B.
+
+    Retorna: número de pares fundidos.
+    Idempotente: chamar múltiplas vezes não faz efeito caso não haja duplicatas.
+    """
+    from database.models import Conversation, WhatsAppMessage
+
+    try:
+        conversations = (
+            db.query(Conversation)
+            .filter(Conversation.phone.isnot(None), Conversation.phone != "")
+            .order_by(Conversation.id)
+            .all()
+        )
+    except Exception as exc:
+        print(f"[MERGE-DUP] Erro ao carregar conversas: {exc}")
+        return 0
+
+    # Mapa phone_string → id da conversa mais antiga com aquele número (qualquer variante).
+    canonical_map: dict = {}  # canonical_key → conversation_id (o principal)
+    duplicate_pairs: list = []  # list of (keeper_id, dup_id)
+
+    for conv in conversations:
+        variants = conversation_phone_keys(conv.phone)
+        # Usa a variante mais curta como chave de agrupamento (evita sensibilidade ao formato).
+        key = min(variants, key=len) if variants else conv.phone
+
+        if key not in canonical_map:
+            canonical_map[key] = conv.id
+        else:
+            keeper_id = canonical_map[key]
+            if keeper_id != conv.id:
+                duplicate_pairs.append((keeper_id, conv.id))
+
+    if not duplicate_pairs:
+        print("[MERGE-DUP] Nenhuma conversa duplicada encontrada.")
+        return 0
+
+    print(f"[MERGE-DUP] {len(duplicate_pairs)} par(es) duplicado(s) detectado(s). Iniciando fusão...")
+
+    merged = 0
+    for keeper_id, dup_id in duplicate_pairs:
+        try:
+            keeper = db.query(Conversation).filter(Conversation.id == keeper_id).first()
+            dup = db.query(Conversation).filter(Conversation.id == dup_id).first()
+            if not keeper or not dup:
+                continue
+
+            # 1. Transferir mensagens
+            db.query(WhatsAppMessage).filter(
+                WhatsAppMessage.conversation_id == dup_id
+            ).update({"conversation_id": keeper_id}, synchronize_session=False)
+
+            # 2. Atualizar metadados do principal se o duplicado tiver atividade mais recente
+            if dup.last_message_at and (
+                not keeper.last_message_at or dup.last_message_at > keeper.last_message_at
+            ):
+                keeper.last_message_at = dup.last_message_at
+                keeper.last_message_preview = dup.last_message_preview
+
+            # 3. Preencher phone canônico no keeper se ainda não tiver
+            if not keeper.phone and dup.phone:
+                keeper.phone = canonicalize_phone(dup.phone)
+
+            # 4. Remover duplicata
+            db.delete(dup)
+            db.commit()
+            merged += 1
+            print(f"[MERGE-DUP] Fundido: conv#{dup_id} ({dup.phone}) → conv#{keeper_id} ({keeper.phone})")
+
+        except Exception as exc:
+            db.rollback()
+            print(f"[MERGE-DUP] Erro ao fundir conv#{dup_id} → conv#{keeper_id}: {exc}")
+
+    print(f"[MERGE-DUP] Fusão concluída: {merged} par(es) fundido(s).")
+    return merged
 
 
 def identify_contact(

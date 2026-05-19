@@ -238,6 +238,16 @@ async def list_conversations(
         if start_date:
             query = query.filter(Conversation.last_message_at >= start_date)
     
+    # Task #318 — Suprimir conversas sem atividade quando não há filtro de busca ativo.
+    # Conversas criadas pelo sync Z-API sem mensagens reais (last_message_at IS NULL)
+    # apareciam como "Sem mensagens" duplicadas. Com busca explícita, todas são visíveis.
+    no_filter_active = not any([
+        search, status, ticket_status, escalation_level,
+        assigned_to_me, unidade, broker, escalation_category, date_range, channel_id
+    ])
+    if no_filter_active:
+        query = query.filter(Conversation.last_message_at.isnot(None))
+
     total = query.count()
     conversations = query.order_by(desc(Conversation.last_message_at)).offset(actual_offset).limit(limit).all()
     
