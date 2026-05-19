@@ -696,6 +696,8 @@ function App() {
   const sentinelRef = useRef(null);
   const hasActiveFiltersRef = useRef(false);
   const fetchConversationsRef = useRef(null);
+  const currentConversationRef = useRef(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const PAGE_SIZE = 20;
   
   const showToast = useCallback((message, type = 'info') => {
@@ -822,7 +824,10 @@ function App() {
       });
       
       setConversations(prev => {
-        const newList = append ? [...prev, ...sortedItems] : sortedItems;
+        const merged = append ? [...prev, ...sortedItems] : sortedItems;
+        const seen = new Map();
+        merged.forEach(c => seen.set(c.id, c));
+        const newList = Array.from(seen.values());
         if (total !== null) {
           setHasMore(offset + items.length < total);
           setTotalCount(total);
@@ -843,12 +848,18 @@ function App() {
     fetchConversationsRef.current = fetchConversations;
   }, [fetchConversations]);
 
-  const fetchMessages = async (conversationId, isInitialLoad = false) => {
+  useEffect(() => {
+    currentConversationRef.current = currentConversation;
+  }, [currentConversation]);
+
+  const fetchMessages = async (conversationId, isInitialLoad = false, skipSync = false) => {
     try {
-      await fetch(`${API_BASE}/conversations/${conversationId}/sync-messages`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      if (!skipSync) {
+        await fetch(`${API_BASE}/conversations/${conversationId}/sync-messages`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+      }
       const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, { credentials: 'include' });
       const dbMessages = await res.json();
       
@@ -952,6 +963,7 @@ function App() {
   const selectConversation = async (conv) => {
     const updatedConv = { ...conv, unread_count: 0 };
     setCurrentConversation(updatedConv);
+    currentConversationRef.current = updatedConv;
     setConversations(prev => prev.map(c => 
       c.id === conv.id ? { ...c, unread_count: 0 } : c
     ));
@@ -959,7 +971,12 @@ function App() {
     setHasMoreHistory(true);
     setLastZapiMessageId(null);
     setHistoryExhausted(false);
-    await fetchMessages(conv.id, true);
+    setIsLoadingMessages(true);
+    try {
+      await fetchMessages(conv.id, true, false);
+    } finally {
+      setIsLoadingMessages(false);
+    }
   };
 
   const loadMoreHistory = async () => {
@@ -1052,14 +1069,19 @@ function App() {
       const freshConv = await resp.json();
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === conversationId);
+        let next;
         if (idx !== -1) {
           const updated = prev.map(c => c.id === conversationId ? { ...c, ...freshConv } : c);
-          return [...updated].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+          next = [...updated].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
         } else if (!hasActiveFiltersRef.current) {
           setTotalCount(t => t + 1);
-          return [freshConv, ...prev];
+          next = [freshConv, ...prev];
+        } else {
+          return prev;
         }
-        return prev;
+        const seen = new Map();
+        next.forEach(c => seen.set(c.id, c));
+        return Array.from(seen.values());
       });
     } catch (e) {
       console.warn('[SSE] Erro ao atualizar conversa in-place:', e.message);
@@ -1079,7 +1101,7 @@ function App() {
       });
       if (!res.ok) throw new Error('Erro ao enviar');
       setMessageInput('');
-      await fetchMessages(currentConversation.id, false);
+      await fetchMessages(currentConversation.id, false, true);
       await fetchConversations(0, false);
     } catch (err) {
       showToast('Erro ao enviar mensagem', 'error');
@@ -1348,9 +1370,10 @@ function App() {
           fallbackPollingTimeout = null;
           return;
         }
-        await fetchConversations(0, false);
-        if (currentConversation) {
-          await fetchMessages(currentConversation.id, false);
+        await fetchConversationsRef.current?.(0, false);
+        const activeConv = currentConversationRef.current;
+        if (activeConv) {
+          await fetchMessages(activeConv.id, false, true);
         }
         fallbackPollingTimeout = setTimeout(poll, 30000);
       };
@@ -1390,17 +1413,19 @@ function App() {
             if (convId) {
               await handleSSEUpdate(convId);
             }
-            if (currentConversation && convId === currentConversation.id) {
-              await fetchMessages(currentConversation.id, false);
+            const activeConv = currentConversationRef.current;
+            if (activeConv && convId === activeConv.id) {
+              await fetchMessages(activeConv.id, false, true);
               try {
-                const resp = await fetch(`${API_BASE}/conversations/${currentConversation.id}`, { credentials: 'include' });
+                const resp = await fetch(`${API_BASE}/conversations/${activeConv.id}`, { credentials: 'include' });
                 if (resp.ok) {
                   const freshData = await resp.json();
                   setCurrentConversation(freshData);
+                  currentConversationRef.current = freshData;
                 }
               } catch (e) { console.warn('[SSE] Erro ao atualizar conversa:', e.message); }
               setConversations(prev => prev.map(c => 
-                c.id === currentConversation.id ? { ...c, unread_count: 0 } : c
+                c.id === activeConv.id ? { ...c, unread_count: 0 } : c
               ));
             }
           }
@@ -1422,7 +1447,7 @@ function App() {
       if (tokenRefreshTimeout) clearTimeout(tokenRefreshTimeout);
       if (fallbackPollingTimeout) clearTimeout(fallbackPollingTimeout);
     };
-  }, [currentConversation, fetchConversations, handleSSEUpdate]);
+  }, [handleSSEUpdate]);
 
   const contactName = currentConversation?.assessor_name || currentConversation?.contact_name || 'Contato';
 
@@ -1757,7 +1782,12 @@ function App() {
                 onScroll={handleMessagesScroll}
                 className="flex-1 overflow-y-auto p-6 min-h-0"
               >
-                {messages.length === 0 ? (
+                {isLoadingMessages ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                    <Loader2 className="w-10 h-10 mb-3 opacity-40 animate-spin" />
+                    <p className="text-sm">Carregando mensagens...</p>
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-gray-400">
                     <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
                     <p>Nenhuma mensagem ainda</p>
