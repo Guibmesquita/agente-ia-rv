@@ -3862,18 +3862,21 @@ def _persist_campaign_message(
             _prev_awaiting = bool(conversation.awaiting_confirmation)
             _any_reset = False
 
+            _reset_parts = []
             if _prev_stalled >= 3:
                 conversation.stalled_interactions = 0
                 _any_reset = True
+                _reset_parts.append(f"stalled={_prev_stalled}→0")
             if _prev_awaiting:
                 conversation.awaiting_confirmation = False
                 conversation.confirmation_sent_at = None
                 _any_reset = True
+                _reset_parts.append("awaiting_confirmation=True→False")
             if _any_reset:
                 conversation.conversation_state = _CS.READY.value
                 print(
                     f"[CAMPAIGN] Conversa {conversation.id} resetada: "
-                    f"stalled={_prev_stalled}→0, awaiting_confirmation={_prev_awaiting}→False"
+                    + ", ".join(_reset_parts)
                 )
 
         tag = f"[Campanha: {campaign_name}] " if campaign_name else ""
