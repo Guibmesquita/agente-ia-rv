@@ -2424,6 +2424,27 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
     return {"channels": results, "all_ok": all_ok}
 
 
+class _PreflightChannelIdsBody(BaseModel):
+    channel_ids: list = []
+
+
+@router.post("/preflight-check")
+async def preflight_check_by_channel_ids(
+    body: _PreflightChannelIdsBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao()),
+):
+    """
+    Task #312 — Endpoint genérico de verificação de pré-condições.
+    Aceita lista de channel_ids diretamente (None = canal legado, int = canal explícito).
+    Permite à UI verificar canais específicos independente de qual campanha está em uso.
+    Retorna { channels: [...], all_ok: bool }. Nunca lança 422 — consultivo.
+    """
+    channel_ids: list = body.channel_ids if body.channel_ids else [None]
+    result = await _run_preflight_check(channel_ids, db)
+    return result
+
+
 @router.post("/{campaign_id}/preflight-check")
 async def preflight_campaign_channels(
     campaign_id: int,
@@ -2431,16 +2452,17 @@ async def preflight_campaign_channels(
     current_user: User = Depends(require_admin_or_gestao()),
 ):
     """
-    Task #312 — Verifica pré-condições de disparo (conectividade + webhook) para todos
-    os canais que serão utilizados nesta campanha.
-
-    Resolve os channel_ids a partir de `processed_data` (suporta upload e base)
-    e delega para `_run_preflight_check`. Retorna { channels: [...], all_ok: bool }.
-    Nunca retorna 422 — é uma consulta informacional; quem decide bloquear é o caller.
+    Task #312 — Verifica pré-condições de disparo por campanha.
+    Resolve channel_ids usando o mesmo caminho que o disparo real:
+    - source_type upload: campo email_assessor (ou email/Email/assessor_email)
+    - source_type base/base_assessores: campo email (paridade com dispatch_campaign_from_base)
+    Retorna { channels: [...], all_ok: bool }. Nunca lança 422 — consultivo.
     """
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    source_type = getattr(campaign, 'source_type', 'upload') or 'upload'
 
     try:
         proc = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
@@ -2449,13 +2471,18 @@ async def preflight_campaign_channels(
 
     emails: list = []
     for row in proc:
-        e = (
-            row.get("email_assessor")
-            or row.get("email")
-            or row.get("Email")
-            or row.get("assessor_email")
-            or ""
-        )
+        if source_type in ("base", "base_assessores"):
+            # Paridade com dispatch_campaign_from_base: usa campo "email"
+            e = row.get("email", "")
+        else:
+            # Paridade com SSE upload e dispatch_campaign: email_assessor prioritário
+            e = (
+                row.get("email_assessor")
+                or row.get("email")
+                or row.get("Email")
+                or row.get("assessor_email")
+                or ""
+            )
         if e:
             emails.append(str(e).strip().lower())
     emails = [e for e in emails if e]

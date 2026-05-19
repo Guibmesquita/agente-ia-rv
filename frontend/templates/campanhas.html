@@ -3024,6 +3024,8 @@ Equipe de Gestao"></textarea>
         let currentEventSource = null;
 
         // Task #312 — Helpers de pré-voo de canais
+        var _lastPreflightResult = null;  // cache do último resultado de preflight por disparo
+
         async function _callPreflightCheck(cId) {
             try {
                 var resp = await fetch(API_BASE + '/' + cId + '/preflight-check', {
@@ -3072,6 +3074,7 @@ Equipe de Gestao"></textarea>
             _hidePreflightError();
 
             var pf = await _callPreflightCheck(cId);
+            _lastPreflightResult = pf;  // cache para uso no onerror do SSE
 
             pfBtn.innerHTML = origHtml;
             pfBtn.disabled = false;
@@ -3282,10 +3285,32 @@ Equipe de Gestao"></textarea>
                         Tentar Novamente
                     `;
 
-                    // Task #312 — verifica se o erro foi causado por falha de pré-voo
-                    // (backend retorna 422 antes de iniciar o stream; EventSource dispara onerror)
+                    // Task #312 — verifica se o erro foi causado por falha de pré-voo.
+                    // O backend pode retornar 422 ao iniciar o stream; EventSource dispara onerror
+                    // sem expor o corpo da resposta. Estratégia:
+                    // 1) Usa os channel_ids do resultado cacheado antes do disparo para re-checar
+                    //    via endpoint genérico (garante paridade com a resolução real de canais).
+                    // 2) Se o check estiver ok (falso-positivo transitório), mostra erro genérico.
                     if (campaignId) {
-                        var _pfSseErr = await _callPreflightCheck(campaignId);
+                        var _pfSseErr = null;
+                        var _cachedChannelIds = _lastPreflightResult
+                            ? (_lastPreflightResult.channels || []).map(function(ch) { return ch.channel_id !== undefined ? ch.channel_id : null; })
+                            : null;
+                        if (_cachedChannelIds && _cachedChannelIds.length > 0) {
+                            // Re-verifica os exatos channel_ids que foram checados antes do disparo
+                            try {
+                                var _pfSseResp = await fetch('/api/campaigns/preflight-check', {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ channel_ids: _cachedChannelIds })
+                                });
+                                if (_pfSseResp.ok) _pfSseErr = await _pfSseResp.json();
+                            } catch (_) {}
+                        } else {
+                            // Sem cache de channel_ids — fallback para endpoint por campanha
+                            _pfSseErr = await _callPreflightCheck(campaignId);
+                        }
                         if (_pfSseErr && !_pfSseErr.all_ok) {
                             var _pfSseBad = (_pfSseErr.channels || []).filter(function(ch) { return !ch.ok; });
                             _showPreflightError(_pfSseBad);
