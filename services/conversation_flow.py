@@ -806,11 +806,16 @@ def _had_substantive_interaction(db: Session, conversation) -> bool:
     return True
 
 
-async def check_pending_confirmations(db: Session, zapi_client, timeout_minutes: int = 5):
+async def check_pending_confirmations(db: Session, zapi_client=None, timeout_minutes: int = 5):
     """
     Verifica conversas que aguardam confirmação há mais de X minutos.
     Chamado periodicamente pelo scheduler.
     Só envia confirmação se o bot respondeu algo substantivo na sessão.
+
+    Task #322 — O canal é resolvido por conversa via resolve_channel_client_for_conversation,
+    garantindo que a mensagem de finalização seja enviada pelo mesmo canal onde a conversa
+    aconteceu (AG1–AG5), e não sempre pelo canal legado. O parâmetro `zapi_client` é mantido
+    apenas por compatibilidade de assinatura — não é mais usado diretamente.
     """
     from datetime import timedelta
     
@@ -830,8 +835,11 @@ async def check_pending_confirmations(db: Session, zapi_client, timeout_minutes:
             if not _had_substantive_interaction(db, conv):
                 print(f"[FLOW] Confirmação NÃO enviada para {conv.phone} — sem interação substantiva (apenas saudação)")
                 continue
-            await send_confirmation_request(db, conv, zapi_client)
-            print(f"[FLOW] Confirmação enviada para {conv.phone}")
+            # Task #322 — resolve o canal correto para esta conversa específica,
+            # em vez de usar o cliente legado global passado pelo scheduler.
+            conv_client = resolve_channel_client_for_conversation(conv, db)
+            await send_confirmation_request(db, conv, conv_client)
+            print(f"[FLOW] Confirmação enviada para {conv.phone} (canal conv#{conv.id})")
         except Exception as e:
             print(f"[FLOW] Erro ao processar confirmação para {conv.phone}: {e}")
 

@@ -1805,10 +1805,13 @@ async def confirmation_timeout_scheduler():
     """
     Scheduler que verifica conversas aguardando confirmação a cada minuto.
     Envia mensagem de confirmação após 5 minutos sem resposta do assessor.
+
+    Task #322 — não importa mais o zapi_client legado global. A resolução do
+    canal correto agora ocorre dentro de check_pending_confirmations, por conversa,
+    usando resolve_channel_client_for_conversation — mesmo mecanismo do webhook.
     """
     from database.database import SessionLocal
     from services.conversation_flow import check_pending_confirmations
-    from services.whatsapp_client import zapi_client
     
     while True:
         try:
@@ -1816,7 +1819,7 @@ async def confirmation_timeout_scheduler():
             
             db = SessionLocal()
             try:
-                await check_pending_confirmations(db, zapi_client, timeout_minutes=5)
+                await check_pending_confirmations(db, timeout_minutes=5)
             except Exception as e:
                 print(f"[SCHEDULER] Erro no scheduler de confirmação: {e}")
             finally:
