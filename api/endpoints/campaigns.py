@@ -2073,9 +2073,6 @@ async def dispatch_campaign(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Erro nos dados da campanha")
     
-    campaign.status = CampaignStatus.PROCESSING.value
-    db.commit()
-    
     grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
 
     # Task #224 — resolve channel_id por assessor em batch (não-SSE dispatch).
@@ -2085,7 +2082,7 @@ async def dispatch_campaign(
     _disp_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
     _disp_channel_map = _batch_resolve_channels(_disp_emails, db) if _disp_emails else {}
 
-    # Task #312 — Pre-flight check no endpoint de disparo legado (não-SSE).
+    # Task #312 — Pre-flight check ANTES de marcar PROCESSING (não-SSE dispatch).
     _pf_disp_cids = list({v for v in _disp_channel_map.values()})
     if not _pf_disp_cids:
         _pf_disp_cids = [None]
@@ -2100,6 +2097,10 @@ async def dispatch_campaign(
                 "channels": _pf_disp_bad,
             },
         )
+
+    # Preflight OK — apenas agora a campanha entra em PROCESSING.
+    campaign.status = CampaignStatus.PROCESSING.value
+    db.commit()
 
     sent_count = 0
     failed_count = 0
@@ -2371,11 +2372,21 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
                             f"webhook aponta para URL diferente da esperada "
                             f"({received_url[:60]}{'…' if len(received_url) > 60 else ''})"
                         )
-                # Se base URL desconhecida e URL não está vazia → ok (não dá pra validar)
-            # get_webhook_settings falhou (status != success, não é endpoint_not_found):
-            # tratamos como não-fatal — falha de rede não deve bloquear o disparo
+                # URL configurada mas base URL desconhecida → não dá pra validar destino; ok
+            else:
+                # Resposta não-success e não endpoint_not_found (ex: credenciais inválidas,
+                # instância temporariamente em erro). Política explícita: fail-safe —
+                # não bloqueia o disparo. A verificação de conectividade (separada acima)
+                # já captura instâncias verdadeiramente offline. Impedir disparo aqui
+                # criaria falsos-positivos em instâncias lentas ou temporariamente
+                # inacessíveis pelo settings endpoint.
+                webhook_ok = True
         except Exception:
-            webhook_ok = True  # fail-safe: skip webhook check em erro inesperado
+            # Erro transitório de rede (timeout, DNS, etc.) — a chamada não completou.
+            # Diferente do else acima (resposta recebida mas com erro): aqui não há dados.
+            # Política: fail-safe — não bloqueia. Trata-se de indisponibilidade transitória,
+            # não de evidência de má-configuração.
+            webhook_ok = True
 
         ok = connectivity_ok and webhook_ok
         error_parts = []
@@ -2517,10 +2528,6 @@ async def dispatch_campaign_stream(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
         )
     
-    campaign.status = CampaignStatus.PROCESSING.value
-    campaign.total_assessors = total_assessors
-    db.commit()
-    
     attachment_url = campaign.attachment_url
     attachment_type = campaign.attachment_type
     attachment_filename = campaign.attachment_filename
@@ -2532,8 +2539,7 @@ async def dispatch_campaign_stream(
     _sse_all_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
     _sse_channel_map = _batch_resolve_channels(_sse_all_emails, db) if _sse_all_emails else {}
 
-    # Task #312 — Pre-flight check: verifica conectividade e webhook antes de iniciar SSE.
-    # Apenas para path upload (base é roteado antes, via dispatch_campaign_from_base).
+    # Task #312 — Pre-flight check ANTES de marcar PROCESSING (SSE upload path).
     _pf_sse_cids = list({v for v in _sse_channel_map.values()})
     if not _pf_sse_cids:
         _pf_sse_cids = [None]
@@ -2548,6 +2554,11 @@ async def dispatch_campaign_stream(
                 "channels": _pf_sse_bad,
             },
         )
+
+    # Preflight OK — apenas agora a campanha entra em PROCESSING.
+    campaign.status = CampaignStatus.PROCESSING.value
+    campaign.total_assessors = total_assessors
+    db.commit()
 
     async def generate_events():
         from core.config import resolve_attachment_for_send
@@ -2957,15 +2968,11 @@ async def dispatch_campaign_from_base(campaign, db: Session):
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
         )
     
-    campaign.status = CampaignStatus.PROCESSING.value
-    campaign.total_assessors = total_assessors
-    db.commit()
-
     # Task #224 — pré-resolver channel_id para cada assessor da base.
     _base_emails = [a.get("email", "") for a in data if a.get("email")]
     _base_channel_map = _batch_resolve_channels(_base_emails, db) if _base_emails else {}
 
-    # Task #312 — Pre-flight check para o path de base de assessores (SSE e não-SSE).
+    # Task #312 — Pre-flight check ANTES de marcar PROCESSING (base path).
     _pf_base_cids = list({v for v in _base_channel_map.values()})
     if not _pf_base_cids:
         _pf_base_cids = [None]
@@ -2980,6 +2987,11 @@ async def dispatch_campaign_from_base(campaign, db: Session):
                 "channels": _pf_base_bad,
             },
         )
+
+    # Preflight OK — apenas agora a campanha entra em PROCESSING.
+    campaign.status = CampaignStatus.PROCESSING.value
+    campaign.total_assessors = total_assessors
+    db.commit()
 
     attachment_url = campaign.attachment_url
     attachment_type = campaign.attachment_type
