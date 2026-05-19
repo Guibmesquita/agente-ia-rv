@@ -3318,6 +3318,9 @@ Equipe de Gestao"></textarea>
                             previewDiv.style.display = 'block';
                             cancelBtn.style.display = 'none';
                             cancelBtn.disabled = false;
+                            // Reexibe botão de disparo para permitir nova tentativa após correção
+                            btn.style.display = '';
+                            btn.disabled = false;
                             return;
                         }
                     }

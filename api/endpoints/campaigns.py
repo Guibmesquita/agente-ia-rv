@@ -2351,7 +2351,14 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
             _pf_client = _gzc_pf(channel_id, db)
             webhook_resp = await _pf_client.get_webhook_settings(timeout=4.0)
             if webhook_resp.get("endpoint_not_found"):
-                webhook_ok = True  # endpoint não suportado — não bloqueia
+                # Fail-closed: canal não-legado sem suporte ao endpoint de webhook settings
+                # não oferece garantia de recebimento — bloqueamos o disparo com mensagem clara.
+                # Canais legados já saem no ramo anterior (continue) e não chegam aqui.
+                webhook_ok = False
+                webhook_error_detail = (
+                    "endpoint de webhook settings não disponível neste canal "
+                    "(verifique instância e credenciais no painel Z-API)"
+                )
             elif webhook_resp.get("success"):
                 settings = webhook_resp.get("settings") or {}
                 received_url = ""
