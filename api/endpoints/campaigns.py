@@ -2374,12 +2374,16 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
                     webhook_ok = False
                     webhook_error_detail = "webhook de recebimento não configurado"
                 elif public_base:
-                    expected_path = f"/api/whatsapp/webhook/{channel_id}"
-                    if public_base not in received_url and expected_path not in received_url:
+                    # Validação estrita: a URL configurada deve conter base+path completos.
+                    # OR lógico (base OU path) seria permissivo demais — um URL em domínio
+                    # errado com path correto passaria. Exigimos a URL completa esperada.
+                    expected_full_url = f"{public_base}/api/whatsapp/webhook/{channel_id}"
+                    if expected_full_url not in received_url:
                         webhook_ok = False
                         webhook_error_detail = (
-                            f"webhook aponta para URL diferente da esperada "
-                            f"({received_url[:60]}{'…' if len(received_url) > 60 else ''})"
+                            f"webhook aponta para URL incorreta — esperado contendo "
+                            f"'{expected_full_url}', recebido: "
+                            f"'{received_url[:80]}{'…' if len(received_url) > 80 else ''}'"
                         )
                 # URL configurada mas base URL desconhecida → não dá pra validar destino; ok
             else:
