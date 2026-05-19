@@ -3884,7 +3884,12 @@ def _persist_campaign_message(
         # Guards: (a) ticket_status = 'open' — atendimento humano ativo, não interferir;
         #         (b) assessor tem channel_id direto configurado — canal do assessor prevalece.
         if channel_id and conversation.channel_id != channel_id and conversation.ticket_status != "open":
-            _has_assessor_channel_override = False
+            # Fail-safe: se não for possível confirmar ausência de override do assessor,
+            # assume que há override e preserva conversation.channel_id (canal do assessor
+            # é a fonte de verdade). Só atualiza quando a verificação é conclusiva (sem exceção).
+            _assessor_has_explicit_channel = False   # False = "não tem override" (padrão seguro)
+            _lookup_failed = False
+
             if conversation.assessor_id:
                 try:
                     _ov_channel = (
@@ -3893,11 +3898,18 @@ def _persist_campaign_message(
                         .scalar()
                     )
                     if _ov_channel:
-                        _has_assessor_channel_override = True
-                except Exception:
-                    pass
+                        _assessor_has_explicit_channel = True
+                except Exception as _lookup_exc:
+                    # Não podemos confirmar a ausência de override — comportamento conservador:
+                    # preserva conversation.channel_id para não rotear pelo canal errado.
+                    _lookup_failed = True
+                    print(
+                        f"[CAMPAIGN] Aviso: lookup de override de canal para assessor_id="
+                        f"{conversation.assessor_id} falhou — channel_id não atualizado "
+                        f"(fail-safe): {type(_lookup_exc).__name__}: {_lookup_exc}"
+                    )
 
-            if not _has_assessor_channel_override:
+            if not _assessor_has_explicit_channel and not _lookup_failed:
                 _old_channel_id = conversation.channel_id
                 conversation.channel_id = channel_id
                 print(
