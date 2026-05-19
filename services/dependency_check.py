@@ -185,13 +185,19 @@ async def _update_channel_health_cache() -> None:
             new_cache: dict = {}
             for ch, result in zip(channels, results):
                 if isinstance(result, Exception):
+                    error_msg = str(result)
                     entry: dict = {
                         "status": "error",
                         "checked_at": datetime.now(timezone.utc).isoformat(),
-                        "detail": str(result),
+                        "detail": error_msg,
+                        "error": error_msg,  # campo canônico do contrato da task #308
                     }
                 else:
                     entry = dict(result)
+                    # Normaliza: garante que 'error' está presente (alias de 'detail')
+                    # para consistência do contrato com clientes externos
+                    if "detail" in entry and "error" not in entry:
+                        entry["error"] = entry["detail"]
 
                 # Token inválido tem prioridade sobre qualquer status de conectividade
                 if ch.id in rejection_map:

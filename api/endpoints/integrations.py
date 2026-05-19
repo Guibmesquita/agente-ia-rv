@@ -590,6 +590,7 @@ async def zapi_health_check(request: Request):
     return {
         **legacy,
         "status": worst_status,
+        "overall_status": worst_status,  # campo explícito conforme contrato Task #308
         "legacy_status": legacy.get("status"),
         "channels": channels_list,
     }
