@@ -562,13 +562,37 @@ def _auth_zapi_channel(request: Request) -> dict:
 @router.get("/zapi/health")
 async def zapi_health_check(request: Request):
     """
-    Retorna o estado em cache da Z-API (atualizado em background a cada 5 minutos).
+    Task #308 — Retorna o estado em cache da Z-API (atualizado em background a cada 5 min).
+    Inclui campo `channels` com saúde individual de cada canal ativo não-legado.
+    O campo `status` reflete o pior estado entre canal legado + todos os canais.
     Nunca faz chamada HTTP direta à Z-API neste endpoint.
     """
-    from services.dependency_check import get_zapi_status_cache
+    from services.dependency_check import get_zapi_status_cache, get_channel_health_cache
 
-    cached = get_zapi_status_cache()
-    return cached
+    legacy = get_zapi_status_cache()
+    channel_cache = get_channel_health_cache()
+
+    channels_list = sorted(channel_cache.values(), key=lambda x: x.get("channel_id", 0))
+
+    # Determina o pior status entre o canal legado e todos os canais não-legados
+    _severity = {
+        "token_invalid": 5,
+        "disconnected": 4,
+        "error": 3,
+        "timeout": 2,
+        "unreachable": 2,
+        "unknown": 1,
+        "connected": 0,
+    }
+    all_statuses = [legacy.get("status", "unknown")] + [c.get("status", "unknown") for c in channels_list]
+    worst_status = max(all_statuses, key=lambda s: _severity.get(s, 0), default="unknown")
+
+    return {
+        **legacy,
+        "status": worst_status,
+        "legacy_status": legacy.get("status"),
+        "channels": channels_list,
+    }
 
 
 @router.get("/zapi/channels")

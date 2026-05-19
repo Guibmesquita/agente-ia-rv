@@ -2,6 +2,7 @@ import logging
 import time
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,9 @@ _startup_time = time.time()
 _zapi_status_cache: dict = {"status": "unknown", "checked_at": None}
 
 _openai_status_cache: dict = {"status": "ok", "checked_at": None, "acknowledged_by": None}
+
+# Task #308 — cache de saúde por canal não-legado: channel_id -> health dict
+_channel_health_cache: dict = {}
 
 
 async def check_zapi_connectivity() -> dict:
@@ -62,6 +66,162 @@ async def check_zapi_connectivity() -> dict:
         }
 
 
+async def check_zapi_connectivity_for_channel(
+    instance_id: str,
+    token: str,
+    client_token: Optional[str],
+    global_client_token: str = "",
+) -> dict:
+    """
+    Task #308 — Verifica conectividade Z-API com credenciais explícitas de canal.
+    Usado pelo health loop para monitorar canais não-legados individualmente.
+    """
+    import httpx
+
+    effective_ct = client_token or global_client_token
+    if not (instance_id and token and effective_ct):
+        return {
+            "status": "disconnected",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "detail": "credentials_missing",
+        }
+
+    url = f"https://api.z-api.io/instances/{instance_id}/token/{token}/status"
+    headers = {"Content-Type": "application/json", "Client-Token": effective_ct}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=5.0)
+            data = response.json() if response.content else {}
+            if response.status_code == 200 and data.get("connected"):
+                return {
+                    "status": "connected",
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                return {
+                    "status": "disconnected",
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "detail": data.get("error", data.get("status", "not_connected")),
+                }
+    except httpx.TimeoutException:
+        return {
+            "status": "timeout",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "detail": str(e),
+        }
+
+
+async def _update_channel_health_cache() -> None:
+    """
+    Task #308 — Atualiza o cache de saúde de todos os canais Z-API ativos não-legados.
+
+    Para cada canal:
+    1. Sonda conectividade via API Z-API (status da instância).
+    2. Verifica webhook_receipt_log: se houver token_rejected nos últimos 30 min,
+       o status é sobrescrito para 'token_invalid' (prioridade máxima).
+
+    Chamado dentro de _zapi_health_loop() a cada ciclo (5 min).
+    """
+    global _channel_health_cache
+    try:
+        from database.database import SessionLocal
+        from database.models import ZAPIChannel, WebhookReceiptLog
+        from datetime import timedelta
+        import os
+
+        db = SessionLocal()
+        try:
+            channels = (
+                db.query(ZAPIChannel)
+                .filter(
+                    ZAPIChannel.is_active == True,
+                    ZAPIChannel.is_legacy == False,
+                )
+                .all()
+            )
+
+            if not channels:
+                _channel_health_cache = {}
+                return
+
+            global_ct = os.getenv("ZAPI_CLIENT_TOKEN", "")
+
+            # Detecta rejeições de token nos últimos 30 minutos, por canal
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+            rejection_rows = (
+                db.query(WebhookReceiptLog)
+                .filter(
+                    WebhookReceiptLog.validation_result == "token_rejected",
+                    WebhookReceiptLog.channel_id.isnot(None),
+                    WebhookReceiptLog.created_at >= cutoff,
+                )
+                .all()
+            )
+            # Mantém apenas o timestamp mais recente por canal
+            rejection_map: dict = {}
+            for row in rejection_rows:
+                cid = row.channel_id
+                ts = row.created_at
+                if cid not in rejection_map or (ts and ts > rejection_map[cid]):
+                    rejection_map[cid] = ts
+
+            # Sonda conectividade de cada canal concorrentemente
+            results = await asyncio.gather(
+                *[
+                    check_zapi_connectivity_for_channel(
+                        ch.instance_id, ch.token, ch.client_token, global_ct
+                    )
+                    for ch in channels
+                ],
+                return_exceptions=True,
+            )
+
+            new_cache: dict = {}
+            for ch, result in zip(channels, results):
+                if isinstance(result, Exception):
+                    entry: dict = {
+                        "status": "error",
+                        "checked_at": datetime.now(timezone.utc).isoformat(),
+                        "detail": str(result),
+                    }
+                else:
+                    entry = dict(result)
+
+                # Token inválido tem prioridade sobre qualquer status de conectividade
+                if ch.id in rejection_map:
+                    entry["status"] = "token_invalid"
+                    ts = rejection_map[ch.id]
+                    entry["last_rejection_at"] = ts.isoformat() if ts else None
+
+                new_cache[ch.id] = {
+                    "channel_id": ch.id,
+                    "label": ch.label or ch.name,
+                    **entry,
+                }
+
+            _channel_health_cache = new_cache
+            logger.info(
+                f"[CHANNEL-HEALTH] Cache atualizado: {len(new_cache)} canal(is) — "
+                + ", ".join(f"ch{cid}={v.get('status')}" for cid, v in new_cache.items())
+            )
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"[CHANNEL-HEALTH] Erro ao atualizar cache de canais: {e}")
+
+
+def get_channel_health_cache() -> dict:
+    """Task #308 — Retorna o cache de saúde por canal (dict channel_id -> health dict)."""
+    return _channel_health_cache
+
+
 async def _zapi_health_loop():
     global _zapi_status_cache
     try:
@@ -69,7 +229,9 @@ async def _zapi_health_loop():
             try:
                 result = await check_zapi_connectivity()
                 _zapi_status_cache = result
-                logger.info(f"[ZAPI-HEALTH] Status atualizado: {result['status']}")
+                logger.info(f"[ZAPI-HEALTH] Status canal legado: {result['status']}")
+                # Task #308 — também atualiza cache de saúde por canal não-legado
+                await _update_channel_health_cache()
             except asyncio.CancelledError:
                 raise
             except Exception as e:

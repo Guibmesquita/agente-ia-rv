@@ -297,6 +297,8 @@
         .zc-conn-pill.connected { background: #d1fae5; color: #065f46; }
         .zc-conn-pill.disconnected { background: #fee2e2; color: #991b1b; }
         .zc-conn-pill.unreachable, .zc-conn-pill.unknown { background: #fef3c7; color: #92400e; }
+        /* Task #308 — token inválido: vermelho distinto de desconectado */
+        .zc-conn-pill.token-invalid { background: #fde8e8; color: #7f1d1d; }
         .zc-legacy-badge { font-size: 0.7rem; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 6px; }
         .zc-inactive-badge { font-size: 0.7rem; background: #f3f4f6; color: #6b7280; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 6px; }
         .zc-channel-name { font-weight: 600; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 2px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
@@ -893,15 +895,21 @@
             return '<span style="color:#6b7280; font-weight:500;">❓ Desconhecido</span>';
         }
 
-        function _connLabel(status) {
+        function _connLabel(status, channelId) {
+            // Task #308 — aceita channelId para adicionar id="zcConnPill-{id}" ao pill,
+            // permitindo que loadZAPIHealth() atualize o badge sem re-render completo.
             const map = {
-                connected: ['connected', '● Conectado'],
-                disconnected: ['disconnected', '● Desconectado'],
-                unreachable: ['unreachable', '● Sem resposta'],
-                unknown: ['unknown', '● Sem resposta'],
+                connected:     ['connected',     '● Conectado'],
+                disconnected:  ['disconnected',  '● Desconectado'],
+                unreachable:   ['unreachable',   '● Sem resposta'],
+                unknown:       ['unknown',       '● Sem resposta'],
+                token_invalid: ['token-invalid', '🔑 Token inválido'],
+                timeout:       ['unreachable',   '● Sem resposta'],
+                error:         ['disconnected',  '● Erro'],
             };
             const [cls, txt] = map[status] || map.unknown;
-            return `<span class="zc-conn-pill ${cls}">${txt}</span>`;
+            const idAttr = channelId !== undefined ? ` id="zcConnPill-${channelId}"` : '';
+            return `<span class="zc-conn-pill ${cls}"${idAttr}>${txt}</span>`;
         }
 
         function _zcHandleCardAction(e) {
@@ -974,7 +982,7 @@
                             ${ch.label || ch.name}
                             ${legacyBadge}${inactiveBadge}
                         </div>
-                        ${_connLabel(ch.connectivity_status)}
+                        ${_connLabel(ch.connectivity_status, ch.id)}
                     </div>
                     ${ch.connectivity_status === 'disconnected' ? `
                     <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:0.82rem;color:#991b1b;display:flex;align-items:center;gap:6px;">
@@ -2664,6 +2672,7 @@
         let _zcHealthTimer = null;
 
         async function loadZAPIHealth() {
+            // Task #308 — atualiza pill global + badges por canal sem re-render completo.
             const pill = document.getElementById('zcHealthPill');
             if (!pill) return;
             try {
@@ -2671,11 +2680,17 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 const status = (data.status || '').toLowerCase();
+
+                // Pill global — reflete o pior status entre todos os canais
                 if (status === 'connected') {
                     pill.textContent = '● Conectado';
                     pill.style.background = 'rgba(255,255,255,0.2)';
                     pill.style.color = '#d1fae5';
-                } else if (status === 'disconnected') {
+                } else if (status === 'token_invalid') {
+                    pill.textContent = '🔑 Token inválido';
+                    pill.style.background = 'rgba(255,80,80,0.25)';
+                    pill.style.color = '#fecaca';
+                } else if (status === 'disconnected' || status === 'error') {
                     pill.textContent = '● Desconectado';
                     pill.style.background = 'rgba(255,80,80,0.25)';
                     pill.style.color = '#fecaca';
@@ -2685,6 +2700,33 @@
                     pill.style.color = '#fed7aa';
                 }
                 pill.style.display = '';
+
+                // Task #308 — atualiza badges individuais por canal não-legado
+                if (data.channels && Array.isArray(data.channels)) {
+                    const _statusMap = {
+                        connected:     ['connected',     '● Conectado'],
+                        disconnected:  ['disconnected',  '● Desconectado'],
+                        unreachable:   ['unreachable',   '● Sem resposta'],
+                        unknown:       ['unknown',       '● Sem resposta'],
+                        token_invalid: ['token-invalid', '🔑 Token inválido'],
+                        timeout:       ['unreachable',   '● Sem resposta'],
+                        error:         ['disconnected',  '● Erro'],
+                    };
+                    for (const ch of data.channels) {
+                        const pillEl = document.getElementById(`zcConnPill-${ch.channel_id}`);
+                        if (!pillEl) continue;
+                        const chStatus = (ch.status || 'unknown').toLowerCase();
+                        const [cls, txt] = _statusMap[chStatus] || _statusMap.unknown;
+                        pillEl.className = `zc-conn-pill ${cls}`;
+                        pillEl.textContent = txt;
+                        if (chStatus === 'token_invalid' && ch.last_rejection_at) {
+                            const ts = new Date(ch.last_rejection_at).toLocaleString('pt-BR');
+                            pillEl.title = `Token rejeitado pela última vez em ${ts}`;
+                        } else {
+                            pillEl.title = '';
+                        }
+                    }
+                }
             } catch (err) {
                 pill.textContent = '● Sem resposta';
                 pill.style.background = 'rgba(255,165,0,0.25)';
