@@ -377,9 +377,11 @@ async def _verify_and_reregister_channel(ch, webhook_base: str, db) -> str:
             "assumindo ok (endpoint_not_found)."
         )
         from datetime import datetime, timezone as _tz
-        ch.webhook_auto_registered = True
+        # Não alteramos webhook_auto_registered aqui: sem suporte a GET /webhooks,
+        # não há como confirmar se o webhook está registrado ou não — preservar o
+        # valor existente evita mascarar canais potencialmente não registrados.
         ch.last_webhook_verified_at = datetime.now(_tz.utc)
-        _log("ok", "endpoint_not_found — URL não verificável, assumindo registrado")
+        _log("ok", "endpoint_not_found — URL não verificável, estado preservado")
         return "ok"
 
     # Extrai URL registrada — Z-API pode guardar em vários campos dependendo da versão
