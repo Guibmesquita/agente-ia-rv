@@ -2085,6 +2085,22 @@ async def dispatch_campaign(
     _disp_emails = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
     _disp_channel_map = _batch_resolve_channels(_disp_emails, db) if _disp_emails else {}
 
+    # Task #312 — Pre-flight check no endpoint de disparo legado (não-SSE).
+    _pf_disp_cids = list({v for v in _disp_channel_map.values()})
+    if not _pf_disp_cids:
+        _pf_disp_cids = [None]
+    _pf_disp_result = await _run_preflight_check(_pf_disp_cids, db)
+    if not _pf_disp_result["all_ok"]:
+        _pf_disp_bad = [ch for ch in _pf_disp_result["channels"] if not ch.get("ok")]
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "preflight_failed": True,
+                "message": "Um ou mais canais de envio apresentam problemas. Corrija antes de disparar.",
+                "channels": _pf_disp_bad,
+            },
+        )
+
     sent_count = 0
     failed_count = 0
     content_line_template = campaign.message_content_template or ""
@@ -2948,6 +2964,22 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     # Task #224 — pré-resolver channel_id para cada assessor da base.
     _base_emails = [a.get("email", "") for a in data if a.get("email")]
     _base_channel_map = _batch_resolve_channels(_base_emails, db) if _base_emails else {}
+
+    # Task #312 — Pre-flight check para o path de base de assessores (SSE e não-SSE).
+    _pf_base_cids = list({v for v in _base_channel_map.values()})
+    if not _pf_base_cids:
+        _pf_base_cids = [None]
+    _pf_base_result = await _run_preflight_check(_pf_base_cids, db)
+    if not _pf_base_result["all_ok"]:
+        _pf_base_bad = [ch for ch in _pf_base_result["channels"] if not ch.get("ok")]
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "preflight_failed": True,
+                "message": "Um ou mais canais de envio apresentam problemas. Corrija antes de disparar.",
+                "channels": _pf_base_bad,
+            },
+        )
 
     attachment_url = campaign.attachment_url
     attachment_type = campaign.attachment_type

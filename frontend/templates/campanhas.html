@@ -3270,19 +3270,34 @@ Equipe de Gestao"></textarea>
                     }
                 };
                 
-                eventSource.onerror = function(error) {
+                eventSource.onerror = async function(error) {
                     console.error('SSE Error:', error);
                     eventSource.close();
-                    
-                    addLogEntry('Erro na conexao com o servidor', 'error');
-                    
+                    currentEventSource = null;
+
                     btn.disabled = false;
                     backBtn.disabled = false;
                     btn.innerHTML = `
                         <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                         Tentar Novamente
                     `;
-                    
+
+                    // Task #312 — verifica se o erro foi causado por falha de pré-voo
+                    // (backend retorna 422 antes de iniciar o stream; EventSource dispara onerror)
+                    if (campaignId) {
+                        var _pfSseErr = await _callPreflightCheck(campaignId);
+                        if (_pfSseErr && !_pfSseErr.all_ok) {
+                            var _pfSseBad = (_pfSseErr.channels || []).filter(function(ch) { return !ch.ok; });
+                            _showPreflightError(_pfSseBad);
+                            progressDiv.style.display = 'none';
+                            previewDiv.style.display = 'block';
+                            cancelBtn.style.display = 'none';
+                            cancelBtn.disabled = false;
+                            return;
+                        }
+                    }
+
+                    addLogEntry('Erro na conexão com o servidor', 'error');
                     toast.error('Erro na conexão. Verifique se a campanha foi parcialmente enviada antes de tentar novamente.');
                 };
 
@@ -3428,7 +3443,16 @@ Equipe de Gestao"></textarea>
 
                 if (!response.ok) {
                     var err = await response.json();
-                    throw new Error(err.detail || 'Erro ao agendar campanha');
+                    // Task #312 — 422 de pré-voo: exibir banner inline por canal
+                    if (response.status === 422 && err.detail && err.detail.preflight_failed) {
+                        var _pfCadBad = (err.detail.channels || []).filter(function(ch) { return !ch.ok; });
+                        _showPreflightError(_pfCadBad);
+                        btn.disabled = false;
+                        btn.innerHTML = '<svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Disparar Campanha';
+                        return;
+                    }
+                    var _errMsg = (typeof err.detail === 'string') ? err.detail : (err.detail && err.detail.message) || 'Erro ao agendar campanha';
+                    throw new Error(_errMsg);
                 }
 
                 var result = await response.json();
