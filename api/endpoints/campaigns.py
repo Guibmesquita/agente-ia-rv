@@ -2460,9 +2460,11 @@ async def preflight_campaign_channels(
 ):
     """
     Task #312 — Verifica pré-condições de disparo por campanha.
-    Resolve channel_ids usando o mesmo caminho que o disparo real:
-    - source_type upload: campo email_assessor (ou email/Email/assessor_email)
-    - source_type base/base_assessores: campo email (paridade com dispatch_campaign_from_base)
+    Resolve channel_ids usando EXATAMENTE o mesmo caminho do disparo real:
+    - upload: group_recommendations_by_assessor com column_mapping + custom_fields_mapping
+      (garante paridade mesmo com mapeamentos de colunas customizados)
+    - base/base_assessores: a.get("email") de processed_data
+      (paridade com dispatch_campaign_from_base)
     Retorna { channels: [...], all_ok: bool }. Nunca lança 422 — consultivo.
     """
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
@@ -2477,24 +2479,45 @@ async def preflight_campaign_channels(
         proc = []
 
     emails: list = []
-    for row in proc:
-        if source_type in ("base", "base_assessores"):
-            # Paridade com dispatch_campaign_from_base: usa campo "email"
-            e = row.get("email", "")
-        else:
-            # Paridade com SSE upload e dispatch_campaign: email_assessor prioritário
-            e = (
-                row.get("email_assessor")
-                or row.get("email")
-                or row.get("Email")
-                or row.get("assessor_email")
-                or ""
-            )
-        if e:
-            emails.append(str(e).strip().lower())
-    emails = [e for e in emails if e]
 
-    channel_map = _batch_resolve_channels(list(set(emails)), db) if emails else {}
+    if source_type in ("base", "base_assessores"):
+        # Paridade com dispatch_campaign_from_base: lê campo "email" diretamente
+        for row in proc:
+            e = row.get("email", "") or ""
+            e = str(e).strip().lower()
+            if e:
+                emails.append(e)
+    else:
+        # Paridade com SSE upload + dispatch_campaign: usa group_recommendations_by_assessor
+        # com column_mapping e custom_fields_mapping para suportar colunas customizadas.
+        try:
+            column_mapping = json.loads(str(campaign.column_mapping)) if campaign.column_mapping else {}
+            custom_mapping = json.loads(str(campaign.custom_fields_mapping)) if campaign.custom_fields_mapping else {}
+        except Exception:
+            column_mapping, custom_mapping = {}, {}
+
+        if column_mapping and proc:
+            grouped = group_recommendations_by_assessor(proc, column_mapping, custom_mapping, db)
+            for _key, assessor_data in grouped.items():
+                e = (assessor_data.get("email_assessor") or assessor_data.get("email") or "").strip().lower()
+                if e:
+                    emails.append(e)
+        else:
+            # Fallback: column_mapping ausente — tenta campos canônicos diretamente
+            for row in proc:
+                e = (
+                    row.get("email_assessor")
+                    or row.get("email")
+                    or row.get("Email")
+                    or row.get("assessor_email")
+                    or ""
+                )
+                e = str(e).strip().lower()
+                if e:
+                    emails.append(e)
+
+    emails = list({e for e in emails if e})
+    channel_map = _batch_resolve_channels(emails, db) if emails else {}
     channel_ids: list = list({v for v in channel_map.values()})
     if not channel_ids:
         channel_ids = [None]
