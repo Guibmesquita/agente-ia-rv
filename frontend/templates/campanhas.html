@@ -3047,8 +3047,10 @@ Equipe de Gestao"></textarea>
             if (!banner || !list) return;
             var html = channels.map(function(ch) {
                 var linkHtml = (!ch.is_legacy && ch.channel_id)
-                    ? ' <a href="/integrations" style="color:#1d4ed8;font-size:0.8rem;white-space:nowrap;">Ver Integrações →</a>'
-                    : '';
+                    ? ' <a href="/integrations#zapi-channel-' + ch.channel_id + '" style="color:#1d4ed8;font-size:0.8rem;white-space:nowrap;">Configurar canal →</a>'
+                    : (ch.is_legacy
+                        ? ' <a href="/integrations#zapi-channels" style="color:#1d4ed8;font-size:0.8rem;white-space:nowrap;">Ver Integrações →</a>'
+                        : '');
                 return '<div style="padding:8px 0;border-top:1px solid #fecaca;font-size:0.85rem;color:#7f1d1d;">'
                     + (ch.error || ((ch.label || 'Canal') + ' — problema desconhecido.'))
                     + linkHtml

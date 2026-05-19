@@ -2195,8 +2195,9 @@ async def _run_preflight_check(channel_ids_raw: list, db) -> dict:
 
     - channel_ids_raw: lista de channel_id (pode conter None = canal legado).
     - Retorna { channels: [...], all_ok: bool }.
-    - Nunca lança exceção — erros de verificação são tratados como aviso;
-      falhas de rede no check do webhook são fail-safe (não bloqueiam).
+    - Nunca lança exceção — erros de verificação são tratados internamente.
+    - Política fail-closed: falhas de rede, timeout ou resposta não-success no check
+      do webhook BLOQUEIAM o disparo. Somente canais legados passam sem validação de webhook.
     """
     from services.dependency_check import (
         get_channel_health_cache,
