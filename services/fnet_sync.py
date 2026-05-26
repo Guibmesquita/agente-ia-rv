@@ -205,14 +205,30 @@ async def sync_single_fund(
             cached_canonical_name=cached_canonical_name,
         )
     except FnetClientError as exc:
-        msg = (
-            f"FNET API falhou para {fund.fund_name} (CNPJ {cnpj_formatted}): "
-            f"{type(exc).__name__}: {exc}"
-        )
+        # 401/403 = sessão bloqueada (anti-bot / geo-block do Cloudflare na
+        # frente do FNET). Traduzimos para uma mensagem auditável em pt-BR
+        # — o detalhe técnico (status + diag headers + body[:200]) fica no
+        # logger.exception() para investigação.
+        status = getattr(exc, "status_code", None)
+        if status in (401, 403):
+            msg = (
+                f"FNET bloqueou o acesso à sessão (HTTP {status}) ao listar "
+                f"docs de {fund.fund_name} (CNPJ {cnpj_formatted}). Provável "
+                f"bloqueio anti-bot ou geo da B3 — nova tentativa automática "
+                f"no próximo ciclo agendado."
+            )
+        else:
+            msg = (
+                f"FNET API falhou para {fund.fund_name} (CNPJ {cnpj_formatted}): "
+                f"{type(exc).__name__}: {exc}"
+            )
         # logger.exception() inclui traceback completo — útil para diagnosticar
         # falhas que vão além da mensagem curta persistida em error_message
         # (limitada a ~500 chars). NÃO altera o que vai para o banco.
-        logger.exception("[FNET-SYNC] %s", msg)
+        logger.exception(
+            "[FNET-SYNC] %s | detalhe técnico: %s: %s",
+            msg, type(exc).__name__, exc,
+        )
         result.errors.append(msg)
         # Persiste log de falha no NÍVEL DO FUNDO para auditabilidade (ex.:
         # timeouts, CNPJ inválido, FNET fora do ar). Idempotente por mês via
@@ -341,10 +357,18 @@ async def _process_single_document(
     try:
         pdf_bytes, suggested_filename = await client.download_document(doc.id)
     except FnetClientError as exc:
-        msg = (
-            f"Falha ao baixar PDF FNET id={doc.id} ({dedup_doc_type} {reference_ym}): "
-            f"{type(exc).__name__}: {exc}"
-        )
+        status = getattr(exc, "status_code", None)
+        if status in (401, 403):
+            msg = (
+                f"FNET bloqueou o download do PDF id={doc.id} "
+                f"({dedup_doc_type} {reference_ym}) com HTTP {status}. "
+                f"Provável bloqueio anti-bot/geo — nova tentativa automática."
+            )
+        else:
+            msg = (
+                f"Falha ao baixar PDF FNET id={doc.id} ({dedup_doc_type} {reference_ym}): "
+                f"{type(exc).__name__}: {exc}"
+            )
         # exception() inclui traceback completo — fecha a frente de
         # observabilidade do client FNET (mensagem persistida em
         # last_error/`Material` continua a string curta acima).

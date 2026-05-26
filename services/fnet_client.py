@@ -54,18 +54,82 @@ _CSRF_REGEX = re.compile(
     r"""var\s+csrf_token\s*=\s*["']([0-9a-fA-F-]{16,})["']""",
 )
 
+# Headers compartilhados por todas as chamadas. Adicionamos sinais que o
+# Cloudflare/anti-bot da B3 usa pra distinguir browser real de scraper
+# (`sec-ch-ua*`, `Accept-Encoding`, `Connection: keep-alive`). Sem isso,
+# IPs fora do Brasil (Railway) recebem 403 já no warm-up. Veja o set
+# `_WARMUP_HEADERS` abaixo para os Sec-Fetch específicos de navegação.
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+_SEC_CH_UA = '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"'
+
 _DEFAULT_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": _USER_AGENT,
     "Accept": "application/json, text/javascript, */*; q=0.01",
     "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
     "X-Requested-With": "XMLHttpRequest",
     "Origin": "https://fnet.bmfbovespa.com.br",
     "Referer": FNET_WARMUP_URL,
+    # Sec-* p/ XHR same-origin (search, autocomplete, download).
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+    "sec-ch-ua": _SEC_CH_UA,
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
 }
+
+# Headers específicos para o warm-up (GET HTML top-level navigation).
+# `Sec-Fetch-Site: none` é o que um browser real envia quando o usuário
+# digita a URL na barra — sem isso o Cloudflare desconfia. `Origin` e
+# `X-Requested-With` saem porque navegação top-level não emite eles.
+_WARMUP_HEADERS_OVERRIDE = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-User": "?1",
+    "Sec-Fetch-Dest": "document",
+    "Upgrade-Insecure-Requests": "1",
+    # Remove headers de XHR — usamos sentinela None para drop no merge.
+    "Origin": None,
+    "Referer": None,
+    "X-Requested-With": None,
+}
+
+
+def _warmup_headers() -> dict[str, str]:
+    """Merge _DEFAULT_HEADERS com overrides de navegação, removendo None."""
+    merged = {**_DEFAULT_HEADERS, **_WARMUP_HEADERS_OVERRIDE}
+    return {k: v for k, v in merged.items() if v is not None}
+
+
+# Headers de resposta que ajudam a diagnosticar bloqueios de Cloudflare/AWS
+# na frente do FNET. Logados em falhas 4xx pra confirmar/descartar a
+# hipótese de geo-block sem expor segredos.
+_DIAG_RESPONSE_HEADERS = (
+    "Server",
+    "CF-Ray",
+    "cf-mitigated",
+    "cf-cache-status",
+    "x-amzn-trace-id",
+)
+
+
+def _extract_diag_headers(response: httpx.Response) -> dict[str, str]:
+    """Pega os headers de diagnóstico que estiverem presentes na resposta."""
+    return {
+        name: response.headers[name]
+        for name in _DIAG_RESPONSE_HEADERS
+        if name in response.headers
+    }
 
 
 @dataclass
@@ -392,27 +456,43 @@ class FnetClient:
         """
         Faz o GET em `abrirGerenciadorDocumentosCVM` e devolve o `csrf_token`
         extraído do HTML. Cookies emitidos vão direto para o jar do `http`.
-        Levanta `FnetClientError` se a página vier sem o token.
+
+        Usa headers de navegação top-level (Sec-Fetch-Site: none, sem Origin/
+        XHR-flags) — sem isso o Cloudflare na frente do FNET trata como bot
+        e devolve 403 já aqui, sequer chega ao app da B3.
+
+        Levanta `FnetClientError` (com `status_code` quando aplicável) em
+        qualquer falha — nada de `httpx.HTTPStatusError` escapa pra cima.
         """
         last_exc: Optional[Exception] = None
+        warm_headers = _warmup_headers()
         for attempt in range(1, self._max_retries + 1):
             try:
-                r = await http.get(
-                    FNET_WARMUP_URL,
-                    # A página é HTML — sobrescreve o Accept padrão (JSON).
-                    headers={"Accept": "text/html,application/xhtml+xml"},
-                )
+                r = await http.get(FNET_WARMUP_URL, headers=warm_headers)
                 if r.status_code in (500, 502, 503, 504, 520, 521, 522, 524):
                     raise FnetTransientError(
-                        f"FNET warmup HTTP {r.status_code} (tentativa {attempt})"
+                        f"FNET warmup HTTP {r.status_code} (tentativa {attempt})",
+                        status_code=r.status_code,
                     )
-                r.raise_for_status()
+                # 4xx no warm-up = anti-bot/geo-block do Cloudflare. Embrulha
+                # explicitamente em FnetClientError (com diag headers) — antes
+                # `r.raise_for_status()` lançava httpx.HTTPStatusError cru que
+                # escapava do client inteiro até o `except Exception` do sync.
+                if r.status_code >= 400:
+                    diag = _extract_diag_headers(r)
+                    raise FnetClientError(
+                        f"FNET warmup HTTP {r.status_code} em {FNET_WARMUP_URL} "
+                        f"(tentativa {attempt}) diag={diag} "
+                        f"body[:200]={r.text[:200]!r}",
+                        status_code=r.status_code,
+                    )
                 m = _CSRF_REGEX.search(r.text)
                 if not m:
                     raise FnetClientError(
                         "Warmup FNET veio sem csrf_token — formato da página "
                         f"pode ter mudado (HTTP {r.status_code}, "
-                        f"len={len(r.text)})"
+                        f"len={len(r.text)})",
+                        status_code=r.status_code,
                     )
                 token = m.group(1)
                 logger.debug(
@@ -428,7 +508,8 @@ class FnetClient:
                 continue
         raise FnetClientError(
             f"Falha persistente no warm-up FNET após {self._max_retries} "
-            f"tentativas: {last_exc}"
+            f"tentativas: {last_exc}",
+            status_code=getattr(last_exc, "status_code", None),
         ) from last_exc
 
     async def _resolve_fund(
@@ -602,7 +683,8 @@ class FnetClient:
                 # 5xx → transitório (com backoff).
                 if r.status_code in (500, 502, 503, 504, 520, 521, 522, 524):
                     raise FnetTransientError(
-                        f"FNET {r.status_code} em GET {url} (tentativa {attempt})"
+                        f"FNET {r.status_code} em GET {url} (tentativa {attempt})",
+                        status_code=r.status_code,
                     )
                 # 401/403 → sessão expirada/derrubada pela B3. Tenta um único
                 # re-warm; se ainda falhar, propaga como FnetClientError. Não
@@ -625,9 +707,12 @@ class FnetClient:
                 # vez de deixar httpx.HTTPStatusError escapar e poluir o
                 # log com "pending" sem mark_failed.
                 if r.status_code >= 400:
+                    diag = _extract_diag_headers(r)
                     raise FnetClientError(
                         f"FNET HTTP {r.status_code} em GET {url} "
-                        f"(rewarmed={rewarmed}): {r.text[:200]}"
+                        f"(rewarmed={rewarmed}) diag={diag} "
+                        f"body[:200]={r.text[:200]!r}",
+                        status_code=r.status_code,
                     )
                 return r
             except (FnetTransientError, httpx.TransportError, httpx.TimeoutException) as exc:
@@ -637,7 +722,8 @@ class FnetClient:
                 continue
         raise FnetClientError(
             f"Falha persistente em GET {url} após {self._max_retries} "
-            f"tentativas: {last_exc}"
+            f"tentativas: {last_exc}",
+            status_code=getattr(last_exc, "status_code", None),
         ) from last_exc
 
     @staticmethod
@@ -652,7 +738,18 @@ class FnetClient:
 
 
 class FnetClientError(RuntimeError):
-    """Erro de comunicação com o FNET após esgotar retries."""
+    """
+    Erro de comunicação com o FNET após esgotar retries.
+
+    `status_code` é preenchido quando o erro tem origem numa resposta HTTP
+    do servidor (4xx/5xx); fica `None` para erros de transporte/parse.
+    Callers (ex.: fnet_sync) usam isso pra distinguir 401/403 — que merecem
+    mensagem amigável de "FNET bloqueou a sessão" — de outros erros.
+    """
+
+    def __init__(self, message: str, *, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class FnetTransientError(FnetClientError):
