@@ -152,11 +152,24 @@ class FnetClient:
         date_end: date,
         tipo_fundo: int = 1,  # 1 = FII
         page_size: int = 200,
-    ) -> list[FnetDocument]:
+        *,
+        cached_internal_id: Optional[int] = None,
+        cached_canonical_name: Optional[str] = None,
+    ) -> tuple[list[FnetDocument], int, str]:
         """
         Lista todos os documentos do fundo `cnpj` entregues entre `date_start`
         e `date_end` (inclusive). Faz paginação automática se houver mais que
         `page_size` registros.
+
+        Quando `cached_internal_id` e `cached_canonical_name` são informados,
+        o autocomplete `listarFundos` é PULADO (economia de 1 round-trip por
+        fundo na sync diária). Em caso de 4xx no search com os valores
+        cacheados (raro — search ignora idFundo/cnpj e devolve dados
+        independente), cai automaticamente no autocomplete para revalidar.
+
+        Retorna `(documentos, idFundo_resolvido, nome_canônico_resolvido)` —
+        o caller (sync) deve persistir os dois últimos quando diferirem dos
+        cacheados, para refresh automático em mudanças de cadastro da B3.
 
         Levanta `FnetClientError` em caso de falha persistente após retries,
         ou `FnetFundNotFoundError` se o CNPJ não for encontrado no FNET.
@@ -173,65 +186,76 @@ class FnetClient:
             # canônico para filtrar client-side — porque a B3 ignora idFundo
             # e cnpjFundo na resposta vem `null`, então a única forma de
             # garantir que não trazemos doc de outro fundo é match por nome.
-            resolved = await self._resolve_fund(
-                http, csrf=csrf, cnpj=cnpj, tipo_fundo=tipo_fundo
-            )
-            if resolved is None:
-                raise FnetFundNotFoundError(
-                    f"CNPJ {cnpj} (tipoFundo={tipo_fundo}) não encontrado no "
-                    f"autocomplete do FNET (listarFundos). Verifique o cadastro."
+            if cached_internal_id and cached_canonical_name:
+                id_fundo = int(cached_internal_id)
+                canonical_name = cached_canonical_name
+                logger.debug(
+                    "[FNET] Cache hit para CNPJ %s → idFundo=%d (%s) — "
+                    "pulando autocomplete listarFundos",
+                    cnpj,
+                    id_fundo,
+                    canonical_name[:60],
                 )
-            id_fundo, canonical_name = resolved
+            else:
+                resolved = await self._resolve_fund(
+                    http, csrf=csrf, cnpj=cnpj, tipo_fundo=tipo_fundo
+                )
+                if resolved is None:
+                    raise FnetFundNotFoundError(
+                        f"CNPJ {cnpj} (tipoFundo={tipo_fundo}) não encontrado no "
+                        f"autocomplete do FNET (listarFundos). Verifique o cadastro."
+                    )
+                id_fundo, canonical_name = resolved
+
+            try:
+                all_docs = await self._fetch_documents_paged(
+                    http,
+                    csrf=csrf,
+                    cnpj=cnpj,
+                    id_fundo=id_fundo,
+                    tipo_fundo=tipo_fundo,
+                    date_start=date_start,
+                    date_end=date_end,
+                    page_size=page_size,
+                )
+            except FnetClientError as exc:
+                # Fallback: se o search bateu 4xx usando valores cacheados,
+                # talvez o idFundo tenha sido recriado na B3. Re-resolve e
+                # tenta de novo uma única vez.
+                used_cache = bool(cached_internal_id and cached_canonical_name)
+                is_4xx = isinstance(exc, FnetClientError) and " HTTP 4" in str(exc)
+                if used_cache and is_4xx:
+                    logger.warning(
+                        "[FNET] 4xx no search com cache (idFundo=%d) — "
+                        "revalidando via listarFundos: %s",
+                        id_fundo,
+                        exc,
+                    )
+                    resolved = await self._resolve_fund(
+                        http, csrf=csrf, cnpj=cnpj, tipo_fundo=tipo_fundo
+                    )
+                    if resolved is None:
+                        raise FnetFundNotFoundError(
+                            f"CNPJ {cnpj} (tipoFundo={tipo_fundo}) não encontrado "
+                            f"no autocomplete do FNET após 4xx com cache."
+                        ) from exc
+                    id_fundo, canonical_name = resolved
+                    all_docs = await self._fetch_documents_paged(
+                        http,
+                        csrf=csrf,
+                        cnpj=cnpj,
+                        id_fundo=id_fundo,
+                        tipo_fundo=tipo_fundo,
+                        date_start=date_start,
+                        date_end=date_end,
+                        page_size=page_size,
+                    )
+                else:
+                    raise
+
             name_needle = self._normalize_for_match(
                 self._strip_listar_prefix(canonical_name)
             )
-
-            all_docs: list[FnetDocument] = []
-            start = 0
-            draw = 1
-
-            while True:
-                # Formato compacto exigido pelo `prepararRequisicaoDataTables`
-                # do JS oficial: d=draw, s=start, l=length. Junto com os
-                # filtros que a página manda quando o usuário busca por CNPJ.
-                params = {
-                    "d": draw,
-                    "s": start,
-                    "l": page_size,
-                    "tipoFundo": tipo_fundo,
-                    "idFundo": id_fundo,
-                    "cnpj": cnpj,
-                    "cnpjFundo": cnpj,
-                    "dataInicial": self._format_br_date(date_start),
-                    "dataFinal": self._format_br_date(date_end),
-                    "paginaCertificados": "false",
-                    "isSession": "true",
-                }
-                payload = await self._json_get_with_retry(
-                    http,
-                    FNET_SEARCH_URL,
-                    params=params,
-                    csrf_token=csrf,
-                    # On 401/403/expired session, warm one more time and reuse.
-                    rewarm_callback=self._warm_session,
-                )
-                data = payload.get("data") or []
-                total = int(payload.get("recordsFiltered") or 0)
-
-                for raw in data:
-                    try:
-                        all_docs.append(FnetDocument.from_api(raw))
-                    except Exception as exc:
-                        logger.warning(
-                            "[FNET] Falha ao parsear documento: %s | raw=%s",
-                            exc,
-                            str(raw)[:200],
-                        )
-
-                start += len(data)
-                draw += 1
-                if not data or start >= total or len(data) < page_size:
-                    break
 
         # Salvaguarda obrigatória: o search da B3 ignora `idFundo`/`cnpj` e
         # devolve documentos de QUALQUER fundo do período. Sem este filtro,
@@ -296,6 +320,73 @@ class FnetClient:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    async def _fetch_documents_paged(
+        self,
+        http: httpx.AsyncClient,
+        *,
+        csrf: str,
+        cnpj: str,
+        id_fundo: int,
+        tipo_fundo: int,
+        date_start: date,
+        date_end: date,
+        page_size: int,
+    ) -> list[FnetDocument]:
+        """
+        Pagina o `pesquisarGerenciadorDocumentosCVMRequest` e devolve a lista
+        bruta de documentos (sem o filtro client-side por nome). Extraído de
+        `list_documents` para permitir retry com revalidação do idFundo na
+        rota de fallback após 4xx com cache.
+        """
+        all_docs: list[FnetDocument] = []
+        start = 0
+        draw = 1
+
+        while True:
+            # Formato compacto exigido pelo `prepararRequisicaoDataTables`
+            # do JS oficial: d=draw, s=start, l=length. Junto com os
+            # filtros que a página manda quando o usuário busca por CNPJ.
+            params = {
+                "d": draw,
+                "s": start,
+                "l": page_size,
+                "tipoFundo": tipo_fundo,
+                "idFundo": id_fundo,
+                "cnpj": cnpj,
+                "cnpjFundo": cnpj,
+                "dataInicial": self._format_br_date(date_start),
+                "dataFinal": self._format_br_date(date_end),
+                "paginaCertificados": "false",
+                "isSession": "true",
+            }
+            payload = await self._json_get_with_retry(
+                http,
+                FNET_SEARCH_URL,
+                params=params,
+                csrf_token=csrf,
+                # On 401/403/expired session, warm one more time and reuse.
+                rewarm_callback=self._warm_session,
+            )
+            data = payload.get("data") or []
+            total = int(payload.get("recordsFiltered") or 0)
+
+            for raw in data:
+                try:
+                    all_docs.append(FnetDocument.from_api(raw))
+                except Exception as exc:
+                    logger.warning(
+                        "[FNET] Falha ao parsear documento: %s | raw=%s",
+                        exc,
+                        str(raw)[:200],
+                    )
+
+            start += len(data)
+            draw += 1
+            if not data or start >= total or len(data) < page_size:
+                break
+
+        return all_docs
 
     async def _warm_session(self, http: httpx.AsyncClient) -> str:
         """

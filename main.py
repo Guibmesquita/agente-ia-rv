@@ -1271,6 +1271,11 @@ def _apply_incremental_migrations():
         "UPDATE fnet_sync_logs SET status='success' WHERE status IN ('downloaded','uploaded')",
         "UPDATE fnet_sync_logs SET status='skipped' WHERE status='skipped_duplicate'",
         "ALTER TABLE fnet_sync_logs ALTER COLUMN status SET DEFAULT 'pending'",
+        # Task #331 — cache do autocomplete `listarFundos` da B3 por fundo,
+        # para evitar 1 round-trip extra ao FNET por fundo em cada sync diária.
+        "ALTER TABLE fnet_monitored_funds ADD COLUMN IF NOT EXISTS fnet_internal_id INTEGER",
+        "ALTER TABLE fnet_monitored_funds ADD COLUMN IF NOT EXISTS fnet_canonical_name VARCHAR(255)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_fnet_internal_id ON fnet_monitored_funds(fnet_internal_id)",
     ]
     db = SessionLocal()
     ok = 0

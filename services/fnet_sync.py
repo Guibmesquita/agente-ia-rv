@@ -189,12 +189,19 @@ async def sync_single_fund(
     start_date, end_date = _current_month_window()
     cnpj_formatted = _format_cnpj_br(fund.cnpj)
 
-    # 1) Lista documentos no FNET
+    # 1) Lista documentos no FNET. Passa cache (idFundo + nome canônico) do
+    # autocomplete `listarFundos` quando presente — evita 1 round-trip extra
+    # por fundo em toda execução do sync. O cliente cai no autocomplete
+    # automaticamente em miss / 4xx no search.
+    cached_internal_id = fund.fnet_internal_id
+    cached_canonical_name = fund.fnet_canonical_name
     try:
-        documents = await client.list_documents(
+        documents, resolved_internal_id, resolved_canonical_name = await client.list_documents(
             cnpj=cnpj_formatted,
             date_start=start_date,
             date_end=end_date,
+            cached_internal_id=cached_internal_id,
+            cached_canonical_name=cached_canonical_name,
         )
     except FnetClientError as exc:
         msg = (
@@ -222,6 +229,22 @@ async def sync_single_fund(
         result.errors.append(msg)
         _persist_fund_level_failure(db_factory, fund, msg)
         return result
+
+    # 1.b) Refresh do cache do autocomplete `listarFundos` quando os valores
+    # resolvidos pelo client diferem do que está persistido no fundo. Cobre
+    # tanto a 1ª resolução (campos NULL no cadastro) quanto mudanças de
+    # cadastro na B3 (raras). Erros aqui não derrubam a sync — o cache só
+    # acelera, não é correto-funcional.
+    if (
+        resolved_internal_id != cached_internal_id
+        or resolved_canonical_name != cached_canonical_name
+    ):
+        _update_fnet_cache(
+            db_factory,
+            fund_id=fund.id,
+            internal_id=resolved_internal_id,
+            canonical_name=resolved_canonical_name,
+        )
 
     # 2) Filtra por tipo
     relevant = [d for d in documents if _matches_target_types(d, target_types)]
@@ -663,6 +686,60 @@ def _persist_fund_level_failure(
             "[FNET-SYNC] Falha ao persistir log de erro no nível do fundo "
             "(fund_id=%s): %s: %s",
             fund.id,
+            type(exc).__name__,
+            exc,
+        )
+    finally:
+        db.close()
+
+
+def _update_fnet_cache(
+    db_factory,
+    *,
+    fund_id: int,
+    internal_id: int,
+    canonical_name: str,
+) -> None:
+    """
+    Atualiza o cache do autocomplete `listarFundos` (idFundo + nome canônico)
+    no `FnetMonitoredFund`. Usado tanto na 1ª resolução (campos NULL no
+    cadastro) quanto em refresh quando a B3 muda os valores.
+
+    Erros aqui são logados mas NÃO propagam: o cache é puramente uma
+    otimização — uma falha de UPDATE não pode derrubar a sync do fundo.
+    """
+    db = db_factory()
+    try:
+        db.execute(
+            sql_text(
+                """
+                UPDATE fnet_monitored_funds
+                SET fnet_internal_id = :internal_id,
+                    fnet_canonical_name = :canonical_name
+                WHERE id = :fund_id
+                """
+            ),
+            {
+                "internal_id": int(internal_id),
+                "canonical_name": (canonical_name or "")[:255],
+                "fund_id": fund_id,
+            },
+        )
+        db.commit()
+        logger.info(
+            "[FNET-SYNC] Cache de listarFundos atualizado para fund_id=%s "
+            "→ idFundo=%d (%s)",
+            fund_id,
+            int(internal_id),
+            (canonical_name or "")[:60],
+        )
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "[FNET-SYNC] Falha ao atualizar cache de listarFundos "
+            "(fund_id=%s, idFundo=%s): %s: %s",
+            fund_id,
+            internal_id,
             type(exc).__name__,
             exc,
         )

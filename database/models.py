@@ -1808,6 +1808,12 @@ class FnetMonitoredFund(Base):
     document_types = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    # Cache do autocomplete `listarFundos` da B3: ID interno + nome canônico
+    # (com prefixo "FII XXXX - ..."). Persistidos para evitar 1 round-trip
+    # extra ao FNET por fundo em toda execução do sync. Refrescados quando
+    # o autocomplete é re-consultado (miss/4xx) e devolve algo diferente.
+    fnet_internal_id = Column(Integer, nullable=True, index=True)
+    fnet_canonical_name = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
