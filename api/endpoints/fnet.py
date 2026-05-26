@@ -43,6 +43,9 @@ class MonitoredFundCreate(BaseModel):
     fund_name: str = Field(..., min_length=2, max_length=255)
     ticker: Optional[str] = Field(default=None, max_length=20)
     product_id: Optional[int] = None
+    # Código `idTipoFundo` do FNET. 1=FII (default), 2=FIP, 3=FIDC, 4=ETF.
+    # Mapa completo em services/fnet_fund_types.py.
+    tipo_fundo: int = Field(default=1)
     document_types: Optional[list[str]] = None
     is_active: bool = True
 
@@ -64,14 +67,41 @@ class MonitoredFundCreate(BaseModel):
         v = v.strip().upper()
         return v or None
 
+    @field_validator("tipo_fundo")
+    @classmethod
+    def _validate_tipo_fundo(cls, v: int) -> int:
+        from services.fnet_fund_types import PREFIX_BY_TIPO_FUNDO
+        if v not in PREFIX_BY_TIPO_FUNDO:
+            raise ValueError(
+                f"tipo_fundo={v} inválido. Valores aceitos: "
+                f"{sorted(PREFIX_BY_TIPO_FUNDO.keys())} "
+                f"(1=FII, 2=FIP, 3=FIDC, 4=ETF)."
+            )
+        return v
+
 
 class MonitoredFundUpdate(BaseModel):
     cnpj: Optional[str] = Field(default=None, min_length=11, max_length=20)
     fund_name: Optional[str] = Field(default=None, min_length=2, max_length=255)
     ticker: Optional[str] = Field(default=None, max_length=20)
     product_id: Optional[int] = None
+    tipo_fundo: Optional[int] = None
     document_types: Optional[list[str]] = None
     is_active: Optional[bool] = None
+
+    @field_validator("tipo_fundo")
+    @classmethod
+    def _validate_tipo_fundo(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        from services.fnet_fund_types import PREFIX_BY_TIPO_FUNDO
+        if v not in PREFIX_BY_TIPO_FUNDO:
+            raise ValueError(
+                f"tipo_fundo={v} inválido. Valores aceitos: "
+                f"{sorted(PREFIX_BY_TIPO_FUNDO.keys())} "
+                f"(1=FII, 2=FIP, 3=FIDC, 4=ETF)."
+            )
+        return v
 
     @field_validator("cnpj")
     @classmethod
@@ -125,6 +155,8 @@ def _format_cnpj(digits: str) -> str:
 
 
 def _serialize_fund(fund: FnetMonitoredFund, db: Session) -> dict:
+    from services.fnet_fund_types import label_for
+
     product_name = None
     product_ticker = None
     if fund.product_id:
@@ -138,6 +170,7 @@ def _serialize_fund(fund: FnetMonitoredFund, db: Session) -> dict:
     except (json.JSONDecodeError, TypeError):
         document_types = None
 
+    tipo = int(fund.tipo_fundo or 1)
     return {
         "id": fund.id,
         "cnpj": fund.cnpj,
@@ -147,6 +180,8 @@ def _serialize_fund(fund: FnetMonitoredFund, db: Session) -> dict:
         "product_id": fund.product_id,
         "product_name": product_name,
         "product_ticker": product_ticker,
+        "tipo_fundo": tipo,
+        "tipo_fundo_label": label_for(tipo),
         "document_types": document_types,
         "is_active": fund.is_active,
         "last_sync_at": fund.last_sync_at.isoformat() if fund.last_sync_at else None,
@@ -236,6 +271,7 @@ async def create_monitored_fund(
         fund_name=payload.fund_name.strip(),
         ticker=payload.ticker,
         product_id=payload.product_id,
+        tipo_fundo=payload.tipo_fundo,
         document_types=(
             json.dumps(payload.document_types, ensure_ascii=False)
             if payload.document_types
@@ -303,6 +339,8 @@ async def update_monitored_fund(
         fund.fund_name = payload.fund_name.strip()
     if payload.ticker is not None:
         fund.ticker = payload.ticker
+    if payload.tipo_fundo is not None:
+        fund.tipo_fundo = payload.tipo_fundo
     if payload.document_types is not None:
         fund.document_types = (
             json.dumps(payload.document_types, ensure_ascii=False)

@@ -1804,6 +1804,10 @@ class FnetMonitoredFund(Base):
     fund_name = Column(String(255), nullable=False, index=True)
     ticker = Column(String(20), nullable=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Código `idTipoFundo` do FNET. Default 1 (FII) por retrocompatibilidade com
+    # fundos cadastrados antes do suporte multi-tipo. Mapa em
+    # services/fnet_fund_types.py: 1=FII, 2=FIP, 3=FIDC, 4=ETF.
+    tipo_fundo = Column(Integer, nullable=False, default=1, server_default="1")
     # JSON list de tipos de documento a baixar (default: Informe Mensal + Relatório Gerencial)
     document_types = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)

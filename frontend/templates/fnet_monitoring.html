@@ -263,11 +263,21 @@
                     <input type="text" id="fund-ticker" class="form-input" placeholder="HGLG11" maxlength="20">
                 </div>
                 <div>
-                    <label class="form-label" for="fund-product">Produto vinculado (opcional)</label>
-                    <select id="fund-product" class="form-input">
-                        <option value="">— Nenhum —</option>
+                    <label class="form-label" for="fund-tipo">Tipo de fundo <span class="text-red-500">*</span></label>
+                    <select id="fund-tipo" class="form-input">
+                        <option value="1">FII — Fundo Imobiliário</option>
+                        <option value="2">FIP — Participações</option>
+                        <option value="3">FIDC — Direitos Creditórios</option>
+                        <option value="4">ETF — Fundo de Índice</option>
                     </select>
+                    <p class="text-xs text-gray-500 mt-1">Determina o catálogo FNET consultado.</p>
                 </div>
+            </div>
+            <div>
+                <label class="form-label" for="fund-product">Produto vinculado (opcional)</label>
+                <select id="fund-product" class="form-input">
+                    <option value="">— Nenhum —</option>
+                </select>
             </div>
             <div>
                 <label class="form-label">Tipos de documento monitorados</label>
@@ -437,6 +447,9 @@
             const tickerBadge = fund.ticker
                 ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-semibold">${escapeHtml(fund.ticker)}</span>`
                 : '';
+            const tipoMap = { 1: 'FII', 2: 'FIP', 3: 'FIDC', 4: 'ETF' };
+            const tipoLabel = tipoMap[fund.tipo_fundo] || 'FII';
+            const tipoBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 text-xs font-semibold" title="${escapeHtml(fund.tipo_fundo_label || tipoLabel)}">${tipoLabel}</span>`;
             const inactiveBadge = !fund.is_active
                 ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200 text-gray-600 text-xs font-medium">Inativo</span>`
                 : '';
@@ -446,6 +459,7 @@
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <h3 class="text-sm font-semibold text-gray-900 truncate">${escapeHtml(fund.fund_name)}</h3>
+                                ${tipoBadge}
                                 ${tickerBadge}
                                 ${inactiveBadge}
                             </div>
@@ -658,6 +672,7 @@
             document.getElementById('fund-name').value = fund.fund_name || '';
             document.getElementById('fund-cnpj').value = fund.cnpj_formatted || formatCnpj(fund.cnpj);
             document.getElementById('fund-ticker').value = fund.ticker || '';
+            document.getElementById('fund-tipo').value = String(fund.tipo_fundo || 1);
             document.getElementById('fund-product').value = fund.product_id || '';
             document.getElementById('fund-active').checked = !!fund.is_active;
             if (Array.isArray(fund.document_types)) {
@@ -691,6 +706,7 @@
             cnpj: cnpjDigits,
             fund_name: document.getElementById('fund-name').value.trim(),
             ticker: document.getElementById('fund-ticker').value.trim() || null,
+            tipo_fundo: parseInt(document.getElementById('fund-tipo').value, 10) || 1,
             product_id: parseInt(document.getElementById('fund-product').value, 10) || null,
             document_types: docTypes.length ? docTypes : null,
             is_active: document.getElementById('fund-active').checked,

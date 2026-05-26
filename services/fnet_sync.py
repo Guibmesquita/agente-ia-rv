@@ -200,6 +200,7 @@ async def sync_single_fund(
             cnpj=cnpj_formatted,
             date_start=start_date,
             date_end=end_date,
+            tipo_fundo=int(fund.tipo_fundo or 1),
             cached_internal_id=cached_internal_id,
             cached_canonical_name=cached_canonical_name,
         )

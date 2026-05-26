@@ -1276,6 +1276,9 @@ def _apply_incremental_migrations():
         "ALTER TABLE fnet_monitored_funds ADD COLUMN IF NOT EXISTS fnet_internal_id INTEGER",
         "ALTER TABLE fnet_monitored_funds ADD COLUMN IF NOT EXISTS fnet_canonical_name VARCHAR(255)",
         "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_fnet_internal_id ON fnet_monitored_funds(fnet_internal_id)",
+        # Task #330 — suporte multi-tipo (FII/FIP/FIDC/ETF) no auto-sync.
+        # Default 1 (FII) preserva comportamento dos fundos cadastrados antes.
+        "ALTER TABLE fnet_monitored_funds ADD COLUMN IF NOT EXISTS tipo_fundo INTEGER NOT NULL DEFAULT 1",
     ]
     db = SessionLocal()
     ok = 0

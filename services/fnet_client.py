@@ -448,13 +448,21 @@ class FnetClient:
         como fallback.
 
         Quando vários candidatos voltam (classes e o fundo-pai), preferimos
-        a entrada cujo `text` começa com "FII " (a B3 prefixa o ticker do
-        fundo-pai assim no autocomplete). Isso evita escolher uma classe
-        subsidiária quando o usuário cadastrou o CNPJ do fundo principal.
+        a entrada cujo `text` começa com o prefixo correspondente ao tipo
+        (ex.: "FII ", "FIDC ", "FIP " — a B3 prefixa o ticker do fundo-pai
+        assim no autocomplete). Sem essa desambiguação, um CNPJ de FIDC
+        poderia ser resolvido para uma classe subsidiária listada antes,
+        fazendo o sync baixar documentos do fundo errado.
 
         Retorna o tuple ou None se nenhum match (CNPJ inexistente ou
         cadastrado em outra `idTipoFundo`).
         """
+        # Import tardio para evitar ciclo (este módulo é genérico do FNET,
+        # o mapa fica em services/fnet_fund_types.py).
+        from services.fnet_fund_types import prefix_for
+
+        prefix = prefix_for(tipo_fundo)
+
         candidates: list[str] = []
         digits = self._digits_only(cnpj)
         if digits:
@@ -481,11 +489,17 @@ class FnetClient:
             if not results:
                 continue
 
-            # Prefere o fundo-pai (prefixo "FII "); senão pega o primeiro.
-            preferred = next(
-                (r for r in results if str(r.get("text", "")).startswith("FII ")),
-                results[0],
-            )
+            # Prefere o fundo-pai cujo `text` começa com o prefixo do tipo
+            # (ex.: "FIDC ..." quando tipo_fundo=3). Se nenhum bate, cai
+            # para o primeiro resultado (comportamento histórico).
+            preferred = None
+            if prefix:
+                preferred = next(
+                    (r for r in results if str(r.get("text", "")).startswith(prefix)),
+                    None,
+                )
+            if preferred is None:
+                preferred = results[0]
             try:
                 fund_id = int(preferred.get("id"))
             except (TypeError, ValueError):
