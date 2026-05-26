@@ -1784,3 +1784,85 @@ def _content_block_after_update(mapper, connection, target):
             risk_reason="Auto-criado pelo listener (status mudou para pending_review)",
         )
     )
+
+
+# ============================================================================
+# Task #324 — FNET / BMFBOVESPA Auto-Sync
+# ============================================================================
+
+
+class FnetMonitoredFund(Base):
+    """
+    Fundo (FII) monitorado pelo auto-sync FNET.
+    O scheduler diário consulta a API pública do FNET por documentos novos
+    deste CNPJ e injeta no pipeline SmartUpload.
+    """
+    __tablename__ = "fnet_monitored_funds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cnpj = Column(String(20), unique=True, nullable=False, index=True)
+    fund_name = Column(String(255), nullable=False, index=True)
+    ticker = Column(String(20), nullable=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
+    # JSON list de tipos de documento a baixar (default: Informe Mensal + Relatório Gerencial)
+    document_types = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    product = relationship("Product", foreign_keys=[product_id])
+    sync_logs = relationship(
+        "FnetSyncLog",
+        back_populates="monitored_fund",
+        cascade="all, delete-orphan",
+    )
+
+
+class FnetSyncLog(Base):
+    """
+    Log de cada documento processado pelo auto-sync FNET.
+    Funciona como tabela de dedup: a UNIQUE em (fund_name, reference_month, document_type)
+    impede que o mesmo documento mensal seja baixado/indexado mais de uma vez,
+    independente de variações do FNET nas chaves técnicas.
+    """
+    __tablename__ = "fnet_sync_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    monitored_fund_id = Column(
+        Integer,
+        ForeignKey("fnet_monitored_funds.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    fnet_document_id = Column(Integer, nullable=False, index=True)
+    # Nome do fundo usado para dedup — sempre o nome configurado no FnetMonitoredFund
+    # (não o `descricaoFundo` retornado pelo FNET, que pode variar entre documentos).
+    fund_name = Column(String(255), nullable=False, index=True)
+    # Mês de referência normalizado para "YYYY-MM"
+    reference_month = Column(String(7), nullable=False, index=True)
+    document_category = Column(String(100), nullable=True)
+    document_type = Column(String(100), nullable=False)
+    status = Column(String(30), nullable=False, default="downloaded", index=True)
+    # downloaded | uploaded | failed | skipped_duplicate
+    material_id = Column(
+        Integer,
+        ForeignKey("materials.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    error_message = Column(Text, nullable=True)
+    raw_metadata = Column(Text, nullable=True)  # JSON do payload FNET
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    monitored_fund = relationship("FnetMonitoredFund", back_populates="sync_logs")
+    material = relationship("Material", foreign_keys=[material_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fund_name",
+            "reference_month",
+            "document_type",
+            name="uq_fnet_sync_log_dedup",
+        ),
+    )

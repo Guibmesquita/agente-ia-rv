@@ -24,6 +24,7 @@ def _register_routers():
     from api.endpoints import recommendations as recommendations_mod
     from api.endpoints import portfolios as portfolios_mod
     from api.endpoints import cadence_campaigns as cadence_campaigns_mod
+    from api.endpoints import fnet as fnet_mod
 
     app.include_router(auth.router)
     app.include_router(users.router)
@@ -54,6 +55,7 @@ def _register_routers():
     app.include_router(recommendations_mod.page_router)
     app.include_router(portfolios_mod.router)
     app.include_router(cadence_campaigns_mod.router)
+    app.include_router(fnet_mod.router)
     print("[INIT] Routers registrados com sucesso.")
 
 
@@ -102,6 +104,10 @@ async def lifespan(app: FastAPI):
     # Task #309 — Loop de revalidação periódica de webhooks (diário + startup após 30s).
     webhook_revalidation_task = asyncio.create_task(_webhook_revalidation_loop())
     background_tasks.append(webhook_revalidation_task)
+
+    # Task #324 — Scheduler diário do FNET auto-sync (default: 07h BRT = 10h UTC).
+    fnet_sync_task = asyncio.create_task(_fnet_daily_scheduler())
+    background_tasks.append(fnet_sync_task)
 
     yield
     
@@ -569,6 +575,75 @@ async def _webhook_revalidation_loop():
 
         # Aguarda 24h até a próxima rodada
         await asyncio.sleep(86400)
+
+
+async def _fnet_daily_scheduler():
+    """
+    Task #324 — Scheduler diário do auto-sync FNET → SmartUpload.
+
+    Roda a cada 24h alinhado ao horário configurado em `FNET_SYNC_HOUR_UTC`
+    (default 10 = 07h BRT). Aguarda 60s no startup antes do primeiro tick
+    de cálculo de delay para evitar concorrência com migrations.
+    Cada run é envolto em try/except para nunca derrubar o loop.
+    """
+    import asyncio
+    import os
+    from datetime import datetime, timedelta, timezone
+
+    # Habilita/desabilita o scheduler inteiro via env (default: habilitado).
+    if os.getenv("FNET_SYNC_ENABLED", "true").lower() in ("0", "false", "no"):
+        print("[FNET-SCHED] FNET_SYNC_ENABLED=false — scheduler desativado.")
+        return
+
+    try:
+        target_hour_utc = int(os.getenv("FNET_SYNC_HOUR_UTC", "10"))
+        if not (0 <= target_hour_utc <= 23):
+            raise ValueError(f"fora do intervalo 0-23: {target_hour_utc}")
+    except (ValueError, TypeError) as exc:
+        print(
+            f"[FNET-SCHED] FNET_SYNC_HOUR_UTC inválido ({exc}); usando 10h UTC (07h BRT)."
+        )
+        target_hour_utc = 10
+
+    await asyncio.sleep(60)
+
+    while True:
+        now = datetime.now(timezone.utc)
+        next_run = now.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        sleep_seconds = max(60.0, (next_run - now).total_seconds())
+        print(
+            f"[FNET-SCHED] Próximo run às {next_run.isoformat()} "
+            f"(em {sleep_seconds/3600:.2f}h)."
+        )
+        try:
+            await asyncio.sleep(sleep_seconds)
+        except asyncio.CancelledError:
+            raise
+
+        try:
+            from services.fnet_sync import run_sync
+
+            print("[FNET-SCHED] Iniciando sync diário...")
+            result = await run_sync()
+            print(
+                f"[FNET-SCHED] ✅ Sync concluído: "
+                f"{result.funds_processed} fundo(s), "
+                f"{result.docs_downloaded} novo(s), "
+                f"{result.docs_skipped_duplicate} duplicado(s), "
+                f"{result.docs_failed} falha(s)."
+            )
+            if result.fatal_error:
+                print(f"[FNET-SCHED] ⚠️  fatal_error: {result.fatal_error}")
+        except Exception as exc:
+            print(
+                f"[FNET-SCHED] ❌ Erro inesperado no run diário: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            import traceback
+
+            traceback.print_exc()
 
 
 def _cleanup_old_webhook_logs():
@@ -1143,6 +1218,46 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_webhook_receipt_log_created ON webhook_receipt_log(created_at DESC)",
         # Task #309 — timestamp da última verificação periódica bem-sucedida do webhook.
         "ALTER TABLE zapi_channels ADD COLUMN IF NOT EXISTS last_webhook_verified_at TIMESTAMPTZ",
+        # Task #324 — FNET / BMFBOVESPA Auto-Sync
+        """CREATE TABLE IF NOT EXISTS fnet_monitored_funds (
+            id SERIAL PRIMARY KEY,
+            cnpj VARCHAR(20) NOT NULL UNIQUE,
+            fund_name VARCHAR(255) NOT NULL,
+            ticker VARCHAR(20),
+            product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+            document_types TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            last_sync_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_cnpj ON fnet_monitored_funds(cnpj)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_fund_name ON fnet_monitored_funds(fund_name)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_ticker ON fnet_monitored_funds(ticker)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_product_id ON fnet_monitored_funds(product_id)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_monitored_funds_is_active ON fnet_monitored_funds(is_active)",
+        """CREATE TABLE IF NOT EXISTS fnet_sync_logs (
+            id SERIAL PRIMARY KEY,
+            monitored_fund_id INTEGER NOT NULL REFERENCES fnet_monitored_funds(id) ON DELETE CASCADE,
+            fnet_document_id INTEGER NOT NULL,
+            fund_name VARCHAR(255) NOT NULL,
+            reference_month VARCHAR(7) NOT NULL,
+            document_category VARCHAR(100),
+            document_type VARCHAR(100) NOT NULL,
+            status VARCHAR(30) NOT NULL DEFAULT 'downloaded',
+            material_id INTEGER REFERENCES materials(id) ON DELETE SET NULL,
+            error_message TEXT,
+            raw_metadata TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_fnet_sync_log_dedup UNIQUE (fund_name, reference_month, document_type)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_monitored_fund_id ON fnet_sync_logs(monitored_fund_id)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_fnet_document_id ON fnet_sync_logs(fnet_document_id)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_fund_name ON fnet_sync_logs(fund_name)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_reference_month ON fnet_sync_logs(reference_month)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_status ON fnet_sync_logs(status)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_material_id ON fnet_sync_logs(material_id)",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_created_at ON fnet_sync_logs(created_at DESC)",
     ]
     db = SessionLocal()
     ok = 0
