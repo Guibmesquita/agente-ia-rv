@@ -349,7 +349,12 @@ class FnetClient:
                 len(all_docs),
                 id_fundo,
             )
-        return filtered
+        # Contrato (assinatura + docstring): 3-tupla (docs, idFundo, nome).
+        # Antes voltava só `filtered`, e o caller (`fnet_sync.sync_single_fund`)
+        # estourava `ValueError: not enough values to unpack` quando a lista
+        # vinha vazia — ou, pior, plantava FnetDocument nos campos errados
+        # quando vinha com 3 itens. Regressão introduzida na #331.
+        return filtered, id_fundo, canonical_name
 
     async def download_document(self, document_id: int) -> tuple[bytes, str]:
         """

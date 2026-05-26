@@ -201,7 +201,7 @@ async def sync_single_fund(
     cached_internal_id = fund.fnet_internal_id
     cached_canonical_name = fund.fnet_canonical_name
     try:
-        documents, resolved_internal_id, resolved_canonical_name = await client.list_documents(
+        list_result = await client.list_documents(
             cnpj=cnpj_formatted,
             date_start=start_date,
             date_end=end_date,
@@ -209,6 +209,20 @@ async def sync_single_fund(
             cached_internal_id=cached_internal_id,
             cached_canonical_name=cached_canonical_name,
         )
+        # Guard defensivo: o contrato é uma 3-tupla (docs, idFundo, nome).
+        # Em vez de deixar `ValueError: not enough values to unpack` vazar
+        # como traceback técnico ao usuário (o que ACONTECEU na #338 quando
+        # o `return` do client veio só a lista), convertemos qualquer
+        # retorno malformado em FnetClientError — que já tem mensagem
+        # amigável no branch logo abaixo.
+        if not isinstance(list_result, tuple) or len(list_result) != 3:
+            raise FnetClientError(
+                f"FnetClient.list_documents retornou contrato inesperado "
+                f"(esperava tupla de 3, recebeu {type(list_result).__name__} "
+                f"len={len(list_result) if hasattr(list_result, '__len__') else 'n/a'}). "
+                f"Provável regressão no client."
+            )
+        documents, resolved_internal_id, resolved_canonical_name = list_result
     except FnetClientError as exc:
         # 401/403 = sessão bloqueada (anti-bot / geo-block do Cloudflare na
         # frente do FNET). Traduzimos para uma mensagem auditável em pt-BR
