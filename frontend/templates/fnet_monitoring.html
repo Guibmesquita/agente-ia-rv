@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoramento FNET - Agente IA - RV</title>
+    <script nonce="{{ request.state.csp_nonce }}" src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/global.css">
+    <script nonce="{{ request.state.csp_nonce }}" src="/static/notifications.js?v={{ now().timestamp() if now else 1706371200 }}"></script>
+    <style>
+        .fund-card {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            transition: box-shadow 0.15s ease;
+        }
+        .fund-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+        .fund-card.inactive {
+            background: #f9fafb;
+            opacity: 0.7;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            flex-shrink: 0;
+        }
+        .status-dot.success { background: #16a34a; }
+        .status-dot.warning { background: #f59e0b; }
+        .status-dot.error   { background: #dc2626; }
+        .status-dot.idle    { background: #9ca3af; }
+
+        .skeleton {
+            background: linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%);
+            background-size: 200% 100%;
+            animation: skeleton-shimmer 1.4s infinite;
+            border-radius: 8px;
+        }
+        @keyframes skeleton-shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .modal-backdrop {
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center; justify-content: center;
+            z-index: 1000;
+            padding: 16px;
+        }
+        .modal-backdrop.open { display: flex; }
+        .modal-panel {
+            background: #fff;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 560px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .timeline-item:last-child { border-bottom: none; }
+
+        details > summary { cursor: pointer; list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary, #6366f1);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .form-label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 4px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.15s ease;
+        }
+        .btn-primary {
+            background: var(--primary, #6366f1); color: #fff;
+        }
+        .btn-primary:hover { background: var(--primary-dark, #4f46e5); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .btn-secondary {
+            background: #fff; color: #374151;
+            border: 1px solid #d1d5db;
+        }
+        .btn-secondary:hover { background: #f9fafb; }
+
+        .btn-danger {
+            background: #fff; color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+        .btn-danger:hover { background: #fef2f2; }
+
+        .global-status-banner {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .tooltip-host {
+            position: relative;
+        }
+        .tooltip-host:hover .tooltip-bubble {
+            opacity: 1;
+            transform: translateY(-4px);
+        }
+        .tooltip-bubble {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1f2937;
+            color: #fff;
+            font-size: 0.75rem;
+            padding: 6px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s, transform 0.15s;
+            z-index: 10;
+            max-width: 280px;
+            white-space: normal;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+{% include '_sidebar.html' %}
+
+<div id="mainContent" class="main-content transition-all duration-300" style="margin-left: 260px;">
+    <div class="max-w-7xl mx-auto px-6 py-8">
+
+        <!-- Header -->
+        <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Monitoramento FNET</h1>
+                <p class="text-gray-500 mt-1 text-sm">
+                    Cadastre fundos por CNPJ; o sistema baixa diariamente do FNET os relatórios
+                    do mês corrente e injeta no pipeline de conhecimento.
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-refresh" class="btn btn-secondary">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Atualizar
+                </button>
+                <button id="btn-sync-now" class="btn btn-primary">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12a9 9 0 0114.32-7.07L21 8M21 12a9 9 0 01-14.32 7.07L3 16M21 3v5h-5M3 21v-5h5"></path>
+                    </svg>
+                    <span id="sync-now-label">Sincronizar agora</span>
+                </button>
+                <button id="btn-add-fund" class="btn btn-primary">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Adicionar fundo
+                </button>
+            </div>
+        </div>
+
+        <!-- Global status banner -->
+        <div class="global-status-banner" id="global-status-banner">
+            <div class="flex items-center gap-2">
+                <span class="status-dot idle" id="last-sync-dot"></span>
+                <span class="text-sm font-medium text-gray-700">Última sincronização:</span>
+            </div>
+            <span class="text-sm text-gray-600" id="last-sync-summary">Carregando…</span>
+        </div>
+
+        <!-- Funds grid -->
+        <div id="funds-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Skeleton loading -->
+            <div class="fund-card"><div class="skeleton h-6 w-3/4 mb-3"></div><div class="skeleton h-4 w-1/2 mb-2"></div><div class="skeleton h-4 w-2/3"></div></div>
+            <div class="fund-card"><div class="skeleton h-6 w-3/4 mb-3"></div><div class="skeleton h-4 w-1/2 mb-2"></div><div class="skeleton h-4 w-2/3"></div></div>
+            <div class="fund-card"><div class="skeleton h-6 w-3/4 mb-3"></div><div class="skeleton h-4 w-1/2 mb-2"></div><div class="skeleton h-4 w-2/3"></div></div>
+        </div>
+
+        <div id="empty-state" class="hidden text-center py-16">
+            <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <h3 class="text-gray-700 font-medium">Nenhum fundo monitorado</h3>
+            <p class="text-gray-500 text-sm mt-1">Adicione o primeiro fundo para começar a sincronizar documentos do FNET.</p>
+        </div>
+
+    </div>
+</div>
+
+<!-- =========================================================
+     Modal: Adicionar / Editar fundo
+     ========================================================= -->
+<div id="fund-modal" class="modal-backdrop">
+    <div class="modal-panel">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900" id="fund-modal-title">Adicionar fundo</h2>
+            <button class="text-gray-400 hover:text-gray-600" data-close-modal>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <form id="fund-form" class="px-6 py-4 space-y-4">
+            <input type="hidden" id="fund-id" value="">
+            <div>
+                <label class="form-label" for="fund-name">Nome do fundo <span class="text-red-500">*</span></label>
+                <input type="text" id="fund-name" class="form-input" required placeholder="Ex.: HGLG11 - CSHG Logística" maxlength="255">
+                <p class="text-xs text-gray-500 mt-1">Campo de referência interno (usado para dedup e exibição).</p>
+            </div>
+            <div>
+                <label class="form-label" for="fund-cnpj">CNPJ <span class="text-red-500">*</span></label>
+                <input type="text" id="fund-cnpj" class="form-input" required placeholder="XX.XXX.XXX/XXXX-XX" maxlength="18" autocomplete="off">
+                <p class="text-xs text-gray-500 mt-1">14 dígitos. A formatação é aplicada automaticamente.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="form-label" for="fund-ticker">Ticker (opcional)</label>
+                    <input type="text" id="fund-ticker" class="form-input" placeholder="HGLG11" maxlength="20">
+                </div>
+                <div>
+                    <label class="form-label" for="fund-product">Produto vinculado (opcional)</label>
+                    <select id="fund-product" class="form-input">
+                        <option value="">— Nenhum —</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="form-label">Tipos de documento monitorados</label>
+                <div class="space-y-2">
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" class="doc-type-cb" value="Informe Mensal" checked>
+                        Informe Mensal
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" class="doc-type-cb" value="Relatório Gerencial" checked>
+                        Relatório Gerencial
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" class="doc-type-cb" value="Fato Relevante">
+                        Fato Relevante
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" class="doc-type-cb" value="Comunicado ao Mercado">
+                        Comunicado ao Mercado
+                    </label>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Padrão: Informe Mensal + Relatório Gerencial.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="fund-active" checked>
+                <label for="fund-active" class="text-sm text-gray-700">Fundo ativo (será sincronizado diariamente)</label>
+            </div>
+        </form>
+        <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
+            <button class="btn btn-danger hidden" id="btn-delete-fund" type="button">Desativar fundo</button>
+            <div class="flex items-center gap-2 ml-auto">
+                <button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
+                <button class="btn btn-primary" type="button" id="btn-save-fund">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ request.state.csp_nonce }}">
+(function() {
+    'use strict';
+
+    const STATUS_META = {
+        success: { dot: 'success', label: 'Sucesso', tone: 'text-green-700' },
+        failed:  { dot: 'error',   label: 'Falha',   tone: 'text-red-700'   },
+        skipped: { dot: 'warning', label: 'Já indexado', tone: 'text-amber-700' },
+        pending: { dot: 'idle',    label: 'Pendente', tone: 'text-gray-600' },
+    };
+
+    const FUND_LEVEL_FAILURE_TYPE = '__fund_level_failure__';
+
+    // ---------------- Utilities ----------------
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function formatCnpj(digits) {
+        const s = (digits || '').replace(/\D/g, '');
+        if (s.length !== 14) return digits || '';
+        return `${s.slice(0,2)}.${s.slice(2,5)}.${s.slice(5,8)}/${s.slice(8,12)}-${s.slice(12,14)}`;
+    }
+
+    function applyCnpjMask(value) {
+        const d = (value || '').replace(/\D/g, '').slice(0, 14);
+        let out = d;
+        if (d.length > 12) out = `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+        else if (d.length > 8) out = `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
+        else if (d.length > 5) out = `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`;
+        else if (d.length > 2) out = `${d.slice(0,2)}.${d.slice(2)}`;
+        return out;
+    }
+
+    function formatDateTime(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (e) { return iso; }
+    }
+
+    function formatRelative(iso) {
+        if (!iso) return 'nunca';
+        try {
+            const diffMs = Date.now() - new Date(iso).getTime();
+            const min = Math.floor(diffMs / 60000);
+            if (min < 1) return 'agora há pouco';
+            if (min < 60) return `há ${min} min`;
+            const h = Math.floor(min / 60);
+            if (h < 24) return `há ${h} h`;
+            const d = Math.floor(h / 24);
+            return `há ${d} dia${d > 1 ? 's' : ''}`;
+        } catch (e) { return iso; }
+    }
+
+    async function api(path, opts) {
+        opts = opts || {};
+        opts.credentials = 'include';
+        opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+        const res = await fetch(path, opts);
+        const text = await res.text();
+        let body = null;
+        try { body = text ? JSON.parse(text) : null; } catch (e) { body = { detail: text }; }
+        if (!res.ok) {
+            const msg = (body && (body.detail || body.message)) || `Erro HTTP ${res.status}`;
+            const err = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+            err.status = res.status;
+            err.body = body;
+            throw err;
+        }
+        return body;
+    }
+
+    // ---------------- State ----------------
+    const state = {
+        funds: [],
+        products: [],
+        expandedFundId: null,
+    };
+
+    // ---------------- Rendering ----------------
+    function statusDotFor(status) {
+        const meta = STATUS_META[status] || STATUS_META.pending;
+        return `<span class="status-dot ${meta.dot}" title="${escapeHtml(meta.label)}"></span>`;
+    }
+
+    function lastSyncSummary(fund) {
+        if (!fund.last_sync_at) {
+            return { dot: 'idle', text: 'nunca sincronizado' };
+        }
+        const counters = fund._last_sync_counters || { success: 0, failed: 0, skipped: 0 };
+        let dot = 'success';
+        if (counters.failed > 0 && counters.success === 0) dot = 'error';
+        else if (counters.failed > 0) dot = 'warning';
+        else if (counters.success === 0 && counters.skipped > 0) dot = 'warning';
+        const parts = [];
+        if (counters.success) parts.push(`${counters.success} baixado(s)`);
+        if (counters.skipped) parts.push(`${counters.skipped} já indexado(s)`);
+        if (counters.failed)  parts.push(`${counters.failed} erro(s)`);
+        const summary = parts.length ? parts.join(' · ') : 'sem documentos no último ciclo';
+        return { dot, text: `${formatRelative(fund.last_sync_at)} — ${summary}` };
+    }
+
+    function renderFunds() {
+        const grid = document.getElementById('funds-grid');
+        const empty = document.getElementById('empty-state');
+        if (!state.funds.length) {
+            grid.innerHTML = '';
+            grid.classList.add('hidden');
+            empty.classList.remove('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+        grid.classList.remove('hidden');
+
+        grid.innerHTML = state.funds.map(function(fund) {
+            const summary = lastSyncSummary(fund);
+            const inactiveClass = fund.is_active ? '' : 'inactive';
+            const productLine = fund.product_name
+                ? `<div class="text-xs text-gray-500 mt-1">Produto: <span class="font-medium text-gray-700">${escapeHtml(fund.product_name)}</span>${fund.product_ticker ? ` (${escapeHtml(fund.product_ticker)})` : ''}</div>`
+                : `<div class="text-xs text-gray-400 mt-1 italic">Sem produto vinculado</div>`;
+            const tickerBadge = fund.ticker
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-semibold">${escapeHtml(fund.ticker)}</span>`
+                : '';
+            const inactiveBadge = !fund.is_active
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200 text-gray-600 text-xs font-medium">Inativo</span>`
+                : '';
+            return `
+                <div class="fund-card ${inactiveClass}" data-fund-id="${fund.id}">
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h3 class="text-sm font-semibold text-gray-900 truncate">${escapeHtml(fund.fund_name)}</h3>
+                                ${tickerBadge}
+                                ${inactiveBadge}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1 font-mono">${escapeHtml(fund.cnpj_formatted || fund.cnpj)}</div>
+                            ${productLine}
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button class="text-gray-400 hover:text-gray-700 p-1" data-edit-fund="${fund.id}" title="Editar">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button class="text-gray-400 hover:text-gray-700 p-1" data-toggle-fund="${fund.id}" title="${fund.is_active ? 'Desativar' : 'Ativar'}">
+                                ${fund.is_active
+                                    ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 13l-1.5 1.5M21 16V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2z"></path></svg>'
+                                    : '<svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                                }
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 text-xs text-gray-600 mt-3 pt-3 border-t border-gray-100">
+                        <span class="status-dot ${summary.dot}"></span>
+                        <span class="${fund.is_active ? '' : 'text-gray-400'}">${escapeHtml(summary.text)}</span>
+                    </div>
+
+                    <details class="mt-3" data-history-details="${fund.id}">
+                        <summary class="text-xs font-medium text-indigo-600 hover:text-indigo-800 select-none flex items-center gap-1">
+                            <svg class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            Ver histórico de sincronizações
+                        </summary>
+                        <div class="mt-3 text-sm" data-history-content="${fund.id}">
+                            <div class="text-xs text-gray-400">Carregando…</div>
+                        </div>
+                    </details>
+                </div>
+            `;
+        }).join('');
+
+        // Wire up buttons
+        grid.querySelectorAll('[data-edit-fund]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                openFundModal(parseInt(btn.dataset.editFund, 10));
+            });
+        });
+        grid.querySelectorAll('[data-toggle-fund]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                toggleFund(parseInt(btn.dataset.toggleFund, 10));
+            });
+        });
+        grid.querySelectorAll('details[data-history-details]').forEach(function(d) {
+            d.addEventListener('toggle', function() {
+                if (d.open) {
+                    loadHistory(parseInt(d.dataset.historyDetails, 10));
+                }
+            });
+        });
+    }
+
+    function renderHistory(fundId, logs) {
+        const container = document.querySelector(`[data-history-content="${fundId}"]`);
+        if (!container) return;
+        if (!logs.length) {
+            container.innerHTML = '<div class="text-xs text-gray-400 italic py-2">Nenhum documento sincronizado para este fundo ainda.</div>';
+            return;
+        }
+        container.innerHTML = logs.map(function(log) {
+            const meta = STATUS_META[log.status] || STATUS_META.pending;
+            const isFundLevel = log.document_type === FUND_LEVEL_FAILURE_TYPE;
+            const docName = isFundLevel
+                ? `<span class="italic text-red-700">Falha no nível do fundo</span>`
+                : escapeHtml(log.document_type || log.document_category || 'Documento');
+            const materialLink = log.material_id
+                ? `<a href="/base-conhecimento" class="text-indigo-600 hover:underline text-xs ml-2">ver material #${log.material_id}</a>`
+                : '';
+            const errorBlock = log.error_message
+                ? `<div class="text-xs text-red-600 mt-1 break-words">${escapeHtml(log.error_message)}</div>`
+                : '';
+            return `
+                <div class="timeline-item">
+                    <div class="pt-1">${statusDotFor(log.status)}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-xs font-mono text-gray-500">${escapeHtml(log.reference_month || '—')}</span>
+                            <span class="text-sm text-gray-800">${docName}</span>
+                            <span class="text-xs ${meta.tone}">· ${escapeHtml(meta.label)}</span>
+                            ${materialLink}
+                        </div>
+                        <div class="text-xs text-gray-400 mt-0.5">${escapeHtml(formatDateTime(log.created_at))}</div>
+                        ${errorBlock}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderGlobalBanner() {
+        const dot = document.getElementById('last-sync-dot');
+        const txt = document.getElementById('last-sync-summary');
+        if (!state.funds.length) {
+            dot.className = 'status-dot idle';
+            txt.textContent = 'Nenhum fundo cadastrado.';
+            return;
+        }
+        let latest = null;
+        let totals = { success: 0, failed: 0, skipped: 0 };
+        state.funds.forEach(function(f) {
+            if (f.last_sync_at && (!latest || new Date(f.last_sync_at) > new Date(latest))) {
+                latest = f.last_sync_at;
+            }
+            const c = f._last_sync_counters || {};
+            totals.success += c.success || 0;
+            totals.failed  += c.failed  || 0;
+            totals.skipped += c.skipped || 0;
+        });
+        if (!latest) {
+            dot.className = 'status-dot idle';
+            txt.textContent = 'Aguardando primeira sincronização.';
+            return;
+        }
+        let dotClass = 'success';
+        if (totals.failed > 0 && totals.success === 0) dotClass = 'error';
+        else if (totals.failed > 0) dotClass = 'warning';
+        dot.className = `status-dot ${dotClass}`;
+        const parts = [
+            `${formatRelative(latest)} (${formatDateTime(latest)})`,
+            `${totals.success} baixado(s)`,
+            `${totals.skipped} já indexado(s)`,
+            `${totals.failed} erro(s)`,
+        ];
+        txt.textContent = parts.join(' · ');
+    }
+
+    // ---------------- Data fetching ----------------
+    async function loadFunds() {
+        try {
+            const data = await api('/api/fnet/monitored-funds?limit=200');
+            state.funds = data.funds || [];
+            // For each fund, fetch last sync's counters (small query)
+            await Promise.all(state.funds.map(async function(fund) {
+                if (!fund.last_sync_at) return;
+                try {
+                    // Pull last batch of logs to compute counters for that day
+                    const logs = await api(`/api/fnet/sync-log?fund_id=${fund.id}&limit=50`);
+                    const refDay = (fund.last_sync_at || '').slice(0, 10);
+                    const counters = { success: 0, failed: 0, skipped: 0 };
+                    (logs.logs || []).forEach(function(lg) {
+                        if ((lg.created_at || '').slice(0, 10) === refDay) {
+                            if (counters[lg.status] !== undefined) counters[lg.status] += 1;
+                        }
+                    });
+                    fund._last_sync_counters = counters;
+                } catch (e) { /* best-effort */ }
+            }));
+            renderFunds();
+            renderGlobalBanner();
+        } catch (err) {
+            toast.error('Falha ao carregar fundos: ' + err.message);
+            document.getElementById('funds-grid').innerHTML =
+                `<div class="col-span-full text-center py-8 text-red-600 text-sm">Erro ao carregar: ${escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    async function loadProducts() {
+        try {
+            const data = await api('/api/products?limit=500');
+            state.products = (data && (data.items || data.products || data)) || [];
+            const sel = document.getElementById('fund-product');
+            const opts = ['<option value="">— Nenhum —</option>'];
+            state.products.forEach(function(p) {
+                opts.push(`<option value="${p.id}">${escapeHtml(p.name)}${p.ticker ? ' (' + escapeHtml(p.ticker) + ')' : ''}</option>`);
+            });
+            sel.innerHTML = opts.join('');
+        } catch (e) {
+            // Non-blocking: products dropdown stays empty
+            console.warn('Não foi possível carregar produtos:', e);
+        }
+    }
+
+    async function loadHistory(fundId) {
+        try {
+            const data = await api(`/api/fnet/sync-log?fund_id=${fundId}&limit=100`);
+            renderHistory(fundId, data.logs || []);
+        } catch (err) {
+            const container = document.querySelector(`[data-history-content="${fundId}"]`);
+            if (container) {
+                container.innerHTML = `<div class="text-xs text-red-600 py-2">Erro ao carregar histórico: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+    }
+
+    // ---------------- Modal ----------------
+    function openFundModal(fundId) {
+        const modal = document.getElementById('fund-modal');
+        const title = document.getElementById('fund-modal-title');
+        const deleteBtn = document.getElementById('btn-delete-fund');
+        const form = document.getElementById('fund-form');
+        form.reset();
+        document.querySelectorAll('.doc-type-cb').forEach(function(cb) {
+            cb.checked = (cb.value === 'Informe Mensal' || cb.value === 'Relatório Gerencial');
+        });
+        document.getElementById('fund-active').checked = true;
+
+        if (fundId) {
+            const fund = state.funds.find(function(f) { return f.id === fundId; });
+            if (!fund) {
+                toast.error('Fundo não encontrado.');
+                return;
+            }
+            title.textContent = 'Editar fundo';
+            document.getElementById('fund-id').value = fund.id;
+            document.getElementById('fund-name').value = fund.fund_name || '';
+            document.getElementById('fund-cnpj').value = fund.cnpj_formatted || formatCnpj(fund.cnpj);
+            document.getElementById('fund-ticker').value = fund.ticker || '';
+            document.getElementById('fund-product').value = fund.product_id || '';
+            document.getElementById('fund-active').checked = !!fund.is_active;
+            if (Array.isArray(fund.document_types)) {
+                document.querySelectorAll('.doc-type-cb').forEach(function(cb) {
+                    cb.checked = fund.document_types.indexOf(cb.value) !== -1;
+                });
+            }
+            deleteBtn.classList.toggle('hidden', !fund.is_active);
+            deleteBtn.dataset.fundId = fund.id;
+        } else {
+            title.textContent = 'Adicionar fundo';
+            document.getElementById('fund-id').value = '';
+            deleteBtn.classList.add('hidden');
+        }
+        modal.classList.add('open');
+    }
+
+    function closeFundModal() {
+        document.getElementById('fund-modal').classList.remove('open');
+    }
+
+    async function saveFund() {
+        const id = document.getElementById('fund-id').value;
+        const cnpjDigits = (document.getElementById('fund-cnpj').value || '').replace(/\D/g, '');
+        if (cnpjDigits.length !== 14) {
+            toast.error('CNPJ inválido: são necessários 14 dígitos.');
+            return;
+        }
+        const docTypes = Array.from(document.querySelectorAll('.doc-type-cb:checked')).map(function(cb) { return cb.value; });
+        const payload = {
+            cnpj: cnpjDigits,
+            fund_name: document.getElementById('fund-name').value.trim(),
+            ticker: document.getElementById('fund-ticker').value.trim() || null,
+            product_id: parseInt(document.getElementById('fund-product').value, 10) || null,
+            document_types: docTypes.length ? docTypes : null,
+            is_active: document.getElementById('fund-active').checked,
+        };
+        if (!payload.fund_name) {
+            toast.error('O nome do fundo é obrigatório.');
+            return;
+        }
+        const btn = document.getElementById('btn-save-fund');
+        btn.disabled = true;
+        btn.textContent = 'Salvando…';
+        try {
+            if (id) {
+                await api(`/api/fnet/monitored-funds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+                toast.success('Fundo atualizado com sucesso.');
+            } else {
+                await api('/api/fnet/monitored-funds', { method: 'POST', body: JSON.stringify(payload) });
+                toast.success('Fundo cadastrado com sucesso.');
+            }
+            closeFundModal();
+            await loadFunds();
+        } catch (err) {
+            toast.error('Falha ao salvar: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Salvar';
+        }
+    }
+
+    async function toggleFund(fundId) {
+        const fund = state.funds.find(function(f) { return f.id === fundId; });
+        if (!fund) return;
+        const newState = !fund.is_active;
+        const action = newState ? 'ativar' : 'desativar';
+        const ok = await toast.confirm({
+            title: `Confirmar`,
+            message: `Deseja ${action} o fundo "${fund.fund_name}"?`,
+        });
+        if (!ok) return;
+        try {
+            await api(`/api/fnet/monitored-funds/${fundId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ is_active: newState }),
+            });
+            toast.success(`Fundo ${newState ? 'ativado' : 'desativado'}.`);
+            await loadFunds();
+        } catch (err) {
+            toast.error('Falha: ' + err.message);
+        }
+    }
+
+    async function deleteFund(fundId) {
+        const fund = state.funds.find(function(f) { return f.id === fundId; });
+        if (!fund) return;
+        const ok = await toast.confirm({
+            title: 'Desativar fundo',
+            message: `Confirmar desativação de "${fund.fund_name}"? O histórico de sincronização é preservado.`,
+        });
+        if (!ok) return;
+        try {
+            await api(`/api/fnet/monitored-funds/${fundId}`, { method: 'DELETE' });
+            toast.success('Fundo desativado.');
+            closeFundModal();
+            await loadFunds();
+        } catch (err) {
+            toast.error('Falha: ' + err.message);
+        }
+    }
+
+    // ---------------- Sync now ----------------
+    async function syncNow() {
+        const btn = document.getElementById('btn-sync-now');
+        const label = document.getElementById('sync-now-label');
+        btn.disabled = true;
+        label.textContent = 'Sincronizando…';
+        try {
+            const result = await api('/api/fnet/sync-now', {
+                method: 'POST',
+                body: JSON.stringify({}),
+            });
+            const parts = [
+                `${result.funds_processed || 0} fundo(s) processado(s)`,
+                `${result.docs_downloaded || 0} baixado(s)`,
+                `${result.docs_skipped_duplicate || 0} já indexado(s)`,
+                `${result.docs_failed || 0} erro(s)`,
+            ];
+            if ((result.docs_failed || 0) > 0) {
+                toast.warning('Sync concluído com erros: ' + parts.join(' · '));
+            } else {
+                toast.success('Sync concluído: ' + parts.join(' · '));
+            }
+            await loadFunds();
+        } catch (err) {
+            toast.error('Falha no sync: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            label.textContent = 'Sincronizar agora';
+        }
+    }
+
+    // ---------------- Events ----------------
+    document.getElementById('btn-refresh').addEventListener('click', loadFunds);
+    document.getElementById('btn-sync-now').addEventListener('click', syncNow);
+    document.getElementById('btn-add-fund').addEventListener('click', function() { openFundModal(null); });
+    document.getElementById('btn-save-fund').addEventListener('click', saveFund);
+    document.getElementById('btn-delete-fund').addEventListener('click', function() {
+        const id = parseInt(this.dataset.fundId, 10);
+        if (id) deleteFund(id);
+    });
+    document.querySelectorAll('[data-close-modal]').forEach(function(el) {
+        el.addEventListener('click', closeFundModal);
+    });
+    document.getElementById('fund-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeFundModal();
+    });
+
+    // CNPJ mask
+    const cnpjInput = document.getElementById('fund-cnpj');
+    cnpjInput.addEventListener('input', function() {
+        cnpjInput.value = applyCnpjMask(cnpjInput.value);
+    });
+
+    // Initial load
+    loadProducts();
+    loadFunds();
+})();
+</script>
+</body>
+</html>

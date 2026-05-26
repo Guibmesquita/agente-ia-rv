@@ -169,6 +169,14 @@
           </a>
 
           <!-- Comitê Ativo: substituído pelo sistema de estrela em ProductCard -->
+
+          <!-- Monitoramento FNET (Task #325) -->
+          <a href="/fnet-monitoring" class="sidebar-item sidebar-indented flex items-center gap-3 px-4 py-2.5 ml-4 mr-2 rounded-lg transition-colors {% if request.path == '/fnet-monitoring' %}bg-primary/10 text-primary{% else %}text-gray-500 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            <span class="text-sm font-medium sidebar-text">Monitoramento FNET</span>
+          </a>
         </div>
 
         {% if user_role == 'admin' %}
@@ -238,7 +246,7 @@
   let isSettingsOpen = false;
   let isKnowledgeOpen = false;
 
-  const knowledgeRoutes = ['/base-conhecimento', '/fila-revisao', '/documentos', '/comite'];
+  const knowledgeRoutes = ['/base-conhecimento', '/fila-revisao', '/documentos', '/comite', '/fnet-monitoring'];
   const configRoutes = ['/assessores', '/admin', '/admin/rag-evasive', '/agent-brain', '/integrations', '/custos'].concat(knowledgeRoutes);
   const currentPath = window.location.pathname;
   const isKnowledgePath = knowledgeRoutes.includes(currentPath) || currentPath.startsWith('/base-conhecimento');
