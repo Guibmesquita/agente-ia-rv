@@ -36,7 +36,12 @@ from database.models import (
     Material,
     ProcessingStatus,
 )
-from services.fnet_client import FnetClient, FnetClientError, FnetDocument
+from services.fnet_client import (
+    FnetClient,
+    FnetClientError,
+    FnetDocument,
+    FnetFundNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -314,9 +319,12 @@ async def _process_single_document(
     except FnetClientError as exc:
         msg = (
             f"Falha ao baixar PDF FNET id={doc.id} ({dedup_doc_type} {reference_ym}): "
-            f"{exc}"
+            f"{type(exc).__name__}: {exc}"
         )
-        logger.error("[FNET-SYNC] %s", msg)
+        # exception() inclui traceback completo — fecha a frente de
+        # observabilidade do client FNET (mensagem persistida em
+        # last_error/`Material` continua a string curta acima).
+        logger.exception("[FNET-SYNC] %s", msg)
         result.errors.append(msg)
         result.docs_failed += 1
         _mark_log_failed(db_factory, claimed_log_id, msg)

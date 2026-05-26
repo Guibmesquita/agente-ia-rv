@@ -3,21 +3,39 @@ Cliente HTTP assíncrono para a API pública do FNET/B3
 (https://fnet.bmfbovespa.com.br/fnet/publico/abrirGerenciadorDocumentosCVM).
 
 Expõe dois métodos principais:
-- `list_documents(cnpj, date_start, date_end, ...)` — DataTables-style search.
+- `list_documents(cnpj, date_start, date_end, ...)` — busca documentos do fundo.
 - `download_document(document_id)` — baixa o PDF do documento por id.
 
-Não há autenticação (endpoint público). Usa um User-Agent realista e
-`Referer` para evitar bloqueios anti-scraping. Retries automáticos para
-falhas transitórias (5xx, timeouts).
+Fluxo obrigatório (descoberto via gerenciador-documentos-cvm.js da própria B3):
+1. **Warm-up de sessão**: GET em `abrirGerenciadorDocumentosCVM` para receber
+   cookies (`JSESSIONID`, `ROUTEID_FNET`, `F051234a800`) e raspar o token CSRF
+   declarado como `var csrf_token = "..."` no HTML.
+2. **Lookup CNPJ → idFundo**: GET em `listarFundos?term=<CNPJ>` (autocomplete
+   select2 da página). O filtro real do search é por `idFundo` numérico — passar
+   só `cnpj`/`cnpjFundo` ignora silenciosamente e devolve TODOS os documentos
+   do tipo, sem filtrar.
+3. **Search**: GET em `pesquisarGerenciadorDocumentosDados` com header
+   `CSRFToken`, params compactos DataTables (`d`/`s`/`l`), nomes de data
+   `dataInicial`/`dataFinal` (não `dataInicio`/`dataFim`) e `idFundo` resolvido.
+
+Sem esses passos o FNET responde 403 Forbidden (Cloudflare na frente) ou 404,
+ou — pior — devolve 200 com dados de OUTROS fundos. Antes desta task o cliente
+fazia POST direto com payload `d[i][name]=...&d[i][value]=...` sem warmup nem
+CSRF, e parou de funcionar quando a B3 passou a exigir GET+CSRF/session.
+
+Não há autenticação por API (endpoint público); a sessão é apenas anti-bot.
+Retries automáticos para falhas transitórias (5xx, timeouts). Se um GET de
+busca/download voltar 401/403 (sessão expirada), o cliente refaz o warm-up
+**uma vez** dentro da mesma chamada antes de desistir.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Optional
-from urllib.parse import urlencode
 
 import httpx
 
@@ -25,9 +43,16 @@ logger = logging.getLogger(__name__)
 
 
 FNET_BASE = "https://fnet.bmfbovespa.com.br/fnet/publico"
+FNET_WARMUP_URL = f"{FNET_BASE}/abrirGerenciadorDocumentosCVM"
+FNET_LIST_FUNDS_URL = f"{FNET_BASE}/listarFundos"
 FNET_SEARCH_URL = f"{FNET_BASE}/pesquisarGerenciadorDocumentosDados"
 FNET_DOWNLOAD_URL = f"{FNET_BASE}/downloadDocumento"
-FNET_REFERER = f"{FNET_BASE}/abrirGerenciadorDocumentosCVM"
+
+# Token CSRF é declarado inline no HTML do gerenciador como
+# `var csrf_token = "<uuid>";` — extraímos com regex.
+_CSRF_REGEX = re.compile(
+    r"""var\s+csrf_token\s*=\s*["']([0-9a-fA-F-]{16,})["']""",
+)
 
 _DEFAULT_HEADERS = {
     "User-Agent": (
@@ -38,7 +63,8 @@ _DEFAULT_HEADERS = {
     "Accept": "application/json, text/javascript, */*; q=0.01",
     "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
     "X-Requested-With": "XMLHttpRequest",
-    "Referer": FNET_REFERER,
+    "Origin": "https://fnet.bmfbovespa.com.br",
+    "Referer": FNET_WARMUP_URL,
 }
 
 
@@ -95,8 +121,10 @@ class FnetDocument:
 
 class FnetClient:
     """
-    Cliente assíncrono para o FNET. Reutilizável; passe `client_factory`
-    nos testes para injetar mock.
+    Cliente assíncrono para o FNET. Cada operação pública (`list_documents`,
+    `download_document`) abre seu próprio `httpx.AsyncClient` para isolar o
+    cookie jar — o warm-up é barato (1 GET) e evita carregar estado entre
+    chamadas de fundos diferentes.
     """
 
     def __init__(
@@ -113,6 +141,10 @@ class FnetClient:
     def _format_br_date(d: date) -> str:
         return d.strftime("%d/%m/%Y")
 
+    @staticmethod
+    def _digits_only(cnpj: str) -> str:
+        return re.sub(r"\D", "", cnpj or "")
+
     async def list_documents(
         self,
         cnpj: str,
@@ -126,34 +158,63 @@ class FnetClient:
         e `date_end` (inclusive). Faz paginação automática se houver mais que
         `page_size` registros.
 
-        Levanta `FnetClientError` em caso de falha persistente após retries.
+        Levanta `FnetClientError` em caso de falha persistente após retries,
+        ou `FnetFundNotFoundError` se o CNPJ não for encontrado no FNET.
         """
-        # FNET espera POST com payload no formato DataTables-style:
-        # d[i][name]=X & d[i][value]=Y (i é o índice do parâmetro).
-        # Ordem dos parâmetros segue o site oficial:
-        # cnpjFundo, tipoFundo, dataInicio, dataFim, draw (sequencial).
-        base_fields: list[tuple[str, str]] = [
-            ("cnpjFundo", cnpj),
-            ("tipoFundo", str(tipo_fundo)),
-            ("dataInicio", self._format_br_date(date_start)),
-            ("dataFim", self._format_br_date(date_end)),
-        ]
-
-        all_docs: list[FnetDocument] = []
-        start = 0
-        draw = 1
-
         async with httpx.AsyncClient(
-            timeout=self._timeout, headers=_DEFAULT_HEADERS
+            timeout=self._timeout,
+            headers=_DEFAULT_HEADERS,
+            follow_redirects=True,
         ) as http:
-            while True:
-                form_data = self._build_datatables_payload(
-                    base_fields=base_fields,
-                    start=start,
-                    length=page_size,
-                    draw=draw,
+            csrf = await self._warm_session(http)
+
+            # Resolve CNPJ → (idFundo, nome_canônico). Mandamos idFundo no
+            # search (o backend ACEITA o param sem reclamar) e usamos o nome
+            # canônico para filtrar client-side — porque a B3 ignora idFundo
+            # e cnpjFundo na resposta vem `null`, então a única forma de
+            # garantir que não trazemos doc de outro fundo é match por nome.
+            resolved = await self._resolve_fund(
+                http, csrf=csrf, cnpj=cnpj, tipo_fundo=tipo_fundo
+            )
+            if resolved is None:
+                raise FnetFundNotFoundError(
+                    f"CNPJ {cnpj} (tipoFundo={tipo_fundo}) não encontrado no "
+                    f"autocomplete do FNET (listarFundos). Verifique o cadastro."
                 )
-                payload = await self._post_with_retry(http, FNET_SEARCH_URL, form_data)
+            id_fundo, canonical_name = resolved
+            name_needle = self._normalize_for_match(
+                self._strip_listar_prefix(canonical_name)
+            )
+
+            all_docs: list[FnetDocument] = []
+            start = 0
+            draw = 1
+
+            while True:
+                # Formato compacto exigido pelo `prepararRequisicaoDataTables`
+                # do JS oficial: d=draw, s=start, l=length. Junto com os
+                # filtros que a página manda quando o usuário busca por CNPJ.
+                params = {
+                    "d": draw,
+                    "s": start,
+                    "l": page_size,
+                    "tipoFundo": tipo_fundo,
+                    "idFundo": id_fundo,
+                    "cnpj": cnpj,
+                    "cnpjFundo": cnpj,
+                    "dataInicial": self._format_br_date(date_start),
+                    "dataFinal": self._format_br_date(date_end),
+                    "paginaCertificados": "false",
+                    "isSession": "true",
+                }
+                payload = await self._json_get_with_retry(
+                    http,
+                    FNET_SEARCH_URL,
+                    params=params,
+                    csrf_token=csrf,
+                    # On 401/403/expired session, warm one more time and reuse.
+                    rewarm_callback=self._warm_session,
+                )
                 data = payload.get("data") or []
                 total = int(payload.get("recordsFiltered") or 0)
 
@@ -172,23 +233,51 @@ class FnetClient:
                 if not data or start >= total or len(data) < page_size:
                     break
 
-        return all_docs
+        # Salvaguarda obrigatória: o search da B3 ignora `idFundo`/`cnpj` e
+        # devolve documentos de QUALQUER fundo do período. Sem este filtro,
+        # uma sync de 1 fundo plantaria centenas de Materiais de terceiros.
+        # Match por substring normalizada do nome canônico vindo do
+        # autocomplete contra `descricao_fundo` da resposta — é o único
+        # campo identificador presente (cnpjFundo/idFundo vêm `null`).
+        filtered = [
+            d for d in all_docs
+            if name_needle
+            and name_needle in self._normalize_for_match(d.descricao_fundo)
+        ]
+        dropped = len(all_docs) - len(filtered)
+        if dropped:
+            logger.info(
+                "[FNET] Filtro client-side por nome '%s' descartou %d/%d "
+                "documento(s) de outros fundos (idFundo=%d).",
+                canonical_name[:60],
+                dropped,
+                len(all_docs),
+                id_fundo,
+            )
+        return filtered
 
     async def download_document(self, document_id: int) -> tuple[bytes, str]:
         """
         Baixa o PDF do documento `document_id`. Retorna `(bytes, suggested_filename)`.
         `suggested_filename` é extraído de Content-Disposition quando disponível,
         ou cai para `fnet_{id}.pdf`.
-        """
-        url = FNET_DOWNLOAD_URL
-        params = {"id": str(document_id)}
 
+        O download também passa pelo warm-up — sem cookies de sessão a B3
+        responde 403 (Cloudflare bloqueia o "deep link" direto ao PDF).
+        """
         async with httpx.AsyncClient(
             timeout=self._timeout,
             headers=_DEFAULT_HEADERS,
             follow_redirects=True,
         ) as http:
-            response = await self._get_raw_with_retry(http, url, params)
+            csrf = await self._warm_session(http)
+            response = await self._raw_get_with_retry(
+                http,
+                FNET_DOWNLOAD_URL,
+                params={"id": str(document_id)},
+                csrf_token=csrf,
+                rewarm_callback=self._warm_session,
+            )
 
         content = response.content
         if not content or content[:4] != b"%PDF":
@@ -204,103 +293,237 @@ class FnetClient:
 
         return content, filename
 
-    @staticmethod
-    def _extract_filename(content_disposition: Optional[str]) -> Optional[str]:
-        if not content_disposition:
-            return None
-        # Padrão FNET: attachment; filename="CNPJ-CODIGO-NNNN.pdf"
-        import re
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
 
-        m = re.search(r'filename\s*=\s*"?([^";]+)"?', content_disposition)
-        if m:
-            return m.group(1).strip()
-        return None
-
-    @staticmethod
-    def _build_datatables_payload(
-        *,
-        base_fields: list[tuple[str, str]],
-        start: int,
-        length: int,
-        draw: int,
-    ) -> list[tuple[str, str]]:
+    async def _warm_session(self, http: httpx.AsyncClient) -> str:
         """
-        Constrói o body application/x-www-form-urlencoded no formato DataTables
-        que o FNET aceita: cada parâmetro é codificado como dois pares
-        d[i][name]=<nome> e d[i][value]=<valor>, mais 'start', 'length', 'draw'.
-
-        Retorna lista de tuplas (não dict) para preservar a ordem dos índices
-        — o backend FNET é sensível à ordem de d[0], d[1], ...
+        Faz o GET em `abrirGerenciadorDocumentosCVM` e devolve o `csrf_token`
+        extraído do HTML. Cookies emitidos vão direto para o jar do `http`.
+        Levanta `FnetClientError` se a página vier sem o token.
         """
-        items: list[tuple[str, str]] = []
-        for idx, (name, value) in enumerate(base_fields):
-            items.append((f"d[{idx}][name]", name))
-            items.append((f"d[{idx}][value]", value))
-        items.append(("start", str(start)))
-        items.append(("length", str(length)))
-        items.append(("draw", str(draw)))
-        return items
-
-    async def _post_with_retry(
-        self,
-        http: httpx.AsyncClient,
-        url: str,
-        form_data: list[tuple[str, str]],
-    ) -> dict[str, Any]:
-        # NOTA (httpx 0.26.0 — RuntimeError "Attempted to send a sync request
-        # with an AsyncClient instance"):
-        # Passar `data=list[tuple]` para `AsyncClient.post` faz o httpx criar
-        # um `IteratorByteStream` que implementa apenas `SyncByteStream`,
-        # falhando o `isinstance(request.stream, AsyncByteStream)` em
-        # `_send_single_request` (httpx/_client.py:1743). Solução: codificamos
-        # nós mesmos o form-urlencoded e enviamos como `content=bytes`, que
-        # gera um `ByteStream` (Sync + Async). Não muda o que o FNET recebe.
-        body = urlencode(form_data).encode("utf-8")
         last_exc: Optional[Exception] = None
         for attempt in range(1, self._max_retries + 1):
             try:
-                r = await http.post(
-                    url,
-                    content=body,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                r = await http.get(
+                    FNET_WARMUP_URL,
+                    # A página é HTML — sobrescreve o Accept padrão (JSON).
+                    headers={"Accept": "text/html,application/xhtml+xml"},
                 )
                 if r.status_code in (500, 502, 503, 504, 520, 521, 522, 524):
                     raise FnetTransientError(
-                        f"FNET {r.status_code} em POST {url} (tentativa {attempt})"
+                        f"FNET warmup HTTP {r.status_code} (tentativa {attempt})"
                     )
                 r.raise_for_status()
-                try:
-                    return r.json()
-                except ValueError as e:
+                m = _CSRF_REGEX.search(r.text)
+                if not m:
                     raise FnetClientError(
-                        f"Resposta não-JSON do FNET (POST {url}): "
-                        f"content_type={r.headers.get('content-type')!r}, "
-                        f"corpo[:200]={r.text[:200]!r}"
-                    ) from e
+                        "Warmup FNET veio sem csrf_token — formato da página "
+                        f"pode ter mudado (HTTP {r.status_code}, "
+                        f"len={len(r.text)})"
+                    )
+                token = m.group(1)
+                logger.debug(
+                    "[FNET] warm-up OK (cookies=%s, csrf=%s...)",
+                    list(http.cookies.keys()),
+                    token[:8],
+                )
+                return token
             except (FnetTransientError, httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 if attempt < self._max_retries:
                     await asyncio.sleep(self._retry_backoff ** attempt)
                 continue
         raise FnetClientError(
-            f"Falha persistente em POST {url} após {self._max_retries} tentativas: {last_exc}"
+            f"Falha persistente no warm-up FNET após {self._max_retries} "
+            f"tentativas: {last_exc}"
         ) from last_exc
 
-    async def _get_raw_with_retry(
+    async def _resolve_fund(
+        self,
+        http: httpx.AsyncClient,
+        *,
+        csrf: str,
+        cnpj: str,
+        tipo_fundo: int,
+    ) -> Optional[tuple[int, str]]:
+        """
+        Resolve CNPJ → (idFundo, nome_canônico) via o autocomplete
+        `listarFundos`. Empiricamente o FNET aceita o CNPJ no campo `term`
+        APENAS no formato só-dígitos (ex.: "36501128000186") — a versão
+        formatada ("XX.XXX.XXX/XXXX-XX") retorna sempre 0 resultados.
+        Tentamos só-dígitos primeiro e caímos para o que veio do cadastro
+        como fallback.
+
+        Quando vários candidatos voltam (classes e o fundo-pai), preferimos
+        a entrada cujo `text` começa com "FII " (a B3 prefixa o ticker do
+        fundo-pai assim no autocomplete). Isso evita escolher uma classe
+        subsidiária quando o usuário cadastrou o CNPJ do fundo principal.
+
+        Retorna o tuple ou None se nenhum match (CNPJ inexistente ou
+        cadastrado em outra `idTipoFundo`).
+        """
+        candidates: list[str] = []
+        digits = self._digits_only(cnpj)
+        if digits:
+            candidates.append(digits)
+        if cnpj and cnpj != digits:
+            candidates.append(cnpj)
+
+        for term in candidates:
+            payload = await self._json_get_with_retry(
+                http,
+                FNET_LIST_FUNDS_URL,
+                params={
+                    "term": term,
+                    "page": 1,
+                    "idTipoFundo": tipo_fundo,
+                    "idAdm": 0,
+                    "paraCerts": "false",
+                },
+                csrf_token=csrf,
+                rewarm_callback=self._warm_session,
+            )
+
+            results = payload.get("results") or []
+            if not results:
+                continue
+
+            # Prefere o fundo-pai (prefixo "FII "); senão pega o primeiro.
+            preferred = next(
+                (r for r in results if str(r.get("text", "")).startswith("FII ")),
+                results[0],
+            )
+            try:
+                fund_id = int(preferred.get("id"))
+            except (TypeError, ValueError):
+                continue
+            text = str(preferred.get("text") or "").strip()
+            logger.debug(
+                "[FNET] CNPJ %s (tipo=%d) → idFundo=%d (%s)",
+                cnpj,
+                tipo_fundo,
+                fund_id,
+                text[:60],
+            )
+            return fund_id, text
+        return None
+
+    @staticmethod
+    def _strip_listar_prefix(text: str) -> str:
+        """
+        O `listarFundos` devolve nomes como
+            "FII RZTR - FUNDO DE INVESTIMENTO IMOBILIÁRIO RIZA TERRAX"
+        e o search devolve só "FUNDO DE INVESTIMENTO IMOBILIÁRIO RIZA TERRAX"
+        em `descricaoFundo`. Removemos o prefixo "PREFIX - " quando presente
+        para que o match client-side encontre o nome no campo do search.
+        """
+        if " - " in text:
+            return text.split(" - ", 1)[1].strip()
+        return text.strip()
+
+    @staticmethod
+    def _normalize_for_match(text: str) -> str:
+        """
+        Normaliza string para match insensível a caixa, acentos e espaços
+        em excesso. Usado só na comparação interna — não muta o que vai
+        para o banco.
+        """
+        import unicodedata
+
+        if not text:
+            return ""
+        # Remove acentos (NFKD) e baixa case
+        no_accents = "".join(
+            ch for ch in unicodedata.normalize("NFKD", text)
+            if not unicodedata.combining(ch)
+        ).lower()
+        # Colapsa whitespace
+        return re.sub(r"\s+", " ", no_accents).strip()
+
+    async def _json_get_with_retry(
         self,
         http: httpx.AsyncClient,
         url: str,
-        params: dict[str, str],
+        *,
+        params: dict[str, Any],
+        csrf_token: str,
+        rewarm_callback: Optional[Any] = None,
+    ) -> dict[str, Any]:
+        """
+        GET que espera resposta JSON. Trata 5xx como transitório (backoff),
+        e 401/403 como "sessão expirada": tenta refazer o warm-up uma vez
+        antes de desistir (re-warm não conta como retry transitório).
+        """
+        r = await self._raw_get_with_retry(
+            http,
+            url,
+            params=params,
+            csrf_token=csrf_token,
+            rewarm_callback=rewarm_callback,
+        )
+        try:
+            return r.json()
+        except ValueError as e:
+            raise FnetClientError(
+                f"Resposta não-JSON do FNET (GET {url}): "
+                f"status={r.status_code}, "
+                f"content_type={r.headers.get('content-type')!r}, "
+                f"corpo[:200]={r.text[:200]!r}"
+            ) from e
+
+    async def _raw_get_with_retry(
+        self,
+        http: httpx.AsyncClient,
+        url: str,
+        *,
+        params: dict[str, Any],
+        csrf_token: str,
+        rewarm_callback: Optional[Any] = None,
     ) -> httpx.Response:
         last_exc: Optional[Exception] = None
-        for attempt in range(1, self._max_retries + 1):
+        rewarmed = False
+        attempt = 0
+        token = csrf_token
+        while attempt < self._max_retries:
+            attempt += 1
             try:
-                r = await http.get(url, params=params)
+                r = await http.get(
+                    url,
+                    params=params,
+                    headers={"CSRFToken": token},
+                )
+                # 5xx → transitório (com backoff).
                 if r.status_code in (500, 502, 503, 504, 520, 521, 522, 524):
                     raise FnetTransientError(
-                        f"FNET {r.status_code} em {url} (tentativa {attempt})"
+                        f"FNET {r.status_code} em GET {url} (tentativa {attempt})"
                     )
-                r.raise_for_status()
+                # 401/403 → sessão expirada/derrubada pela B3. Tenta um único
+                # re-warm; se ainda falhar, propaga como FnetClientError. Não
+                # conta como retry transitório (sem backoff exponencial).
+                if r.status_code in (401, 403) and rewarm_callback and not rewarmed:
+                    logger.info(
+                        "[FNET] HTTP %s em %s — sessão expirada, refazendo warm-up",
+                        r.status_code,
+                        url,
+                    )
+                    token = await rewarm_callback(http)
+                    rewarmed = True
+                    # Recompensa essa tentativa para que o re-warm não consuma
+                    # o budget — efetivamente "uma chance extra" pós-re-warm.
+                    attempt -= 1
+                    continue
+                # 4xx residual (incluindo 401/403 após re-warm) — não é
+                # transitório, mas precisa virar FnetClientError para o
+                # caller (fnet_sync) tratar via except FnetClientError em
+                # vez de deixar httpx.HTTPStatusError escapar e poluir o
+                # log com "pending" sem mark_failed.
+                if r.status_code >= 400:
+                    raise FnetClientError(
+                        f"FNET HTTP {r.status_code} em GET {url} "
+                        f"(rewarmed={rewarmed}): {r.text[:200]}"
+                    )
                 return r
             except (FnetTransientError, httpx.TransportError, httpx.TimeoutException) as exc:
                 last_exc = exc
@@ -308,8 +531,19 @@ class FnetClient:
                     await asyncio.sleep(self._retry_backoff ** attempt)
                 continue
         raise FnetClientError(
-            f"Falha persistente em GET {url} após {self._max_retries} tentativas: {last_exc}"
+            f"Falha persistente em GET {url} após {self._max_retries} "
+            f"tentativas: {last_exc}"
         ) from last_exc
+
+    @staticmethod
+    def _extract_filename(content_disposition: Optional[str]) -> Optional[str]:
+        if not content_disposition:
+            return None
+        # Padrão FNET: attachment; filename="CNPJ-CODIGO-NNNN.pdf"
+        m = re.search(r'filename\s*=\s*"?([^";]+)"?', content_disposition)
+        if m:
+            return m.group(1).strip()
+        return None
 
 
 class FnetClientError(RuntimeError):
@@ -318,3 +552,7 @@ class FnetClientError(RuntimeError):
 
 class FnetTransientError(FnetClientError):
     """Erro transitório (5xx, timeout) — passível de retry."""
+
+
+class FnetFundNotFoundError(FnetClientError):
+    """CNPJ não encontrado no autocomplete `listarFundos` do FNET."""
