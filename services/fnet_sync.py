@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_DOCUMENT_TYPES = ["Informe Mensal", "Relatório Gerencial"]
-SYNC_LOOKBACK_MONTHS = 2  # mês corrente + mês anterior (cobre entregas em atraso)
 UPLOAD_DIR_QUEUE = "uploads/materials"
 
 
@@ -109,21 +108,14 @@ def _format_cnpj_br(cnpj_digits: str) -> str:
     return f"{s[0:2]}.{s[2:5]}.{s[5:8]}/{s[8:12]}-{s[12:14]}"
 
 
-def _months_window(lookback_months: int) -> tuple[date, date]:
+def _current_month_window() -> tuple[date, date]:
     """
-    Retorna (start_date, end_date) cobrindo os últimos `lookback_months` meses
-    a partir do dia 1 do mês mais antigo até hoje.
+    Retorna (start_date, end_date) cobrindo APENAS o mês corrente de calendário
+    (do dia 1 até hoje). Sincronização retroativa de meses anteriores está
+    explicitamente fora de escopo (fnet-backend.md §Out of scope).
     """
     today = date.today()
-    end = today
-    # Volta lookback_months-1 meses (lookback_months=2 → mês anterior + atual)
-    year = today.year
-    month = today.month - (lookback_months - 1)
-    while month <= 0:
-        month += 12
-        year -= 1
-    start = date(year, month, 1)
-    return start, end
+    return date(today.year, today.month, 1), today
 
 
 def _matches_target_types(doc: FnetDocument, target_types: list[str]) -> bool:
@@ -189,7 +181,7 @@ async def sync_single_fund(
                 exc,
             )
 
-    start_date, end_date = _months_window(SYNC_LOOKBACK_MONTHS)
+    start_date, end_date = _current_month_window()
     cnpj_formatted = _format_cnpj_br(fund.cnpj)
 
     # 1) Lista documentos no FNET
@@ -243,7 +235,7 @@ async def sync_single_fund(
             # captura apenas erros realmente inesperados (ex.: bug, OOM).
             # Não tentamos persistir log aqui porque pode não haver linha
             # reservada — se o claim foi feito antes do crash, ficará em
-            # 'processing' e será re-reivindicada pelo próximo run.
+            # 'pending' e será re-reivindicada pelo próximo run.
             msg = (
                 f"Erro inesperado em doc FNET id={doc.id} "
                 f"({doc.tipo_documento} {doc.data_referencia}): "
@@ -281,10 +273,10 @@ async def _process_single_document(
     dedup_doc_type = doc.tipo_documento.strip() or doc.categoria_documento.strip()
 
     # 3.a) CLAIM ATÔMICO via UPSERT — única fonte de verdade para dedup.
-    # - Se a linha não existe, insere com status='processing' e retorna id (claim).
-    # - Se existe com status terminal de sucesso (downloaded/uploaded), retorna NADA
+    # - Se a linha não existe, insere com status='pending' e retorna id (claim).
+    # - Se existe com status terminal (success/skipped), retorna NADA
     #   (linha já bate, sem update) → tratamos como duplicata.
-    # - Se existe com status retriável (processing/failed), promove a 'processing'
+    # - Se existe com status retriável (pending expirado/failed), promove a 'pending'
     #   e retorna id (re-claim) → permite re-tentativas após falha sem violar UNIQUE.
     # Dois workers concorrentes não podem ambos receber id: o UPSERT é atômico no PG.
     # Hash determinístico do documento — protege contra reprocessamento
@@ -349,8 +341,8 @@ async def _process_single_document(
         _mark_log_failed(db_factory, claimed_log_id, msg)
         return
 
-    # 3.d) Sucesso — promove o claim a 'downloaded' com material_id
-    _mark_log_downloaded(db_factory, claimed_log_id, material_id)
+    # 3.d) Sucesso — promove o claim a 'success' com material_id
+    _mark_log_success(db_factory, claimed_log_id, material_id)
     result.docs_downloaded += 1
     logger.info(
         "[FNET-SYNC] ✅ Enfileirado: %s | %s | %s | material_id=%s upload_id=%s log_id=%s",
@@ -494,21 +486,23 @@ def _claim_document_for_processing(
     Tenta reservar (claim) o documento para processamento de forma atômica.
 
     Estratégia: INSERT ... ON CONFLICT (fund_name, reference_month, document_type)
-    DO UPDATE SET status='processing' WHERE existing.status NOT IN
-    ('downloaded','uploaded') RETURNING id.
+    DO UPDATE SET status='pending' WHERE existing.status NOT IN
+    ('success','skipped') RETURNING id.
 
-    - Linha não existe                                  → insere com 'processing' e retorna id (claim novo).
+    Status canônico (alinhado com fnet-backend.md): pending / success / failed / skipped.
+
+    - Linha não existe                                  → insere com 'pending' e retorna id (claim novo).
     - Linha existe com 'failed'                         → re-claim para retry, retorna id.
-    - Linha existe com 'processing' antiga (>1h)        → assume worker crashed,
+    - Linha existe com 'pending' antiga (>1h)           → assume worker crashed,
                                                           re-claim para retry, retorna id (lease expirado).
-    - Linha existe com 'processing' recente (<1h)       → outro worker está
+    - Linha existe com 'pending' recente (<1h)          → outro worker está
                                                           trabalhando; RETURNING vazio → None (skip).
-    - Linha existe com 'downloaded' ou 'uploaded'       → trabalho terminal já feito;
+    - Linha existe com 'success' ou 'skipped'           → trabalho terminal já feito;
                                                           RETURNING vazio → None (dedup hit).
 
     Em conjunto com o pg_advisory_lock global em run_sync(), garante que
     nenhum documento é processado em paralelo nem duplicado. O lease de 1h
-    protege contra worker mortos sem deixar 'processing' órfão para sempre.
+    protege contra worker mortos sem deixar 'pending' órfão para sempre.
     """
     db = db_factory()
     try:
@@ -525,12 +519,12 @@ def _claim_document_for_processing(
                 raw_metadata, created_at
             ) VALUES (
                 :monitored_fund_id, :fnet_document_id, :document_hash, :fund_name,
-                :reference_month, :document_category, :document_type, 'processing',
+                :reference_month, :document_category, :document_type, 'pending',
                 :raw_metadata, NOW()
             )
             ON CONFLICT ON CONSTRAINT uq_fnet_sync_log_dedup
             DO UPDATE SET
-                status = 'processing',
+                status = 'pending',
                 fnet_document_id = EXCLUDED.fnet_document_id,
                 document_hash = EXCLUDED.document_hash,
                 monitored_fund_id = EXCLUDED.monitored_fund_id,
@@ -538,7 +532,7 @@ def _claim_document_for_processing(
                 error_message = NULL,
                 raw_metadata = EXCLUDED.raw_metadata
             WHERE fnet_sync_logs.status = 'failed'
-               OR (fnet_sync_logs.status = 'processing'
+               OR (fnet_sync_logs.status = 'pending'
                    AND fnet_sync_logs.created_at < NOW() - INTERVAL '1 hour')
             RETURNING id
             """
@@ -574,15 +568,15 @@ def _claim_document_for_processing(
         db.close()
 
 
-def _mark_log_downloaded(db_factory, log_id: int, material_id: int) -> None:
-    """Promove um log 'processing' para 'downloaded' com material_id."""
+def _mark_log_success(db_factory, log_id: int, material_id: int) -> None:
+    """Promove um log 'pending' para 'success' com material_id."""
     db = db_factory()
     try:
         db.execute(
             sql_text(
                 """
                 UPDATE fnet_sync_logs
-                   SET status = 'downloaded',
+                   SET status = 'success',
                        material_id = :material_id,
                        error_message = NULL
                  WHERE id = :id
@@ -663,7 +657,7 @@ def _persist_fund_level_failure(
 
 
 def _mark_log_failed(db_factory, log_id: int, error_message: str) -> None:
-    """Promove um log 'processing' para 'failed' preservando a UNIQUE row."""
+    """Promove um log 'pending' para 'failed' preservando a UNIQUE row."""
     db = db_factory()
     try:
         db.execute(

@@ -1245,7 +1245,7 @@ def _apply_incremental_migrations():
             reference_month VARCHAR(7) NOT NULL,
             document_category VARCHAR(100),
             document_type VARCHAR(100) NOT NULL,
-            status VARCHAR(30) NOT NULL DEFAULT 'downloaded',
+            status VARCHAR(30) NOT NULL DEFAULT 'pending',
             material_id INTEGER REFERENCES materials(id) ON DELETE SET NULL,
             error_message TEXT,
             raw_metadata TEXT,
@@ -1263,6 +1263,14 @@ def _apply_incremental_migrations():
         "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_status ON fnet_sync_logs(status)",
         "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_material_id ON fnet_sync_logs(material_id)",
         "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_created_at ON fnet_sync_logs(created_at DESC)",
+        # Task #324 — normalização do enum de status para o contrato canônico
+        # do fnet-backend.md (pending | success | failed | skipped). Migra
+        # valores antigos da rev anterior ('processing'→'pending',
+        # 'downloaded'/'uploaded'→'success', 'skipped_duplicate'→'skipped').
+        "UPDATE fnet_sync_logs SET status='pending' WHERE status='processing'",
+        "UPDATE fnet_sync_logs SET status='success' WHERE status IN ('downloaded','uploaded')",
+        "UPDATE fnet_sync_logs SET status='skipped' WHERE status='skipped_duplicate'",
+        "ALTER TABLE fnet_sync_logs ALTER COLUMN status SET DEFAULT 'pending'",
     ]
     db = SessionLocal()
     ok = 0

@@ -1847,8 +1847,8 @@ class FnetSyncLog(Base):
     reference_month = Column(String(7), nullable=False, index=True)
     document_category = Column(String(100), nullable=True)
     document_type = Column(String(100), nullable=False)
-    status = Column(String(30), nullable=False, default="downloaded", index=True)
-    # downloaded | uploaded | failed | skipped_duplicate | processing
+    status = Column(String(30), nullable=False, default="pending", index=True)
+    # Status canônico (fnet-backend.md §Done): pending | success | failed | skipped
     material_id = Column(
         Integer,
         ForeignKey("materials.id", ondelete="SET NULL"),

@@ -6,7 +6,8 @@ Rotas:
 - POST   /api/fnet/monitored-funds         — cria fundo monitorado.
 - PATCH  /api/fnet/monitored-funds/{id}    — atualiza fundo.
 - DELETE /api/fnet/monitored-funds/{id}    — remove fundo.
-- GET    /api/fnet/sync-logs               — paginação por fundo / status.
+- GET    /api/fnet/sync-log                — paginação por fundo / status / mês.
+                                              Alias: /api/fnet/sync-logs (compat).
 - POST   /api/fnet/sync-now                — dispara um ciclo manual de sync.
 
 Acesso restrito a `admin` e `gestao_rv` (alinhado com o resto do CMS).
@@ -65,11 +66,24 @@ class MonitoredFundCreate(BaseModel):
 
 
 class MonitoredFundUpdate(BaseModel):
+    cnpj: Optional[str] = Field(default=None, min_length=11, max_length=20)
     fund_name: Optional[str] = Field(default=None, min_length=2, max_length=255)
     ticker: Optional[str] = Field(default=None, max_length=20)
     product_id: Optional[int] = None
     document_types: Optional[list[str]] = None
     is_active: Optional[bool] = None
+
+    @field_validator("cnpj")
+    @classmethod
+    def _normalize_cnpj(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        digits = "".join(c for c in v if c.isdigit())
+        if len(digits) != 14:
+            raise ValueError(
+                f"CNPJ inválido: '{v}' (são necessários 14 dígitos, obtidos {len(digits)})."
+            )
+        return digits
 
     @field_validator("ticker")
     @classmethod
@@ -256,6 +270,26 @@ async def update_monitored_fund(
     if not fund:
         raise HTTPException(status_code=404, detail=f"Fundo monitorado id={fund_id} não encontrado.")
 
+    if payload.cnpj is not None and payload.cnpj != fund.cnpj:
+        # Garante unicidade do CNPJ entre fundos monitorados.
+        conflict = (
+            db.query(FnetMonitoredFund)
+            .filter(
+                FnetMonitoredFund.cnpj == payload.cnpj,
+                FnetMonitoredFund.id != fund_id,
+            )
+            .first()
+        )
+        if conflict:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"CNPJ {_format_cnpj(payload.cnpj)} já está vinculado ao fundo "
+                    f"id={conflict.id} ('{conflict.fund_name}')."
+                ),
+            )
+        fund.cnpj = payload.cnpj
+
     if payload.product_id is not None:
         prod = db.query(Product).filter(Product.id == payload.product_id).first()
         if not prod:
@@ -321,7 +355,8 @@ async def delete_monitored_fund(
 # ============================================================================
 
 
-@router.get("/sync-logs")
+@router.get("/sync-log")
+@router.get("/sync-logs", include_in_schema=False)  # alias de compatibilidade
 async def list_sync_logs(
     fund_id: Optional[int] = Query(default=None),
     status: Optional[str] = Query(default=None),
@@ -403,7 +438,7 @@ async def sync_now(
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
-            detail="Sync FNET excedeu 10 minutos. Consulte /api/fnet/sync-logs para resultados parciais.",
+            detail="Sync FNET excedeu 10 minutos. Consulte /api/fnet/sync-log para resultados parciais.",
         )
     except Exception as exc:
         logger.exception("[FNET] Erro inesperado no sync manual")

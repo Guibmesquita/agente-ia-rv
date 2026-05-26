@@ -127,25 +127,32 @@ class FnetClient:
 
         Levanta `FnetClientError` em caso de falha persistente após retries.
         """
-        params_base: dict[str, str] = {
-            "d": "1",
-            "cnpjFundo": cnpj,
-            "tipoFundo": str(tipo_fundo),
-            "dataInicio": self._format_br_date(date_start),
-            "dataFim": self._format_br_date(date_end),
-        }
+        # FNET espera POST com payload no formato DataTables-style:
+        # d[i][name]=X & d[i][value]=Y (i é o índice do parâmetro).
+        # Ordem dos parâmetros segue o site oficial:
+        # cnpjFundo, tipoFundo, dataInicio, dataFim, draw (sequencial).
+        base_fields: list[tuple[str, str]] = [
+            ("cnpjFundo", cnpj),
+            ("tipoFundo", str(tipo_fundo)),
+            ("dataInicio", self._format_br_date(date_start)),
+            ("dataFim", self._format_br_date(date_end)),
+        ]
 
         all_docs: list[FnetDocument] = []
         start = 0
+        draw = 1
 
         async with httpx.AsyncClient(
             timeout=self._timeout, headers=_DEFAULT_HEADERS
         ) as http:
             while True:
-                params = dict(params_base)
-                params["s"] = str(start)
-                params["l"] = str(page_size)
-                payload = await self._get_with_retry(http, FNET_SEARCH_URL, params)
+                form_data = self._build_datatables_payload(
+                    base_fields=base_fields,
+                    start=start,
+                    length=page_size,
+                    draw=draw,
+                )
+                payload = await self._post_with_retry(http, FNET_SEARCH_URL, form_data)
                 data = payload.get("data") or []
                 total = int(payload.get("recordsFiltered") or 0)
 
@@ -160,6 +167,7 @@ class FnetClient:
                         )
 
                 start += len(data)
+                draw += 1
                 if not data or start >= total or len(data) < page_size:
                     break
 
@@ -207,26 +215,55 @@ class FnetClient:
             return m.group(1).strip()
         return None
 
-    async def _get_with_retry(
+    @staticmethod
+    def _build_datatables_payload(
+        *,
+        base_fields: list[tuple[str, str]],
+        start: int,
+        length: int,
+        draw: int,
+    ) -> list[tuple[str, str]]:
+        """
+        Constrói o body application/x-www-form-urlencoded no formato DataTables
+        que o FNET aceita: cada parâmetro é codificado como dois pares
+        d[i][name]=<nome> e d[i][value]=<valor>, mais 'start', 'length', 'draw'.
+
+        Retorna lista de tuplas (não dict) para preservar a ordem dos índices
+        — o backend FNET é sensível à ordem de d[0], d[1], ...
+        """
+        items: list[tuple[str, str]] = []
+        for idx, (name, value) in enumerate(base_fields):
+            items.append((f"d[{idx}][name]", name))
+            items.append((f"d[{idx}][value]", value))
+        items.append(("start", str(start)))
+        items.append(("length", str(length)))
+        items.append(("draw", str(draw)))
+        return items
+
+    async def _post_with_retry(
         self,
         http: httpx.AsyncClient,
         url: str,
-        params: dict[str, str],
+        form_data: list[tuple[str, str]],
     ) -> dict[str, Any]:
         last_exc: Optional[Exception] = None
         for attempt in range(1, self._max_retries + 1):
             try:
-                r = await http.get(url, params=params)
+                r = await http.post(
+                    url,
+                    data=form_data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
                 if r.status_code in (500, 502, 503, 504, 520, 521, 522, 524):
                     raise FnetTransientError(
-                        f"FNET {r.status_code} em {url} (tentativa {attempt})"
+                        f"FNET {r.status_code} em POST {url} (tentativa {attempt})"
                     )
                 r.raise_for_status()
                 try:
                     return r.json()
                 except ValueError as e:
                     raise FnetClientError(
-                        f"Resposta não-JSON do FNET ({url}): "
+                        f"Resposta não-JSON do FNET (POST {url}): "
                         f"content_type={r.headers.get('content-type')!r}, "
                         f"corpo[:200]={r.text[:200]!r}"
                     ) from e
@@ -236,7 +273,7 @@ class FnetClient:
                     await asyncio.sleep(self._retry_backoff ** attempt)
                 continue
         raise FnetClientError(
-            f"Falha persistente em GET {url} após {self._max_retries} tentativas: {last_exc}"
+            f"Falha persistente em POST {url} após {self._max_retries} tentativas: {last_exc}"
         ) from last_exc
 
     async def _get_raw_with_retry(
