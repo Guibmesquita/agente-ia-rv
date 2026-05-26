@@ -196,7 +196,10 @@ async def sync_single_fund(
             f"FNET API falhou para {fund.fund_name} (CNPJ {cnpj_formatted}): "
             f"{type(exc).__name__}: {exc}"
         )
-        logger.error("[FNET-SYNC] %s", msg)
+        # logger.exception() inclui traceback completo — útil para diagnosticar
+        # falhas que vão além da mensagem curta persistida em error_message
+        # (limitada a ~500 chars). NÃO altera o que vai para o banco.
+        logger.exception("[FNET-SYNC] %s", msg)
         result.errors.append(msg)
         # Persiste log de falha no NÍVEL DO FUNDO para auditabilidade (ex.:
         # timeouts, CNPJ inválido, FNET fora do ar). Idempotente por mês via
@@ -645,7 +648,10 @@ def _persist_fund_level_failure(
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.error(
+        # exception() inclui traceback: se a própria auditoria falhar,
+        # precisamos ver o stack completo para diagnosticar (DB indisponível,
+        # constraint nova, etc.) — não há outro registro desse erro.
+        logger.exception(
             "[FNET-SYNC] Falha ao persistir log de erro no nível do fundo "
             "(fund_id=%s): %s: %s",
             fund.id,

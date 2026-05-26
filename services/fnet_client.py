@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Optional
+from urllib.parse import urlencode
 
 import httpx
 
@@ -246,12 +247,21 @@ class FnetClient:
         url: str,
         form_data: list[tuple[str, str]],
     ) -> dict[str, Any]:
+        # NOTA (httpx 0.26.0 — RuntimeError "Attempted to send a sync request
+        # with an AsyncClient instance"):
+        # Passar `data=list[tuple]` para `AsyncClient.post` faz o httpx criar
+        # um `IteratorByteStream` que implementa apenas `SyncByteStream`,
+        # falhando o `isinstance(request.stream, AsyncByteStream)` em
+        # `_send_single_request` (httpx/_client.py:1743). Solução: codificamos
+        # nós mesmos o form-urlencoded e enviamos como `content=bytes`, que
+        # gera um `ByteStream` (Sync + Async). Não muda o que o FNET recebe.
+        body = urlencode(form_data).encode("utf-8")
         last_exc: Optional[Exception] = None
         for attempt in range(1, self._max_retries + 1):
             try:
                 r = await http.post(
                     url,
-                    data=form_data,
+                    content=body,
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
                 if r.status_code in (500, 502, 503, 504, 520, 521, 522, 524):

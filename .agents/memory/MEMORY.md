@@ -1,0 +1,1 @@
+- [httpx AsyncClient form-data bug](httpx-asyncclient-form-data.md) — `data=list[tuple]` on AsyncClient 0.26 raises confusing "sync request" RuntimeError; pre-urlencode and use `content=bytes`.
