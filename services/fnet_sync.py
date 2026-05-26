@@ -17,6 +17,7 @@ Idempotente: rodar duas vezes seguidas no mesmo dia não cria duplicatas.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -199,9 +200,27 @@ async def sync_single_fund(
             date_end=end_date,
         )
     except FnetClientError as exc:
-        msg = f"FNET API falhou para {fund.fund_name} (CNPJ {cnpj_formatted}): {exc}"
+        msg = (
+            f"FNET API falhou para {fund.fund_name} (CNPJ {cnpj_formatted}): "
+            f"{type(exc).__name__}: {exc}"
+        )
         logger.error("[FNET-SYNC] %s", msg)
         result.errors.append(msg)
+        # Persiste log de falha no NÍVEL DO FUNDO para auditabilidade (ex.:
+        # timeouts, CNPJ inválido, FNET fora do ar). Idempotente por mês via
+        # UPSERT em (fund_name, reference_month, document_type=__fund_level__).
+        _persist_fund_level_failure(db_factory, fund, msg)
+        return result
+    except Exception as exc:
+        # Defensive: erros inesperados ao listar (ex.: parse falhou) também
+        # devem ficar auditáveis sem derrubar os outros fundos do run.
+        msg = (
+            f"Erro inesperado ao listar docs FNET de {fund.fund_name} "
+            f"(CNPJ {cnpj_formatted}): {type(exc).__name__}: {exc}"
+        )
+        logger.exception("[FNET-SYNC] %s", msg)
+        result.errors.append(msg)
+        _persist_fund_level_failure(db_factory, fund, msg)
         return result
 
     # 2) Filtra por tipo
@@ -268,6 +287,10 @@ async def _process_single_document(
     # - Se existe com status retriável (processing/failed), promove a 'processing'
     #   e retorna id (re-claim) → permite re-tentativas após falha sem violar UNIQUE.
     # Dois workers concorrentes não podem ambos receber id: o UPSERT é atômico no PG.
+    # Hash determinístico do documento — protege contra reprocessamento
+    # mesmo se chaves semânticas mudarem (ex.: tipo do doc reclassificado).
+    document_hash = _compute_document_hash(fund.cnpj, doc.id)
+
     claimed_log_id = _claim_document_for_processing(
         db_factory=db_factory,
         fund=fund,
@@ -275,6 +298,7 @@ async def _process_single_document(
         reference_ym=reference_ym,
         dedup_fund_name=dedup_fund_name,
         dedup_doc_type=dedup_doc_type,
+        document_hash=document_hash,
     )
     if claimed_log_id is None:
         # Outra run já processou (status terminal) — dedup hit clássico.
@@ -450,6 +474,12 @@ def _create_material_and_enqueue(
     return material_id, upload_id
 
 
+def _compute_document_hash(cnpj: str, fnet_document_id: int) -> str:
+    """sha256(cnpj|fnet_doc_id) — chave determinística do documento físico no FNET."""
+    payload = f"{(cnpj or '').strip()}|{int(fnet_document_id)}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _claim_document_for_processing(
     *,
     db_factory,
@@ -458,6 +488,7 @@ def _claim_document_for_processing(
     reference_ym: str,
     dedup_fund_name: str,
     dedup_doc_type: str,
+    document_hash: str,
 ) -> Optional[int]:
     """
     Tenta reservar (claim) o documento para processamento de forma atômica.
@@ -489,16 +520,19 @@ def _claim_document_for_processing(
         stmt = sql_text(
             """
             INSERT INTO fnet_sync_logs (
-                monitored_fund_id, fnet_document_id, fund_name, reference_month,
-                document_category, document_type, status, raw_metadata, created_at
+                monitored_fund_id, fnet_document_id, document_hash, fund_name,
+                reference_month, document_category, document_type, status,
+                raw_metadata, created_at
             ) VALUES (
-                :monitored_fund_id, :fnet_document_id, :fund_name, :reference_month,
-                :document_category, :document_type, 'processing', :raw_metadata, NOW()
+                :monitored_fund_id, :fnet_document_id, :document_hash, :fund_name,
+                :reference_month, :document_category, :document_type, 'processing',
+                :raw_metadata, NOW()
             )
             ON CONFLICT ON CONSTRAINT uq_fnet_sync_log_dedup
             DO UPDATE SET
                 status = 'processing',
                 fnet_document_id = EXCLUDED.fnet_document_id,
+                document_hash = EXCLUDED.document_hash,
                 monitored_fund_id = EXCLUDED.monitored_fund_id,
                 document_category = EXCLUDED.document_category,
                 error_message = NULL,
@@ -514,6 +548,7 @@ def _claim_document_for_processing(
             {
                 "monitored_fund_id": fund.id,
                 "fnet_document_id": doc.id,
+                "document_hash": document_hash,
                 "fund_name": dedup_fund_name,
                 "reference_month": reference_ym,
                 "document_category": doc.categoria_documento,
@@ -561,6 +596,65 @@ def _mark_log_downloaded(db_factory, log_id: int, material_id: int) -> None:
         logger.error(
             "[FNET-SYNC] Falha ao marcar log_id=%s como downloaded: %s: %s",
             log_id,
+            type(exc).__name__,
+            exc,
+        )
+    finally:
+        db.close()
+
+
+_FUND_LEVEL_FAILURE_TYPE = "__fund_level_failure__"
+
+
+def _persist_fund_level_failure(
+    db_factory, fund: FnetMonitoredFund, error_message: str
+) -> None:
+    """
+    Registra uma falha que aconteceu ANTES de termos um documento específico
+    (ex.: list_documents do FNET falhou para o fundo inteiro).
+
+    Usa UPSERT em (fund_name, current_month, '__fund_level_failure__') para
+    ser idempotente: múltiplas falhas no mesmo mês atualizam a mesma linha
+    com a mensagem mais recente, sem violar a UNIQUE.
+    """
+    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    db = db_factory()
+    try:
+        db.execute(
+            sql_text(
+                """
+                INSERT INTO fnet_sync_logs (
+                    monitored_fund_id, fnet_document_id, document_hash, fund_name,
+                    reference_month, document_category, document_type, status,
+                    error_message, created_at
+                ) VALUES (
+                    :monitored_fund_id, NULL, NULL, :fund_name,
+                    :reference_month, NULL, :document_type, 'failed',
+                    :error_message, NOW()
+                )
+                ON CONFLICT ON CONSTRAINT uq_fnet_sync_log_dedup
+                DO UPDATE SET
+                    status = 'failed',
+                    error_message = EXCLUDED.error_message,
+                    monitored_fund_id = EXCLUDED.monitored_fund_id,
+                    created_at = NOW()
+                """
+            ),
+            {
+                "monitored_fund_id": fund.id,
+                "fund_name": fund.fund_name.strip(),
+                "reference_month": current_month,
+                "document_type": _FUND_LEVEL_FAILURE_TYPE,
+                "error_message": (error_message or "")[:2000],
+            },
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "[FNET-SYNC] Falha ao persistir log de erro no nível do fundo "
+            "(fund_id=%s): %s: %s",
+            fund.id,
             type(exc).__name__,
             exc,
         )

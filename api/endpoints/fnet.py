@@ -165,6 +165,8 @@ def _serialize_log(log: FnetSyncLog) -> dict:
 @router.get("/monitored-funds")
 async def list_monitored_funds(
     is_active: Optional[bool] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -172,8 +174,19 @@ async def list_monitored_funds(
     q = db.query(FnetMonitoredFund)
     if is_active is not None:
         q = q.filter(FnetMonitoredFund.is_active.is_(is_active))
-    funds = q.order_by(FnetMonitoredFund.fund_name).all()
-    return {"funds": [_serialize_fund(f, db) for f in funds]}
+    total = q.count()
+    funds = (
+        q.order_by(FnetMonitoredFund.fund_name)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "funds": [_serialize_fund(f, db) for f in funds],
+    }
 
 
 @router.post("/monitored-funds", status_code=201)
@@ -282,10 +295,20 @@ async def delete_monitored_fund(
     if not fund:
         raise HTTPException(status_code=404, detail=f"Fundo monitorado id={fund_id} não encontrado.")
 
-    db.delete(fund)
+    # SOFT DELETE: preserva FnetSyncLog (cascade='all, delete-orphan' apagaria
+    # todo o histórico de sincronização — auditoria seria perdida).
+    # Para reativar, basta PATCH com is_active=true.
+    if not fund.is_active:
+        logger.info(
+            "[FNET] DELETE no-op: fundo id=%s ('%s') já estava inativo.",
+            fund_id,
+            fund.fund_name,
+        )
+        return None
+    fund.is_active = False
     db.commit()
     logger.info(
-        "[FNET] Fundo monitorado removido por user=%s: id=%s nome='%s'",
+        "[FNET] Fundo monitorado desativado (soft delete) por user=%s: id=%s nome='%s'",
         current_user.username,
         fund_id,
         fund.fund_name,
@@ -302,6 +325,11 @@ async def delete_monitored_fund(
 async def list_sync_logs(
     fund_id: Optional[int] = Query(default=None),
     status: Optional[str] = Query(default=None),
+    month: Optional[str] = Query(
+        default=None,
+        description="Filtra por mês de referência no formato YYYY-MM (ex.: '2026-05').",
+        pattern=r"^\d{4}-\d{2}$",
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -313,6 +341,8 @@ async def list_sync_logs(
         q = q.filter(FnetSyncLog.monitored_fund_id == fund_id)
     if status:
         q = q.filter(FnetSyncLog.status == status)
+    if month:
+        q = q.filter(FnetSyncLog.reference_month == month)
     total = q.count()
     logs = (
         q.order_by(FnetSyncLog.created_at.desc())

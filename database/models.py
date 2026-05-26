@@ -1835,7 +1835,11 @@ class FnetSyncLog(Base):
         nullable=False,
         index=True,
     )
-    fnet_document_id = Column(Integer, nullable=False, index=True)
+    fnet_document_id = Column(Integer, nullable=True, index=True)  # nullable: erros no nível do fundo
+    # Hash determinístico do documento — garante que o MESMO documento FNET
+    # nunca seja processado duas vezes, mesmo se cair em chaves semânticas
+    # diferentes. Computado como sha256("{cnpj}|{fnet_document_id}").
+    document_hash = Column(String(64), nullable=True, unique=True, index=True)
     # Nome do fundo usado para dedup — sempre o nome configurado no FnetMonitoredFund
     # (não o `descricaoFundo` retornado pelo FNET, que pode variar entre documentos).
     fund_name = Column(String(255), nullable=False, index=True)
@@ -1844,7 +1848,7 @@ class FnetSyncLog(Base):
     document_category = Column(String(100), nullable=True)
     document_type = Column(String(100), nullable=False)
     status = Column(String(30), nullable=False, default="downloaded", index=True)
-    # downloaded | uploaded | failed | skipped_duplicate
+    # downloaded | uploaded | failed | skipped_duplicate | processing
     material_id = Column(
         Integer,
         ForeignKey("materials.id", ondelete="SET NULL"),
@@ -1859,6 +1863,7 @@ class FnetSyncLog(Base):
     material = relationship("Material", foreign_keys=[material_id])
 
     __table_args__ = (
+        # Dedup semântico (sempre presente para docs e erros de fundo).
         UniqueConstraint(
             "fund_name",
             "reference_month",

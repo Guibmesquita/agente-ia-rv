@@ -1239,7 +1239,8 @@ def _apply_incremental_migrations():
         """CREATE TABLE IF NOT EXISTS fnet_sync_logs (
             id SERIAL PRIMARY KEY,
             monitored_fund_id INTEGER NOT NULL REFERENCES fnet_monitored_funds(id) ON DELETE CASCADE,
-            fnet_document_id INTEGER NOT NULL,
+            fnet_document_id INTEGER,
+            document_hash VARCHAR(64),
             fund_name VARCHAR(255) NOT NULL,
             reference_month VARCHAR(7) NOT NULL,
             document_category VARCHAR(100),
@@ -1251,6 +1252,10 @@ def _apply_incremental_migrations():
             created_at TIMESTAMPTZ DEFAULT NOW(),
             CONSTRAINT uq_fnet_sync_log_dedup UNIQUE (fund_name, reference_month, document_type)
         )""",
+        # Task #324 — adições idempotentes (caso a tabela já exista da rev anterior):
+        "ALTER TABLE fnet_sync_logs ADD COLUMN IF NOT EXISTS document_hash VARCHAR(64)",
+        "ALTER TABLE fnet_sync_logs ALTER COLUMN fnet_document_id DROP NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_fnet_sync_logs_document_hash ON fnet_sync_logs(document_hash) WHERE document_hash IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_monitored_fund_id ON fnet_sync_logs(monitored_fund_id)",
         "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_fnet_document_id ON fnet_sync_logs(fnet_document_id)",
         "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_fund_name ON fnet_sync_logs(fund_name)",
