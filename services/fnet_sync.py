@@ -170,7 +170,12 @@ async def sync_single_fund(
         cnpj=fund.cnpj,
     )
 
-    client = client or FnetClient()
+    # Proxy opcional para rotear toda a sync por um IP brasileiro (VPN/proxy
+    # residencial BR) quando o Cloudflare na frente do FNET geo-bloquear o
+    # IP do Railway. Configurado via env `FNET_HTTP_PROXY` — vazio/ausente
+    # mantém o comportamento histórico (conexão direta). Aceita schemes
+    # http/https/socks5; ex.: "http://user:pass@br-proxy.example.com:8080".
+    client = client or FnetClient(proxy=os.getenv("FNET_HTTP_PROXY") or None)
 
     # Tipos de documento configurados (ou default)
     target_types: list[str] = DEFAULT_DOCUMENT_TYPES
@@ -869,7 +874,9 @@ async def run_sync(
             run_result.finished_at = datetime.now(timezone.utc)
             return run_result
 
-        client = client or FnetClient()
+        # Proxy opcional via env `FNET_HTTP_PROXY` — ver comentário em
+        # sync_single_fund. Quando vazio/ausente, conexão direta (default).
+        client = client or FnetClient(proxy=os.getenv("FNET_HTTP_PROXY") or None)
 
         logger.info("[FNET-SYNC] Iniciando run para %d fundo(s) (lock adquirido)", len(funds))
         await _run_sync_inner(funds, client, db_factory, run_result)

@@ -196,10 +196,16 @@ class FnetClient:
         timeout: float = 30.0,
         max_retries: int = 3,
         retry_backoff: float = 1.5,
+        proxy: Optional[str] = None,
     ):
         self._timeout = timeout
         self._max_retries = max_retries
         self._retry_backoff = retry_backoff
+        # Proxy URL (ex.: "http://user:pass@br-proxy.example.com:8080") usado
+        # para rotear toda chamada FNET por um IP brasileiro quando o Railway
+        # estiver geo-bloqueado pelo Cloudflare da B3. Quando None, conexão
+        # direta (comportamento histórico). Aceita schemes http/https/socks5.
+        self._proxy = proxy or None
 
     @staticmethod
     def _format_br_date(d: date) -> str:
@@ -242,6 +248,7 @@ class FnetClient:
             timeout=self._timeout,
             headers=_DEFAULT_HEADERS,
             follow_redirects=True,
+            proxy=self._proxy,
         ) as http:
             csrf = await self._warm_session(http)
 
@@ -357,6 +364,7 @@ class FnetClient:
             timeout=self._timeout,
             headers=_DEFAULT_HEADERS,
             follow_redirects=True,
+            proxy=self._proxy,
         ) as http:
             csrf = await self._warm_session(http)
             response = await self._raw_get_with_retry(
