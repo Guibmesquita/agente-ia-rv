@@ -1,2 +1,3 @@
 - [httpx AsyncClient form-data bug](httpx-asyncclient-form-data.md) — `data=list[tuple]` on AsyncClient 0.26 raises confusing "sync request" RuntimeError; pre-urlencode and use `content=bytes`.
 - [FNET search ignora filtros server-side](fnet-search-quirks.md) — endpoint `pesquisarGerenciadorDocumentosCVMRequest` aceita `idFundo`/`cnpj` mas devolve documentos de TODOS os fundos; filtrar client-side por nome.
+- [FNET deploy/diagnose checklist](fnet-deploy-checklist.md) — quando bug FNET persiste em prod pós-deploy, sempre comparar `/api/fnet/version` (SHA) e usar `/api/fnet/diagnose/{id}` antes de mudar código.

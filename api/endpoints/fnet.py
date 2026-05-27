@@ -202,6 +202,13 @@ def _serialize_log(log: FnetSyncLog) -> dict:
         "status": log.status,
         "material_id": log.material_id,
         "error_message": log.error_message,
+        # Task #339: traceback técnico (Python format_exc) — pode ser longo.
+        # Só vem preenchido para status='failed'. UI exibe sob demanda no
+        # modal "Diagnóstico"; nas listagens padrão segue oculto.
+        "error_traceback": log.error_traceback,
+        # Task #339: UUID do run de sincronização que gravou esta linha.
+        # Permite ao frontend destacar "última tentativa" vs. histórico.
+        "run_id": log.run_id,
         "created_at": log.created_at.isoformat() if log.created_at else None,
     }
 
@@ -398,6 +405,10 @@ async def delete_monitored_fund(
 async def list_sync_logs(
     fund_id: Optional[int] = Query(default=None),
     status: Optional[str] = Query(default=None),
+    run_id: Optional[str] = Query(
+        default=None,
+        description="Filtra por UUID do run de sincronização (Task #339).",
+    ),
     month: Optional[str] = Query(
         default=None,
         description="Filtra por mês de referência no formato YYYY-MM (ex.: '2026-05').",
@@ -414,6 +425,8 @@ async def list_sync_logs(
         q = q.filter(FnetSyncLog.monitored_fund_id == fund_id)
     if status:
         q = q.filter(FnetSyncLog.status == status)
+    if run_id:
+        q = q.filter(FnetSyncLog.run_id == run_id)
     if month:
         q = q.filter(FnetSyncLog.reference_month == month)
     total = q.count()
@@ -429,6 +442,70 @@ async def list_sync_logs(
         "offset": offset,
         "logs": [_serialize_log(lg) for lg in logs],
     }
+
+
+# ----------------------------------------------------------------------------
+# Task #339: limpar falhas históricas. Operação destrutiva mas restrita —
+# só remove status='failed', exige fund_id e nunca toca em success/skipped.
+# ----------------------------------------------------------------------------
+@router.delete("/sync-log")
+async def delete_sync_logs(
+    fund_id: int = Query(..., description="Fundo monitorado alvo (obrigatório)."),
+    status: str = Query(
+        "failed",
+        description=(
+            "Status alvo. Por segurança, apenas 'failed' é aceito — "
+            "linhas de sucesso/pulado/pending nunca são apagadas aqui."
+        ),
+    ),
+    before: Optional[str] = Query(
+        default=None,
+        description=(
+            "ISO datetime opcional: apaga apenas linhas criadas ANTES "
+            "desse instante. Útil para limpar histórico antigo preservando "
+            "a tentativa mais recente."
+        ),
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin_or_gestao(current_user)
+    if status != "failed":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Apenas linhas com status='failed' podem ser apagadas. "
+                "Sucesso, pulado e pendente são preservados."
+            ),
+        )
+    fund = db.query(FnetMonitoredFund).filter(FnetMonitoredFund.id == fund_id).first()
+    if not fund:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Fundo monitorado id={fund_id} não encontrado.",
+        )
+
+    q = db.query(FnetSyncLog).filter(
+        FnetSyncLog.monitored_fund_id == fund_id,
+        FnetSyncLog.status == "failed",
+    )
+    if before:
+        try:
+            before_dt = datetime.fromisoformat(before.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parâmetro 'before' inválido: '{before}' não é ISO datetime.",
+            )
+        q = q.filter(FnetSyncLog.created_at < before_dt)
+
+    deleted = q.delete(synchronize_session=False)
+    db.commit()
+    logger.info(
+        "[FNET] Limpeza de histórico de falhas por user=%s: fund_id=%s before=%s removidos=%d",
+        current_user.username, fund_id, before, deleted,
+    )
+    return {"deleted": deleted, "fund_id": fund_id, "before": before}
 
 
 # ============================================================================
@@ -486,3 +563,286 @@ async def sync_now(
         )
 
     return result.to_dict()
+
+
+# ============================================================================
+# Task #339 — Auto-diagnóstico
+# ============================================================================
+# Dois endpoints novos para destravar Railway/produção quando o pipeline
+# FNET falha mas o usuário não tem acesso a logs:
+#   GET  /api/fnet/version           — hash dos módulos críticos + proxy status
+#   POST /api/fnet/diagnose/{id}     — dry-run de warm-up → download (sem
+#                                       persistir nada) com timeline pt-BR.
+# Ambos read-only do ponto de vista de dados (diagnose baixa o PDF mas
+# não cria Material). Restrito a admin/gestao_rv.
+# ============================================================================
+
+
+def _file_sha256(path: str) -> str:
+    """SHA-256 do arquivo no disco. Identifica o bytecode em produção."""
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError as exc:
+        return f"erro:{type(exc).__name__}"
+
+
+def _mask_proxy(url: Optional[str]) -> Optional[str]:
+    """Mascarar user:pass em URLs de proxy antes de devolver ao cliente."""
+    if not url:
+        return None
+    try:
+        from urllib.parse import urlparse, urlunparse
+        p = urlparse(url)
+        if p.username or p.password:
+            netloc = (p.hostname or "") + (f":{p.port}" if p.port else "")
+            netloc = f"***:***@{netloc}"
+            return urlunparse((p.scheme, netloc, p.path, p.params, p.query, p.fragment))
+        return url
+    except Exception:  # noqa: BLE001 — diagnóstico não pode falhar por aux
+        return "<proxy mascarado: parse falhou>"
+
+
+@router.get("/version")
+async def fnet_version(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retorna a SHA do código FNET em execução. Diagnóstico crítico para
+    Railway/produção: se o bytecode estiver cacheado e o deploy não tiver
+    surtido efeito, o SHA aqui será o do código ANTIGO. Comparar com o SHA
+    no repositório local antes de abrir bug.
+
+    Inclui também o status do proxy opcional (URL mascarada) — útil para
+    confirmar se `FNET_HTTP_PROXY` está realmente aplicado em produção.
+    """
+    _require_admin_or_gestao(current_user)
+    import os as _os
+    base = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    # api/endpoints/fnet.py → sobe 2 níveis até a raiz do projeto.
+    project_root = _os.path.dirname(base)
+    files = {
+        "services/fnet_client.py": _os.path.join(project_root, "services", "fnet_client.py"),
+        "services/fnet_sync.py": _os.path.join(project_root, "services", "fnet_sync.py"),
+        "api/endpoints/fnet.py": _os.path.join(project_root, "api", "endpoints", "fnet.py"),
+    }
+    return {
+        "task_baseline": "339",
+        "file_hashes": {name: _file_sha256(p) for name, p in files.items()},
+        "fnet_http_proxy": _mask_proxy(_os.getenv("FNET_HTTP_PROXY") or None),
+        "fnet_http_proxy_configured": bool(_os.getenv("FNET_HTTP_PROXY")),
+    }
+
+
+@router.post("/diagnose/{fund_id}")
+async def diagnose_fund(
+    fund_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Dry-run completo do pipeline FNET para um fundo monitorado, etapa a etapa:
+      1. warm-up de sessão (cookies + CSRF)
+      2. autocomplete `listarFundos` → idFundo
+      3. search `pesquisarGerenciadorDocumentosDados`
+      4. download do PDF do 1º documento (se houver), só em memória
+      5. simulação do estágio Material/Upload sem persistir
+
+    Retorna uma timeline em pt-BR com `step`, `status` (ok/aviso/erro),
+    `elapsed_ms`, mensagem amigável e diagnóstico técnico curto. NÃO
+    grava nada no banco e NÃO interfere com a sincronização agendada.
+    """
+    _require_admin_or_gestao(current_user)
+    from services.fnet_client import (
+        FnetClient,
+        FnetClientError,
+        FnetFundNotFoundError,
+    )
+    from services.fnet_sync import _current_month_window, _format_cnpj_br
+    import os as _os
+    import time as _time
+
+    fund = db.query(FnetMonitoredFund).filter(FnetMonitoredFund.id == fund_id).first()
+    if not fund:
+        raise HTTPException(status_code=404, detail=f"Fundo id={fund_id} não encontrado.")
+
+    timeline: list[dict] = []
+
+    def _step(name: str, status: str, msg: str, started: float, technical: str = "") -> None:
+        timeline.append({
+            "step": name,
+            "status": status,
+            "elapsed_ms": int((_time.monotonic() - started) * 1000),
+            "message": msg,
+            "technical": technical[:1000],
+        })
+
+    client = FnetClient(proxy=_os.getenv("FNET_HTTP_PROXY") or None, max_retries=2)
+    start_date, end_date = _current_month_window()
+    cnpj_formatted = _format_cnpj_br(fund.cnpj)
+    overall_ok = True
+    summary = "Pipeline FNET funcionando para este fundo."
+
+    # Etapa 1 + 2 + 3 estão acopladas em list_documents — o client cuida
+    # do warm-up sob demanda. Medimos como um único bloco mas reportamos
+    # cada falha com a mensagem amigável correspondente.
+    t0 = _time.monotonic()
+    try:
+        list_result = await client.list_documents(
+            cnpj=cnpj_formatted,
+            date_start=start_date,
+            date_end=end_date,
+            tipo_fundo=int(fund.tipo_fundo or 1),
+            cached_internal_id=fund.fnet_internal_id,
+            cached_canonical_name=fund.fnet_canonical_name,
+        )
+        if not isinstance(list_result, tuple) or len(list_result) != 3:
+            _step(
+                "listar_documentos", "erro",
+                "FnetClient.list_documents devolveu contrato inválido — "
+                "regressão no client. Verifique o SHA em /api/fnet/version.",
+                t0,
+                f"esperado 3-tupla, recebido {type(list_result).__name__}",
+            )
+            return {
+                "fund_id": fund.id, "fund_name": fund.fund_name,
+                "overall_status": "erro", "summary": "Regressão no contrato do client.",
+                "timeline": timeline,
+            }
+        documents, id_fundo, canonical = list_result
+        _step(
+            "listar_documentos", "ok",
+            f"FNET respondeu OK: {len(documents)} documento(s) no período "
+            f"{start_date:%d/%m/%Y}–{end_date:%d/%m/%Y} (idFundo={id_fundo}).",
+            t0,
+            f"canonical='{canonical[:80]}'",
+        )
+    except FnetFundNotFoundError as exc:
+        _step(
+            "listar_documentos", "erro",
+            f"Fundo não encontrado no autocomplete da B3 (CNPJ {cnpj_formatted}). "
+            "Verifique se o CNPJ está correto e se a B3 já catalogou esse fundo.",
+            t0, f"{type(exc).__name__}: {exc}",
+        )
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "erro",
+            "summary": "CNPJ não localizado pelo FNET.",
+            "timeline": timeline,
+        }
+    except FnetClientError as exc:
+        status_code = getattr(exc, "status_code", None)
+        if status_code in (401, 403):
+            msg = (
+                f"FNET bloqueou a sessão (HTTP {status_code}). Provável "
+                "anti-bot/geo-block da Cloudflare. Tentar via FNET_HTTP_PROXY (BR)."
+            )
+        else:
+            msg = f"FNET indisponível ou retornou erro: {exc}"
+        _step("listar_documentos", "erro", msg, t0, f"{type(exc).__name__}: {exc}")
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "erro", "summary": msg,
+            "timeline": timeline,
+        }
+    except Exception as exc:  # noqa: BLE001
+        import traceback as _tb
+        _step(
+            "listar_documentos", "erro",
+            f"Erro inesperado ao listar documentos: {type(exc).__name__}: {exc}",
+            t0, _tb.format_exc()[:1000],
+        )
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "erro",
+            "summary": "Erro inesperado — veja traceback no último passo.",
+            "timeline": timeline,
+        }
+
+    # Etapa 4: download do 1º doc (se houver) — em memória, não grava nada.
+    if not documents:
+        summary = (
+            "FNET respondeu OK mas não há documentos neste mês. "
+            "Nada para baixar — normal no início de cada mês."
+        )
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "ok" if overall_ok else "aviso",
+            "summary": summary, "timeline": timeline,
+        }
+
+    first_doc = documents[0]
+    t1 = _time.monotonic()
+    try:
+        pdf_bytes, suggested_filename = await client.download_document(first_doc.id)
+        size_kb = len(pdf_bytes) // 1024
+        _step(
+            "baixar_pdf", "ok",
+            f"Download OK: '{suggested_filename}' ({size_kb} KB) — documento FNET "
+            f"id={first_doc.id} ({first_doc.tipo_documento} {first_doc.data_referencia}).",
+            t1,
+        )
+    except FnetClientError as exc:
+        overall_ok = False
+        status_code = getattr(exc, "status_code", None)
+        _step(
+            "baixar_pdf", "erro",
+            (
+                f"Falha ao baixar PDF do FNET (HTTP {status_code}). "
+                "Listagem funcionou mas o download não — pode ser bloqueio "
+                "anti-bot só na rota de download."
+            ),
+            t1, f"{type(exc).__name__}: {exc}",
+        )
+        summary = "Download bloqueado pelo FNET."
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "erro", "summary": summary, "timeline": timeline,
+        }
+    except Exception as exc:  # noqa: BLE001
+        import traceback as _tb
+        overall_ok = False
+        _step(
+            "baixar_pdf", "erro",
+            f"Erro inesperado no download: {type(exc).__name__}: {exc}",
+            t1, _tb.format_exc()[:1000],
+        )
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "erro",
+            "summary": "Erro inesperado no download.",
+            "timeline": timeline,
+        }
+
+    # Etapa 5: simulação do estágio Material — apenas validação que o helper
+    # consegue ser importado e que as dependências (produto, queue) estão OK.
+    t2 = _time.monotonic()
+    try:
+        from services.upload_queue import UploadQueue  # noqa: F401
+        # Apenas instanciamos para garantir que a queue está viva.
+        _ = UploadQueue.get_instance()
+        _step(
+            "validar_pipeline_material", "ok",
+            "Componentes do pipeline Material/UploadQueue carregaram OK. "
+            "Em uma sincronização real, este PDF seria persistido e enfileirado.",
+            t2,
+        )
+    except Exception as exc:  # noqa: BLE001
+        import traceback as _tb
+        overall_ok = False
+        _step(
+            "validar_pipeline_material", "erro",
+            f"Falha ao carregar pipeline Material: {type(exc).__name__}: {exc}",
+            t2, _tb.format_exc()[:1000],
+        )
+
+    return {
+        "fund_id": fund.id, "fund_name": fund.fund_name,
+        "overall_status": "ok" if overall_ok else "aviso",
+        "summary": summary if overall_ok else "Pipeline com avisos — veja timeline.",
+        "timeline": timeline,
+    }

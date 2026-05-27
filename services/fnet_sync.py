@@ -86,6 +86,11 @@ class SyncRunResult:
     docs_skipped_duplicate: int = 0
     per_fund: list[FundSyncResult] = field(default_factory=list)
     fatal_error: Optional[str] = None
+    # Task #339: UUID estável atribuído ao início do run_sync() e propagado
+    # a todos os logs criados/atualizados durante esse ciclo. Permite ao
+    # frontend isolar visualmente "última tentativa" do "histórico de falhas"
+    # e correlacionar tudo via /api/fnet/sync-log?run_id=...
+    run_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +102,7 @@ class SyncRunResult:
             "docs_skipped_duplicate": self.docs_skipped_duplicate,
             "per_fund": [f.to_dict() for f in self.per_fund],
             "fatal_error": self.fatal_error,
+            "run_id": self.run_id,
         }
 
 
@@ -159,6 +165,7 @@ async def sync_single_fund(
     fund: FnetMonitoredFund,
     client: Optional[FnetClient] = None,
     db_factory=SessionLocal,
+    run_id: Optional[str] = None,
 ) -> FundSyncResult:
     """
     Sincroniza um único fundo monitorado. Cada documento é processado em sua
@@ -252,7 +259,11 @@ async def sync_single_fund(
         # Persiste log de falha no NÍVEL DO FUNDO para auditabilidade (ex.:
         # timeouts, CNPJ inválido, FNET fora do ar). Idempotente por mês via
         # UPSERT em (fund_name, reference_month, document_type=__fund_level__).
-        _persist_fund_level_failure(db_factory, fund, msg)
+        import traceback as _tb
+        _persist_fund_level_failure(
+            db_factory, fund, msg,
+            run_id=run_id, traceback_text=_tb.format_exc(),
+        )
         return result
     except Exception as exc:
         # Defensive: erros inesperados ao listar (ex.: parse falhou) também
@@ -263,7 +274,11 @@ async def sync_single_fund(
         )
         logger.exception("[FNET-SYNC] %s", msg)
         result.errors.append(msg)
-        _persist_fund_level_failure(db_factory, fund, msg)
+        import traceback as _tb
+        _persist_fund_level_failure(
+            db_factory, fund, msg,
+            run_id=run_id, traceback_text=_tb.format_exc(),
+        )
         return result
 
     # 1.b) Refresh do cache do autocomplete `listarFundos` quando os valores
@@ -295,6 +310,7 @@ async def sync_single_fund(
                 client=client,
                 result=result,
                 db_factory=db_factory,
+                run_id=run_id,
             )
         except Exception as exc:
             # Salvaguarda final: _process_single_document gerencia seus
@@ -321,6 +337,7 @@ async def _process_single_document(
     client: FnetClient,
     result: FundSyncResult,
     db_factory,
+    run_id: Optional[str] = None,
 ) -> None:
     reference_ym = doc.reference_month_ym()
     if not reference_ym:
@@ -358,6 +375,7 @@ async def _process_single_document(
         dedup_fund_name=dedup_fund_name,
         dedup_doc_type=dedup_doc_type,
         document_hash=document_hash,
+        run_id=run_id,
     )
     if claimed_log_id is None:
         # Outra run já processou (status terminal) — dedup hit clássico.
@@ -394,10 +412,19 @@ async def _process_single_document(
         logger.exception("[FNET-SYNC] %s", msg)
         result.errors.append(msg)
         result.docs_failed += 1
-        _mark_log_failed(db_factory, claimed_log_id, msg)
+        import traceback as _tb
+        _mark_log_failed(
+            db_factory, claimed_log_id, msg,
+            traceback_text=_tb.format_exc(),
+        )
         return
 
-    # 3.c) Criar Material + MaterialFile + enfileirar no UploadQueue
+    # 3.c) Criar Material + MaterialFile + enfileirar no UploadQueue.
+    # Task #339 hardening: o helper agora é idempotente por file_hash —
+    # se rodar duas vezes com o mesmo PDF, devolve o mesmo material_id
+    # sem duplicar Material/MaterialFile, e captura QUALQUER exceção
+    # (incluindo FK/constraint do DB) para que o pipeline não morra
+    # silenciosamente em meio ao loop de fundos.
     try:
         material_id, upload_id = await asyncio.to_thread(
             _create_material_and_enqueue,
@@ -410,13 +437,17 @@ async def _process_single_document(
         )
     except Exception as exc:
         msg = (
-            f"Falha ao criar Material/enqueue para doc FNET id={doc.id}: "
-            f"{type(exc).__name__}: {exc}"
+            f"Falha ao criar Material/enqueue para doc FNET id={doc.id} "
+            f"({dedup_doc_type} {reference_ym}): {type(exc).__name__}: {exc}"
         )
         logger.exception("[FNET-SYNC] %s", msg)
         result.errors.append(msg)
         result.docs_failed += 1
-        _mark_log_failed(db_factory, claimed_log_id, msg)
+        import traceback as _tb
+        _mark_log_failed(
+            db_factory, claimed_log_id, msg,
+            traceback_text=_tb.format_exc(),
+        )
         return
 
     # 3.d) Sucesso — promove o claim a 'success' com material_id
@@ -446,6 +477,13 @@ def _create_material_and_enqueue(
     Executado em thread separada (DB sync + filesystem I/O). Cria o Material,
     salva o MaterialFile, persiste o PDF em uploads/materials/ e adiciona um
     item à UploadQueue. Retorna (material_id, upload_id).
+
+    Task #339 — idempotência por `file_hash`: se já existe um `Material` com
+    o mesmo hash do PDF (mesmo arquivo, ex.: rodada anterior crashou DEPOIS
+    de salvar o Material mas ANTES de marcar success no log), devolvemos o
+    `material_id` existente em vez de criar duplicata. Isso fecha a janela
+    em que `_mark_log_failed` cobria erros transitórios mas o Material já
+    havia sido criado, e evita ruído de "phantom materials" idênticos.
     """
     # Imports tardios para evitar ciclos durante o startup do app.
     from api.endpoints.products import (
@@ -488,6 +526,28 @@ def _create_material_and_enqueue(
         import hashlib
 
         file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+        # Idempotência (Task #339): se já existe Material com este file_hash,
+        # apenas re-enfileira no UploadQueue (caso o item tenha sumido) sem
+        # criar um segundo Material idêntico — evita "duplicate key"/lixo
+        # acumulado quando um run anterior falhou após criar o Material.
+        existing = (
+            db.query(Material)
+            .filter(Material.file_hash == file_hash)
+            .filter(Material.file_hash.isnot(None))
+            .first()
+        )
+        if existing is not None:
+            logger.info(
+                "[FNET-SYNC] Idempotência file_hash: Material #%s já existe "
+                "para doc FNET id=%s (%s %s) — reutilizando.",
+                existing.id, doc.id, dedup_doc_type, reference_ym,
+            )
+            material_id = existing.id
+            # Não enfileiramos novamente: se o Material existe, o pipeline
+            # já cuidou (ou está cuidando) dele. Caller registra success
+            # no log apontando para esse material_id.
+            return material_id, ""
 
         material = Material(
             product_id=product_id,
@@ -559,6 +619,7 @@ def _claim_document_for_processing(
     dedup_fund_name: str,
     dedup_doc_type: str,
     document_hash: str,
+    run_id: Optional[str] = None,
 ) -> Optional[int]:
     """
     Tenta reservar (claim) o documento para processamento de forma atômica.
@@ -594,11 +655,11 @@ def _claim_document_for_processing(
             INSERT INTO fnet_sync_logs (
                 monitored_fund_id, fnet_document_id, document_hash, fund_name,
                 reference_month, document_category, document_type, status,
-                raw_metadata, created_at
+                raw_metadata, run_id, error_traceback, created_at
             ) VALUES (
                 :monitored_fund_id, :fnet_document_id, :document_hash, :fund_name,
                 :reference_month, :document_category, :document_type, 'pending',
-                :raw_metadata, NOW()
+                :raw_metadata, :run_id, NULL, NOW()
             )
             ON CONFLICT ON CONSTRAINT uq_fnet_sync_log_dedup
             DO UPDATE SET
@@ -608,6 +669,8 @@ def _claim_document_for_processing(
                 monitored_fund_id = EXCLUDED.monitored_fund_id,
                 document_category = EXCLUDED.document_category,
                 error_message = NULL,
+                error_traceback = NULL,
+                run_id = EXCLUDED.run_id,
                 raw_metadata = EXCLUDED.raw_metadata
             WHERE fnet_sync_logs.status = 'failed'
                OR (fnet_sync_logs.status = 'pending'
@@ -626,6 +689,7 @@ def _claim_document_for_processing(
                 "document_category": doc.categoria_documento,
                 "document_type": dedup_doc_type,
                 "raw_metadata": raw_meta,
+                "run_id": run_id,
             },
         )
         row = result.first()
@@ -679,7 +743,12 @@ _FUND_LEVEL_FAILURE_TYPE = "__fund_level_failure__"
 
 
 def _persist_fund_level_failure(
-    db_factory, fund: FnetMonitoredFund, error_message: str
+    db_factory,
+    fund: FnetMonitoredFund,
+    error_message: str,
+    *,
+    run_id: Optional[str] = None,
+    traceback_text: Optional[str] = None,
 ) -> None:
     """
     Registra uma falha que aconteceu ANTES de termos um documento específico
@@ -698,16 +767,21 @@ def _persist_fund_level_failure(
                 INSERT INTO fnet_sync_logs (
                     monitored_fund_id, fnet_document_id, document_hash, fund_name,
                     reference_month, document_category, document_type, status,
-                    error_message, created_at
+                    error_message, error_traceback, run_id, created_at
                 ) VALUES (
                     :monitored_fund_id, NULL, NULL, :fund_name,
                     :reference_month, NULL, :document_type, 'failed',
-                    :error_message, NOW()
+                    :error_message, :traceback_text, :run_id, NOW()
                 )
                 ON CONFLICT ON CONSTRAINT uq_fnet_sync_log_dedup
                 DO UPDATE SET
                     status = 'failed',
                     error_message = EXCLUDED.error_message,
+                    -- Preserva traceback/run_id antigos quando a nova falha
+                    -- vier sem essas pistas (ex.: fallback genérico). Diagnóstico
+                    -- útil de uma tentativa anterior nunca é apagado por engano.
+                    error_traceback = COALESCE(EXCLUDED.error_traceback, fnet_sync_logs.error_traceback),
+                    run_id = COALESCE(EXCLUDED.run_id, fnet_sync_logs.run_id),
                     monitored_fund_id = EXCLUDED.monitored_fund_id,
                     created_at = NOW()
                 """
@@ -718,6 +792,8 @@ def _persist_fund_level_failure(
                 "reference_month": current_month,
                 "document_type": _FUND_LEVEL_FAILURE_TYPE,
                 "error_message": (error_message or "")[:2000],
+                "traceback_text": (traceback_text or "")[:8000] or None,
+                "run_id": run_id,
             },
         )
         db.commit()
@@ -791,8 +867,20 @@ def _update_fnet_cache(
         db.close()
 
 
-def _mark_log_failed(db_factory, log_id: int, error_message: str) -> None:
-    """Promove um log 'pending' para 'failed' preservando a UNIQUE row."""
+def _mark_log_failed(
+    db_factory,
+    log_id: int,
+    error_message: str,
+    *,
+    traceback_text: Optional[str] = None,
+) -> None:
+    """
+    Promove um log 'pending' para 'failed' preservando a UNIQUE row.
+
+    Task #339: agora persiste o traceback completo (truncado a 8KB) em
+    `error_traceback` — exibido sob demanda no modal de diagnóstico do
+    frontend, sem poluir o histórico/log padrão.
+    """
     db = db_factory()
     try:
         db.execute(
@@ -800,11 +888,16 @@ def _mark_log_failed(db_factory, log_id: int, error_message: str) -> None:
                 """
                 UPDATE fnet_sync_logs
                    SET status = 'failed',
-                       error_message = :error_message
+                       error_message = :error_message,
+                       error_traceback = COALESCE(:traceback_text, error_traceback)
                  WHERE id = :id
                 """
             ),
-            {"error_message": (error_message or "")[:2000], "id": log_id},
+            {
+                "error_message": (error_message or "")[:2000],
+                "traceback_text": (traceback_text or "")[:8000] or None,
+                "id": log_id,
+            },
         )
         db.commit()
     except Exception as exc:
@@ -842,7 +935,12 @@ async def run_sync(
        `_claim_document_for_processing`.
     """
     started_at = datetime.now(timezone.utc)
-    run_result = SyncRunResult(started_at=started_at)
+    # Task #339: UUID estável para todo o ciclo. Propagado para cada log
+    # criado/atualizado dentro deste run, permite ao usuário ver no UI
+    # quais linhas vieram do clique "Sincronizar agora" mais recente
+    # (separadas do "histórico de falhas" antigas).
+    run_uuid = str(uuid.uuid4())
+    run_result = SyncRunResult(started_at=started_at, run_id=run_uuid)
 
     # 1) Tenta adquirir o lock global. Mantemos uma sessão dedicada aberta
     #    durante todo o run; pg_advisory_unlock é chamado no finally.
@@ -892,7 +990,10 @@ async def run_sync(
         # sync_single_fund. Quando vazio/ausente, conexão direta (default).
         client = client or FnetClient(proxy=os.getenv("FNET_HTTP_PROXY") or None)
 
-        logger.info("[FNET-SYNC] Iniciando run para %d fundo(s) (lock adquirido)", len(funds))
+        logger.info(
+            "[FNET-SYNC] Iniciando run %s para %d fundo(s) (lock adquirido)",
+            run_uuid, len(funds),
+        )
         await _run_sync_inner(funds, client, db_factory, run_result)
         run_result.finished_at = datetime.now(timezone.utc)
         logger.info(
@@ -925,7 +1026,10 @@ async def _run_sync_inner(
     """Loop interno (sem lock/setup) — extraído para clareza do mutex."""
     for fund in funds:
         try:
-            fund_result = await sync_single_fund(fund, client=client, db_factory=db_factory)
+            fund_result = await sync_single_fund(
+                fund, client=client, db_factory=db_factory,
+                run_id=run_result.run_id,
+            )
         except Exception as exc:
             fund_result = FundSyncResult(
                 fund_id=fund.id, fund_name=fund.fund_name, cnpj=fund.cnpj

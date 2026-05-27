@@ -1866,6 +1866,15 @@ class FnetSyncLog(Base):
         index=True,
     )
     error_message = Column(Text, nullable=True)
+    # Task #339: traceback completo (apenas para status='failed') — separado
+    # de error_message porque este é a string curta auditável; o traceback
+    # é técnico, exibido só sob demanda no diagnóstico.
+    error_traceback = Column(Text, nullable=True)
+    # Task #339: UUID do run de sincronização que produziu este log. Permite
+    # ao usuário separar "última tentativa" de "histórico de falhas" na UI
+    # e correlacionar todos os logs (success/failed/skipped) de um mesmo
+    # disparo do botão "Sincronizar agora".
+    run_id = Column(String(36), nullable=True, index=True)
     raw_metadata = Column(Text, nullable=True)  # JSON do payload FNET
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

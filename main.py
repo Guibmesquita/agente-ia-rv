@@ -1279,6 +1279,12 @@ def _apply_incremental_migrations():
         # Task #330 — suporte multi-tipo (FII/FIP/FIDC/ETF) no auto-sync.
         # Default 1 (FII) preserva comportamento dos fundos cadastrados antes.
         "ALTER TABLE fnet_monitored_funds ADD COLUMN IF NOT EXISTS tipo_fundo INTEGER NOT NULL DEFAULT 1",
+        # Task #339 — auto-diagnóstico: cada log carrega o UUID do run que o
+        # produziu (separa "última tentativa" do "histórico" na UI) e o
+        # traceback técnico quando falha (sob demanda no modal de diagnóstico).
+        "ALTER TABLE fnet_sync_logs ADD COLUMN IF NOT EXISTS run_id VARCHAR(36)",
+        "ALTER TABLE fnet_sync_logs ADD COLUMN IF NOT EXISTS error_traceback TEXT",
+        "CREATE INDEX IF NOT EXISTS ix_fnet_sync_logs_run_id ON fnet_sync_logs(run_id)",
     ]
     db = SessionLocal()
     ok = 0
