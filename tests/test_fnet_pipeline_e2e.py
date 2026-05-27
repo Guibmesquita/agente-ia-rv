@@ -430,6 +430,16 @@ def test_diagnose_probes_mirror_real_client_calls():
     src = inspect.getsource(fnet_mod.diagnose_fund)
     # CSRFToken deve ser anexado aos requests XHR (autocomplete + search).
     assert '"CSRFToken"' in src, "Probes XHR devem incluir CSRFToken header"
+    # Bug #343: params obrigatórios do autocomplete (sem eles FNET retorna 500).
+    for required_param in ("page", "idAdm", "paraCerts"):
+        assert f'"{required_param}"' in src, (
+            f"Probe de autocomplete deve enviar param '{required_param}' "
+            "— sem ele o FNET retorna HTTP 500"
+        )
+    # Bug #343: parsing da resposta — FNET retorna dict com "results", não lista.
+    assert '"results"' in src or ".get(\"results\")" in src, (
+        "Parsing do autocomplete deve ler payload.get('results'), não json() direto"
+    )
     # Params do search devem espelhar _fetch_documents_paged.
     for required_param in ("tipoFundo", "cnpjFundo", "paginaCertificados", "isSession"):
         assert f'"{required_param}"' in src, (

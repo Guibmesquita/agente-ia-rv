@@ -836,9 +836,14 @@ async def diagnose_fund(
                 r2 = await http_client.get(
                     FNET_LIST_FUNDS_URL,
                     headers=xhr_headers,
+                    # Params alinhados a FnetClient._resolve_fund — o FNET
+                    # exige page, idAdm e paraCerts e retorna HTTP 500 sem eles.
                     params={
                         "term": cnpj_digits,
+                        "page": 1,
                         "idTipoFundo": int(fund.tipo_fundo or 1),
+                        "idAdm": 0,
+                        "paraCerts": "false",
                     },
                 )
                 diag2 = _http_diag(r2)
@@ -851,10 +856,18 @@ async def diagnose_fund(
                         "overall_status": "erro", "summary": msg, "timeline": timeline,
                     }
                 try:
-                    matches = r2.json()
+                    # FNET retorna {"results": [...], "total": N} — não uma
+                    # lista plana. Lemos .get("results") como o _resolve_fund
+                    # real faz. Fallback para lista direta por robustez.
+                    raw_json = r2.json()
+                    results = (
+                        raw_json.get("results") or []
+                        if isinstance(raw_json, dict)
+                        else raw_json or []
+                    )
                 except Exception:  # noqa: BLE001
-                    matches = []
-                if not matches:
+                    results = []
+                if not results:
                     overall_ok = False
                     msg = (
                         f"CNPJ {cnpj_formatted} não encontrado no autocomplete "
@@ -868,13 +881,13 @@ async def diagnose_fund(
                         "summary": "CNPJ não localizado pelo FNET.",
                         "timeline": timeline,
                     }
-                first = matches[0] if isinstance(matches, list) else {}
+                first = results[0] if results else {}
                 id_fundo = int(first.get("id") or 0) or None
                 canonical_name = str(first.get("text") or "")[:120]
                 _step(
                     "autocomplete_fundo", "ok",
                     f"Fundo resolvido: '{canonical_name}' (idFundo={id_fundo}). "
-                    f"Total de candidatos: {len(matches)}.",
+                    f"Total de candidatos: {len(results)}.",
                     t1, http=diag2,
                 )
             except httpx.HTTPError as exc:
