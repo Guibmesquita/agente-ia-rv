@@ -184,6 +184,10 @@ def test_create_material_reuses_existing_by_file_hash():
     existing_material = MagicMock()
     existing_material.id = 7777
     existing_material.file_hash = expected_hash
+    # Task #339 — Material já processado (terminal=success) é o único
+    # caso em que pulamos re-enqueue. Outros estados (pending/failed/
+    # processing) caem no caminho de re-enfileiramento defensivo.
+    existing_material.processing_status = "success"
 
     fake_db = MagicMock()
     query = fake_db.query.return_value
@@ -269,3 +273,186 @@ def test_mask_proxy_hides_credentials():
     assert "user" not in masked, "Usuário NÃO pode vazar"
     assert "proxy.br:8080" in masked, "Host deve permanecer visível"
     assert "***" in masked, "Deve sinalizar mascaramento"
+
+
+# ----------------------------------------------------------------------------
+# Task #339 — correções pós code-review
+# ----------------------------------------------------------------------------
+def test_version_endpoint_payload_has_git_sha_and_build_timestamp():
+    """Validator exigiu git short SHA + build timestamp em /version."""
+    from api.endpoints import fnet as fnet_mod
+
+    # _BUILD_TIMESTAMP_MS é capturado no import → existe e é > 0
+    assert isinstance(fnet_mod._BUILD_TIMESTAMP_MS, int)
+    assert fnet_mod._BUILD_TIMESTAMP_MS > 1_700_000_000_000
+
+    # _git_short_sha aceita ausência de .git/ sem crash
+    sha = fnet_mod._git_short_sha()
+    assert sha is None or (isinstance(sha, str) and 7 <= len(sha) <= 40), (
+        f"Esperado None ou string de 7-40 chars, recebi {sha!r}"
+    )
+
+
+def test_idempotency_reenqueues_non_terminal_material():
+    """
+    Achado bloqueante do architect: Material existente mas NÃO processado
+    (status=pending/failed/processing) deve ser RE-ENFILEIRADO em vez de
+    marcado como sucesso silencioso. Sem isso, retries reportavam success
+    enquanto o Material ficava preso.
+    """
+    from services import fnet_sync
+
+    pdf_bytes = b"%PDF-1.4 reenqueue test\n%%EOF"
+    expected_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+    existing_material = MagicMock()
+    existing_material.id = 8888
+    existing_material.file_hash = expected_hash
+    existing_material.processing_status = "pending"  # ← NÃO terminal
+    existing_material.name = "Reenqueue Test"
+    existing_material.material_type = "outro"
+    existing_material.product_id = 42
+
+    fake_db = MagicMock()
+    fake_db.query.return_value.filter.return_value.filter.return_value.first.return_value = existing_material
+
+    fund = MagicMock()
+    fund.id = 1
+    fund.fund_name = "RIZA TERRAX FII"
+    fund.product_id = 42
+    fund.ticker = None
+    fund.cnpj = "12.345.678/0001-90"
+
+    doc = MagicMock()
+    doc.id = 999
+    doc.tipo_documento = "Informe Mensal"
+    doc.data_referencia = "2026-05-01"
+
+    fake_queue = MagicMock()
+
+    with patch.object(fnet_sync, "SessionLocal", return_value=fake_db), \
+         patch("api.endpoints.products._save_file_to_db"), \
+         patch("api.endpoints.products.find_or_create_product_from_name"), \
+         patch("services.upload_queue.UploadQueue.get_instance", return_value=fake_queue):
+        material_id, upload_id = fnet_sync._create_material_and_enqueue(
+            fund=fund,
+            doc=doc,
+            reference_ym="2026-05",
+            dedup_doc_type="Informe Mensal",
+            pdf_bytes=pdf_bytes,
+            suggested_filename="riza-terrax.pdf",
+        )
+
+    assert material_id == 8888
+    assert upload_id != "", (
+        "Material NÃO terminal precisa de upload_id novo (re-enfileiramento)"
+    )
+    assert fake_queue.add.called, "UploadQueue.add deve ser chamado no re-enqueue"
+    # Status do Material foi resetado para PENDING.
+    assert existing_material.processing_status == "pending"
+
+
+def test_reenqueue_atomic_rollback_on_commit_failure():
+    """
+    Achado bloqueante #2 do architect: se db.commit() falhar no caminho
+    de re-enqueue, o arquivo temporário e o item na queue devem ser
+    revertidos. Sem isto, status='pending' podia persistir sem item
+    correspondente na fila.
+    """
+    from services import fnet_sync
+
+    pdf_bytes = b"%PDF-1.4 atomic rollback test\n%%EOF"
+
+    existing_material = MagicMock()
+    existing_material.id = 5555
+    existing_material.file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    existing_material.processing_status = "failed"  # NÃO terminal → re-enqueue
+    existing_material.name = "Atomic Test"
+    existing_material.material_type = "outro"
+    existing_material.product_id = 1
+
+    fake_db = MagicMock()
+    fake_db.query.return_value.filter.return_value.filter.return_value.first.return_value = existing_material
+    fake_db.commit.side_effect = RuntimeError("simulated commit failure")
+
+    fund = MagicMock()
+    fund.id = 1
+    fund.fund_name = "Test Fund"
+    fund.product_id = 1
+    fund.ticker = None
+    fund.cnpj = "00.000.000/0000-00"
+
+    doc = MagicMock()
+    doc.id = 1
+    doc.tipo_documento = "Informe Mensal"
+    doc.data_referencia = "2026-05-01"
+
+    fake_queue = MagicMock()
+    captured_paths: list[str] = []
+
+    real_remove = os.remove
+    removed_files: list[str] = []
+
+    def _spy_remove(p):
+        removed_files.append(p)
+        if os.path.exists(p):
+            real_remove(p)
+
+    with patch.object(fnet_sync, "SessionLocal", return_value=fake_db), \
+         patch("services.upload_queue.UploadQueue.get_instance", return_value=fake_queue), \
+         patch("services.fnet_sync.os.remove", side_effect=_spy_remove):
+        with pytest.raises(RuntimeError, match="simulated commit failure"):
+            fnet_sync._create_material_and_enqueue(
+                fund=fund, doc=doc, reference_ym="2026-05",
+                dedup_doc_type="Informe Mensal",
+                pdf_bytes=pdf_bytes, suggested_filename="test.pdf",
+            )
+
+    # Rollback do DB foi tentado.
+    assert fake_db.rollback.called, "rollback() obrigatório após commit fail"
+    # Arquivo temporário foi removido.
+    assert removed_files, "PDF temporário deve ser removido em rollback"
+    assert all(p.endswith(".pdf") for p in removed_files)
+    # Item foi removido da queue (best-effort).
+    assert fake_queue.add.called, "add() ocorreu antes do commit"
+    assert fake_queue.remove.called, "remove() deve ser tentado no rollback"
+
+
+def test_diagnose_probes_mirror_real_client_calls():
+    """
+    Achado bloqueante #3 do architect: os probes HTTP do /diagnose precisam
+    enviar CSRFToken e os mesmos params que FnetClient._fetch_documents_paged
+    envia (tipoFundo, cnpjFundo, paginaCertificados, isSession) — sem isso
+    o diagnóstico pode divergir do fluxo real (falso positivo/negativo).
+    """
+    from api.endpoints import fnet as fnet_mod
+
+    src = inspect.getsource(fnet_mod.diagnose_fund)
+    # CSRFToken deve ser anexado aos requests XHR (autocomplete + search).
+    assert '"CSRFToken"' in src, "Probes XHR devem incluir CSRFToken header"
+    # Params do search devem espelhar _fetch_documents_paged.
+    for required_param in ("tipoFundo", "cnpjFundo", "paginaCertificados", "isSession"):
+        assert f'"{required_param}"' in src, (
+            f"Probe de search deve enviar param '{required_param}' "
+            "para espelhar FnetClient._fetch_documents_paged"
+        )
+
+
+def test_diagnose_timeline_step_names_are_split():
+    """
+    Validator exigiu split de warmup/autocomplete/search em vez de bloco único.
+    Validamos por inspeção de fonte que as 3 etapas estão presentes (probe HTTP
+    explícito) + a etapa final `listar_documentos`.
+    """
+    from api.endpoints import fnet as fnet_mod
+
+    src = inspect.getsource(fnet_mod.diagnose_fund)
+    for step in ("warmup", "autocomplete_fundo", "search_endpoint", "listar_documentos"):
+        assert f'"{step}"' in src, f"Etapa '{step}' ausente na timeline do /diagnose"
+    # Diagnóstico HTTP estruturado (status/headers/body) é função nested
+    # dentro de diagnose_fund — validamos por presença no source.
+    assert "_http_diag" in src, "/diagnose deve emitir diagnóstico HTTP por etapa"
+    assert "body_excerpt" in src, "_http_diag deve incluir body_excerpt"
+    assert "_extract_diag_headers" in src, (
+        "/diagnose deve incluir headers CF-Ray/Server/cf-mitigated por etapa"
+    )

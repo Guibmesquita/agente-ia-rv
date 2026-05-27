@@ -538,16 +538,119 @@ def _create_material_and_enqueue(
             .first()
         )
         if existing is not None:
-            logger.info(
-                "[FNET-SYNC] Idempotência file_hash: Material #%s já existe "
-                "para doc FNET id=%s (%s %s) — reutilizando.",
-                existing.id, doc.id, dedup_doc_type, reference_ym,
-            )
             material_id = existing.id
-            # Não enfileiramos novamente: se o Material existe, o pipeline
-            # já cuidou (ou está cuidando) dele. Caller registra success
-            # no log apontando para esse material_id.
-            return material_id, ""
+            existing_status = (existing.processing_status or "").lower()
+            # Task #339 — correção do achado do architect:
+            # Material existente PROCESSADO (success) é seguro reutilizar
+            # sem re-enfileirar. Material PENDING/FAILED/PROCESSING pode
+            # estar órfão (run anterior crashou após criar Material mas
+            # antes do worker rodar) — re-enfileiramos defensivamente
+            # para garantir processamento eventual. Sem isso, retries
+            # marcavam log como success enquanto o Material ficava preso.
+            terminal_ok = existing_status in ("success",)
+            if terminal_ok:
+                logger.info(
+                    "[FNET-SYNC] Idempotência file_hash: Material #%s já "
+                    "processado (status=%s) para doc FNET id=%s (%s %s) — "
+                    "reutilizando sem re-enfileirar.",
+                    material_id, existing_status, doc.id,
+                    dedup_doc_type, reference_ym,
+                )
+                return material_id, ""
+            logger.warning(
+                "[FNET-SYNC] Idempotência file_hash: Material #%s existe mas "
+                "está em status=%s (não terminal). Re-enfileirando para "
+                "garantir processamento. doc FNET id=%s (%s %s).",
+                material_id, existing_status or "desconhecido", doc.id,
+                dedup_doc_type, reference_ym,
+            )
+            # Atomicidade (achado bloqueante do architect):
+            # 1) Escrever PDF em disco PRIMEIRO. Se falhar, abortamos sem
+            #    tocar no DB (estado preservado).
+            # 2) Adicionar à UploadQueue (in-memory). Se falhar, removemos
+            #    o arquivo temporário antes de propagar.
+            # 3) SÓ ENTÃO commitamos a transição de status. Se commit
+            #    falhar, removemos o item da queue + arquivo (rollback
+            #    completo). Sem isto, status='pending' podia persistir
+            #    sem item correspondente na fila.
+            unique_filename = f"{uuid.uuid4()}.pdf"
+            file_path = os.path.join(UPLOAD_DIR_QUEUE, unique_filename)
+            upload_id = str(uuid.uuid4())
+            # --- passo 1: arquivo ---
+            try:
+                with open(file_path, "wb") as f:
+                    f.write(pdf_bytes)
+            except OSError as exc:
+                logger.error(
+                    "[FNET-SYNC] Re-enqueue falhou ao escrever PDF em %s: %s",
+                    file_path, exc,
+                )
+                raise
+            queue_item = UploadQueueItem(
+                upload_id=upload_id,
+                file_path=file_path,
+                filename=suggested_filename,
+                material_id=material_id,
+                name=existing.name or _build_material_name(
+                    fund_name=fund.fund_name,
+                    tipo_documento=dedup_doc_type,
+                    reference_ym=reference_ym,
+                ),
+                user_id=None,
+                material_type=existing.material_type or "outro",
+                categories=[],
+                tags=["fnet_auto_sync", reference_ym, "reenqueue"],
+                valid_from=None,
+                valid_until=None,
+                selected_product_id=existing.product_id or fund.product_id,
+            )
+            queue = UploadQueue.get_instance()
+            # --- passo 2: queue ---
+            try:
+                queue.add(queue_item)
+            except Exception as exc:  # noqa: BLE001
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+                logger.error(
+                    "[FNET-SYNC] Re-enqueue falhou no UploadQueue.add: %s",
+                    exc,
+                )
+                raise
+            # --- passo 3: commit DB ---
+            try:
+                existing.processing_status = (
+                    ProcessingStatus.PENDING.value
+                    if hasattr(ProcessingStatus, "PENDING")
+                    else "pending"
+                )
+                db.add(existing)
+                db.commit()
+            except Exception as exc:  # noqa: BLE001
+                # Rollback completo: tirar da fila + apagar arquivo.
+                try:
+                    db.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    queue.remove(upload_id)  # type: ignore[attr-defined]
+                except Exception:  # noqa: BLE001
+                    # UploadQueue pode não expor remove() — best effort.
+                    logger.warning(
+                        "[FNET-SYNC] Não foi possível remover upload_id=%s "
+                        "do UploadQueue após falha no commit.", upload_id,
+                    )
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+                logger.error(
+                    "[FNET-SYNC] Re-enqueue: commit falhou, estado revertido. "
+                    "exc=%s", exc,
+                )
+                raise
+            return material_id, upload_id
 
         material = Material(
             product_id=product_id,

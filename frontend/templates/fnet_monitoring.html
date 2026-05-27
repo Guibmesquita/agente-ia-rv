@@ -913,11 +913,21 @@
             if (!badge) return;
             const shortHash = (v.file_hashes && v.file_hashes['services/fnet_sync.py'] || '')
                 .slice(0, 8) || '?';
-            badge.textContent = `fnet @${shortHash}`;
+            const gitSha = v.git_short_sha || shortHash;
+            badge.textContent = `fnet @${gitSha}`;
             const proxyLine = v.fnet_http_proxy_configured
                 ? `Proxy: ${v.fnet_http_proxy}`
                 : 'Proxy: (direto)';
-            const lines = ['Task baseline #' + v.task_baseline, proxyLine, '---'];
+            const buildTs = v.build_timestamp_ms
+                ? new Date(v.build_timestamp_ms).toISOString()
+                : '(desconhecido)';
+            const lines = [
+                'Task baseline #' + v.task_baseline,
+                'Git SHA: ' + (v.git_short_sha || '(sem .git/)'),
+                'Build/boot: ' + buildTs,
+                proxyLine,
+                '---',
+            ];
             Object.keys(v.file_hashes || {}).forEach(function(k) {
                 lines.push(`${k}: ${v.file_hashes[k].slice(0, 12)}…`);
             });
@@ -991,6 +1001,23 @@
                            <pre class="text-xs bg-gray-50 border border-gray-200 rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap">${escapeHtml(s.technical)}</pre>
                        </details>`
                     : '';
+                // Task #339: diagnóstico HTTP estruturado por etapa (status,
+                // CF-Ray/Server/cf-mitigated, body excerpt). Permite distinguir
+                // geo-block (CF) de problema do nosso código sem ler logs.
+                const httpDiag = s.http
+                    ? `<details class="mt-1">
+                           <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-800">HTTP ${s.http.status_code} — headers + body</summary>
+                           <div class="text-xs bg-gray-50 border border-gray-200 rounded p-2 mt-1 space-y-1">
+                               <div><strong>URL:</strong> ${escapeHtml(s.http.request_url || '')}</div>
+                               <div><strong>Headers de diagnóstico:</strong>
+                                   <pre class="whitespace-pre-wrap">${escapeHtml(JSON.stringify(s.http.headers || {}, null, 2))}</pre>
+                               </div>
+                               <div><strong>Body (300 chars):</strong>
+                                   <pre class="whitespace-pre-wrap break-all">${escapeHtml(s.http.body_excerpt || '')}</pre>
+                               </div>
+                           </div>
+                       </details>`
+                    : '';
                 return `
                     <div class="border-l-2 border-gray-200 pl-3 py-2">
                         <div class="flex items-center gap-2">
@@ -999,6 +1026,7 @@
                             <span class="text-xs text-gray-400">${s.elapsed_ms} ms</span>
                         </div>
                         <div class="text-sm text-gray-700 mt-1">${escapeHtml(s.message || '')}</div>
+                        ${httpDiag}
                         ${technical}
                     </div>
                 `;

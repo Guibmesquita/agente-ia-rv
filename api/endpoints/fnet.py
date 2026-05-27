@@ -591,6 +591,37 @@ def _file_sha256(path: str) -> str:
         return f"erro:{type(exc).__name__}"
 
 
+def _git_short_sha() -> Optional[str]:
+    """Lê `.git/HEAD` direto do disco — não depende do binário `git` no container.
+
+    Resolve refs simbólicos (ex.: `ref: refs/heads/main` → conteúdo de
+    `.git/refs/heads/main`). Devolve os 12 primeiros chars do SHA ou None.
+    Em containers de produção sem `.git/`, retorna None silenciosamente.
+    """
+    import os as _os
+    base = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    project_root = _os.path.dirname(base)
+    head_path = _os.path.join(project_root, ".git", "HEAD")
+    try:
+        with open(head_path, "r", encoding="utf-8") as f:
+            head = f.read().strip()
+        if head.startswith("ref:"):
+            ref = head.split(" ", 1)[1].strip()
+            ref_path = _os.path.join(project_root, ".git", ref)
+            with open(ref_path, "r", encoding="utf-8") as f:
+                return f.read().strip()[:12]
+        # detached HEAD — já é SHA puro
+        return head[:12] if head else None
+    except OSError:
+        return None
+
+
+# Timestamp de boot do processo (ms desde epoch). Capturado uma única
+# vez no import — diferencia containers reiniciados na mesma versão.
+import time as _boot_time
+_BUILD_TIMESTAMP_MS = int(_boot_time.time() * 1000)
+
+
 def _mask_proxy(url: Optional[str]) -> Optional[str]:
     """Mascarar user:pass em URLs de proxy antes de devolver ao cliente."""
     if not url:
@@ -632,6 +663,11 @@ async def fnet_version(
     }
     return {
         "task_baseline": "339",
+        # SHA curto do commit em execução — None em containers sem .git/.
+        "git_short_sha": _git_short_sha(),
+        # Timestamp de boot do processo (ms). Diferencia restarts do mesmo
+        # SHA — se mudou, o container foi reiniciado / re-deployado.
+        "build_timestamp_ms": _BUILD_TIMESTAMP_MS,
         "file_hashes": {name: _file_sha256(p) for name, p in files.items()},
         "fnet_http_proxy": _mask_proxy(_os.getenv("FNET_HTTP_PROXY") or None),
         "fnet_http_proxy_configured": bool(_os.getenv("FNET_HTTP_PROXY")),
@@ -657,10 +693,18 @@ async def diagnose_fund(
     grava nada no banco e NÃO interfere com a sincronização agendada.
     """
     _require_admin_or_gestao(current_user)
+    import httpx
     from services.fnet_client import (
         FnetClient,
         FnetClientError,
         FnetFundNotFoundError,
+        FNET_WARMUP_URL,
+        FNET_LIST_FUNDS_URL,
+        FNET_SEARCH_URL,
+        _DEFAULT_HEADERS,
+        _CSRF_REGEX,
+        _extract_diag_headers,
+        _warmup_headers,
     )
     from services.fnet_sync import _current_month_window, _format_cnpj_br
     import os as _os
@@ -672,27 +716,244 @@ async def diagnose_fund(
 
     timeline: list[dict] = []
 
-    def _step(name: str, status: str, msg: str, started: float, technical: str = "") -> None:
-        timeline.append({
+    def _step(
+        name: str,
+        status: str,
+        msg: str,
+        started: float,
+        technical: str = "",
+        http: Optional[dict] = None,
+    ) -> None:
+        """Adiciona linha à timeline. `http` carrega diagnóstico estruturado
+        por etapa (status_code, headers selecionados, body excerpt)."""
+        entry: dict = {
             "step": name,
             "status": status,
             "elapsed_ms": int((_time.monotonic() - started) * 1000),
             "message": msg,
             "technical": technical[:1000],
-        })
+        }
+        if http:
+            entry["http"] = http
+        timeline.append(entry)
 
-    client = FnetClient(proxy=_os.getenv("FNET_HTTP_PROXY") or None, max_retries=2)
+    def _http_diag(response: httpx.Response) -> dict:
+        """Empacota status, headers de diagnóstico (CF-Ray/Server/cf-mitigated/
+        x-amzn-trace-id/cf-cache-status) e excerpt do body (300 chars) para
+        que o operador identifique geo-block/anti-bot sem expor segredos."""
+        body_excerpt = ""
+        try:
+            body_excerpt = response.text[:300]
+        except Exception:  # noqa: BLE001
+            body_excerpt = "<binary>"
+        return {
+            "status_code": response.status_code,
+            "headers": _extract_diag_headers(response),
+            "body_excerpt": body_excerpt,
+            "request_url": str(response.request.url) if response.request else "",
+        }
+
+    proxy_url = _os.getenv("FNET_HTTP_PROXY") or None
     start_date, end_date = _current_month_window()
     cnpj_formatted = _format_cnpj_br(fund.cnpj)
+    cnpj_digits = "".join(ch for ch in (fund.cnpj or "") if ch.isdigit())
     overall_ok = True
     summary = "Pipeline FNET funcionando para este fundo."
 
-    # Etapa 1 + 2 + 3 estão acopladas em list_documents — o client cuida
-    # do warm-up sob demanda. Medimos como um único bloco mas reportamos
-    # cada falha com a mensagem amigável correspondente.
-    t0 = _time.monotonic()
+    # =========================================================
+    # Etapas 1-3 — probes HTTP explícitos (warmup → autocomplete → search).
+    # NÃO usamos client.list_documents aqui porque o validador exigiu
+    # granularidade por etapa + diagnóstico HTTP estruturado. Os probes
+    # mimetizam exatamente os requests do FnetClient (mesmas URLs/headers)
+    # para que sucesso aqui implique sucesso no pipeline real.
+    # =========================================================
+    csrf_token: Optional[str] = None
+    id_fundo: Optional[int] = None
+    canonical_name: Optional[str] = None
+
     try:
-        list_result = await client.list_documents(
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            follow_redirects=True,
+            proxies=proxy_url,
+        ) as http_client:
+            # ----- Etapa 1: warmup -----
+            t0 = _time.monotonic()
+            try:
+                r1 = await http_client.get(FNET_WARMUP_URL, headers=_warmup_headers())
+                diag1 = _http_diag(r1)
+                if r1.status_code >= 400:
+                    overall_ok = False
+                    msg = (
+                        f"FNET bloqueou o warmup com HTTP {r1.status_code}. "
+                        "Provável anti-bot/geo-block (Cloudflare). "
+                        "Verifique CF-Ray / cf-mitigated em 'http.headers'."
+                    )
+                    _step("warmup", "erro", msg, t0, http=diag1)
+                    return {
+                        "fund_id": fund.id, "fund_name": fund.fund_name,
+                        "overall_status": "erro", "summary": msg,
+                        "timeline": timeline,
+                    }
+                m = _CSRF_REGEX.search(r1.text)
+                if not m:
+                    overall_ok = False
+                    msg = (
+                        "Warmup respondeu OK mas sem csrf_token — formato "
+                        "da página FNET pode ter mudado."
+                    )
+                    _step("warmup", "erro", msg, t0,
+                          technical=f"len(html)={len(r1.text)}", http=diag1)
+                    return {
+                        "fund_id": fund.id, "fund_name": fund.fund_name,
+                        "overall_status": "erro", "summary": msg,
+                        "timeline": timeline,
+                    }
+                csrf_token = m.group(1)
+                _step(
+                    "warmup", "ok",
+                    f"Sessão estabelecida (csrf={csrf_token[:8]}…, "
+                    f"cookies={len(http_client.cookies.jar)} no jar).",
+                    t0, http=diag1,
+                )
+            except httpx.HTTPError as exc:
+                overall_ok = False
+                _step("warmup", "erro",
+                      f"Falha de rede no warmup: {type(exc).__name__}: {exc}",
+                      t0, technical=str(exc))
+                return {
+                    "fund_id": fund.id, "fund_name": fund.fund_name,
+                    "overall_status": "erro",
+                    "summary": "FNET inalcançável no warmup.", "timeline": timeline,
+                }
+
+            # ----- Etapa 2: autocomplete (listarFundos) -----
+            # Headers idênticos ao FnetClient._raw_get_with_retry — incluem
+            # CSRFToken pra evitar 403 e refletir fielmente o request real.
+            xhr_headers = {**_DEFAULT_HEADERS, "CSRFToken": csrf_token}
+            t1 = _time.monotonic()
+            try:
+                r2 = await http_client.get(
+                    FNET_LIST_FUNDS_URL,
+                    headers=xhr_headers,
+                    params={
+                        "term": cnpj_digits,
+                        "idTipoFundo": int(fund.tipo_fundo or 1),
+                    },
+                )
+                diag2 = _http_diag(r2)
+                if r2.status_code >= 400:
+                    overall_ok = False
+                    msg = f"Autocomplete FNET retornou HTTP {r2.status_code}."
+                    _step("autocomplete_fundo", "erro", msg, t1, http=diag2)
+                    return {
+                        "fund_id": fund.id, "fund_name": fund.fund_name,
+                        "overall_status": "erro", "summary": msg, "timeline": timeline,
+                    }
+                try:
+                    matches = r2.json()
+                except Exception:  # noqa: BLE001
+                    matches = []
+                if not matches:
+                    overall_ok = False
+                    msg = (
+                        f"CNPJ {cnpj_formatted} não encontrado no autocomplete "
+                        "(tipoFundo={}). Verifique o cadastro do fundo no "
+                        "FNET ou se o tipo está correto."
+                    ).format(fund.tipo_fundo)
+                    _step("autocomplete_fundo", "erro", msg, t1, http=diag2)
+                    return {
+                        "fund_id": fund.id, "fund_name": fund.fund_name,
+                        "overall_status": "erro",
+                        "summary": "CNPJ não localizado pelo FNET.",
+                        "timeline": timeline,
+                    }
+                first = matches[0] if isinstance(matches, list) else {}
+                id_fundo = int(first.get("id") or 0) or None
+                canonical_name = str(first.get("text") or "")[:120]
+                _step(
+                    "autocomplete_fundo", "ok",
+                    f"Fundo resolvido: '{canonical_name}' (idFundo={id_fundo}). "
+                    f"Total de candidatos: {len(matches)}.",
+                    t1, http=diag2,
+                )
+            except httpx.HTTPError as exc:
+                overall_ok = False
+                _step("autocomplete_fundo", "erro",
+                      f"Falha de rede no autocomplete: {type(exc).__name__}: {exc}",
+                      t1, technical=str(exc))
+                return {
+                    "fund_id": fund.id, "fund_name": fund.fund_name,
+                    "overall_status": "erro",
+                    "summary": "FNET inalcançável no autocomplete.", "timeline": timeline,
+                }
+
+            # ----- Etapa 3: search (apenas valida endpoint; o list_documents
+            # completo + filtragem cliente-side roda na Etapa 4 a seguir). -----
+            # Params alinhados com _fetch_documents_paged do FnetClient
+            # (tipoFundo, cnpjFundo, paginaCertificados, isSession) — sem
+            # isso o endpoint pode responder diferente do fluxo real.
+            t2 = _time.monotonic()
+            try:
+                r3 = await http_client.get(
+                    FNET_SEARCH_URL,
+                    headers=xhr_headers,
+                    params={
+                        "d": 1, "s": 0, "l": 1,
+                        "tipoFundo": int(fund.tipo_fundo or 1),
+                        "idFundo": id_fundo or "",
+                        "cnpj": cnpj_digits,
+                        "cnpjFundo": cnpj_digits,
+                        "dataInicial": start_date.strftime("%d/%m/%Y"),
+                        "dataFinal": end_date.strftime("%d/%m/%Y"),
+                        "paginaCertificados": "false",
+                        "isSession": "true",
+                    },
+                )
+                diag3 = _http_diag(r3)
+                if r3.status_code >= 400:
+                    overall_ok = False
+                    msg = f"Endpoint de busca FNET retornou HTTP {r3.status_code}."
+                    _step("search_endpoint", "erro", msg, t2, http=diag3)
+                    return {
+                        "fund_id": fund.id, "fund_name": fund.fund_name,
+                        "overall_status": "erro", "summary": msg, "timeline": timeline,
+                    }
+                _step(
+                    "search_endpoint", "ok",
+                    "Endpoint de busca respondeu OK — a Etapa 4 vai usar o "
+                    "FnetClient para listar/filtrar documentos do mês.",
+                    t2, http=diag3,
+                )
+            except httpx.HTTPError as exc:
+                overall_ok = False
+                _step("search_endpoint", "erro",
+                      f"Falha de rede no search: {type(exc).__name__}: {exc}",
+                      t2, technical=str(exc))
+                return {
+                    "fund_id": fund.id, "fund_name": fund.fund_name,
+                    "overall_status": "erro",
+                    "summary": "FNET inalcançável no search.", "timeline": timeline,
+                }
+    except Exception as exc:  # noqa: BLE001 — defense in depth
+        import traceback as _tb
+        overall_ok = False
+        _step("probe_http", "erro",
+              f"Erro inesperado nos probes HTTP: {type(exc).__name__}: {exc}",
+              _time.monotonic(), technical=_tb.format_exc()[:1000])
+        return {
+            "fund_id": fund.id, "fund_name": fund.fund_name,
+            "overall_status": "erro", "summary": "Erro inesperado nos probes.",
+            "timeline": timeline,
+        }
+
+    # =========================================================
+    # Etapa 4 — `listar_documentos` real via FnetClient (com filtro cliente).
+    # =========================================================
+    client = FnetClient(proxy=proxy_url, max_retries=2)
+    t3 = _time.monotonic()
+    try:
+        documents, id_fundo_full, canonical = await client.list_documents(
             cnpj=cnpj_formatted,
             date_start=start_date,
             date_end=end_date,
@@ -700,66 +961,42 @@ async def diagnose_fund(
             cached_internal_id=fund.fnet_internal_id,
             cached_canonical_name=fund.fnet_canonical_name,
         )
-        if not isinstance(list_result, tuple) or len(list_result) != 3:
-            _step(
-                "listar_documentos", "erro",
-                "FnetClient.list_documents devolveu contrato inválido — "
-                "regressão no client. Verifique o SHA em /api/fnet/version.",
-                t0,
-                f"esperado 3-tupla, recebido {type(list_result).__name__}",
-            )
-            return {
-                "fund_id": fund.id, "fund_name": fund.fund_name,
-                "overall_status": "erro", "summary": "Regressão no contrato do client.",
-                "timeline": timeline,
-            }
-        documents, id_fundo, canonical = list_result
         _step(
             "listar_documentos", "ok",
-            f"FNET respondeu OK: {len(documents)} documento(s) no período "
-            f"{start_date:%d/%m/%Y}–{end_date:%d/%m/%Y} (idFundo={id_fundo}).",
-            t0,
-            f"canonical='{canonical[:80]}'",
+            f"Listagem completa OK: {len(documents)} documento(s) no período "
+            f"{start_date:%d/%m/%Y}–{end_date:%d/%m/%Y}.",
+            t3, technical=f"canonical='{canonical[:80]}' idFundo={id_fundo_full}",
         )
     except FnetFundNotFoundError as exc:
-        _step(
-            "listar_documentos", "erro",
-            f"Fundo não encontrado no autocomplete da B3 (CNPJ {cnpj_formatted}). "
-            "Verifique se o CNPJ está correto e se a B3 já catalogou esse fundo.",
-            t0, f"{type(exc).__name__}: {exc}",
-        )
+        overall_ok = False
+        _step("listar_documentos", "erro",
+              f"Fundo não encontrado no FnetClient: {exc}",
+              t3, technical=f"{type(exc).__name__}: {exc}")
         return {
             "fund_id": fund.id, "fund_name": fund.fund_name,
             "overall_status": "erro",
-            "summary": "CNPJ não localizado pelo FNET.",
+            "summary": "CNPJ rejeitado pelo FnetClient apesar do probe ter passado.",
             "timeline": timeline,
         }
     except FnetClientError as exc:
-        status_code = getattr(exc, "status_code", None)
-        if status_code in (401, 403):
-            msg = (
-                f"FNET bloqueou a sessão (HTTP {status_code}). Provável "
-                "anti-bot/geo-block da Cloudflare. Tentar via FNET_HTTP_PROXY (BR)."
-            )
-        else:
-            msg = f"FNET indisponível ou retornou erro: {exc}"
-        _step("listar_documentos", "erro", msg, t0, f"{type(exc).__name__}: {exc}")
+        overall_ok = False
+        _step("listar_documentos", "erro",
+              f"FnetClient.list_documents falhou: {exc}",
+              t3, technical=f"{type(exc).__name__}: {exc}")
         return {
             "fund_id": fund.id, "fund_name": fund.fund_name,
-            "overall_status": "erro", "summary": msg,
-            "timeline": timeline,
+            "overall_status": "erro", "summary": str(exc), "timeline": timeline,
         }
     except Exception as exc:  # noqa: BLE001
         import traceback as _tb
-        _step(
-            "listar_documentos", "erro",
-            f"Erro inesperado ao listar documentos: {type(exc).__name__}: {exc}",
-            t0, _tb.format_exc()[:1000],
-        )
+        overall_ok = False
+        _step("listar_documentos", "erro",
+              f"Erro inesperado: {type(exc).__name__}: {exc}",
+              t3, technical=_tb.format_exc()[:1000])
         return {
             "fund_id": fund.id, "fund_name": fund.fund_name,
             "overall_status": "erro",
-            "summary": "Erro inesperado — veja traceback no último passo.",
+            "summary": "Erro inesperado — veja traceback.",
             "timeline": timeline,
         }
 
