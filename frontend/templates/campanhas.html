@@ -3157,6 +3157,9 @@ Equipe de Gestao"></textarea>
                         btn.innerHTML = '<div class="spinner" style="width: 20px; height: 20px;"></div> Enviando...';
                         addLogEntry(`Iniciando disparo para ${data.total} assessores (delay: 5s, retry: 3x)...`, 'info');
                     }
+                    else if (data.type === 'heartbeat') {
+                        // Task #345 — heartbeat de keepalive; apenas ignorar.
+                    }
                     else if (data.type === 'retry') {
                         const nextAttempt = data.attempt + 1;
                         const currentHtml = `
@@ -3279,6 +3282,28 @@ Equipe de Gestao"></textarea>
                     console.error('SSE Error:', error);
                     eventSource.close();
                     currentEventSource = null;
+
+                    // Task #345 — se a campanha ainda está em processing/sending no backend
+                    // (motor rodando em background após queda da conexão SSE), reconecta
+                    // automaticamente em vez de mostrar erro ao usuário.
+                    if (campaignId) {
+                        try {
+                            var _statusResp = await fetch(`${API_BASE}/${campaignId}`, { credentials: 'include' });
+                            if (_statusResp.ok) {
+                                var _statusData = await _statusResp.json();
+                                if (_statusData.status === 'processing' || _statusData.status === 'sending') {
+                                    addLogEntry('Conexão SSE interrompida — reconectando ao motor de envio em background...', 'warning');
+                                    // Pequeno delay antes de reconectar para não saturar
+                                    await new Promise(function(r) { setTimeout(r, 2000); });
+                                    const newSource = new EventSource(`${API_BASE}/${campaignId}/dispatch-stream`);
+                                    currentEventSource = newSource;
+                                    newSource.onmessage = eventSource.onmessage;
+                                    newSource.onerror = eventSource.onerror;
+                                    return;
+                                }
+                            }
+                        } catch (_) {}
+                    }
 
                     btn.disabled = false;
                     backBtn.disabled = false;
@@ -4331,8 +4356,19 @@ Equipe de Gestao"></textarea>
                         ? '<button class="btn" style="padding: 4px 8px; font-size: 11px; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; margin-right: 4px;" data-action="openCadenceDashboard" data-id="' + c.id + '">Dashboard</button>'
                         : '';
 
+                    // Task #345 — badge de pendentes para campanhas imediatas canceladas
+                    var pendingBadge = '';
+                    if (c.status === 'cancelled' && c.delivery_mode !== 'cadence' && c.pending_dispatches_count > 0) {
+                        pendingBadge = ' <span title="' + c.pending_dispatches_count + ' assessores ainda não receberam a mensagem" style="font-size: 10px; padding: 2px 7px; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 99px; margin-left: 4px;">'
+                            + c.pending_dispatches_count + ' pendentes</span>';
+                    }
+
                     var optionsContent = '';
                     if (!isLegacy) {
+                        // Task #345 — botão "Retomar disparo" para campanhas imediatas canceladas
+                        if (c.status === 'cancelled' && c.delivery_mode !== 'cadence') {
+                            optionsContent += '<button data-action="resumeImmediateCampaign" data-id="' + c.id + '" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #1d4ed8; font-size: 14px;">&#9654; Retomar disparo</button>';
+                        }
                         if (c.messages_failed > 0) {
                             optionsContent += '<button data-action="openFailures" data-id="' + c.id + '" style="display: block; width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; cursor: pointer; color: #dc2626; font-size: 14px;">Analisar Falhas</button>';
                         }
@@ -4359,7 +4395,7 @@ Equipe de Gestao"></textarea>
                     }
 
                     return '<tr>' +
-                        '<td>' + nameLink + cadenceBadge +
+                        '<td>' + nameLink + cadenceBadge + pendingBadge +
                             '<br><small style="color: var(--text-secondary);">' + (c.original_filename || '') + '</small>' +
                         '</td>' +
                         '<td>' + (c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '-') + '</td>' +
@@ -4596,6 +4632,31 @@ Equipe de Gestao"></textarea>
                 
                 goToStep(3);
                 
+            } catch (error) {
+                toast.error(error.message);
+            }
+        }
+
+        // Task #345 — retoma disparo imediato de campanha cancelada via POST /resume
+        async function resumeImmediateCampaign(id) {
+            const confirmed = await toast.confirm({
+                title: 'Retomar disparo',
+                message: 'Isso retomará o envio para os assessores que ainda não receberam a mensagem (pendentes + falhas). Deseja continuar?',
+                confirmText: 'Retomar',
+                type: 'warning'
+            });
+            if (!confirmed) return;
+
+            try {
+                const resp = await fetch(`${API_BASE}/${id}/resume`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const result = await resp.json().catch(function() { return {}; });
+                if (!resp.ok) throw new Error(result.detail || ('HTTP ' + resp.status));
+                toast.success(result.message || 'Disparo retomado em segundo plano.');
+                // Aguarda 1s para o motor iniciar e recarrega o histórico
+                setTimeout(function() { loadHistory(); }, 1000);
             } catch (error) {
                 toast.error(error.message);
             }
@@ -4917,6 +4978,8 @@ Equipe de Gestao"></textarea>
                 openFailuresModal(parseInt(actionEl.dataset.id));
             } else if (action === 'toggleOptions') {
                 toggleOptionsMenu(parseInt(actionEl.dataset.id));
+            } else if (action === 'resumeImmediateCampaign') {
+                resumeImmediateCampaign(parseInt(actionEl.dataset.id));
             } else if (action === 'deleteCampaign') {
                 deleteCampaign(parseInt(actionEl.dataset.id));
             } else if (action === 'openCadenceDashboard') {

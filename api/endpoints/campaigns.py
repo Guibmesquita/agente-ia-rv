@@ -24,6 +24,7 @@ MAX_RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 3.0
 
 cancelled_campaigns: dict = {}
+_dispatch_tasks: dict[int, asyncio.Task] = {}
 
 
 def get_random_dispatch_delay() -> float:
@@ -2029,6 +2030,320 @@ def _resolve_channel_client_for_dispatch(channel_id, db_session):
     return client, client.is_configured(), False
 
 
+async def _run_immediate_dispatch(campaign_id: int) -> None:
+    """Motor de envio imediato em background — independente da conexão SSE.
+
+    Processa dispatches com status='pending' da campanha em ordem de id,
+    respeitando delays anti-bloqueio e retries. Atualiza os contadores da
+    campanha a cada envio. Pode ser cancelado via asyncio.Task.cancel() ou
+    pelo status 'cancelling' gravado no banco pelo endpoint /cancel.
+    """
+    from core.config import resolve_attachment_for_send
+    print(f"[DISPATCH-BG] Motor iniciado para campaign_id={campaign_id}")
+    try:
+        db_init = SessionLocal()
+        try:
+            campaign_init = db_init.query(Campaign).filter(Campaign.id == campaign_id).first()
+            if not campaign_init:
+                print(f"[DISPATCH-BG] Campanha {campaign_id} não encontrada, abortando")
+                return
+            attachment_url = campaign_init.attachment_url
+            attachment_type = campaign_init.attachment_type
+            attachment_filename = campaign_init.attachment_filename or ""
+            campaign_name = campaign_init.name
+        finally:
+            db_init.close()
+
+        full_attachment_url = resolve_attachment_for_send(attachment_url) if attachment_url else None
+        attachment_url_invalid = bool(attachment_url) and full_attachment_url is None
+
+        while True:
+            db = SessionLocal()
+            try:
+                camp = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+                if not camp:
+                    break
+
+                if cancelled_campaigns.get(campaign_id) or camp.status in ("cancelling", "cancelled"):
+                    camp.status = "cancelled"
+                    db.commit()
+                    print(f"[DISPATCH-BG] Campanha {campaign_id} cancelada pelo usuário")
+                    break
+
+                dispatch = (
+                    db.query(CampaignDispatch)
+                    .filter(
+                        CampaignDispatch.campaign_id == campaign_id,
+                        CampaignDispatch.status == "pending",
+                    )
+                    .order_by(CampaignDispatch.id.asc())
+                    .first()
+                )
+
+                if not dispatch:
+                    camp.status = CampaignStatus.SENT.value
+                    camp.sent_at = datetime.utcnow()
+                    db.commit()
+                    print(f"[DISPATCH-BG] Campanha {campaign_id} concluída com sucesso")
+                    break
+
+                dispatch_id = dispatch.id
+                phone = dispatch.assessor_phone or ""
+                message = dispatch.message_content
+                assessor_name = dispatch.assessor_name or ""
+                assessor_email = dispatch.assessor_email or ""
+                channel_id = dispatch.channel_id
+            finally:
+                db.close()
+
+            db = SessionLocal()
+            try:
+                dispatch = db.query(CampaignDispatch).filter(
+                    CampaignDispatch.id == dispatch_id
+                ).first()
+                if not dispatch or dispatch.status != "pending":
+                    continue
+
+                _active_client, _act_cfg, _chan_inactive = _resolve_channel_client_for_dispatch(
+                    channel_id, db
+                )
+
+                if _chan_inactive:
+                    dispatch.status = "failed"
+                    dispatch.error_message = "Canal desativado"
+                    dispatch.error_details = (
+                        "O canal Z-API associado a este assessor está inativo. "
+                        "Ative o canal em Integrações → Canais."
+                    )
+                elif not phone:
+                    dispatch.status = "failed"
+                    dispatch.error_message = "Telefone não informado"
+                    dispatch.error_details = (
+                        f"O assessor '{assessor_name}' não possui número de telefone cadastrado."
+                    )
+                elif not _act_cfg:
+                    dispatch.status = "simulated"
+                    dispatch.error_details = "Disparo simulado - Z-API não configurado"
+                    dispatch.sent_at = datetime.utcnow()
+                elif attachment_url and attachment_url_invalid:
+                    dispatch.status = "failed"
+                    dispatch.error_message = "Arquivo do anexo não encontrado"
+                    dispatch.error_details = (
+                        "O arquivo do anexo não pôde ser resolvido para envio via WhatsApp. "
+                        "Verifique se APP_BASE_URL está configurado no Railway."
+                    )
+                else:
+                    attempt = 1
+                    while attempt <= MAX_RETRY_ATTEMPTS:
+                        try:
+                            if attachment_url and attachment_type:
+                                if attachment_type == "image":
+                                    result = await _active_client.send_image(
+                                        phone, full_attachment_url, message
+                                    )
+                                elif attachment_type == "video":
+                                    result = await _active_client.send_video(
+                                        phone, full_attachment_url, message
+                                    )
+                                elif attachment_type == "audio":
+                                    result = await _active_client.send_audio(
+                                        phone, full_attachment_url
+                                    )
+                                else:
+                                    result = await _active_client.send_document(
+                                        phone, full_attachment_url, attachment_filename, message
+                                    )
+                            else:
+                                result = await _active_client.send_text(
+                                    phone, message, delay_typing=2
+                                )
+                            dispatch.api_response = json.dumps(
+                                result, ensure_ascii=False, default=str
+                            )
+                            if result.get("success"):
+                                dispatch.status = "sent"
+                                dispatch.sent_at = datetime.utcnow()
+                                _persist_campaign_message(
+                                    db, phone, message, campaign_name,
+                                    channel_id=channel_id, campaign_id=campaign_id,
+                                )
+                                break
+                            else:
+                                error_code = result.get("error_code", "UNKNOWN")
+                                error_msg_val = result.get("error", "Erro desconhecido")
+                                dispatch.last_error_message = str(error_msg_val)[:500]
+                                print(
+                                    f"[DISPATCH-BG] Falha canal={channel_id} "
+                                    f"assessor={assessor_email} código={error_code} "
+                                    f"detalhe={str(error_msg_val)[:200]}"
+                                )
+                                is_retryable = (
+                                    error_code.startswith("HTTP_5")
+                                    or "500" in error_code
+                                    or "502" in error_code
+                                    or "503" in error_code
+                                    or error_code in ["TIMEOUT", "CONNECTION_ERROR", "HTTP_ERROR"]
+                                )
+                                if is_retryable and attempt < MAX_RETRY_ATTEMPTS:
+                                    await asyncio.sleep(RETRY_DELAY_SECONDS)
+                                    attempt += 1
+                                    continue
+                                else:
+                                    dispatch.status = "failed"
+                                    dispatch.error_message = error_msg_val
+                                    dispatch.error_details = translate_error_to_natural_language(
+                                        error_code, error_msg_val, phone
+                                    )
+                                    if attempt > 1:
+                                        dispatch.error_details += f" (após {attempt} tentativas)"
+                                    break
+                        except Exception as e:
+                            err_str = str(e)
+                            dispatch.last_error_message = err_str[:500]
+                            if attempt < MAX_RETRY_ATTEMPTS:
+                                await asyncio.sleep(RETRY_DELAY_SECONDS)
+                                attempt += 1
+                                continue
+                            else:
+                                dispatch.status = "failed"
+                                dispatch.error_message = err_str
+                                dispatch.error_details = f"Erro inesperado: {err_str}"
+                                if attempt > 1:
+                                    dispatch.error_details += f" (após {attempt} tentativas)"
+                                break
+
+                sent_c = (
+                    db.query(CampaignDispatch)
+                    .filter(
+                        CampaignDispatch.campaign_id == campaign_id,
+                        CampaignDispatch.status.in_(["sent", "simulated"]),
+                    )
+                    .count()
+                )
+                failed_c = (
+                    db.query(CampaignDispatch)
+                    .filter(
+                        CampaignDispatch.campaign_id == campaign_id,
+                        CampaignDispatch.status == "failed",
+                    )
+                    .count()
+                )
+                camp_upd = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+                if camp_upd:
+                    camp_upd.messages_sent = sent_c
+                    camp_upd.messages_failed = failed_c
+                db.commit()
+            except Exception as send_exc:
+                print(f"[DISPATCH-BG] Erro no dispatch {dispatch_id}: {send_exc}")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                db2 = SessionLocal()
+                try:
+                    d2 = db2.query(CampaignDispatch).filter(
+                        CampaignDispatch.id == dispatch_id
+                    ).first()
+                    if d2 and d2.status == "pending":
+                        d2.status = "failed"
+                        d2.error_message = str(send_exc)[:500]
+                        d2.error_details = f"Erro inesperado: {str(send_exc)[:500]}"
+                        db2.commit()
+                finally:
+                    db2.close()
+            finally:
+                db.close()
+
+            await asyncio.sleep(get_random_dispatch_delay())
+
+    except asyncio.CancelledError:
+        print(f"[DISPATCH-BG] Task cancelada externamente campaign_id={campaign_id}")
+        db_c = SessionLocal()
+        try:
+            camp = db_c.query(Campaign).filter(Campaign.id == campaign_id).first()
+            if camp and camp.status not in [CampaignStatus.SENT.value, "cancelled"]:
+                camp.status = "cancelled"
+                db_c.commit()
+        finally:
+            db_c.close()
+    except Exception as fatal:
+        print(f"[DISPATCH-BG] Erro fatal campaign_id={campaign_id}: {fatal}")
+        db_f = SessionLocal()
+        try:
+            camp = db_f.query(Campaign).filter(Campaign.id == campaign_id).first()
+            if camp and camp.status not in [CampaignStatus.SENT.value, "cancelled"]:
+                camp.status = "cancelled"
+                db_f.commit()
+        finally:
+            db_f.close()
+    finally:
+        _dispatch_tasks.pop(campaign_id, None)
+        cancelled_campaigns.pop(campaign_id, None)
+        print(f"[DISPATCH-BG] Motor encerrado campaign_id={campaign_id}")
+
+
+async def _poll_dispatch_progress(campaign_id: int, total_assessors: int):
+    """Gerador SSE que observa o progresso do motor de disparo em background.
+
+    Lê contadores do banco a cada 2s. Emite heartbeat a cada 15s para manter
+    proxies satisfeitos. Pode ser descartado (CancelledError) sem afetar o motor.
+    """
+    import time as _t
+    last_heartbeat = _t.monotonic()
+    try:
+        yield f"data: {json.dumps({'type': 'start', 'total': total_assessors})}\n\n"
+        while True:
+            now = _t.monotonic()
+            db = SessionLocal()
+            try:
+                camp = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+                if not camp:
+                    break
+                sent = camp.messages_sent or 0
+                failed = camp.messages_failed or 0
+                total = camp.total_assessors or total_assessors
+                done = sent + failed
+                if camp.status == CampaignStatus.SENT.value:
+                    yield f"data: {json.dumps({'type': 'complete', 'total': total, 'sent_count': sent, 'failed_count': failed})}\n\n"
+                    break
+                elif camp.status == "cancelled":
+                    yield f"data: {json.dumps({'type': 'cancelled', 'current': done, 'total': total, 'sent_count': sent, 'failed_count': failed, 'message': 'Envio cancelado'})}\n\n"
+                    break
+                else:
+                    latest = (
+                        db.query(CampaignDispatch)
+                        .filter(
+                            CampaignDispatch.campaign_id == campaign_id,
+                            CampaignDispatch.status.in_(["sent", "simulated", "failed"]),
+                        )
+                        .order_by(CampaignDispatch.id.desc())
+                        .first()
+                    )
+                    percent = round((done / total * 100), 1) if total > 0 else 0
+                    progress_data = {
+                        "type": "progress",
+                        "current": done,
+                        "total": total,
+                        "percent": percent,
+                        "assessor_name": latest.assessor_name if latest else "",
+                        "assessor_phone": latest.assessor_phone if latest else "",
+                        "status": latest.status if latest else "pending",
+                        "error": (latest.error_message if latest and latest.status == "failed" else ""),
+                        "sent_count": sent,
+                        "failed_count": failed,
+                        "attempts_made": 1,
+                    }
+                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
+                    if now - last_heartbeat > 15:
+                        yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                        last_heartbeat = now
+            finally:
+                db.close()
+            await asyncio.sleep(2)
+    except asyncio.CancelledError:
+        pass
+
+
 @router.post("/{campaign_id}/dispatch")
 async def dispatch_campaign(
     campaign_id: int,
@@ -2640,262 +2955,61 @@ async def dispatch_campaign_stream(
     campaign.total_assessors = total_assessors
     db.commit()
 
-    async def generate_events():
-        from core.config import resolve_attachment_for_send
-        import os
-        
-        # Task #224 — sem zapi_configured global; validação é per-dispatch via helper.
-        # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
-        # arquivo existe localmente (elimina problema de URL inacessível pelo
-        # Z-API, como janeway.replit.dev). Fallback para URL pública se o
-        # arquivo não existir no disco.
-        full_attachment_url = resolve_attachment_for_send(attachment_url) if attachment_url else None
-        attachment_url_invalid = bool(attachment_url) and full_attachment_url is None
-        sent_count = 0
-        failed_count = 0
-        current_index = 0
-        cancelled = False
-        
-        try:
-            yield f"data: {json.dumps({'type': 'start', 'total': total_assessors})}\n\n"
-            
-            for assessor_id, assessor_data in grouped.items():
-                current_index += 1
-                
-                if use_blocks:
-                    wrapper_parts = []
-                    if header_template.strip():
-                        wrapper_parts.append(header_template.strip())
-                    
-                    if content_template.strip() and "{{lista_clientes}}" in content_template:
-                        wrapper_parts.append(content_template.strip())
-                    else:
-                        wrapper_parts.append("{{lista_clientes}}")
-                    
-                    if footer_template.strip():
-                        wrapper_parts.append(footer_template.strip())
-                    
-                    wrapper_template = "\n\n".join(wrapper_parts)
-                    message = build_message(wrapper_template, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
+    # Task #345 — Cria TODOS os dispatches upfront em uma transação.
+    # O motor _run_immediate_dispatch processa os pendentes em background,
+    # independente da vida da conexão SSE (resolve timeout de 10min no Railway).
+    _upfront_db = SessionLocal()
+    try:
+        for assessor_id, assessor_data in grouped.items():
+            if use_blocks:
+                _wp = []
+                if header_template.strip():
+                    _wp.append(header_template.strip())
+                if content_template.strip() and "{{lista_clientes}}" in content_template:
+                    _wp.append(content_template.strip())
                 else:
-                    message = build_message(template_content, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
-                
-                phone = assessor_data.get("telefone", "")
-                assessor_name = assessor_data.get("nome_assessor", "")
-                
-                db_session = SessionLocal()
-                try:
-                    # Task #224 — resolve channel_id para este assessor.
-                    _sse_channel_id = _sse_channel_map.get(assessor_data.get("email_assessor", ""))
-                    dispatch = CampaignDispatch(
-                        campaign_id=campaign_id,
-                        assessor_id=assessor_id,
-                        assessor_email=assessor_data.get("email_assessor", ""),
-                        assessor_phone=phone,
-                        assessor_name=assessor_name,
-                        message_content=message,
-                        status="pending",
-                        channel_id=_sse_channel_id,
-                    )
-                    db_session.add(dispatch)
-                    db_session.flush()
+                    _wp.append("{{lista_clientes}}")
+                if footer_template.strip():
+                    _wp.append(footer_template.strip())
+                _wt = "\n\n".join(_wp)
+                _msg = build_message(
+                    _wt, assessor_data, custom_mapping,
+                    content_line_template, group_by_client=is_grouped
+                )
+            else:
+                _msg = build_message(
+                    template_content, assessor_data, custom_mapping,
+                    content_line_template, group_by_client=is_grouped
+                )
+            _phone = assessor_data.get("telefone", "")
+            _name = assessor_data.get("nome_assessor", "")
+            _email = assessor_data.get("email_assessor", "")
+            _ch_id = _sse_channel_map.get(_email)
+            _upfront_db.add(CampaignDispatch(
+                campaign_id=campaign_id,
+                assessor_id=assessor_id,
+                assessor_email=_email,
+                assessor_phone=_phone,
+                assessor_name=_name,
+                message_content=_msg,
+                status="pending",
+                channel_id=_ch_id,
+            ))
+        _upfront_db.commit()
+    finally:
+        _upfront_db.close()
 
-                    # Task #224 — resolve cliente por canal via helper compartilhado.
-                    _active_client, _act_cfg, _chan_inactive_sse = \
-                        _resolve_channel_client_for_dispatch(_sse_channel_id, db_session)
-                    if _chan_inactive_sse:
-                        dispatch.status = "failed"
-                        dispatch.error_message = "Canal desativado"
-                        dispatch.error_details = (
-                            "O canal Z-API associado a este assessor está "
-                            "inativo. Ative o canal em Integrações → Canais."
-                        )
-                        failed_count += 1
-                        status = "failed"
-                        error_msg = "Canal desativado"
+    _bg_task = asyncio.create_task(_run_immediate_dispatch(campaign_id))
+    _dispatch_tasks[campaign_id] = _bg_task
 
-                    if not _chan_inactive_sse:
-                        status = "pending"
-                        error_msg = ""
-                    attempt = 1
-
-                    if not _chan_inactive_sse and phone and _act_cfg and attachment_url_invalid:
-                        # Anexo configurado mas URL pública não pôde ser
-                        # construída (sem APP_BASE_URL/REPLIT_DOMAINS).
-                        # Mandar caminho relativo para o Z-API faz o disparo
-                        # travar em "pendente" eternamente. Falhar agora
-                        # com mensagem clara.
-                        dispatch.status = "failed"
-                        dispatch.error_message = "Arquivo do anexo não encontrado"
-                        dispatch.error_details = (
-                            "O arquivo do anexo não pôde ser resolvido para envio "
-                            "via WhatsApp. Causas possíveis: (1) arquivo não "
-                            "encontrado no servidor — verifique se o upload foi "
-                            "feito no ambiente de produção (não no ambiente de dev); "
-                            "(2) variável APP_BASE_URL não configurada no Railway — "
-                            "configure com o domínio público da aplicação "
-                            "(ex.: https://agente-ia-rv.railway.app)."
-                        )
-                        failed_count += 1
-                        status = "failed"
-                        error_msg = "Arquivo do anexo não encontrado"
-                    elif not _chan_inactive_sse and phone and _act_cfg:
-                        while attempt <= MAX_RETRY_ATTEMPTS:
-                            try:
-                                if attachment_url and attachment_type:
-                                    if attachment_type == "image":
-                                        result = await _active_client.send_image(phone, full_attachment_url, message)
-                                    elif attachment_type == "video":
-                                        result = await _active_client.send_video(phone, full_attachment_url, message)
-                                    elif attachment_type == "audio":
-                                        result = await _active_client.send_audio(phone, full_attachment_url)
-                                    else:
-                                        result = await _active_client.send_document(phone, full_attachment_url, attachment_filename or "", message)
-                                else:
-                                    result = await _active_client.send_text(phone, message, delay_typing=2)
-                                dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
-                                
-                                if result.get("success"):
-                                    dispatch.status = "sent"
-                                    dispatch.sent_at = datetime.utcnow()
-                                    sent_count += 1
-                                    status = "sent"
-                                    _persist_campaign_message(db_session, phone, message, campaign.name, channel_id=_sse_channel_id, campaign_id=campaign_id)
-                                    break
-                                else:
-                                    error_code = result.get("error_code", "UNKNOWN")
-                                    error_msg = result.get("error", "Erro desconhecido")
-                                    print(f"[DISPATCH-FAIL] canal={_sse_channel_id} assessor={assessor_data.get('email_assessor','')} motivo={error_code} detalhe={str(error_msg)[:200]} api_response={str(result)[:300]}")
-                                    
-                                    is_retryable = (
-                                        error_code.startswith("HTTP_5") or 
-                                        "500" in error_code or
-                                        "502" in error_code or
-                                        "503" in error_code or
-                                        error_code in ["TIMEOUT", "CONNECTION_ERROR", "HTTP_ERROR"]
-                                    )
-                                    
-                                    if is_retryable and attempt < MAX_RETRY_ATTEMPTS:
-                                        retry_data = {
-                                            'type': 'retry',
-                                            'current': current_index,
-                                            'total': total_assessors,
-                                            'assessor_name': assessor_name,
-                                            'attempt': attempt,
-                                            'max_attempts': MAX_RETRY_ATTEMPTS,
-                                            'error': error_msg
-                                        }
-                                        yield f"data: {json.dumps(retry_data, ensure_ascii=False)}\n\n"
-                                        await asyncio.sleep(RETRY_DELAY_SECONDS)
-                                        attempt += 1
-                                        continue
-                                    else:
-                                        dispatch.status = "failed"
-                                        dispatch.error_message = error_msg
-                                        dispatch.error_details = translate_error_to_natural_language(error_code, error_msg, phone)
-                                        if attempt > 1:
-                                            dispatch.error_details += f" (após {attempt} tentativas)"
-                                        failed_count += 1
-                                        status = "failed"
-                                        break
-                            except Exception as e:
-                                error_msg = str(e)
-                                
-                                if attempt < MAX_RETRY_ATTEMPTS:
-                                    retry_data = {
-                                        'type': 'retry',
-                                        'current': current_index,
-                                        'total': total_assessors,
-                                        'assessor_name': assessor_name,
-                                        'attempt': attempt,
-                                        'max_attempts': MAX_RETRY_ATTEMPTS,
-                                        'error': error_msg
-                                    }
-                                    yield f"data: {json.dumps(retry_data, ensure_ascii=False)}\n\n"
-                                    await asyncio.sleep(RETRY_DELAY_SECONDS)
-                                    attempt += 1
-                                    continue
-                                else:
-                                    dispatch.status = "failed"
-                                    dispatch.error_message = error_msg
-                                    dispatch.error_details = f"Erro inesperado ao enviar mensagem: {error_msg}"
-                                    if attempt > 1:
-                                        dispatch.error_details += f" (após {attempt} tentativas)"
-                                    failed_count += 1
-                                    status = "failed"
-                                    break
-                    elif not _chan_inactive_sse:
-                        if not phone:
-                            dispatch.status = "failed"
-                            dispatch.error_message = "Telefone não informado"
-                            dispatch.error_details = f"O assessor '{assessor_name}' não possui número de telefone cadastrado."
-                            failed_count += 1
-                            status = "failed"
-                            error_msg = "Telefone não informado"
-                        elif not _act_cfg:
-                            dispatch.status = "simulated"
-                            dispatch.error_details = "Disparo simulado - Z-API não configurado"
-                            dispatch.sent_at = datetime.utcnow()
-                            sent_count += 1
-                            status = "simulated"
-                    
-                    db_session.commit()
-                    
-                    percent = round((current_index / total_assessors) * 100, 1)
-                    progress_data = {
-                        'type': 'progress',
-                        'current': current_index,
-                        'total': total_assessors,
-                        'percent': percent,
-                        'assessor_name': assessor_name,
-                        'assessor_phone': phone,
-                        'status': status,
-                        'error': error_msg,
-                        'sent_count': sent_count,
-                        'failed_count': failed_count,
-                        'attempts_made': attempt
-                    }
-                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
-                    
-                finally:
-                    db_session.close()
-                
-                if current_index < total_assessors:
-                    delay = get_random_dispatch_delay()
-                    await asyncio.sleep(delay)
-        
-        except asyncio.CancelledError:
-            cancelled = True
-        finally:
-            db_final = SessionLocal()
-            try:
-                campaign_final = db_final.query(Campaign).filter(Campaign.id == campaign_id).first()
-                if campaign_final:
-                    campaign_final.status = CampaignStatus.SENT.value
-                    campaign_final.messages_sent = sent_count
-                    campaign_final.messages_failed = failed_count
-                    campaign_final.sent_at = datetime.utcnow()
-                    db_final.commit()
-            finally:
-                db_final.close()
-        
-        if not cancelled:
-            complete_data = {
-                'type': 'complete',
-                'total': total_assessors,
-                'sent_count': sent_count,
-                'failed_count': failed_count
-            }
-            yield f"data: {json.dumps(complete_data)}\n\n"
-    
     return StreamingResponse(
-        generate_events(),
+        _poll_dispatch_progress(campaign_id, total_assessors),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -3073,268 +3187,54 @@ async def dispatch_campaign_from_base(campaign, db: Session):
     campaign.total_assessors = total_assessors
     db.commit()
 
-    attachment_url = campaign.attachment_url
-    attachment_type = campaign.attachment_type
-    attachment_filename = campaign.attachment_filename
-    
-    async def generate_events():
-        from core.config import resolve_attachment_for_send
-        # Task #224 — sem zapi_configured global; validação é per-dispatch via helper.
-        # Resolve o anexo UMA VEZ por campanha — preferindo base64 quando o
-        # arquivo existe localmente (elimina problema de URL inacessível pelo
-        # Z-API, como janeway.replit.dev). Fallback para URL pública se o
-        # arquivo não existir no disco.
-        full_attachment_url = resolve_attachment_for_send(attachment_url) if attachment_url else None
-        attachment_url_invalid = bool(attachment_url) and full_attachment_url is None
-        sent_count = 0
-        failed_count = 0
-        current_index = 0
-        cancelled = False
-        
-        try:
-            yield f"data: {json.dumps({'type': 'start', 'total': total_assessors})}\n\n"
-            
-            for assessor in data:
-                db_check = SessionLocal()
-                try:
-                    campaign_check = db_check.query(Campaign).filter(Campaign.id == campaign.id).first()
-                    should_cancel = (
-                        cancelled_campaigns.get(campaign.id, False) or 
-                        (campaign_check and campaign_check.status in ["cancelling", "cancelled"])
-                    )
-                    if should_cancel:
-                        cancelled = True
-                        cancel_data = {
-                            'type': 'cancelled',
-                            'current': current_index,
-                            'total': total_assessors,
-                            'sent_count': sent_count,
-                            'failed_count': failed_count,
-                            'message': 'Envio cancelado pelo usuário'
-                        }
-                        yield f"data: {json.dumps(cancel_data, ensure_ascii=False)}\n\n"
-                        break
-                finally:
-                    db_check.close()
-                
-                current_index += 1
-                assessor_name = assessor.get("nome", "")
-                phone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
-                
-                variables = build_assessor_variables(assessor)
-                
-                message_parts = []
-                
-                header_rendered = replace_variables_generic(header_template, variables)
-                if header_rendered.strip():
-                    message_parts.append(header_rendered.strip())
-                
-                content_rendered = replace_variables_generic(content_template, variables)
-                if content_rendered.strip():
-                    message_parts.append(content_rendered.strip())
-                
-                footer_rendered = replace_variables_generic(footer_template, variables)
-                if footer_rendered.strip():
-                    message_parts.append(footer_rendered.strip())
-                
-                message = "\n\n".join(message_parts)
-                
-                leftover_pattern = r'\{\{[^}]+\}\}'
-                message = re.sub(leftover_pattern, '', message)
-                
-                db_session = SessionLocal()
-                try:
-                    # Task #224 — channel_id por e-mail do assessor.
-                    _base_channel_id = _base_channel_map.get(assessor.get("email", ""))
-                    dispatch = CampaignDispatch(
-                        campaign_id=campaign.id,
-                        assessor_id=str(assessor.get("id", "")),
-                        assessor_email=assessor.get("email", ""),
-                        assessor_phone=phone,
-                        assessor_name=assessor_name,
-                        message_content=message,
-                        status="pending",
-                        channel_id=_base_channel_id,
-                    )
-                    db_session.add(dispatch)
-                    db_session.flush()
+    # Task #345 — Cria TODOS os dispatches upfront em uma transação.
+    # O motor _run_immediate_dispatch processa os pendentes em background,
+    # independente da vida da conexão SSE (resolve timeout de 10min no Railway).
+    _upfront_db_base = SessionLocal()
+    try:
+        for assessor in data:
+            _email = assessor.get("email", "")
+            _phone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
+            _name = assessor.get("nome", "")
+            _ch_id = _base_channel_map.get(_email)
+            _vars = build_assessor_variables(assessor)
+            _parts = []
+            _hr = replace_variables_generic(header_template, _vars)
+            if _hr.strip():
+                _parts.append(_hr.strip())
+            _cr = replace_variables_generic(content_template, _vars)
+            if _cr.strip():
+                _parts.append(_cr.strip())
+            _fr = replace_variables_generic(footer_template, _vars)
+            if _fr.strip():
+                _parts.append(_fr.strip())
+            _msg = "\n\n".join(_parts)
+            _msg = re.sub(r'\{\{[^}]+\}\}', '', _msg)
+            _upfront_db_base.add(CampaignDispatch(
+                campaign_id=campaign.id,
+                assessor_id=str(assessor.get("id", "")),
+                assessor_email=_email,
+                assessor_phone=_phone,
+                assessor_name=_name,
+                message_content=_msg,
+                status="pending",
+                channel_id=_ch_id,
+            ))
+        _upfront_db_base.commit()
+    finally:
+        _upfront_db_base.close()
 
-                    # Task #224 — resolve cliente por canal via helper compartilhado.
-                    _base_active_client, _base_act_cfg, _chan_inactive_base = \
-                        _resolve_channel_client_for_dispatch(_base_channel_id, db_session)
-                    if _chan_inactive_base:
-                        dispatch.status = "failed"
-                        dispatch.error_message = "Canal desativado"
-                        dispatch.error_details = (
-                            "O canal Z-API associado a este assessor está "
-                            "inativo. Ative o canal em Integrações → Canais."
-                        )
-                        failed_count += 1
-                        status = "failed"
-                        error_msg = "Canal desativado"
+    _bg_task_base = asyncio.create_task(_run_immediate_dispatch(campaign.id))
+    _dispatch_tasks[campaign.id] = _bg_task_base
 
-                    if not _chan_inactive_base:
-                        status = "pending"
-                        error_msg = ""
-                    attempt = 1
-
-                    if not _chan_inactive_base and phone and _base_act_cfg and attachment_url_invalid:
-                        # Anexo configurado mas URL pública não pôde ser
-                        # construída (sem APP_BASE_URL/REPLIT_DOMAINS).
-                        # Mandar caminho relativo para o Z-API faz o disparo
-                        # travar em "pendente" eternamente. Falhar agora
-                        # com mensagem clara.
-                        dispatch.status = "failed"
-                        dispatch.error_message = "Arquivo do anexo não encontrado"
-                        dispatch.error_details = (
-                            "O arquivo do anexo não pôde ser resolvido para envio "
-                            "via WhatsApp. Causas possíveis: (1) arquivo não "
-                            "encontrado no servidor — verifique se o upload foi "
-                            "feito no ambiente de produção (não no ambiente de dev); "
-                            "(2) variável APP_BASE_URL não configurada no Railway — "
-                            "configure com o domínio público da aplicação "
-                            "(ex.: https://agente-ia-rv.railway.app)."
-                        )
-                        failed_count += 1
-                        status = "failed"
-                        error_msg = "Arquivo do anexo não encontrado"
-                    elif not _chan_inactive_base and phone and _base_act_cfg:
-                        while attempt <= MAX_RETRY_ATTEMPTS:
-                            try:
-                                if attachment_url and attachment_type:
-                                    if attachment_type == "image":
-                                        result = await _base_active_client.send_image(phone, full_attachment_url, message)
-                                    elif attachment_type == "video":
-                                        result = await _base_active_client.send_video(phone, full_attachment_url, message)
-                                    elif attachment_type == "audio":
-                                        result = await _base_active_client.send_audio(phone, full_attachment_url)
-                                    else:
-                                        result = await _base_active_client.send_document(phone, full_attachment_url, attachment_filename or "", message)
-                                else:
-                                    result = await _base_active_client.send_text(phone, message, delay_typing=2)
-                                dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
-                                
-                                if result.get("success"):
-                                    dispatch.status = "sent"
-                                    dispatch.sent_at = datetime.utcnow()
-                                    sent_count += 1
-                                    status = "sent"
-                                    _persist_campaign_message(db_session, phone, message, campaign.name, channel_id=_base_channel_id, campaign_id=campaign.id)
-                                    break
-                                else:
-                                    error_code = result.get("error_code", "UNKNOWN")
-                                    error_msg = result.get("error", "Erro desconhecido")
-                                    print(f"[DISPATCH-FAIL] canal={_base_channel_id} assessor={assessor.get('email','')} motivo={error_code} detalhe={str(error_msg)[:200]} api_response={str(result)[:300]}")
-                                    
-                                    is_retryable = (
-                                        error_code.startswith("HTTP_5") or 
-                                        "500" in error_code or
-                                        "502" in error_code or
-                                        "503" in error_code or
-                                        error_code in ["TIMEOUT", "CONNECTION_ERROR", "HTTP_ERROR"]
-                                    )
-                                    
-                                    if is_retryable and attempt < MAX_RETRY_ATTEMPTS:
-                                        await asyncio.sleep(RETRY_DELAY_SECONDS)
-                                        attempt += 1
-                                        continue
-                                    else:
-                                        dispatch.status = "failed"
-                                        dispatch.error_message = error_msg
-                                        dispatch.error_details = translate_error_to_natural_language(error_code, error_msg, phone)
-                                        failed_count += 1
-                                        status = "failed"
-                                        break
-                            except Exception as e:
-                                error_msg = str(e)
-                                if attempt < MAX_RETRY_ATTEMPTS:
-                                    await asyncio.sleep(RETRY_DELAY_SECONDS)
-                                    attempt += 1
-                                else:
-                                    dispatch.status = "failed"
-                                    dispatch.error_message = error_msg
-                                    dispatch.error_details = f"Erro de conexao: {error_msg}"
-                                    failed_count += 1
-                                    status = "failed"
-                                    break
-                    elif not _chan_inactive_base:
-                        if not phone:
-                            dispatch.status = "failed"
-                            dispatch.error_message = "Telefone não informado"
-                            dispatch.error_details = "O assessor não possui telefone WhatsApp cadastrado"
-                            failed_count += 1
-                            status = "failed"
-                            error_msg = "Telefone não informado"
-                        elif not _base_act_cfg:
-                            dispatch.status = "simulated"
-                            dispatch.error_details = "Disparo simulado - Z-API não configurado"
-                            dispatch.sent_at = datetime.utcnow()
-                            sent_count += 1
-                            status = "simulated"
-                    
-                    db_session.commit()
-                    
-                    percent = round((current_index / total_assessors) * 100, 1)
-                    progress_data = {
-                        'type': 'progress',
-                        'current': current_index,
-                        'total': total_assessors,
-                        'percent': percent,
-                        'assessor_name': assessor_name,
-                        'assessor_phone': phone,
-                        'status': status,
-                        'error': error_msg,
-                        'sent_count': sent_count,
-                        'failed_count': failed_count,
-                        'attempts_made': attempt
-                    }
-                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
-                    
-                finally:
-                    db_session.close()
-                
-                if current_index < total_assessors:
-                    delay = get_random_dispatch_delay()
-                    await asyncio.sleep(delay)
-        
-        except asyncio.CancelledError:
-            cancelled = True
-        finally:
-            if campaign.id in cancelled_campaigns:
-                del cancelled_campaigns[campaign.id]
-            
-            db_final = SessionLocal()
-            try:
-                campaign_final = db_final.query(Campaign).filter(Campaign.id == campaign.id).first()
-                if campaign_final:
-                    if cancelled or campaign_final.status == "cancelling":
-                        campaign_final.status = "cancelled"
-                    elif campaign_final.status in [CampaignStatus.PROCESSING.value, "processing", "sending"]:
-                        campaign_final.status = CampaignStatus.SENT.value
-                    campaign_final.messages_sent = sent_count
-                    campaign_final.messages_failed = failed_count
-                    campaign_final.sent_at = datetime.utcnow()
-                    db_final.commit()
-            finally:
-                db_final.close()
-        
-        if not cancelled:
-            complete_data = {
-                'type': 'complete',
-                'total': total_assessors,
-                'sent_count': sent_count,
-                'failed_count': failed_count
-            }
-            yield f"data: {json.dumps(complete_data)}\n\n"
-    
     return StreamingResponse(
-        generate_events(),
+        _poll_dispatch_progress(campaign.id, total_assessors),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -3353,11 +3253,215 @@ async def cancel_campaign_dispatch(
         raise HTTPException(status_code=409, detail="A campanha não está em andamento")
     
     cancelled_campaigns[campaign_id] = True
-    
+
     campaign.status = "cancelling"
     db.commit()
-    
+
+    # Task #345 — cancela asyncio.Task do motor de envio em background, se ativo.
+    bg_task = _dispatch_tasks.get(campaign_id)
+    if bg_task and not bg_task.done():
+        bg_task.cancel()
+
     return {"success": True, "message": "Solicitação de cancelamento enviada"}
+
+
+@router.post("/{campaign_id}/resume")
+async def resume_campaign_dispatch(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_gestao())
+):
+    """Task #345 — Retoma o disparo de uma campanha cancelada.
+
+    Envia apenas para assessores que ainda não receberam a mensagem
+    (dispatches com status != 'sent' e != 'simulated').
+    Resets dispatches 'failed' para 'pending' (nova tentativa incluída).
+    Para campanhas antigas (sem dispatches upfront), reconstrói os pendentes
+    a partir de processed_data.
+    """
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada")
+
+    if campaign.status != "cancelled":
+        raise HTTPException(
+            status_code=409,
+            detail="Apenas campanhas com status 'cancelada' podem ser retomadas."
+        )
+
+    bg_task = _dispatch_tasks.get(campaign_id)
+    if bg_task and not bg_task.done():
+        raise HTTPException(status_code=409, detail="Campanha já está sendo processada.")
+
+    # Reset dispatches 'failed' para 'pending' (novo disparo para quem falhou).
+    failed_reset = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.status == "failed",
+        )
+        .update(
+            {"status": "pending", "error_message": None, "error_details": None},
+            synchronize_session=False,
+        )
+    )
+
+    pending_count = (
+        db.query(CampaignDispatch)
+        .filter(
+            CampaignDispatch.campaign_id == campaign_id,
+            CampaignDispatch.status == "pending",
+        )
+        .count()
+    )
+
+    # Para campanhas antigas (sem criação upfront): pode haver assessores sem
+    # nenhum registro em campaign_dispatches — reconstrói a partir de processed_data.
+    if pending_count == 0:
+        source_type = getattr(campaign, "source_type", "upload") or "upload"
+        try:
+            column_mapping = json.loads(str(campaign.column_mapping)) if campaign.column_mapping else {}
+            custom_mapping = json.loads(str(campaign.custom_fields_mapping)) if campaign.custom_fields_mapping else {}
+            data = json.loads(str(campaign.processed_data)) if campaign.processed_data else []
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Erro ao ler dados da campanha.")
+
+        sent_assessor_ids = {
+            d.assessor_id
+            for d in db.query(CampaignDispatch).filter(
+                CampaignDispatch.campaign_id == campaign_id,
+                CampaignDispatch.status.in_(["sent", "simulated"]),
+            ).all()
+            if d.assessor_id
+        }
+
+        new_count = 0
+        if source_type in ["base", "base_assessores"]:
+            header_t = campaign.message_header or ""
+            content_t = campaign.message_content_template or ""
+            footer_t = campaign.message_footer or ""
+            if not header_t and not content_t and not footer_t:
+                if campaign.custom_template_content:
+                    content_t = str(campaign.custom_template_content)
+                elif campaign.template_id:
+                    tmpl = db.query(MessageTemplate).filter(
+                        MessageTemplate.id == campaign.template_id
+                    ).first()
+                    if tmpl:
+                        content_t = str(tmpl.content)
+                else:
+                    content_t = "Olá, {{nome_assessor}}!"
+
+            all_emails = [a.get("email", "") for a in data if a.get("email")]
+            ch_map = _batch_resolve_channels(all_emails, db) if all_emails else {}
+
+            for assessor in data:
+                a_id = str(assessor.get("id", ""))
+                if a_id and a_id in sent_assessor_ids:
+                    continue
+                _email = assessor.get("email", "")
+                _phone = assessor.get("telefone_whatsapp", "") or assessor.get("telefone", "")
+                _name = assessor.get("nome", "")
+                _ch = ch_map.get(_email)
+                _vars = build_assessor_variables(assessor)
+                _parts = []
+                for _t in [header_t, content_t, footer_t]:
+                    _r = replace_variables_generic(_t, _vars)
+                    if _r.strip():
+                        _parts.append(_r.strip())
+                _msg = "\n\n".join(_parts)
+                _msg = re.sub(r'\{\{[^}]+\}\}', '', _msg)
+                db.add(CampaignDispatch(
+                    campaign_id=campaign_id,
+                    assessor_id=a_id,
+                    assessor_email=_email,
+                    assessor_phone=_phone,
+                    assessor_name=_name,
+                    message_content=_msg,
+                    status="pending",
+                    channel_id=_ch,
+                ))
+                new_count += 1
+        else:
+            grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
+            header_t = campaign.message_header or ""
+            content_t = campaign.message_content_template or ""
+            footer_t = campaign.message_footer or ""
+            use_bl = bool(header_t.strip() or content_t.strip() or footer_t.strip())
+            tmpl_content = DEFAULT_TEMPLATE_CONTENT
+            if not use_bl:
+                if campaign.custom_template_content:
+                    _cand = str(campaign.custom_template_content)
+                    if template_has_required_variables(_cand):
+                        tmpl_content = _cand
+                elif campaign.template_id:
+                    _t = db.query(MessageTemplate).filter(
+                        MessageTemplate.id == campaign.template_id
+                    ).first()
+                    if _t:
+                        _cand = str(_t.content)
+                        if template_has_required_variables(_cand):
+                            tmpl_content = _cand
+            clt = campaign.message_content_template or ""
+            is_gr = bool(campaign.group_by_client)
+            all_em = [v.get("email_assessor", "") for v in grouped.values() if v.get("email_assessor")]
+            ch_map = _batch_resolve_channels(all_em, db) if all_em else {}
+
+            for assessor_id, assessor_data in grouped.items():
+                if assessor_id in sent_assessor_ids:
+                    continue
+                if use_bl:
+                    _wp = []
+                    if header_t.strip():
+                        _wp.append(header_t.strip())
+                    if content_t.strip() and "{{lista_clientes}}" in content_t:
+                        _wp.append(content_t.strip())
+                    else:
+                        _wp.append("{{lista_clientes}}")
+                    if footer_t.strip():
+                        _wp.append(footer_t.strip())
+                    _wt = "\n\n".join(_wp)
+                    _msg = build_message(_wt, assessor_data, custom_mapping, clt, group_by_client=is_gr)
+                else:
+                    _msg = build_message(tmpl_content, assessor_data, custom_mapping, clt, group_by_client=is_gr)
+                _phone = assessor_data.get("telefone", "")
+                _name = assessor_data.get("nome_assessor", "")
+                _email = assessor_data.get("email_assessor", "")
+                _ch = ch_map.get(_email)
+                db.add(CampaignDispatch(
+                    campaign_id=campaign_id,
+                    assessor_id=assessor_id,
+                    assessor_email=_email,
+                    assessor_phone=_phone,
+                    assessor_name=_name,
+                    message_content=_msg,
+                    status="pending",
+                    channel_id=_ch,
+                ))
+                new_count += 1
+
+        db.commit()
+        pending_count = new_count + failed_reset
+
+    if pending_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Todos os assessores desta campanha já receberam a mensagem."
+        )
+
+    campaign.status = CampaignStatus.PROCESSING.value
+    campaign.messages_failed = 0
+    db.commit()
+
+    bg = asyncio.create_task(_run_immediate_dispatch(campaign_id))
+    _dispatch_tasks[campaign_id] = bg
+
+    return {
+        "success": True,
+        "campaign_id": campaign_id,
+        "pending_dispatches": pending_count,
+        "message": f"Retomando envio para {pending_count} assessor(es).",
+    }
 
 
 @router.get("/{campaign_id}/delivery-report")
@@ -3491,6 +3595,23 @@ async def list_campaigns(
         )
         next_etas = {cid: dt for cid, dt in rows}
 
+    # Task #345 — contagem de dispatches pendentes para campanhas canceladas
+    # (imediatas), para exibir badge "X pendentes" e habilitar botão Retomar.
+    from database.models import CampaignDispatch as _CD
+    cancelled_ids = [c.id for c in campaigns if c.status == "cancelled"]
+    pending_counts: dict = {}
+    if cancelled_ids:
+        _pc_rows = (
+            db.query(_CD.campaign_id, sql_func.count(_CD.id))
+            .filter(
+                _CD.campaign_id.in_(cancelled_ids),
+                _CD.status.in_(["pending", "failed"]),
+            )
+            .group_by(_CD.campaign_id)
+            .all()
+        )
+        pending_counts = {cid: cnt for cid, cnt in _pc_rows}
+
     for c in campaigns:
         result.append({
             "id": c.id,
@@ -3509,6 +3630,7 @@ async def list_campaigns(
             "template_name": c.template.name if c.template else None,
             "source": "unified",
             "next_send_eta": next_etas.get(c.id).isoformat() if next_etas.get(c.id) else None,
+            "pending_dispatches_count": pending_counts.get(c.id, 0),
         })
 
     legacy_campaigns = db.query(CadenceCampaign).order_by(CadenceCampaign.created_at.desc()).limit(50).all()
