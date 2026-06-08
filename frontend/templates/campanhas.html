@@ -4638,6 +4638,7 @@ Equipe de Gestao"></textarea>
         }
 
         // Task #345 — retoma disparo imediato de campanha cancelada via POST /resume
+        // Após sucesso, navega para o painel de progresso SSE para acompanhar ao vivo.
         async function resumeImmediateCampaign(id) {
             const confirmed = await toast.confirm({
                 title: 'Retomar disparo',
@@ -4654,9 +4655,74 @@ Equipe de Gestao"></textarea>
                 });
                 const result = await resp.json().catch(function() { return {}; });
                 if (!resp.ok) throw new Error(result.detail || ('HTTP ' + resp.status));
-                toast.success(result.message || 'Disparo retomado em segundo plano.');
-                // Aguarda 1s para o motor iniciar e recarrega o histórico
-                setTimeout(function() { loadHistory(); }, 1000);
+
+                const totalPending = result.pending_dispatches || 0;
+
+                // Navega para step 3 (painel de disparo) para mostrar progresso ao vivo.
+                campaignId = id;
+                goToStep(3);
+
+                const btn = document.getElementById('dispatchBtn');
+                const backBtn = document.getElementById('backBtn');
+                const cancelBtn = document.getElementById('cancelDispatchBtn');
+                const progressDiv = document.getElementById('dispatchProgress');
+                const previewDiv = document.getElementById('previewMessages');
+
+                if (btn) { btn.disabled = true; btn.style.display = 'none'; }
+                if (backBtn) backBtn.disabled = true;
+                if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+                if (progressDiv) progressDiv.style.display = 'block';
+                if (previewDiv) previewDiv.style.display = 'none';
+
+                addLogEntry(`Retomando disparo para ${totalPending} assessor(es)...`, 'info');
+
+                // Abre EventSource — dispatch-stream detecta motor já ativo e apenas observa.
+                const es = new EventSource(`${API_BASE}/${id}/dispatch-stream`);
+                currentEventSource = es;
+                es.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'heartbeat') return;
+                        if (data.type === 'start') {
+                            if (document.getElementById('progressTotal'))
+                                document.getElementById('progressTotal').textContent = data.total || totalPending;
+                        } else if (data.type === 'progress') {
+                            if (document.getElementById('progressCurrent'))
+                                document.getElementById('progressCurrent').textContent = data.current;
+                            if (document.getElementById('progressPercent'))
+                                document.getElementById('progressPercent').textContent = (data.percent || 0) + '%';
+                            if (document.getElementById('progressBar'))
+                                document.getElementById('progressBar').style.width = (data.percent || 0) + '%';
+                            if (document.getElementById('progressSent'))
+                                document.getElementById('progressSent').textContent = data.sent_count;
+                            if (document.getElementById('progressFailed'))
+                                document.getElementById('progressFailed').textContent = data.failed_count;
+                            const st = data.status === 'sent' || data.status === 'simulated' ? 'success' : 'error';
+                            addLogEntry(`[${data.current}/${data.total}] ${data.assessor_name} — ${data.status.toUpperCase()}${data.error ? ': ' + data.error : ''}`, st);
+                        } else if (data.type === 'complete') {
+                            es.close(); currentEventSource = null;
+                            if (cancelBtn) cancelBtn.style.display = 'none';
+                            if (document.getElementById('progressPercent'))
+                                document.getElementById('progressPercent').textContent = '100%';
+                            if (document.getElementById('progressBar'))
+                                document.getElementById('progressBar').style.width = '100%';
+                            addLogEntry(`Retomada concluída! Enviadas: ${data.sent_count}, Falhas: ${data.failed_count}`, 'info');
+                            if (campaignId) loadChannelSummary(campaignId);
+                            const actionsDiv = document.getElementById('dispatchActions');
+                            if (actionsDiv) actionsDiv.innerHTML = '<button class="btn btn-primary" data-action="reloadPage">Nova Campanha</button>';
+                        } else if (data.type === 'cancelled') {
+                            es.close(); currentEventSource = null;
+                            if (cancelBtn) { cancelBtn.style.display = 'none'; cancelBtn.disabled = false; }
+                            addLogEntry(`Envio cancelado. Enviadas: ${data.sent_count}, Falhas: ${data.failed_count}`, 'warning');
+                        }
+                    } catch (e) {}
+                };
+                es.onerror = function() {
+                    es.close(); currentEventSource = null;
+                    if (cancelBtn) { cancelBtn.style.display = 'none'; cancelBtn.disabled = false; }
+                    if (btn) { btn.disabled = false; btn.style.display = ''; }
+                    addLogEntry('Conexão com o servidor interrompida.', 'warning');
+                };
             } catch (error) {
                 toast.error(error.message);
             }

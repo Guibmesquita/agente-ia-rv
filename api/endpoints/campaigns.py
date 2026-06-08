@@ -2413,92 +2413,60 @@ async def dispatch_campaign(
             },
         )
 
+    # Task #345 — guard de reconexão: se o motor já está ativo para esta campanha,
+    # retorna imediatamente sem duplicar dispatches ou tasks.
+    _exist_task_disp = _dispatch_tasks.get(campaign_id)
+    if campaign.status == CampaignStatus.PROCESSING.value or (
+        _exist_task_disp and not _exist_task_disp.done()
+    ):
+        return {
+            "success": True,
+            "campaign_id": campaign_id,
+            "total_assessors": campaign.total_assessors or len(grouped),
+            "background": True,
+            "message": "Motor de envio já ativo para esta campanha.",
+        }
+
     # Preflight OK — apenas agora a campanha entra em PROCESSING.
     campaign.status = CampaignStatus.PROCESSING.value
-    db.commit()
-
-    sent_count = 0
-    failed_count = 0
-    content_line_template = campaign.message_content_template or ""
-    
-    is_grouped = bool(campaign.group_by_client)
-    for assessor_id, assessor_data in grouped.items():
-        message = build_message(template_content, assessor_data, custom_mapping, content_line_template, group_by_client=is_grouped)
-        phone = assessor_data.get("telefone", "")
-        _a_email = assessor_data.get("email_assessor", "")
-        _a_channel_id = _disp_channel_map.get(_a_email)
-
-        dispatch = CampaignDispatch(
-            campaign_id=campaign_id,
-            assessor_id=assessor_id,
-            assessor_email=_a_email,
-            assessor_phone=phone,
-            assessor_name=assessor_data.get("nome_assessor", ""),
-            message_content=message,
-            channel_id=_a_channel_id,
-            status="pending"
-        )
-        db.add(dispatch)
-        db.flush()
-
-        # Seleciona cliente Z-API por canal (Task #224) — helper compartilhado.
-        _active_zapi, _zapi_configured, _chan_inactive_disp = \
-            _resolve_channel_client_for_dispatch(_a_channel_id, db)
-        if _chan_inactive_disp:
-            dispatch.status = "failed"
-            dispatch.error_message = "Canal desativado"
-            dispatch.error_details = "O canal Z-API associado a este assessor está inativo."
-            failed_count += 1
-            db.flush()
-            continue
-
-        if phone and _zapi_configured:
-            try:
-                result = await _active_zapi.send_text(phone, message, delay_typing=2)
-                dispatch.api_response = json.dumps(result, ensure_ascii=False, default=str)
-                
-                if result.get("success"):
-                    dispatch.status = "sent"
-                    dispatch.sent_at = datetime.utcnow()
-                    sent_count += 1
-                    _persist_campaign_message(db, phone, message, campaign.name, channel_id=_a_channel_id, campaign_id=campaign_id)
-                else:
-                    dispatch.status = "failed"
-                    error_code = result.get("error_code", "UNKNOWN")
-                    error_msg = result.get("error", "Erro desconhecido")
-                    dispatch.error_message = error_msg
-                    dispatch.error_details = translate_error_to_natural_language(error_code, error_msg, phone)
-                    failed_count += 1
-                    print(f"[DISPATCH-FAIL] canal={_a_channel_id} assessor={_a_email} motivo={error_code} detalhe={error_msg[:200]} api_response={str(result)[:300]}")
-            except Exception as e:
-                dispatch.status = "failed"
-                dispatch.error_message = str(e)
-                dispatch.error_details = f"Erro inesperado ao enviar mensagem: {str(e)}"
-                failed_count += 1
-        else:
-            if not phone:
-                dispatch.status = "failed"
-                dispatch.error_message = "Telefone não informado"
-                dispatch.error_details = f"O assessor '{assessor_data.get('nome_assessor', 'Desconhecido')}' não possui número de telefone cadastrado na planilha ou na base de assessores."
-                failed_count += 1
-            elif not _zapi_configured:
-                dispatch.status = "simulated"
-                dispatch.error_details = "Disparo simulado - Z-API não configurado"
-                dispatch.sent_at = datetime.utcnow()
-                sent_count += 1
-    
-    campaign.status = CampaignStatus.SENT.value
-    campaign.messages_sent = sent_count
-    campaign.messages_failed = failed_count
-    campaign.sent_at = datetime.utcnow()
     campaign.total_assessors = len(grouped)
     db.commit()
-    
+
+    # Task #345 — cria todos os dispatches upfront, depois lança motor em background.
+    # POST /dispatch retorna JSON imediatamente; o SSE (dispatch-stream) observa o progresso.
+    _upfront_db_disp = SessionLocal()
+    try:
+        _clt_disp = campaign.message_content_template or ""
+        _isg_disp = bool(campaign.group_by_client)
+        for assessor_id, assessor_data in grouped.items():
+            _msg_disp = build_message(
+                template_content, assessor_data, custom_mapping,
+                _clt_disp, group_by_client=_isg_disp
+            )
+            _a_email = assessor_data.get("email_assessor", "")
+            _upfront_db_disp.add(CampaignDispatch(
+                campaign_id=campaign_id,
+                assessor_id=assessor_id,
+                assessor_email=_a_email,
+                assessor_phone=assessor_data.get("telefone", ""),
+                assessor_name=assessor_data.get("nome_assessor", ""),
+                message_content=_msg_disp,
+                status="pending",
+                channel_id=_disp_channel_map.get(_a_email),
+            ))
+        _upfront_db_disp.commit()
+    finally:
+        _upfront_db_disp.close()
+
+    _bg_task_disp = asyncio.create_task(_run_immediate_dispatch(campaign_id))
+    _dispatch_tasks[campaign_id] = _bg_task_disp
+
     return {
-        "message": "Campanha disparada com sucesso",
+        "success": True,
+        "campaign_id": campaign_id,
         "total_assessors": len(grouped),
-        "messages_sent": sent_count,
-        "messages_failed": failed_count
+        "background": True,
+        "message": f"Disparo iniciado em segundo plano para {len(grouped)} assessor(es). Use /dispatch-stream para acompanhar o progresso.",
     }
 
 
@@ -2904,7 +2872,20 @@ async def dispatch_campaign_stream(
     
     grouped = group_recommendations_by_assessor(data, column_mapping, custom_mapping, db)
     total_assessors = len(grouped)
-    
+
+    # Task #345 — guard de reconexão SSE: se o motor de background já está ativo
+    # para esta campanha (SSE reconectou após queda), apenas retorna o observador
+    # de polling sem recriar dispatches nem lançar nova task.
+    _exist_task_sse = _dispatch_tasks.get(campaign_id)
+    if campaign.status == CampaignStatus.PROCESSING.value or (
+        _exist_task_sse and not _exist_task_sse.done()
+    ):
+        return StreamingResponse(
+            _poll_dispatch_progress(campaign_id, campaign.total_assessors or total_assessors),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
     if total_assessors == 0:
         campaign.status = CampaignStatus.SENT.value
         campaign.messages_sent = 0
@@ -3143,7 +3124,18 @@ async def dispatch_campaign_from_base(campaign, db: Session):
         data = []
     
     total_assessors = len(data)
-    
+
+    # Task #345 — guard de reconexão SSE para base path.
+    _exist_task_base = _dispatch_tasks.get(campaign.id)
+    if campaign.status == CampaignStatus.PROCESSING.value or (
+        _exist_task_base and not _exist_task_base.done()
+    ):
+        return StreamingResponse(
+            _poll_dispatch_progress(campaign.id, campaign.total_assessors or total_assessors),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
     if total_assessors == 0:
         campaign.status = CampaignStatus.SENT.value
         campaign.messages_sent = 0
@@ -3293,12 +3285,20 @@ async def resume_campaign_dispatch(
     if bg_task and not bg_task.done():
         raise HTTPException(status_code=409, detail="Campanha já está sendo processada.")
 
-    # Reset dispatches 'failed' para 'pending' (novo disparo para quem falhou).
+    # Task #345 — Reset dispatches 'failed' para 'pending' excluindo falhas
+    # permanentes (telefone ausente, canal desativado, anexo inválido) que não
+    # se resolvem com simples retentativa.
+    _PERMANENT_ERRORS = [
+        "Telefone não informado",
+        "Canal desativado",
+        "Arquivo do anexo não encontrado",
+    ]
     failed_reset = (
         db.query(CampaignDispatch)
         .filter(
             CampaignDispatch.campaign_id == campaign_id,
             CampaignDispatch.status == "failed",
+            ~CampaignDispatch.error_message.in_(_PERMANENT_ERRORS),
         )
         .update(
             {"status": "pending", "error_message": None, "error_details": None},
