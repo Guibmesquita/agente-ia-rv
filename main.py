@@ -1994,7 +1994,7 @@ async def revoked_tokens_cleanup_scheduler():
 app = FastAPI(
     title="Assessor IA - API",
     description="API para agente de IA de assessores financeiros com integração WhatsApp",
-    version="1.0.0",
+    version="1.0.1",
     lifespan=lifespan,
     docs_url="/docs" if not is_production() else None,
     redoc_url="/redoc" if not is_production() else None,
