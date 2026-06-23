@@ -196,13 +196,11 @@ async def list_conversations(
         query = query.filter(Conversation.status == status)
     
     # V2 Zendesk-like filters
+    # ticket_status=None significa conversa de bot (por design do modelo).
+    # O filtro "new" deve retornar apenas conversas com ticket_status='new' explícito —
+    # nunca incluir NULLs, pois isso inflaria "Novos" com todas as conversas de bot.
     if ticket_status:
-        if ticket_status == "new":
-            query = query.filter(
-                or_(Conversation.ticket_status == ticket_status, Conversation.ticket_status.is_(None))
-            )
-        else:
-            query = query.filter(Conversation.ticket_status == ticket_status)
+        query = query.filter(Conversation.ticket_status == ticket_status)
     
     if escalation_level:
         query = query.filter(Conversation.escalation_level == escalation_level)
@@ -238,14 +236,13 @@ async def list_conversations(
         if start_date:
             query = query.filter(Conversation.last_message_at >= start_date)
     
-    # Task #318 — Suprimir conversas sem atividade quando não há filtro de busca ativo.
-    # Conversas criadas pelo sync Z-API sem mensagens reais (last_message_at IS NULL)
-    # apareciam como "Sem mensagens" duplicadas. Com busca explícita, todas são visíveis.
-    no_filter_active = not any([
-        search, status, ticket_status, escalation_level,
-        assigned_to_me, unidade, broker, escalation_category, date_range, channel_id
-    ])
-    if no_filter_active:
+    # Task #318 / Task #348 — Suprimir conversas sem atividade real (last_message_at IS NULL)
+    # em todos os modos de visualização, exceto quando há busca textual explícita.
+    # Antes era aplicado só em "sem filtro ativo"; agora cobre também filtros de ticket_status
+    # (ex.: "Novos"), garantindo que "Novos" e "Ver Todas" exibam o mesmo universo de conversas
+    # e que conversas criadas pelo sync Z-API sem mensagens não apareçam em nenhum filtro.
+    # A busca textual é a única exceção: o usuário pode querer localizar conversas antigas sem msgs.
+    if not search:
         query = query.filter(Conversation.last_message_at.isnot(None))
 
     total = query.count()
@@ -363,8 +360,7 @@ async def get_filter_counts(
         Conversation.assigned_to == current_user.id
     ).scalar() or 0
     new_count = db.query(func.count(Conversation.id)).filter(
-        Conversation.ticket_status == TicketStatusV2.NEW.value,
-        Conversation.assigned_to.is_(None)
+        Conversation.ticket_status == TicketStatusV2.NEW.value
     ).scalar() or 0
     open_count = db.query(func.count(Conversation.id)).filter(
         Conversation.ticket_status == TicketStatusV2.OPEN.value,
