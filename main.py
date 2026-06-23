@@ -1610,6 +1610,46 @@ def _backfill_conversation_ticket_status():
         db.close()
 
 
+def _backfill_conversation_last_message_at():
+    """Task #349 — backfill de last_message_at a partir da última mensagem real.
+
+    Após a migração (Replit → Railway) as conversas ficaram com last_message_at=NULL
+    e desapareceram da Central: a listagem aplica o guard `last_message_at IS NOT NULL`
+    (api/endpoints/conversations.py), então conversas sem esse campo não aparecem nem
+    em "Novos" nem em "Ver Todas" — apesar de o badge contá-las.
+
+    Deriva o valor de MAX(whatsapp_messages.created_at) por conversa. Idempotente:
+    só atualiza rows com last_message_at NULL que possuem mensagens associadas.
+    Conversas sem nenhuma mensagem permanecem NULL (corretamente ocultas).
+    """
+    from database.database import SessionLocal
+    from sqlalchemy import text as sql_text
+    db = SessionLocal()
+    try:
+        result = db.execute(sql_text(
+            "UPDATE conversations c "
+            "SET last_message_at = sub.max_created "
+            "FROM (SELECT conversation_id, MAX(created_at) AS max_created "
+            "      FROM whatsapp_messages "
+            "      WHERE conversation_id IS NOT NULL "
+            "      GROUP BY conversation_id) sub "
+            "WHERE c.id = sub.conversation_id "
+            "  AND c.last_message_at IS NULL "
+            "  AND sub.max_created IS NOT NULL"
+        ))
+        updated = result.rowcount
+        db.commit()
+        if updated > 0:
+            print(f"[INIT] Backfill last_message_at: {updated} conversa(s) atualizadas a partir das mensagens")
+        else:
+            print("[INIT] Backfill last_message_at: nenhuma conversa com last_message_at NULL e mensagens associadas")
+    except Exception as e:
+        print(f"[INIT] Aviso: backfill de last_message_at falhou: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _normalize_assessor_phones():
     """Task #319 — normaliza telefones de assessores para o formato canônico 55DDXXXXXXXXX.
 
@@ -1672,6 +1712,7 @@ def _sync_init_database():
         _backfill_cadence_events()
         _cleanup_old_cadence_events()
         _backfill_conversation_ticket_status()
+        _backfill_conversation_last_message_at()
 
     _normalize_assessor_phones()
 
