@@ -1618,14 +1618,17 @@ def _backfill_conversation_last_message_at():
     (api/endpoints/conversations.py), então conversas sem esse campo não aparecem nem
     em "Novos" nem em "Ver Todas" — apesar de o badge contá-las.
 
-    Deriva o valor de MAX(whatsapp_messages.created_at) por conversa. Idempotente:
-    só atualiza rows com last_message_at NULL que possuem mensagens associadas.
-    Conversas sem nenhuma mensagem permanecem NULL (corretamente ocultas).
+    Pass 1: deriva de MAX(whatsapp_messages.created_at) — melhor precisão.
+    Pass 2: para conversas com ticket_status explícito mas sem mensagens importadas
+            (cenário pós-migração Replit→Railway), usa updated_at/created_at como
+            fallback — conversas reais que perderam as mensagens durante a migração.
+    Conversas sem ticket_status E sem mensagens permanecem NULL (bots, corretamente ocultos).
     """
     from database.database import SessionLocal
     from sqlalchemy import text as sql_text
     db = SessionLocal()
     try:
+        # Pass 1: conversas com mensagens associadas
         result = db.execute(sql_text(
             "UPDATE conversations c "
             "SET last_message_at = sub.max_created "
@@ -1637,12 +1640,26 @@ def _backfill_conversation_last_message_at():
             "  AND c.last_message_at IS NULL "
             "  AND sub.max_created IS NOT NULL"
         ))
-        updated = result.rowcount
+        updated1 = result.rowcount
         db.commit()
-        if updated > 0:
-            print(f"[INIT] Backfill last_message_at: {updated} conversa(s) atualizadas a partir das mensagens")
+
+        # Pass 2: conversas com ticket_status explícito mas sem mensagens importadas
+        # (migração Replit→Railway perdeu as mensagens; ticket_status indica que eram reais)
+        result2 = db.execute(sql_text(
+            "UPDATE conversations "
+            "SET last_message_at = COALESCE(updated_at, created_at) "
+            "WHERE last_message_at IS NULL "
+            "  AND ticket_status IS NOT NULL "
+            "  AND COALESCE(updated_at, created_at) IS NOT NULL"
+        ))
+        updated2 = result2.rowcount
+        db.commit()
+
+        total = updated1 + updated2
+        if total > 0:
+            print(f"[INIT] Backfill last_message_at: {updated1} via mensagens + {updated2} via updated_at (ticket_status) = {total} total")
         else:
-            print("[INIT] Backfill last_message_at: nenhuma conversa com last_message_at NULL e mensagens associadas")
+            print("[INIT] Backfill last_message_at: nenhuma conversa precisou de atualização")
     except Exception as e:
         print(f"[INIT] Aviso: backfill de last_message_at falhou: {e}")
         db.rollback()
