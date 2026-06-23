@@ -652,7 +652,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [ticketFilter, setTicketFilter] = useState('new');
+  const [ticketFilter, setTicketFilter] = useState(''); // Task #348 follow-up: abrir em "Ver Todas" (não "Novos" estrito)
   const [filterCounts, setFilterCounts] = useState({ all: 0, escalated: 0, my_tickets: 0, open: 0, solved_today: 0, new: 0, in_progress: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
